@@ -1,0 +1,35 @@
+[
+  {
+    "id": "synthetic-conversation",
+    "title": "SYNTHETIC_PRIVATE_TITLE_SENTINEL",
+    "create_time": 1700000000,
+    "update_time": null,
+    "current_node": "final",
+    "is_archived": false,
+    "mapping": {
+      "root": {"parent": null, "children": ["question"], "message": null},
+      "question": {
+        "parent": "root",
+        "children": ["final", "alternate", "analysis"],
+        "message": {
+          "author": {"role": "user"},
+          "create_time": 1700000001,
+          "content": {"content_type": "multimodal_text", "parts": ["SYNTHETIC_PRIVATE_TEXT_SENTINEL", {"asset_pointer": "SYNTHETIC_PRIVATE_ASSET_SENTINEL"}]},
+          "metadata": {"SYNTHETIC_PRIVATE_KEY_SENTINEL": "SYNTHETIC_PRIVATE_VALUE_SENTINEL"}
+        }
+      },
+      "final": {
+        "parent": "question", "children": [],
+        "message": {"author": {"role": "assistant"}, "channel": "final", "content": {"content_type": "text", "parts": ["SYNTHETIC_VISIBLE_REPLY_SENTINEL"]}, "metadata": {"model_slug": "SYNTHETIC_MODEL_SENTINEL"}}
+      },
+      "alternate": {
+        "parent": "question", "children": [],
+        "message": {"author": {"role": "assistant"}, "content": {"content_type": "text", "parts": ["SYNTHETIC_ALTERNATE_SENTINEL"]}}
+      },
+      "analysis": {
+        "parent": "question", "children": [],
+        "message": {"author": {"role": "assistant"}, "channel": "analysis", "content": {"content_type": "text", "parts": ["SYNTHETIC_HIDDEN_REASONING_SENTINEL"]}}
+      }
+    }
+  }
+]

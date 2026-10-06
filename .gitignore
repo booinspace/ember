@@ -1,0 +1,29 @@
+# Private sources, state, credentials, and local deployment configuration.
+.local/
+.cache/
+data/
+runtime-data/
+exports/
+reports/
+backups/
+*.zip
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+deployment.local.toml
+*.log
+
+# Python/build/tool artifacts. uv.lock is intentionally tracked.
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+coverage.xml
+.coverage

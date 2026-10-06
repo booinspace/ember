@@ -1,0 +1,14 @@
+# ADR: canonical memory ownership and provisional contracts
+
+Status: accepted from the supplied design.
+
+Memory owns sources/evidence, identity crosswalks, character beliefs/revisions,
+grants/suppression, retrieval/extraction, independent seeds, and portable bundles.
+Importers write through normalized archive contracts once defined; providers never
+own or mutate canonical memory. Search indexes are rebuildable accelerators.
+
+The public ABI package is independent of backend/runtime frameworks. Engine
+construction is external to character business logic. Phase -1 reserves package
+boundaries and ships read-only inspection only. Real archive evidence precedes ABI
+0.1 and canonical schema decisions; pre-1.0 changes still require preservation and
+migrations rather than wiping history.

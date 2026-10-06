@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "character-memory-importers"
+version = "0.0.0"
+description = "Offline source reconnaissance; canonical normalization is not implemented"
+requires-python = ">=3.12,<3.13"
+dependencies = ["pydantic>=2.10,<3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/character_memory_importers"]

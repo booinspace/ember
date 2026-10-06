@@ -1,0 +1,41 @@
+name: Python quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.23"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install locked development environment
+        run: uv sync --locked
+      - name: Validate locked memory deployment
+        run: uv sync --locked --project character-memory --all-packages
+      - name: Validate locked agent deployment
+        run: uv sync --locked --project character-agent --extra local-deployment
+      - name: Formatting
+        run: uv run --locked ruff format --check .
+      - name: Lint
+        run: uv run --locked ruff check .
+      - name: Strict types
+        run: uv run --locked pyright
+      - name: Tests including synthetic end-to-end CLI checks
+        run: uv run --locked pytest

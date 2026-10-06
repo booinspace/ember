@@ -1,0 +1,42 @@
+# Copy to deployment.local.toml before adding machine-specific details.
+# Relative paths resolve against this file's directory, not the shell's cwd.
+config_version = 1
+active_profile = "primary"
+
+[paths]
+data_root = "../../.local/data"
+runtime_root = "../../.local/runtime"
+
+[model]
+# REQUIRED before phase 3 generation: the actual Ollama inventory tag and digest.
+# A user-facing model name is not a runtime identity.
+tag = ""
+expected_digest = ""
+context_tokens = 8192
+max_input_tokens = 7000
+output_reserve_tokens = 1024
+
+[services.ollama]
+endpoint = "http://127.0.0.1:11434"
+mode = "attach"
+
+[services.livekit]
+endpoint = "ws://127.0.0.1:7880"
+mode = "attach"
+
+[services.kokoro]
+endpoint = "http://127.0.0.1:8880"
+mode = "attach"
+
+[gateway]
+endpoint = "http://127.0.0.1:11435"
+mode = "managed"
+# Phase 3 implements P0 first. Other classes arrive through this same gateway.
+preemption_enabled = false
+
+[providers.odysseus]
+mode = "disabled"
+
+[audio]
+stt_device = "cpu"
+tts_voice = "af_alloy"
