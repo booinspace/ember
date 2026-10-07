@@ -1,8 +1,8 @@
 """Validated, content-free inspection reports; these are not Memory ABI models."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 type JsonKind = Literal["null", "boolean", "number", "string", "array", "object"]
 type ComponentKind = Literal[
@@ -11,6 +11,7 @@ type ComponentKind = Literal[
     "memory_named_component_unverified",
     "account_metadata_candidate",
     "asset_candidate",
+    "nested_zip_candidate",
     "other",
 ]
 type PositiveInteger = Annotated[int, Field(gt=0)]
@@ -32,6 +33,10 @@ class InspectionLimits(InspectionModel):
     max_member_bytes: PositiveInteger = 2 * 1024**3
     max_json_bytes: PositiveInteger = 64 * 1024**2
     max_compression_ratio: PositiveInteger = 1_000
+    max_conversation_bytes: PositiveInteger = 64 * 1024**2
+    max_json_depth: PositiveInteger = 128
+    max_json_events: PositiveInteger = 2_000_000
+    max_nested_depth: NonnegativeInteger = 2
 
 
 class UnsupportedConversationStructure(InspectionModel):
@@ -46,7 +51,7 @@ class ConversationStructure(InspectionModel):
     """Aggregate shapes/counts; no source identifiers, text, or reasoning values."""
 
     status: Literal["structurally_inspected"] = "structurally_inspected"
-    wrapper: Literal["array", "object_with_conversations_array"]
+    wrapper: Literal["array", "object_with_conversations_array", "single_conversation"]
     counts: dict[str, NonnegativeInteger]
     roles: dict[str, NonnegativeInteger]
     channels: dict[str, NonnegativeInteger]
@@ -68,6 +73,7 @@ class ConversationComponent(InspectionModel):
     """Bind structural coverage to a hashed member path without disclosing its name."""
 
     path_sha256: Sha256
+    container_path_sha256: tuple[Sha256, ...] = ()
     structure: ConversationInspection
 
 
@@ -75,6 +81,7 @@ class InventoryEntry(InspectionModel):
     """A hashed source member, with explicit JSON coverage and optional private path."""
 
     path_sha256: Sha256
+    container_path_sha256: tuple[Sha256, ...] = ()
     component: ComponentKind
     size_bytes: NonnegativeInteger
     compressed_bytes: NonnegativeInteger
@@ -84,18 +91,25 @@ class InventoryEntry(InspectionModel):
         Literal["deferred_size_limit", "structurally_inspected", "invalid_or_ambiguous_json"] | None
     ) = None
     json_shape: dict[str, str] | None = None
+    container_status: Literal["inspected", "deferred_depth_limit"] | None = None
 
 
 class SourceInventory(InspectionModel):
     """Exact container identity and deterministic logical file inventory identity."""
 
-    kind: Literal["zip"] = "zip"
-    raw_sha256: Sha256
+    kind: Literal["zip", "directory"] = "zip"
+    raw_sha256: Sha256 | None = None
     logical_inventory_sha256: Sha256
     archive_size_bytes: NonnegativeInteger
     members_including_directories: NonnegativeInteger
     files: NonnegativeInteger
     uncompressed_bytes: NonnegativeInteger
+
+    @model_validator(mode="after")
+    def _validate_raw_identity(self) -> Self:
+        if (self.kind == "zip") != (self.raw_sha256 is not None):
+            raise ValueError("Only ZIP sources have an exact raw-container hash.")
+        return self
 
 
 class InspectionPrivacy(InspectionModel):
@@ -130,9 +144,13 @@ class ReconnaissanceReport(InspectionModel):
 
     # Existing reports remain readable; new inspections use the ember namespace.
     report_format: Literal[
-        "ember-memory.reconnaissance/0.0.1", "character-memory.reconnaissance/0.0.1"
-    ] = "ember-memory.reconnaissance/0.0.1"
-    phase: Literal["-1-tooling/0-input-inspection"] = "-1-tooling/0-input-inspection"
+        "ember-memory.reconnaissance/0.0.2",
+        "ember-memory.reconnaissance/0.0.1",
+        "character-memory.reconnaissance/0.0.1",
+    ] = "ember-memory.reconnaissance/0.0.2"
+    phase: Literal["0a-preparation/0b-input-inspection", "-1-tooling/0-input-inspection"] = (
+        "0a-preparation/0b-input-inspection"
+    )
     generated_at: Annotated[str, Field(pattern=r"Z$")]
     source_namespace: Annotated[str, Field(min_length=1)]
     source: SourceInventory

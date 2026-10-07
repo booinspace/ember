@@ -76,3 +76,14 @@ def test_cli_entry_point_emits_valid_content_free_report(
     assert report.source.files == 1
     assert "SENTINEL" not in output.read_text(encoding="utf-8")
     assert report.privacy.member_paths == "hashed"
+
+
+def test_cli_directory_report_cannot_mutate_source_tree(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "conversations.json").write_bytes(FIXTURE.read_bytes())
+    assert main(_arguments(source, source / "report.json")) == 2
+    assert not (source / "report.json").exists()
+    assert main(_arguments(source, tmp_path / "report.json")) == 0
+    report = ReconnaissanceReport.model_validate_json((tmp_path / "report.json").read_bytes())
+    assert report.source.kind == "directory"

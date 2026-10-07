@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from ember_memory_importers.base.archive import ArchiveInspectionError, inspect_zip
+from ember_memory_importers.base.archive import ArchiveInspectionError, inspect_source
 from ember_memory_importers.report_models import InspectionLimits, ReconnaissanceReport
 
 
@@ -20,6 +20,8 @@ class _InspectionArguments(BaseModel):
     output: Path
     include_member_paths: bool
     max_json_mib: int
+    max_conversation_mib: int
+    max_nested_depth: int
 
 
 class ReportWriteError(OSError):
@@ -28,12 +30,12 @@ class ReportWriteError(OSError):
 
 def _arguments(argv: list[str] | None) -> _InspectionArguments:
     parser = argparse.ArgumentParser(prog="ember-memory")
-    parser.add_argument("--version", action="version", version="%(prog)s 0.0.0 (phase -1)")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.0.0 (phase 0a)")
     commands = parser.add_subparsers(dest="command", required=True)
     inspect = commands.add_parser("inspect", help="Read-only source inventory and reconnaissance")
     adapters = inspect.add_subparsers(dest="adapter", required=True)
     chatgpt = adapters.add_parser(
-        "chatgpt", help="Inspect a ZIP without extraction or normalization"
+        "chatgpt", help="Inspect a ZIP or directory without extraction or normalization"
     )
     chatgpt.add_argument("archive", type=Path)
     chatgpt.add_argument(
@@ -51,11 +53,27 @@ def _arguments(argv: list[str] | None) -> _InspectionArguments:
         "--max-json-mib",
         type=int,
         default=64,
-        help="Parser limit; larger JSON is hashed and reported deferred",
+        help="Non-conversation JSON limit; larger metadata is hashed and deferred",
+    )
+    chatgpt.add_argument(
+        "--max-conversation-mib",
+        type=int,
+        default=64,
+        help="Per-conversation streaming bound, independent of total JSON component size",
+    )
+    chatgpt.add_argument(
+        "--max-nested-depth",
+        type=int,
+        default=2,
+        help="Nested ZIP depth; deeper containers are hashed and reported deferred",
     )
     arguments = _InspectionArguments.model_validate(vars(parser.parse_args(argv)))
     if arguments.max_json_mib <= 0:
         parser.error("--max-json-mib must be positive")
+    if arguments.max_conversation_mib <= 0:
+        parser.error("--max-conversation-mib must be positive")
+    if arguments.max_nested_depth < 0:
+        parser.error("--max-nested-depth cannot be negative")
     return arguments
 
 
@@ -79,11 +97,20 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.output.exists() or arguments.output.resolve() == arguments.archive.resolve():
         print("Report output must be a new file separate from the source archive.", file=sys.stderr)
         return 2
+    if arguments.archive.is_dir() and arguments.output.resolve().is_relative_to(
+        arguments.archive.resolve()
+    ):
+        print("Report output must be outside the source directory.", file=sys.stderr)
+        return 2
     try:
-        report = inspect_zip(
+        report = inspect_source(
             arguments.archive,
             source_namespace=arguments.source_namespace,
-            limits=InspectionLimits(max_json_bytes=arguments.max_json_mib * 1024**2),
+            limits=InspectionLimits(
+                max_json_bytes=arguments.max_json_mib * 1024**2,
+                max_conversation_bytes=arguments.max_conversation_mib * 1024**2,
+                max_nested_depth=arguments.max_nested_depth,
+            ),
             include_member_paths=arguments.include_member_paths,
         )
         _write_report(report, arguments.output)

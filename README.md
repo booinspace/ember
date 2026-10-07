@@ -1,9 +1,9 @@
-# ember — local character stack (phase -1)
+# ember — local character stack (phase 0a)
 
 ember is a local character application with durable memory and realtime interaction.
 [PLAN.md](PLAN.md) is authoritative for all future tasks, including its engineering
 language and code-quality standards. The actual ChatGPT export is pending.
-Phase 0 has **not** been completed.
+Phase 0a preparation is implemented; phase 0b actual-export acceptance is pending.
 
 Two independently packaged project roots are staged here:
 
@@ -27,8 +27,10 @@ root after setup, run `uv run --locked ember --help` or
 ## Working behavior now
 
 - Python 3.12 packaging, uv workspaces/local dependencies, and CLI entry points.
-- Read-only ZIP inventory, raw/member/logical SHA-256 fingerprints, bounded JSON
-  shape inspection, conversation-graph observations, and explicit coverage gaps.
+- Read-only ZIP/directory inventory, bounded nested containers and numbered shards,
+  raw/member/logical SHA-256 fingerprints, and streamed conversation observations.
+- Provisional typed ChatGPT source models preserving all graph branches, unknown
+  metadata and absent/null distinctions; separate sanitized report models.
 - Default reports contain counts/shapes/hashes, without message text, titles,
   external IDs, raw reasoning, or raw member filenames.
 - Deployment TOML validation and truthful scaffold readiness reporting.
@@ -83,8 +85,10 @@ identities, grants, or seeds.
 ```
 
 Copy the example to `deployment.local.toml` before adding private machine settings.
-Model tag/digest remain pending. `--require-model-pin` makes a missing pin an error.
-A configured pin is still unverified until phase 3 checks actual Ollama metadata.
+Both supplied Q4_K_M tags and full digests have local private configs in
+`.local/config/deployment.non-mtp.toml` and `.local/config/deployment.mtp.toml`.
+Use either with `--require-model-pin`. See [model profiles](docs/model-profiles.md).
+A stored inventory/configured pin still needs a fresh phase 3 runtime verification.
 `ember start` currently fails explicitly because the runtime is not built.
 
 ## When the export arrives
@@ -97,9 +101,11 @@ Then run:
 ```
 
 Inspection writes a **new** local report, refusing to overwrite the source or a
-previous report. It does not import sources into canonical memory. Large JSON over
-64 MiB is hashed and reported as deferred; completing phase 0 for such an export
-requires a bounded streaming parser or an explicitly reviewed limit adjustment.
+previous report. It does not import sources into canonical memory. Conversation
+JSON streams one bounded graph at a time; other JSON over 64 MiB is hashed and
+deferred. Directories are accepted too, with report output outside the source tree.
+See [public-format research](docs/phase-0-research.md) and the
+[provisional source/archive model](docs/phase-0-source-model.md).
 
 See [phase 0 runbook](docs/phase-0-runbook.md), [phase -1 status](docs/phase-minus-one.md),
 and the [current plan](PLAN.md). The [original supplied design](docs/design-plan.md)

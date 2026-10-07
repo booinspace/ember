@@ -7,7 +7,7 @@ name = "ember-memory-importers"
 version = "0.0.0"
 description = "Offline source reconnaissance; canonical normalization is not implemented"
 requires-python = ">=3.12,<3.13"
-dependencies = ["pydantic>=2.10,<3"]
+dependencies = ["pydantic>=2.10,<3", "ijson>=3.4,<4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ember_memory_importers"]

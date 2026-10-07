@@ -5,8 +5,9 @@ retrieval, extraction, consolidation, seeds, and bundles.
 
 The uv workspace contains separately packaged `memory-abi`, `memory-engine`, and
 `memory-importers`; the workspace root packages the maintenance CLI from `cli/src`.
-Phase -1 implements only read-only reconnaissance in the importers/CLI. Public
-Pydantic contracts begin in phase 1 and SQLite storage in phase 2. Empty planned
+Phase 0a implements read-only nested-ZIP/directory reconnaissance, streamed
+conversation statistics, and provisional typed source-adapter models. Public
+Memory ABI/archive contracts begin in phase 1 and SQLite storage in phase 2. Empty planned
 module folders mark ownership, without advertising an implementation.
 
 ```powershell

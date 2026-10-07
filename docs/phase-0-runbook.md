@@ -1,7 +1,12 @@
-# Phase 0 — actual export reconnaissance
+# Phase 0 — preparation and actual export reconnaissance
 
-This runbook is ready; the real archive is not yet supplied. The synthetic fixture
-cannot satisfy this phase's acceptance gate.
+Phase 0a is implemented while the personal export is pending: public-format
+[research](phase-0-research.md), [provisional source/archive models](phase-0-source-model.md),
+streamed inspection, synthetic tests, and [local model profiles](model-profiles.md).
+The working synthetic demonstration is under ignored `.local/incoming/` and
+`.local/reports/`; it cannot satisfy phase 0b actual-export acceptance.
+
+The steps below close phase 0b once the export arrives.
 
 ## 1. Preserve input and name the source
 
@@ -9,7 +14,8 @@ Retain the original export verbatim. Use an explicit namespace such as
 `personal-chatgpt`; do not merge accounts based on similar conversation IDs/content.
 Use `.local/incoming/` for workspace staging. Retain originals separately according
 to the chosen backup policy. The inspector only reads the supplied file and does
-not create a source vault, canonical library, or identity crosswalk yet.
+not create a source vault, canonical library, or identity crosswalk yet. An existing
+directory source is supported; keep the report outside that directory.
 
 ## 2. Produce a bounded, content-free baseline
 
@@ -23,16 +29,32 @@ Default inventory includes hashed paths and exact file content hashes. If review
 the source locally requires raw filenames, add `--include-member-paths` and keep
 that sensitive report private. Existing reports are never overwritten.
 
-Default limits: 100,000 members, 8 GiB total uncompressed bytes, 2 GiB per member,
-1,000:1 compression ratio, and 64 MiB for individual JSON structural parsing.
+Default limits: 100,000 combined members, 8 GiB combined uncompressed bytes,
+2 GiB per member, 1,000:1 ZIP compression ratio, and two nested levels. Nested
+container payloads and children both count against the global byte budget.
+Conversation arrays/wrappers stream one graph at a time, bounded to 64 MiB of
+string payload/read accounting, depth 128 and 2,000,000 events per graph. Parser
+read-ahead permits two 64 KiB buffers. Other JSON has a 64 MiB whole-file bound.
 Unsupported compression, encryption, symlinks, unsafe/duplicate/case-ambiguous paths,
 corruption, or exceeded safety limits cause an explicit failure. No extraction
 occurs. JSON with duplicate keys/nonfinite values is reported as ambiguous/invalid.
 
-Oversized JSON is hashed and marked `deferred_size_limit`. A report's existence is
-not proof of complete coverage. Prefer a bounded streaming extension for a large
-real conversation component; `--max-json-mib` is available for a deliberate local
-limit adjustment. Do not hide or remove the deferred-coverage finding.
+Oversized individual conversations or metadata are hashed and marked
+`deferred_size_limit`; partial conversation statistics are discarded. Deeper ZIPs
+are hashed with `deferred_depth_limit`. A report's existence does not establish
+complete coverage. CLI adjustments are `--max-conversation-mib`, `--max-json-mib`
+(for other JSON), and `--max-nested-depth`. Review limits before increasing them.
+A larger outer file does not itself require increasing the per-conversation bound.
+
+The library also exposes validated `InspectionLimits` for total/member bytes,
+member counts, compression ratio, event and depth bounds. If a real component
+exceeds defaults, make a reviewed local adjustment rather than removing a guard.
+
+Report `0.0.2` uses hashed qualified member identities and ancestor container
+hashes. Directory sources have a logical fingerprint without a raw ZIP hash.
+Private temporary staging spills after 8 MiB and is deleted on exit; inspection
+does not extract an archive directory tree. HTML and opaque media are inventoried,
+not interpreted. Attachment resolution remains a later importer responsibility.
 
 ## 3. Review actual capabilities and ambiguities
 

@@ -25,4 +25,4 @@ $checkPython = Join-Path $workspaceRoot ".venv\Scripts\python.exe"
 & $checkPython (Join-Path $PSScriptRoot "check.py")
 if ($LASTEXITCODE -ne 0) { throw "Quality gate failed" }
 
-Write-Output "Phase -1 setup complete. No models or runtime services were started."
+Write-Output "Environment setup complete. No models or runtime services were started."

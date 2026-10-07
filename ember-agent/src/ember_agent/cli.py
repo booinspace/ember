@@ -29,7 +29,7 @@ type _Arguments = Annotated[_StartArguments | _DoctorArguments, Field(discrimina
 
 def _arguments(argv: list[str] | None) -> _Arguments:
     parser = argparse.ArgumentParser(prog="ember")
-    parser.add_argument("--version", action="version", version="%(prog)s 0.0.0 (phase -1)")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.0.0 (phase 0a)")
     commands = parser.add_subparsers(dest="command", required=True)
     doctor = commands.add_parser("doctor", help="Validate configuration without starting services")
     doctor.add_argument("--config", type=Path, required=True)
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = _arguments(argv)
     if arguments.command == "start":
         print(
-            "Runtime not implemented in phase -1. Use doctor --config to check preparation.",
+            "Runtime is not implemented yet. Use doctor --config to check preparation.",
             file=sys.stderr,
         )
         return 2
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.json_output:
         print(report.model_dump_json(indent=2))
     else:
-        print("Phase -1 configuration is valid. Application/character/voice are not implemented.")
+        print("Phase 0a configuration is valid. Application/character/voice are not implemented.")
         print(f"Model pin: {report.model_pin}. Service health: not probed.")
         for blocker in report.blockers:
             print(f"Pending: {blocker}")

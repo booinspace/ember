@@ -97,9 +97,9 @@ def test_ember_reports_preserve_read_compatibility_with_pre_rename_reports(
     source_archive: Path,
 ) -> None:
     report = inspect_zip(source_archive, source_namespace="synthetic")
-    assert report.report_format == "ember-memory.reconnaissance/0.0.1"
+    assert report.report_format == "ember-memory.reconnaissance/0.0.2"
     previous = report.model_dump_json().replace(
-        "ember-memory.reconnaissance/0.0.1", "character-memory.reconnaissance/0.0.1"
+        "ember-memory.reconnaissance/0.0.2", "character-memory.reconnaissance/0.0.1"
     )
     restored = ReconnaissanceReport.model_validate_json(previous)
     assert restored.source == report.source
@@ -167,7 +167,8 @@ def test_resource_limits_are_enforced(source_archive: Path, limits: InspectionLi
         inspect_zip(source_archive, source_namespace="synthetic", limits=limits)
 
 
-def test_large_json_is_hashed_and_explicitly_deferred(source_archive: Path) -> None:
+def test_large_metadata_json_is_hashed_and_explicitly_deferred(source_archive: Path) -> None:
+    _write_zip(source_archive, [("user.json", FIXTURE.read_bytes())])
     report = inspect_zip(
         source_archive,
         source_namespace="synthetic",

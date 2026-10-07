@@ -901,6 +901,21 @@ ChatGPT import is optional bootstrap functionality.
 
 ### Phase 0
 
+Begin phase 0 while the personal export is pending:
+
+- **Phase 0a — preparation:** research official export guarantees and primary
+  public format observations; implement provisional source models, synthetic
+  structural/safety fixtures, bounded reconnaissance for likely layouts, and
+  pinned local inference profiles without generation. Public observations remain
+  hypotheses about this account, not verified export capabilities.
+- **Phase 0b — actual export acceptance:** preserve and inspect the real export,
+  confirm/revise the hypotheses, produce sanitized source-derived fixtures, and
+  complete the capability/ambiguity report. This gate remains required before
+  finalizing phase 1 source-dependent contracts.
+
+Track evidence and provisional designs in `docs/phase-0-research.md`,
+`docs/phase-0-source-model.md`, and `docs/phase-0-runbook.md`.
+
 Inspect the real export for:
 
 - Components/formats.

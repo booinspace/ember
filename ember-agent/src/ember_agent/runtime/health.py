@@ -1,4 +1,4 @@
-"""Truthful scaffold readiness; no runtime probes are performed in phase -1."""
+"""Truthful preparation readiness; the doctor performs no runtime probes."""
 
 from typing import Literal
 
@@ -15,7 +15,7 @@ class ServiceHealth(RuntimeModel):
 class ReadinessReport(RuntimeModel):
     """Serialized preparation readiness; no field claims a functioning runtime."""
 
-    phase: Literal[-1] = -1
+    phase: Literal["0a"] = "0a"
     configuration: Literal["valid"] = "valid"
     application: Literal["scaffold_only"] = "scaffold_only"
     character: Literal["not_implemented"] = "not_implemented"
@@ -34,8 +34,12 @@ def readiness(config: DeploymentConfig) -> ReadinessReport:
             name: ServiceHealth(mode=service.mode) for name, service in config.services.items()
         },
         blockers=(
-            "Actual ChatGPT archive is required for phase 0 reconnaissance.",
+            "Actual ChatGPT export is required to complete phase 0b acceptance.",
             "Canonical ABI, memory storage, and realtime runtime await later phases.",
-            "Actual model pin and local model measurements await phase 3.",
+            (
+                "Configured model pin needs runtime revalidation and phase 3 measurements."
+                if config.model_pin_configured
+                else "Model pin configuration and phase 3 measurements are pending."
+            ),
         ),
     )

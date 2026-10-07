@@ -40,6 +40,8 @@ KNOWN_FIELDS = frozenset(
         "content",
         "content_type",
         "parts",
+        "text",
+        "conversations",
         "channel",
         "recipient",
         "status",
@@ -198,6 +200,11 @@ def _observe_content(content: JsonValue, channel: JsonValue, observations: _Obse
     ):
         observations.counts["reasoning_messages_observed_excluded"] += 1
         return
+    if isinstance(content.get("text"), str):
+        observations.counts["messages_with_text_field"] += 1
+        if "parts" not in content:
+            observations.part_types["string"] += 1
+            return
     parts = content.get("parts")
     if not isinstance(parts, list):
         observations.counts["missing_or_invalid_parts"] += 1
@@ -311,23 +318,39 @@ def _observe_conversation(conversation: JsonValue, observations: _Observations) 
         _observe_message(node.get("message"), observations)
 
 
-def inspect_conversations(value: JsonValue) -> ConversationInspection:
-    """Return content-free coverage for JSON, including explicit unsupported shapes.
+class ConversationObserver:
+    """Accumulate sanitized statistics while retaining no conversations between calls."""
 
-    This never selects/normalizes branches or activates memories. Malformed graph
-    components are counted and block automatic branch interpretation.
-    """
-    wrapper: Literal["array", "object_with_conversations_array"] = "array"
-    if isinstance(value, dict):
-        conversations = value.get("conversations")
-        if isinstance(conversations, list):
-            value = conversations
-            wrapper = "object_with_conversations_array"
-    if not isinstance(value, list):
-        return UnsupportedConversationStructure(root_type=kind(value))
-    observations = _Observations()
-    for conversation in value:
-        _observe_conversation(conversation, observations)
+    def __init__(self) -> None:
+        self._observations = _Observations()
+
+    def observe(self, conversation: JsonValue) -> None:
+        """Inspect one transient source graph; never select or normalize its branches."""
+        _observe_conversation(conversation, self._observations)
+        counters = (
+            self._observations.roles,
+            self._observations.channels,
+            self._observations.content_types,
+            *self._observations.fields.values(),
+        )
+        for counter in counters:
+            if len(counter) > 1024:
+                overflow = sorted(key for key in counter if key.startswith("unknown_sha256:"))
+                for key in overflow[: max(0, len(counter) - 1023)]:
+                    counter["other_unknown_labels"] += counter.pop(key)
+
+    def finish(
+        self,
+        wrapper: Literal["array", "object_with_conversations_array", "single_conversation"],
+    ) -> ConversationStructure:
+        """Return immutable report counters; source text and identifiers are excluded."""
+        return _finish_observations(self._observations, wrapper)
+
+
+def _finish_observations(
+    observations: _Observations,
+    wrapper: Literal["array", "object_with_conversations_array", "single_conversation"],
+) -> ConversationStructure:
     return ConversationStructure(
         wrapper=wrapper,
         counts=dict(sorted(observations.counts.items())),
@@ -344,6 +367,8 @@ def inspect_conversations(value: JsonValue) -> ConversationInspection:
             "blocked" if any(observations.counts[key] for key in ANOMALIES) else "not_evaluated"
         ),
         limitations=(
+            "Each label counter is bounded to 1024 labels; excess unknown hashes "
+            "are aggregated as other_unknown_labels.",
             "Counts are structural observations; "
             "no branches, edits, or regenerations are normalized.",
             "Timestamp formats/timezones and attachment resolution require actual-export review.",
@@ -351,3 +376,22 @@ def inspect_conversations(value: JsonValue) -> ConversationInspection:
             "are not inferred from message content.",
         ),
     )
+
+
+def inspect_conversations(value: JsonValue) -> ConversationInspection:
+    """Inspect supported envelopes; graph anomalies block automatic interpretation."""
+    observer = ConversationObserver()
+    if isinstance(value, list):
+        for conversation in value:
+            observer.observe(conversation)
+        return observer.finish("array")
+    if isinstance(value, dict):
+        conversations = value.get("conversations")
+        if isinstance(conversations, list):
+            for conversation in conversations:
+                observer.observe(conversation)
+            return observer.finish("object_with_conversations_array")
+        if isinstance(value.get("mapping"), dict):
+            observer.observe(value)
+            return observer.finish("single_conversation")
+    return UnsupportedConversationStructure(root_type=kind(value))

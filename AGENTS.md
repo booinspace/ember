@@ -8,8 +8,9 @@ repository or vendor an external agent framework into either core.
 `## Engineering language and code-quality standards`, before changing code.
 `docs/design-plan.md` is a historical copy of the original attachment, not the
 current plan. Use `docs/phase-minus-one.md` for scaffold status only.
-Phase -1 is preparation; phase 0 requires the actual ChatGPT archive. Synthetic
-fixtures establish test behavior only and cannot establish export capabilities.
+Phase 0a can proceed with public-format research, provisional source models, and
+synthetic test coverage while the archive is pending. Phase 0b requires the actual
+ChatGPT export; synthetic fixtures cannot establish account-specific capabilities.
 
 ## Boundaries
 

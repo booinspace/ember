@@ -1,0 +1,368 @@
+{
+  "$defs": {
+    "JsonValue": {},
+    "SourceAuthor": {
+      "additionalProperties": true,
+      "description": "Observed actor attribution; role/name are claims, not resolved identities.",
+      "properties": {
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metadata"
+        }
+      },
+      "title": "SourceAuthor",
+      "type": "object"
+    },
+    "SourceContent": {
+      "additionalProperties": true,
+      "description": "Preserve text/structured parts and unfamiliar content variants transiently.",
+      "properties": {
+        "content_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Type"
+        },
+        "parts": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parts"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "title": "SourceContent",
+      "type": "object"
+    },
+    "SourceMessage": {
+      "additionalProperties": true,
+      "description": "Raw message shape with unresolved timestamps, channels, and metadata.",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "author": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceAuthor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceContent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "create_time": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "update_time": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel"
+        },
+        "recipient": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recipient"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metadata"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "end_turn": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Turn"
+        }
+      },
+      "title": "SourceMessage",
+      "type": "object"
+    },
+    "SourceNode": {
+      "additionalProperties": true,
+      "description": "Graph nodes exist independently of messages, including null-message roots.",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent"
+        },
+        "children": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Children"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceMessage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "SourceNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "Keep every branch and provider key; current_node is only a selection hint.",
+  "properties": {
+    "id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Id"
+    },
+    "conversation_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Conversation Id"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title"
+    },
+    "create_time": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "update_time": {
+      "$ref": "#/$defs/JsonValue",
+      "default": null
+    },
+    "mapping": {
+      "additionalProperties": {
+        "$ref": "#/$defs/SourceNode"
+      },
+      "title": "Mapping",
+      "type": "object"
+    },
+    "current_node": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Node"
+    },
+    "is_archived": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Is Archived"
+    },
+    "is_deleted": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Is Deleted"
+    }
+  },
+  "required": [
+    "mapping"
+  ],
+  "title": "SourceConversation",
+  "type": "object",
+  "$comment": "Phase 0a inferred source-adapter schema, pending actual export. Not canonical Memory ABI. Original raw bytes remain authoritative.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
