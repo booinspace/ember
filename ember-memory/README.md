@@ -8,8 +8,11 @@ The uv workspace contains separately packaged `memory-abi`, `memory-engine`, and
 Phase 0a implements read-only nested-ZIP/directory reconnaissance, streamed
 conversation statistics, and provisional typed source-adapter models. Public
 Memory ABI/Normalized Archive 0.1.0 contracts are implemented experimentally;
-SQLite storage and client implementations begin in phase 2. Empty planned
-module folders mark ownership, without advertising an implementation.
+Phase 2 implements engine 0.1.0: local canonical SQLite storage, immutable
+provenance/revisions, temporal primitives, owned sync/async clients and degraded
+retrieval. See [the review](../docs/phase-2-canonical-engine.md) and
+[ADR 0003](docs/adr/0003-canonical-engine-and-workers.md). Remaining empty folders
+mark later ownership without advertising an implementation.
 
 ```powershell
 uv sync --locked --all-packages --python 3.12

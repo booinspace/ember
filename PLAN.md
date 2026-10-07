@@ -2253,6 +2253,30 @@ engine development. Phase 3 model/gateway foundations do not depend on an export
 but its real-import/historical-recall acceptance does. See `docs/phase-1-contracts.md`
 for the implemented contract surface and remaining acceptance boundaries.
 
+Phase 2 canonical engine is implemented experimentally as engine 0.1.0 with
+SQLite schema 0.1.0 / user_version 1; ABI/archive contracts remain 0.1.0. Synthetic
+storage, policy, temporal, crash and async acceptance pass. See
+`docs/phase-2-canonical-engine.md` and ADR 0003 for architecture and coupling.
+Phase 0b and source-dependent acceptance remain open. Phase 3 has not started.
+
+### Phase architecture review workflow
+
+For every phase, review this PLAN and the existing implementation first:
+
+1. Define desired behavior.
+2. Decide ownership.
+3. Identify existing abstractions.
+4. Decide whether a new primitive is genuinely needed.
+5. Define contracts and invariants.
+6. Define failure behavior.
+7. Define acceptance tests.
+8. Implement and validate against the existing architecture.
+
+Record decisions and introduced coupling in an ADR; explain meaningful decisions
+as work proceeds. Deliver tested behavior and an architecture summary, then stop
+for the user's review before starting the next phase. Current checkpoint: phase 2
+ready for review, phase 3 pending review.
+
 Model integration is not deferred for a pending build: the model exists. Phase 3 starts baseline validation; later phases test their specific features.
 
 Early phases do not perform unimplemented background model workloads through P0.

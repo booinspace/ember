@@ -1,0 +1,213 @@
+"""Character-bound canonical MemoryStore: transactional mutations and safe degraded reads."""
+
+import sqlite3
+from collections.abc import Callable
+from concurrent.futures import Future
+
+from ember_memory_abi.common import (
+    CanonicalId,
+)
+from ember_memory_abi.interfaces import (
+    ArchiveQuery,
+    ArchiveSearchResponse,
+    ContextRequest,
+    DisableRequest,
+    ForgetRequest,
+    MemoryCapabilities,
+    MemoryQuery,
+    MutationReceipt,
+    MutationRequest,
+    PageRequest,
+    PinRequest,
+    RecordAccessRequest,
+    RememberRequest,
+    RequestOptions,
+    RetrievalContext,
+    SearchResponse,
+    SupersedeRequest,
+    UnpinRequest,
+    UpdateRequest,
+)
+from ember_memory_abi.memory import (
+    Memory,
+    MemorySource,
+    PinnedMemory,
+)
+
+from . import mutations, retrieval
+from ._state import CharacterState
+from .archive import SourceResolver
+from .database import (
+    SqliteDatabase,
+)
+from .models import ForgetImpact, MutationAuthority, TokenCounter
+
+
+class SqliteMemoryStore:
+    """Character-bound ABI facade; SQL/policy state and algorithms remain inside the engine."""
+
+    def __init__(
+        self,
+        database: SqliteDatabase,
+        resolver: SourceResolver,
+        authority: MutationAuthority,
+        token_counter: TokenCounter,
+    ) -> None:
+        self.database = database
+        self.state = CharacterState(database, resolver, authority, token_counter)
+
+    @property
+    def character_id(self) -> CanonicalId:
+        """Trusted composition-supplied identity, never chosen by query/model arguments."""
+        return self.database.store_id
+
+    def capabilities(self) -> MemoryCapabilities:
+        """Report canonical fallback/provenance support, without advertising phase 5 indexes."""
+        mutations = (
+            (
+                "remember",
+                "update",
+                "supersede",
+                "disable",
+                "forget",
+                "pin",
+                "unpin",
+                "record_access",
+            )
+            if self.state.authority.mode == "confirmed_user"
+            else ()
+        )
+        return MemoryCapabilities(
+            supported_kinds=("fact", "episode", "goal", "plan"),
+            supported_modalities=tuple(
+                sorted(
+                    {
+                        modality
+                        for definition in self.state.predicates
+                        for modality in definition.allowed_modalities
+                    }
+                    | {"GOAL", "PLAN"}
+                )
+            ),
+            supported_predicates=tuple(definition.name for definition in self.state.predicates),
+            retrieval_modes=(
+                "canonical_structured",
+                "canonical_literal_fallback",
+                "recent",
+                "pins",
+                "provenance",
+            ),
+            mutations=mutations,
+            index_status="degraded",
+        )
+
+    def submit[T](
+        self, work: Callable[[sqlite3.Connection], T], *, write: bool = False
+    ) -> Future[T]:
+        """Engine-internal owned work boundary used by the async ABI facade."""
+        return self.database.submit(work, write=write)
+
+    def get(
+        self,
+        memory_id: CanonicalId,
+        *,
+        revision: int | None = None,
+        options: RequestOptions | None = None,
+    ) -> Memory:
+        """Read latest/exact owned history, enforcing current suppression even for past
+        revisions.
+        """
+        return self.database.read(
+            lambda connection: self.state.read_memory(connection, memory_id, revision, options)
+        )
+
+    def get_sources(
+        self,
+        memory_id: CanonicalId,
+        *,
+        revision: int | None = None,
+        options: RequestOptions | None = None,
+    ) -> tuple[MemorySource, ...]:
+        """Resolve immutable original quotes with fresh permission/suppression checks."""
+        return self.database.read(
+            lambda connection: self.state.read_sources(connection, memory_id, revision, options)
+        )
+
+    def _mutation(self, operation: str, request: MutationRequest) -> MutationReceipt:
+        return self.database.write(
+            lambda connection: mutations.mutate(self.state, connection, operation, request)
+        )
+
+    def remember(self, request: RememberRequest) -> MutationReceipt:
+        """Persist manually authorized, evidence-validated beliefs and receipt/outbox atomically."""
+        return self._mutation("remember", request)
+
+    def update(self, request: UpdateRequest) -> MutationReceipt:
+        """Append an expected-revision update while preserving prior interpretation history."""
+        return self._mutation("update", request)
+
+    def supersede(self, request: SupersedeRequest) -> MutationReceipt:
+        """Apply explicit single-valued replacement evidence, without erasing old assertions."""
+        return self._mutation("supersede", request)
+
+    def disable(self, request: DisableRequest) -> MutationReceipt:
+        """Remove from recall and invalidate its pin, retaining source and belief revisions."""
+        return self._mutation("disable", request)
+
+    def forget(self, request: ForgetRequest) -> MutationReceipt:
+        """Persist conservative dependency suppression and outbox/policy invalidation."""
+        return self._mutation("forget", request)
+
+    def pin(self, request: PinRequest) -> MutationReceipt:
+        """Pin only active unsuppressed owned revisions."""
+        return self._mutation("pin", request)
+
+    def unpin(self, request: UnpinRequest) -> MutationReceipt:
+        """Remove the pin idempotently, with expected memory revision validation."""
+        return self._mutation("unpin", request)
+
+    def record_access(self, request: RecordAccessRequest) -> MutationReceipt:
+        """Commit bounded idempotent access observations without changing importance/claims."""
+        return self._mutation("record_access", request)
+
+    def preview_forget(self, memory_id: CanonicalId) -> ForgetImpact:
+        """Trusted maintenance preview of conservative claim/alias/source suppression impact."""
+        return self.database.read(
+            lambda connection: self.state.forget_impact(
+                connection, memory_id, self.state.read_memory(connection, memory_id).revision
+            )
+        )
+
+    def search(self, query: MemoryQuery) -> SearchResponse:
+        """Run bounded structured/literal fallback, with scope/suppression filters before result
+        limits.
+        """
+        return self.database.read(
+            lambda connection: retrieval.search(self.state, connection, query)
+        )
+
+    def get_pinned(self, request: PageRequest) -> tuple[PinnedMemory, ...]:
+        """Read only active current permitted pins; old/forgotten pins never resurrect recall."""
+        return self.database.read(
+            lambda connection: retrieval.get_pinned(self.state, connection, request)
+        )
+
+    def get_recent(self, request: PageRequest) -> SearchResponse:
+        """Return active canonical recent beliefs with honest fallback coverage."""
+        return self.database.read(
+            lambda connection: retrieval.recent(self.state, connection, request)
+        )
+
+    def search_archive(self, query: ArchiveQuery) -> ArchiveSearchResponse:
+        """Search current explicit snapshots/native sources, never widening grants after
+        reimport.
+        """
+        return self.database.read(
+            lambda connection: retrieval.search_archive(self.state, connection, query)
+        )
+
+    def retrieve_context(self, request: ContextRequest) -> RetrievalContext:
+        """Build budgeted structured context with owned source dependencies, not a model prompt."""
+        return self.database.read(
+            lambda connection: retrieval.retrieve_context(self.state, connection, request)
+        )

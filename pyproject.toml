@@ -12,7 +12,7 @@ package = false
 dev = [
     "ember-agent[local-deployment]==0.0.0",
     "ember-memory==0.0.0",
-    "ember-memory-engine==0.0.0",
+    "ember-memory-engine==0.1.0",
     "pytest>=8.3,<10",
     "pyright>=1.1.390,<2",
     "ruff>=0.9,<1",
@@ -66,6 +66,7 @@ reportUnnecessaryTypeIgnoreComment = "error"
 testpaths = [
     "ember-memory/tests",
     "ember-memory/packages/memory-abi/tests",
+    "ember-memory/packages/memory-engine/tests",
     "ember-memory/packages/memory-importers/tests",
     "ember-agent/tests",
 ]

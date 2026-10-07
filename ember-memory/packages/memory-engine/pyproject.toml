@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ember-memory-engine"
-version = "0.0.0"
-description = "Reserved in-process memory engine; storage begins in phase 2"
+version = "0.1.0"
+description = "Experimental canonical SQLite memory engine and bounded async facade"
 requires-python = ">=3.12,<3.13"
-dependencies = ["ember-memory-abi==0.1.0"]
+dependencies = ["ember-memory-abi==0.1.0", "pydantic>=2.10,<3"]
 
 [tool.uv.sources]
 ember-memory-abi = { workspace = true }

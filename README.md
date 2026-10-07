@@ -1,9 +1,9 @@
-# ember — local character stack (phase 1 core)
+# ember — local character stack (phase 2 core)
 
 ember is a local character application with durable memory and realtime interaction.
 [PLAN.md](PLAN.md) is authoritative for all future tasks, including its engineering
 language and code-quality standards. The actual ChatGPT export is pending.
-Phase 0a preparation and phase 1 core contracts are implemented. Phase 0b
+Phase 0a preparation, phase 1 contracts and phase 2 canonical engine are implemented. Phase 0b
 actual-export acceptance and source-dependent contract review remain pending.
 
 Two independently packaged project roots are staged here:
@@ -36,15 +36,19 @@ root after setup, run `uv run --locked ember --help` or
   external IDs, raw reasoning, or raw member filenames.
 - Experimental Memory ABI / Normalized Archive 0.1.0 with exact Unicode evidence,
   temporal/predicate semantics, typed client protocols, and reproducible schemas.
+- Engine 0.1.0: immutable SQLite sources/beliefs, exact provenance, temporal
+  queries, grants/suppression, and bounded sync/async clients.
 - Deployment TOML validation and truthful scaffold readiness reporting.
 - Synthetic fixtures and offline tests for source safety, privacy, ambiguity,
   configuration, and architectural ownership.
 - Planned package/module directories and independently isolated data/runtime roots.
 
-Canonical storage, client/async worker implementations, normalized import, retrieval,
-extraction, generation, voice, UI, and service startup await their planned phases.
-See [phase 1 contracts](docs/phase-1-contracts.md) for what works and how far engine
-and runtime foundations can advance before the export arrives.
+Production normalized import, indexed retrieval, extraction, generation, voice,
+UI and service startup await their planned phases. Canonical fallback retrieval
+works with truthful degraded coverage. Review
+[phase 2 architecture](docs/phase-2-canonical-engine.md) and
+[ADR 0003](ember-memory/docs/adr/0003-canonical-engine-and-workers.md).
+This delivery stops for architecture review before phase 3.
 
 ## Setup (PowerShell)
 

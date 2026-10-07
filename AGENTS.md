@@ -14,6 +14,12 @@ ChatGPT export; synthetic fixtures cannot establish account-specific capabilitie
 Phase 1 generic ABI/archive 0.1 core is implemented and experimental. Engine work
 can use its contracts while source-dependent acceptance remains open. Read
 `docs/phase-1-contracts.md` and the current compatibility matrix before extending it.
+Phase 2 engine 0.1.0 is implemented and awaiting user architecture review; read
+`docs/phase-2-canonical-engine.md` and ADR 0003 before extending it. Phase 3 has
+not started. Deliver one phase at a time: define behavior, ownership, existing
+abstractions, necessary primitives, invariants, failures and acceptance tests before
+implementation. Keep ADR/current PLAN status updated, explain introduced coupling,
+validate, then stop for user review before the next phase.
 
 ## Boundaries
 

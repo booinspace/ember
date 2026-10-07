@@ -1,3 +1,20 @@
-"""Engine package reserved for phase 2; no database is created by importing it."""
+"""Experimental canonical engine; importing it performs no filesystem I/O or startup."""
 
-__version__ = "0.0.0"
+from .archive import SqliteArchiveStore
+from .async_client import InProcessAsyncMemoryClient
+from .character import SqliteMemoryStore
+from .engine import CanonicalEngine
+from .models import MutationAuthority, SourceGrant, SourceKey, SourceKeyAssignment
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "CanonicalEngine",
+    "InProcessAsyncMemoryClient",
+    "MutationAuthority",
+    "SourceGrant",
+    "SourceKey",
+    "SourceKeyAssignment",
+    "SqliteArchiveStore",
+    "SqliteMemoryStore",
+]

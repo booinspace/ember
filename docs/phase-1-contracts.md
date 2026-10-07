@@ -1,8 +1,9 @@
 # Phase 1 — Memory ABI / Normalized Archive 0.1
 
 Status: **phase 1 core implemented**, experimental `0.1.0`. Actual-export adapter
-acceptance remains open in phase 0b/1b. There is no SQLite engine, production
-normalizer, automatic activation, live client implementation, or ABI 1.0 freeze.
+acceptance remains open in phase 0b/1b. Phase 2 supplies the SQLite engine and
+sync/async clients. Production normalization, automatic activation, realtime
+integration and ABI 1.0 freeze remain pending.
 
 ## Working contracts
 
@@ -105,10 +106,11 @@ records only, and schema generation never generates source/character identities.
 | Work | Can proceed now | Acceptance that remains pending |
 |---|---|---|
 | Phase 1 core contracts | Implemented and tested | Actual-source compatibility; ABI 1.0 integration/restore gate |
-| Phase 2 canonical engine | Yes, using generic records and synthetic transactional/recovery scenarios | Source-dependent adapter findings may require additive changes or migrations |
+| Phase 2 canonical engine | Implemented with generic records and synthetic transactional/recovery acceptance | Source-dependent adapter findings may require additive changes or migrations |
 | Phase 3 gateway/model baseline and LiveKit foundations | Can be built independently against the existing pinned models | End-to-end historical recall and real-import provenance require real sources |
 | ChatGPT production normalizer | Public-format hypotheses can guide preparation | Actual variants, timestamps, graph selection and asset resolution need the archive |
 | Historical extraction/seeding | Policy/contracts and synthetic scenarios can be built | Personal facts, approved knowledge and evidence cannot be invented or accepted from synthetic data |
 
-Continue with phase 2 as the next delivery step. Keep the raw export acceptance
-and source-dependent contract review open rather than declaring phase 0b complete.
+Phase 2 is ready for architecture review; see [the walkthrough](phase-2-canonical-engine.md).
+Raw export acceptance and source-dependent contract review remain open. Phase 3
+starts after the current user review checkpoint.
