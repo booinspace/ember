@@ -9,6 +9,6 @@ own or mutate canonical memory. Search indexes are rebuildable accelerators.
 
 The public ABI package is independent of backend/runtime frameworks. Engine
 construction is external to character business logic. Phase -1 reserves package
-boundaries and ships read-only inspection only. Real archive evidence precedes ABI
-0.1 and canonical schema decisions; pre-1.0 changes still require preservation and
+boundaries and ships read-only inspection only. The generic ABI 0.1 core can precede the export per ADR 0002. Real archive evidence
+still precedes final source-dependent mapping and ABI 1.0 acceptance; pre-1.0 changes still require preservation and
 migrations rather than wiping history.

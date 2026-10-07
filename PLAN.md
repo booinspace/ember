@@ -911,7 +911,8 @@ Begin phase 0 while the personal export is pending:
 - **Phase 0b — actual export acceptance:** preserve and inspect the real export,
   confirm/revise the hypotheses, produce sanitized source-derived fixtures, and
   complete the capability/ambiguity report. This gate remains required before
-  finalizing phase 1 source-dependent contracts.
+  finalizing phase 1 source-dependent contracts. The generic phase 1 core may
+  proceed as experimental 0.1 contracts before this acceptance.
 
 Track evidence and provisional designs in `docs/phase-0-research.md`,
 `docs/phase-0-source-model.md`, and `docs/phase-0-runbook.md`.
@@ -2230,7 +2231,7 @@ Each phase leaves working, tested behavior.
 
 | Phase | Deliverables |
 |---|---|
-| **0 — Actual export reconnaissance** | Inventory, capability report, sanitized fixtures, ambiguity |
+| **0 — Source reconnaissance** | 0a public-format preparation; 0b actual-export inventory, capability report, sanitized fixtures, ambiguity |
 | **1 — ABI/archive 0.1** | Models, IDs, serialization, evidence, predicates/modalities, client contracts |
 | **2 — Canonical engine** | SQLite, graph/revisions, provenance, temporal primitives, sync/async facade, degraded startup |
 | **3 — Real importer + LiveKit slice** | Deterministic production extraction, seed/restart/provenance; **minimal production P0 gateway**, upstream/model pin, IDs, streaming, health; initial real-model baseline |
@@ -2244,6 +2245,13 @@ Each phase leaves working, tested behavior.
 | **11 — Odysseus delegation** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
 | **12 — Portable skills** | Loader, requirements/resources, provider metadata/translation |
 | **13 — Preemption hardening** | Actual cancellation/runner/GPU/context-switch contention testing; enable live preemption only after acceptance |
+
+Phase 1's generic ABI/archive 0.1 core can advance while the personal export is
+pending. Source-dependent mappings and actual-export acceptance remain open;
+synthetic conformance does not satisfy them. Phase 2 may use generic records for
+engine development. Phase 3 model/gateway foundations do not depend on an export,
+but its real-import/historical-recall acceptance does. See `docs/phase-1-contracts.md`
+for the implemented contract surface and remaining acceptance boundaries.
 
 Model integration is not deferred for a pending build: the model exists. Phase 3 starts baseline validation; later phases test their specific features.
 

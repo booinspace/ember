@@ -41,8 +41,9 @@ containers/directories/streamed coverage; legacy `0.0.1` reports remain readable
 
 The future public `SourceRef` uses `source_store_id`, `record_kind`, `record_id`,
 positive `record_revision`, and optional `part_id`. It contains no provider key,
-filesystem path, database handle, or inference-runtime dependency. Phase 1 defines
-its exact schema and client/writer interfaces after phase 0b observations.
+filesystem path, database handle, or inference-runtime dependency. The generic phase 1 core now defines
+its schema and client/writer interfaces experimentally. Phase 0b still validates
+source-dependent mappings. See [implemented contracts](phase-1-contracts.md).
 
 Canonical timestamps use UTC RFC3339 with microseconds when the source supports
 conversion. Unknown timestamps stay null; raw values, unit assumptions, ambiguity,

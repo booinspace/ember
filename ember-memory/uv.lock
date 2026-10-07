@@ -32,8 +32,14 @@ requires-dist = [{ name = "ember-memory-importers", editable = "packages/memory-
 
 [[package]]
 name = "ember-memory-abi"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/memory-abi" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
 name = "ember-memory-engine"

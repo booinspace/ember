@@ -1,9 +1,10 @@
-# ember — local character stack (phase 0a)
+# ember — local character stack (phase 1 core)
 
 ember is a local character application with durable memory and realtime interaction.
 [PLAN.md](PLAN.md) is authoritative for all future tasks, including its engineering
 language and code-quality standards. The actual ChatGPT export is pending.
-Phase 0a preparation is implemented; phase 0b actual-export acceptance is pending.
+Phase 0a preparation and phase 1 core contracts are implemented. Phase 0b
+actual-export acceptance and source-dependent contract review remain pending.
 
 Two independently packaged project roots are staged here:
 
@@ -33,13 +34,17 @@ root after setup, run `uv run --locked ember --help` or
   metadata and absent/null distinctions; separate sanitized report models.
 - Default reports contain counts/shapes/hashes, without message text, titles,
   external IDs, raw reasoning, or raw member filenames.
+- Experimental Memory ABI / Normalized Archive 0.1.0 with exact Unicode evidence,
+  temporal/predicate semantics, typed client protocols, and reproducible schemas.
 - Deployment TOML validation and truthful scaffold readiness reporting.
 - Synthetic fixtures and offline tests for source safety, privacy, ambiguity,
   configuration, and architectural ownership.
 - Planned package/module directories and independently isolated data/runtime roots.
 
-Canonical memory models/storage, normalized import, retrieval, extraction,
-generation, voice, UI, and service/process startup await their planned phases.
+Canonical storage, client/async worker implementations, normalized import, retrieval,
+extraction, generation, voice, UI, and service startup await their planned phases.
+See [phase 1 contracts](docs/phase-1-contracts.md) for what works and how far engine
+and runtime foundations can advance before the export arrives.
 
 ## Setup (PowerShell)
 

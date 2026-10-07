@@ -1,3 +1,31 @@
-"""Public-contract package reserved for phase 1; no Memory ABI is published yet."""
+"""Experimental Memory ABI/Normalized Archive 0.1; no storage or runtime implementation."""
 
-__version__ = "0.0.0"
+from .archive import Conversation, Document, GraphNode, Message, NormalizedArchiveBatch
+from .common import ABI_VERSION, ARCHIVE_VERSION, ContractModel
+from .evidence import Evidence, EvidenceAssertion, EvidenceSpan, SourceRef, validate_evidence
+from .interfaces import ArchiveWriter, AsyncMemoryClient, MemoryStore
+from .memory import ApprovedKnowledge, CandidateMemory, Memory
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "ABI_VERSION",
+    "ARCHIVE_VERSION",
+    "ApprovedKnowledge",
+    "ArchiveWriter",
+    "AsyncMemoryClient",
+    "CandidateMemory",
+    "ContractModel",
+    "Conversation",
+    "Document",
+    "Evidence",
+    "EvidenceAssertion",
+    "EvidenceSpan",
+    "GraphNode",
+    "Memory",
+    "MemoryStore",
+    "Message",
+    "NormalizedArchiveBatch",
+    "SourceRef",
+    "validate_evidence",
+]

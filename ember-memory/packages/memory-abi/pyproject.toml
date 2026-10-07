@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ember-memory-abi"
-version = "0.0.0"
-description = "Reserved public memory contract package; ABI not defined in phase -1"
+version = "0.1.0"
+description = "Backend-independent Memory ABI and Normalized Archive 0.1 contracts"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["pydantic>=2.10,<3"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ember_memory_abi"]

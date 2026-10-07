@@ -1,0 +1,97 @@
+{
+  "$defs": {
+    "ExtensionKey": {
+      "pattern": "^[a-z][a-z0-9_-]*[.:][a-z0-9_.:-]+$",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "PredicateDefinition": {
+      "additionalProperties": false,
+      "description": "Independent predicate semantics, including historical/replacement behavior.",
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "allowed_modalities": {
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Allowed Modalities",
+          "type": "array"
+        },
+        "cardinality": {
+          "$ref": "#/$defs/WireString"
+        },
+        "definition_version": {
+          "$ref": "#/$defs/WireString"
+        },
+        "deprecated_aliases": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Deprecated Aliases",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "name": {
+          "$ref": "#/$defs/WireString"
+        },
+        "normalization_rules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Normalization Rules",
+          "type": "object"
+        },
+        "replacement_meaningful": {
+          "title": "Replacement Meaningful",
+          "type": "boolean"
+        },
+        "temporal": {
+          "title": "Temporal",
+          "type": "boolean"
+        },
+        "value_type": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "name",
+        "definition_version",
+        "value_type",
+        "cardinality",
+        "temporal",
+        "replacement_meaningful",
+        "normalization_rules",
+        "allowed_modalities"
+      ],
+      "title": "PredicateDefinition",
+      "type": "object"
+    },
+    "WireString": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "items": {
+    "$ref": "#/$defs/PredicateDefinition"
+  },
+  "type": "array"
+}

@@ -1,0 +1,986 @@
+{
+  "$defs": {
+    "ActorAttribution": {
+      "additionalProperties": false,
+      "description": "Source actor claims, without silently resolving role/name into personal identity.",
+      "properties": {
+        "actor_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "role": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "ActorAttribution",
+      "type": "object"
+    },
+    "Asset": {
+      "additionalProperties": false,
+      "description": "Portable asset identity/availability; local paths live in backend locators.",
+      "properties": {
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unresolved"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_type": {
+          "const": "asset",
+          "default": "asset",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInteger"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "availability"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "BranchSelection": {
+      "additionalProperties": false,
+      "description": "A derived selection observation; ambiguous paths cannot authorize activation.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "path": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Path",
+          "type": "array"
+        },
+        "reason_codes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "selected_node": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "ambiguous",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "BranchSelection",
+      "type": "object"
+    },
+    "CanonicalId": {
+      "format": "uuid4",
+      "type": "string"
+    },
+    "ContentPart": {
+      "additionalProperties": false,
+      "description": "Ordered visible text or a typed absence, unsupported part, or reasoning exclusion.",
+      "properties": {
+        "asset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exclusion_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "kind": {
+          "$ref": "#/$defs/WireString"
+        },
+        "part_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "status": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "excluded"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "part_id",
+        "kind",
+        "status"
+      ],
+      "title": "ContentPart",
+      "type": "object"
+    },
+    "Conversation": {
+      "additionalProperties": false,
+      "description": "Normalized conversation identity and source metadata, independent of graph messages.",
+      "properties": {
+        "archived": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archived"
+        },
+        "created_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        },
+        "deleted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deleted"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "record_type": {
+          "const": "conversation",
+          "default": "conversation",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BranchSelection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "updated_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at"
+      ],
+      "title": "Conversation",
+      "type": "object"
+    },
+    "Document": {
+      "additionalProperties": false,
+      "description": "Generic preserved document/observation, using the same exact visible part semantics.",
+      "properties": {
+        "created_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "parts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ContentPart"
+          },
+          "title": "Parts",
+          "type": "array"
+        },
+        "record_type": {
+          "const": "document",
+          "default": "document",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at"
+      ],
+      "title": "Document",
+      "type": "object"
+    },
+    "ExtensionKey": {
+      "pattern": "^[a-z][a-z0-9_-]*[.:][a-z0-9_.:-]+$",
+      "type": "string"
+    },
+    "GraphNode": {
+      "additionalProperties": false,
+      "description": "Retain null-message roots and original parent/child observations, including disagreements.",
+      "properties": {
+        "children": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceLink"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "conversation": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceLink"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_type": {
+          "const": "graph_node",
+          "default": "graph_node",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "conversation"
+      ],
+      "title": "GraphNode",
+      "type": "object"
+    },
+    "ImportCursor": {
+      "additionalProperties": false,
+      "description": "Portable resumability against an immutable fingerprint, without physical file paths.",
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/WireString"
+        },
+        "adapter_version": {
+          "$ref": "#/$defs/WireString"
+        },
+        "component_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "logical_inventory_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "next_record_index": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        }
+      },
+      "required": [
+        "logical_inventory_sha256",
+        "component_sha256",
+        "next_record_index",
+        "adapter",
+        "adapter_version"
+      ],
+      "title": "ImportCursor",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "Message": {
+      "additionalProperties": false,
+      "description": "Normalized visible parts and explicit exclusions; graph membership is stored separately.",
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/ActorAttribution"
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "conversation": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "created_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "parts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ContentPart"
+          },
+          "title": "Parts",
+          "type": "array"
+        },
+        "recipient": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_type": {
+          "const": "message",
+          "default": "message",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "updated_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "conversation",
+        "actor"
+      ],
+      "title": "Message",
+      "type": "object"
+    },
+    "NonnegativeInteger": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "OpaqueArchiveRecord": {
+      "additionalProperties": false,
+      "description": "Read-preserved unsupported source kind; original bytes stay in the raw vault.\n\nThis carries identity/coverage and namespaced metadata, never an unfiltered\nunknown content body. Normalization must separately exclude hidden reasoning.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "reason_codes": {
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "record_type": {
+          "const": "opaque",
+          "default": "opaque",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "status": {
+          "const": "unsupported",
+          "default": "unsupported",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "reason_codes"
+      ],
+      "title": "OpaqueArchiveRecord",
+      "type": "object"
+    },
+    "ProcessingSpecRef": {
+      "additionalProperties": false,
+      "description": "An independently versioned processing specification, without runtime dependencies.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "name": {
+          "$ref": "#/$defs/WireString"
+        },
+        "specification_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "version": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "specification_sha256"
+      ],
+      "title": "ProcessingSpecRef",
+      "type": "object"
+    },
+    "Revision": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "Sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "SourceLink": {
+      "additionalProperties": false,
+      "description": "Preserve missing/invalid graph links rather than flattening or repairing them.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "raw_reference_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "missing",
+            "invalid"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "SourceLink",
+      "type": "object"
+    },
+    "SourceRecord": {
+      "discriminator": {
+        "mapping": {
+          "asset": "#/$defs/Asset",
+          "conversation": "#/$defs/Conversation",
+          "document": "#/$defs/Document",
+          "graph_node": "#/$defs/GraphNode",
+          "message": "#/$defs/Message",
+          "opaque": "#/$defs/OpaqueArchiveRecord"
+        },
+        "propertyName": "record_type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Conversation"
+        },
+        {
+          "$ref": "#/$defs/GraphNode"
+        },
+        {
+          "$ref": "#/$defs/Message"
+        },
+        {
+          "$ref": "#/$defs/Document"
+        },
+        {
+          "$ref": "#/$defs/Asset"
+        },
+        {
+          "$ref": "#/$defs/OpaqueArchiveRecord"
+        }
+      ]
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "description": "Reference an immutable canonical source revision without exposing physical locators.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "part_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "record_kind": {
+          "$ref": "#/$defs/WireString"
+        },
+        "record_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "source_store_id": {
+          "$ref": "#/$defs/CanonicalId"
+        }
+      },
+      "required": [
+        "source_store_id",
+        "record_kind",
+        "record_id",
+        "record_revision"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "SourceTimestamp": {
+      "additionalProperties": false,
+      "description": "Unresolved source clock; recorded/import time never fills a missing value.",
+      "properties": {
+        "ambiguity_reasons": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Ambiguity Reasons",
+          "type": "array"
+        },
+        "basis": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "precision": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "raw_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Value"
+        },
+        "timezone_assumption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone Assumption"
+        },
+        "units": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "SourceTimestamp",
+      "type": "object"
+    },
+    "UtcTimestamp": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "WireString": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Maintenance write boundary: records and resume cursor must commit atomically.\n\nNamespace/store binding is established by trusted maintenance configuration;\nthe writer verifies fingerprints, crosswalks, versions, and current ownership.",
+  "properties": {
+    "archive_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Archive Version",
+      "type": "string"
+    },
+    "extensions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/ExtensionKey"
+      },
+      "title": "Extensions",
+      "type": "object"
+    },
+    "idempotency_key": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "processing_spec": {
+      "$ref": "#/$defs/ProcessingSpecRef"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/SourceRecord"
+      },
+      "maxItems": 1000,
+      "minItems": 1,
+      "title": "Records",
+      "type": "array"
+    },
+    "resume_cursor": {
+      "$ref": "#/$defs/ImportCursor"
+    },
+    "source_namespace": {
+      "$ref": "#/$defs/WireString"
+    },
+    "source_store_id": {
+      "$ref": "#/$defs/CanonicalId"
+    }
+  },
+  "required": [
+    "source_store_id",
+    "source_namespace",
+    "idempotency_key",
+    "processing_spec",
+    "records",
+    "resume_cursor"
+  ],
+  "title": "NormalizedArchiveBatch",
+  "type": "object"
+}

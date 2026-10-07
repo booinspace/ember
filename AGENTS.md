@@ -11,6 +11,9 @@ current plan. Use `docs/phase-minus-one.md` for scaffold status only.
 Phase 0a can proceed with public-format research, provisional source models, and
 synthetic test coverage while the archive is pending. Phase 0b requires the actual
 ChatGPT export; synthetic fixtures cannot establish account-specific capabilities.
+Phase 1 generic ABI/archive 0.1 core is implemented and experimental. Engine work
+can use its contracts while source-dependent acceptance remains open. Read
+`docs/phase-1-contracts.md` and the current compatibility matrix before extending it.
 
 ## Boundaries
 

@@ -15,7 +15,7 @@ class ServiceHealth(RuntimeModel):
 class ReadinessReport(RuntimeModel):
     """Serialized preparation readiness; no field claims a functioning runtime."""
 
-    phase: Literal["0a"] = "0a"
+    phase: Literal["1"] = "1"
     configuration: Literal["valid"] = "valid"
     application: Literal["scaffold_only"] = "scaffold_only"
     character: Literal["not_implemented"] = "not_implemented"
@@ -35,7 +35,7 @@ def readiness(config: DeploymentConfig) -> ReadinessReport:
         },
         blockers=(
             "Actual ChatGPT export is required to complete phase 0b acceptance.",
-            "Canonical ABI, memory storage, and realtime runtime await later phases.",
+            "ABI/archive 0.1 contracts exist; storage and realtime runtime await later phases.",
             (
                 "Configured model pin needs runtime revalidation and phase 3 measurements."
                 if config.model_pin_configured

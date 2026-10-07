@@ -65,6 +65,7 @@ reportUnnecessaryTypeIgnoreComment = "error"
 [tool.pytest.ini_options]
 testpaths = [
     "ember-memory/tests",
+    "ember-memory/packages/memory-abi/tests",
     "ember-memory/packages/memory-importers/tests",
     "ember-agent/tests",
 ]
