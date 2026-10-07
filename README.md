@@ -1,6 +1,6 @@
-# Local character stack — phase -1
+# ember — local character stack (phase -1)
 
-Preparation for the Character Memory Platform and Local Character Stack design.
+ember is a local character application with durable memory and realtime interaction.
 [PLAN.md](PLAN.md) is authoritative for all future tasks, including its engineering
 language and code-quality standards. The actual ChatGPT export is pending.
 Phase 0 has **not** been completed.
@@ -8,16 +8,21 @@ Phase 0 has **not** been completed.
 Two independently packaged project roots are staged here:
 
 ```text
-character-memory/   public ABI, engine, importers, maintenance CLI
-character-agent/    realtime application, gateway, tools, optional providers
+ember-memory/       public ABI, engine, importers, maintenance CLI
+ember-agent/        realtime application, gateway, tools, optional providers
 docs/               supplied design, decisions, phase 0 runbook
 scripts/            setup, offline checks, empty local staging preparation
 .local/             ignored private sources, reports, state, and backups
 ```
 
-The workspace initially had no Git repository. These are separate project roots
-ready to become the two product repositories; no third product repository or
-external worker checkout has been created.
+The Git workspace contains both independently packaged component roots, ready
+to become the two product repositories. Shared development tooling and docs live
+at the workspace root.
+
+The main command is `ember`; memory maintenance uses `ember-memory`.
+`ember-agent` is also available as a component command alias. From the workspace
+root after setup, run `uv run --locked ember --help` or
+`uv run --locked ember-memory --help`.
 
 ## Working behavior now
 
@@ -74,13 +79,13 @@ identities, grants, or seeds.
 ## Check configuration
 
 ```powershell
-.\character-agent\.venv\Scripts\character-agent.exe doctor --config .\character-agent\config\deployment.example.toml
+.\ember-agent\.venv\Scripts\ember.exe doctor --config .\ember-agent\config\deployment.example.toml
 ```
 
 Copy the example to `deployment.local.toml` before adding private machine settings.
 Model tag/digest remain pending. `--require-model-pin` makes a missing pin an error.
 A configured pin is still unverified until phase 3 checks actual Ollama metadata.
-`character-agent start` currently fails explicitly because the runtime is not built.
+`ember start` currently fails explicitly because the runtime is not built.
 
 ## When the export arrives
 
@@ -88,7 +93,7 @@ Keep the original ZIP unchanged in `.local/incoming/` or supply its existing pat
 Then run:
 
 ```powershell
-.\character-memory\.venv\Scripts\character-memory.exe inspect chatgpt .\.local\incoming\chatgpt-export.zip --source-namespace personal-chatgpt --output .\.local\reports\chatgpt-inspection.json
+.\ember-memory\.venv\Scripts\ember-memory.exe inspect chatgpt .\.local\incoming\chatgpt-export.zip --source-namespace personal-chatgpt --output .\.local\reports\chatgpt-inspection.json
 ```
 
 Inspection writes a **new** local report, refusing to overwrite the source or a

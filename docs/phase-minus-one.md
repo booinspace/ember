@@ -22,6 +22,11 @@ CLI end-to-end checks and regressions for nonfinite JSON numbers, oversized inte
 timestamps, boolean timestamp handling, and safe Pydantic validation diagnostics.
 Hosted CI has not run; no Git repository/remote was configured by this work.
 
+The project was renamed to ember on 7 October 2026. Renamed distributions/imports,
+both `ember` and `ember-agent` commands, and legacy inspection-report reads pass
+the quality gate with 64 pytest cases. The code is prepared for the existing Git
+origin; retained private sources and the original design attachment are unchanged.
+
 ## Delivered
 
 - Two product roots following design section 28, with Python 3.12 packaging and
@@ -59,7 +64,7 @@ Hosted CI has not run; no Git repository/remote was configured by this work.
 | 8+ | Full single-command composition/voice/browser lifecycle and optional delegation |
 
 Package version `0.0.0` denotes this scaffold. Report format
-`character-memory.reconnaissance/0.0.1` is internal preparation tooling; it is not
+`ember-memory.reconnaissance/0.0.1` is internal preparation tooling; it is not
 Memory ABI 0.1, Normalized Archive 0.1, or Bundle 0.1. Their schemas are not frozen.
 
 ## Known limitations

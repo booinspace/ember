@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ember-memory-engine"
+version = "0.0.0"
+description = "Reserved in-process memory engine; storage begins in phase 2"
+requires-python = ">=3.12,<3.13"
+dependencies = ["ember-memory-abi==0.0.0"]
+
+[tool.uv.sources]
+ember-memory-abi = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ember_memory_engine"]

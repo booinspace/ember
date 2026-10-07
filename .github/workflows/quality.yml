@@ -28,9 +28,9 @@ jobs:
       - name: Install locked development environment
         run: uv sync --locked
       - name: Validate locked memory deployment
-        run: uv sync --locked --project character-memory --all-packages
+        run: uv sync --locked --project ember-memory --all-packages
       - name: Validate locked agent deployment
-        run: uv sync --locked --project character-agent --extra local-deployment
+        run: uv sync --locked --project ember-agent --extra local-deployment
       - name: Formatting
         run: uv run --locked ruff format --check .
       - name: Lint

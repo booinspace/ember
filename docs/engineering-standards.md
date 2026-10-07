@@ -39,9 +39,9 @@ These preparation models do not implement or freeze the phase 1 Memory ABI/archi
 ## Tests and checks
 
 Importer unit tests and synthetic fixtures live in
-`character-memory/packages/memory-importers/tests/`. CLI tests live in
-`character-memory/tests/`; runtime/configuration/import-boundary tests live in
-`character-agent/tests/`. Tests use pytest fixtures, assertions, and parameterization.
+`ember-memory/packages/memory-importers/tests/`. CLI tests live in
+`ember-memory/tests/`; runtime/configuration/import-boundary tests live in
+`ember-agent/tests/`. Tests use pytest fixtures, assertions, and parameterization.
 CLI subprocess tests are explicitly marked `end_to_end`. `integration` is registered
 for future service-dependent tests; unknown markers fail collection.
 
@@ -67,7 +67,7 @@ lockfiles and invokes that same check script. Intentional dependency changes use
 
 `.github/workflows/quality.yml` runs locked installation and the full gate on Windows
 and Linux for pushes/PRs. This is a prepared workflow for the current workspace
-layout; hosted execution and branch protection await an actual Git hosting setup.
+layout; hosted workflow execution has not been verified locally.
 When splitting the product repositories, preserve the single canonical tooling
 configuration and wire sibling/published ABI dependencies explicitly.
 

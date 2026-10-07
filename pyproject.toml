@@ -1,8 +1,8 @@
 # Development tooling only. Product packages remain in the two project roots.
 [project]
-name = "character-stack-development"
+name = "ember-development"
 version = "0.0.0"
-description = "Shared quality tooling; not a product package"
+description = "Shared ember quality tooling; not a product package"
 requires-python = ">=3.12,<3.13"
 
 [tool.uv]
@@ -10,20 +10,20 @@ package = false
 
 [dependency-groups]
 dev = [
-    "character-agent[local-deployment]==0.0.0",
-    "character-memory==0.0.0",
-    "character-memory-engine==0.0.0",
+    "ember-agent[local-deployment]==0.0.0",
+    "ember-memory==0.0.0",
+    "ember-memory-engine==0.0.0",
     "pytest>=8.3,<10",
     "pyright>=1.1.390,<2",
     "ruff>=0.9,<1",
 ]
 
 [tool.uv.sources]
-character-agent = { path = "character-agent", editable = true }
-character-memory = { path = "character-memory", editable = true }
-character-memory-abi = { path = "character-memory/packages/memory-abi", editable = true }
-character-memory-engine = { path = "character-memory/packages/memory-engine", editable = true }
-character-memory-importers = { path = "character-memory/packages/memory-importers", editable = true }
+ember-agent = { path = "ember-agent", editable = true }
+ember-memory = { path = "ember-memory", editable = true }
+ember-memory-abi = { path = "ember-memory/packages/memory-abi", editable = true }
+ember-memory-engine = { path = "ember-memory/packages/memory-engine", editable = true }
+ember-memory-importers = { path = "ember-memory/packages/memory-importers", editable = true }
 
 [tool.ruff]
 target-version = "py312"
@@ -31,11 +31,11 @@ line-length = 100
 indent-width = 4
 extend-exclude = [".local", ".cache", "**/.venv"]
 src = [
-    "character-agent/src",
-    "character-memory/cli/src",
-    "character-memory/packages/memory-abi/src",
-    "character-memory/packages/memory-engine/src",
-    "character-memory/packages/memory-importers/src",
+    "ember-agent/src",
+    "ember-memory/cli/src",
+    "ember-memory/packages/memory-abi/src",
+    "ember-memory/packages/memory-engine/src",
+    "ember-memory/packages/memory-importers/src",
 ]
 
 [tool.ruff.lint]
@@ -52,11 +52,11 @@ typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
 include = [
-    "character-agent/src",
-    "character-memory/cli/src",
-    "character-memory/packages/memory-abi/src",
-    "character-memory/packages/memory-engine/src",
-    "character-memory/packages/memory-importers/src",
+    "ember-agent/src",
+    "ember-memory/cli/src",
+    "ember-memory/packages/memory-abi/src",
+    "ember-memory/packages/memory-engine/src",
+    "ember-memory/packages/memory-importers/src",
     "scripts",
 ]
 exclude = ["**/.venv", "**/__pycache__", ".local", ".cache"]
@@ -64,9 +64,9 @@ reportUnnecessaryTypeIgnoreComment = "error"
 
 [tool.pytest.ini_options]
 testpaths = [
-    "character-memory/tests",
-    "character-memory/packages/memory-importers/tests",
-    "character-agent/tests",
+    "ember-memory/tests",
+    "ember-memory/packages/memory-importers/tests",
+    "ember-agent/tests",
 ]
 addopts = ["--strict-markers", "--import-mode=importlib"]
 markers = [
@@ -74,9 +74,9 @@ markers = [
     "end_to_end: tests exercising installed CLI/application entry points",
 ]
 pythonpath = [
-    "character-agent/src",
-    "character-memory/cli/src",
-    "character-memory/packages/memory-abi/src",
-    "character-memory/packages/memory-engine/src",
-    "character-memory/packages/memory-importers/src",
+    "ember-agent/src",
+    "ember-memory/cli/src",
+    "ember-memory/packages/memory-abi/src",
+    "ember-memory/packages/memory-engine/src",
+    "ember-memory/packages/memory-importers/src",
 ]

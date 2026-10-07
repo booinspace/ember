@@ -7,7 +7,7 @@ pending, and the workspace is empty. We can prepare independently packaged produ
 roots, offline inspection, deployment validation, privacy/safety tests, and phase 0
 operations without choosing canonical schema semantics from guessed export data.
 
-Stage `character-memory/` and `character-agent/` as the two planned product roots.
+Stage `ember-memory/` and `ember-agent/` as the two planned product roots.
 The outer workspace contains coordination docs/scripts, not a third application.
 Use `0.0.0` scaffold package versions until actual contracts exist. Avoid allocating
 canonical IDs, creating SQLite stores, or implementing placeholder clients that

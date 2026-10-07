@@ -12,58 +12,58 @@ wheels = [
 ]
 
 [[package]]
-name = "character-agent"
+name = "ember-agent"
 version = "0.0.0"
-source = { editable = "character-agent" }
+source = { editable = "ember-agent" }
 dependencies = [
-    { name = "character-memory-abi" },
+    { name = "ember-memory-abi" },
     { name = "pydantic" },
 ]
 
 [package.optional-dependencies]
 local-deployment = [
-    { name = "character-memory-engine" },
+    { name = "ember-memory-engine" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "character-memory-abi", editable = "character-memory/packages/memory-abi" },
-    { name = "character-memory-engine", marker = "extra == 'local-deployment'", editable = "character-memory/packages/memory-engine" },
+    { name = "ember-memory-abi", editable = "ember-memory/packages/memory-abi" },
+    { name = "ember-memory-engine", marker = "extra == 'local-deployment'", editable = "ember-memory/packages/memory-engine" },
     { name = "pydantic", specifier = ">=2.10,<3" },
 ]
 provides-extras = ["local-deployment"]
 
 [[package]]
-name = "character-memory"
+name = "ember-memory"
 version = "0.0.0"
-source = { editable = "character-memory" }
+source = { editable = "ember-memory" }
 dependencies = [
-    { name = "character-memory-importers" },
+    { name = "ember-memory-importers" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "character-memory-importers", editable = "character-memory/packages/memory-importers" }]
+requires-dist = [{ name = "ember-memory-importers", editable = "ember-memory/packages/memory-importers" }]
 
 [[package]]
-name = "character-memory-abi"
+name = "ember-memory-abi"
 version = "0.0.0"
-source = { editable = "character-memory/packages/memory-abi" }
+source = { editable = "ember-memory/packages/memory-abi" }
 
 [[package]]
-name = "character-memory-engine"
+name = "ember-memory-engine"
 version = "0.0.0"
-source = { editable = "character-memory/packages/memory-engine" }
+source = { editable = "ember-memory/packages/memory-engine" }
 dependencies = [
-    { name = "character-memory-abi" },
+    { name = "ember-memory-abi" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "character-memory-abi", editable = "character-memory/packages/memory-abi" }]
+requires-dist = [{ name = "ember-memory-abi", editable = "ember-memory/packages/memory-abi" }]
 
 [[package]]
-name = "character-memory-importers"
+name = "ember-memory-importers"
 version = "0.0.0"
-source = { editable = "character-memory/packages/memory-importers" }
+source = { editable = "ember-memory/packages/memory-importers" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -72,15 +72,15 @@ dependencies = [
 requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
-name = "character-stack-development"
+name = "ember-development"
 version = "0.0.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
-    { name = "character-agent", extra = ["local-deployment"] },
-    { name = "character-memory" },
-    { name = "character-memory-engine" },
+    { name = "ember-agent", extra = ["local-deployment"] },
+    { name = "ember-memory" },
+    { name = "ember-memory-engine" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -90,9 +90,9 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "character-agent", extras = ["local-deployment"], editable = "character-agent" },
-    { name = "character-memory", editable = "character-memory" },
-    { name = "character-memory-engine", editable = "character-memory/packages/memory-engine" },
+    { name = "ember-agent", extras = ["local-deployment"], editable = "ember-agent" },
+    { name = "ember-memory", editable = "ember-memory" },
+    { name = "ember-memory-engine", editable = "ember-memory/packages/memory-engine" },
     { name = "pyright", specifier = ">=1.1.390,<2" },
     { name = "pytest", specifier = ">=8.3,<10" },
     { name = "ruff", specifier = ">=0.9,<1" },

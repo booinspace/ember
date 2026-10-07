@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.26,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ember-agent"
+version = "0.0.0"
+description = "Phase -1 configuration and readiness checks for ember"
+requires-python = ">=3.12,<3.13"
+dependencies = ["ember-memory-abi==0.0.0", "pydantic>=2.10,<3"]
+
+[project.optional-dependencies]
+local-deployment = ["ember-memory-engine==0.0.0"]
+
+[project.scripts]
+ember = "ember_agent.cli:main"
+ember-agent = "ember_agent.cli:main"
+
+[tool.uv.sources]
+ember-memory-abi = { path = "../ember-memory/packages/memory-abi", editable = true }
+ember-memory-engine = { path = "../ember-memory/packages/memory-engine", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ember_agent"]

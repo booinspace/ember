@@ -16,7 +16,7 @@ not create a source vault, canonical library, or identity crosswalk yet.
 From the workspace root after setup:
 
 ```powershell
-.\character-memory\.venv\Scripts\character-memory.exe inspect chatgpt .\.local\incoming\chatgpt-export.zip --source-namespace personal-chatgpt --output .\.local\reports\chatgpt-inspection.json
+.\ember-memory\.venv\Scripts\ember-memory.exe inspect chatgpt .\.local\incoming\chatgpt-export.zip --source-namespace personal-chatgpt --output .\.local\reports\chatgpt-inspection.json
 ```
 
 Default inventory includes hashed paths and exact file content hashes. If reviewing

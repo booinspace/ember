@@ -1,11 +1,11 @@
-# Character Memory Platform and Local Character Stack — Revised Implementation Plan
+# ember — Character Memory Platform and Local Character Stack — Revised Implementation Plan
 
 ## 1. Executive summary
 
 Build one local character application from two first-party repositories:
 
-- **`character-memory`** owns durable autobiographical memory, source archives, provenance, temporal facts, retrieval, extraction, consolidation, forgetting, seeding, and bundles.
-- **`character-agent`** owns realtime interaction, LiveKit, personality, audio, vision, browser UI, tools, skills, delegation, events, attention policy, deployment composition, and inference scheduling.
+- **`ember-memory`** owns durable autobiographical memory, source archives, provenance, temporal facts, retrieval, extraction, consolidation, forgetting, seeding, and bundles.
+- **`ember-agent`** owns realtime interaction, LiveKit, personality, audio, vision, browser UI, tools, skills, delegation, events, attention policy, deployment composition, and inference scheduling.
 
 The character’s identity, personality, conversation continuity, and memories remain independent of external agent frameworks.
 
@@ -53,8 +53,8 @@ The remaining model unknowns are:
 
 | Component | Owns |
 |---|---|
-| `character-memory` | Canonical source records, beliefs, evidence, revisions, source grants, suppression, retrieval, extraction policy, consolidation, bundles |
-| `character-agent` | Personality, conversational state, LiveKit, prompt composition, audio, tools, skills, task routing, events, attention, inference policy, launcher |
+| `ember-memory` | Canonical source records, beliefs, evidence, revisions, source grants, suppression, retrieval, extraction policy, consolidation, bundles |
+| `ember-agent` | Personality, conversational state, LiveKit, prompt composition, audio, tools, skills, task routing, events, attention, inference policy, launcher |
 | External harness | Task-local execution context, autonomous tool loops, temporary checkpoints, observations, artifacts, structured results |
 
 An external harness cannot own or modify:
@@ -97,7 +97,7 @@ Character runtime
 
 A future deployment can replace the injected client with a local-daemon transport without changing LiveKit hooks, prompt composition, or conversation logic.
 
-Production packaging may install `character-memory-engine` through the standard local-deployment extra. Installation does not authorize runtime modules to import engine internals.
+Production packaging may install `ember-memory-engine` through the standard local-deployment extra. Installation does not authorize runtime modules to import engine internals.
 
 Only composition, maintenance, and backend adapter modules construct concrete engine implementations. Character logic must not import SQLite backends, migrations, ranking implementations, or engine-private classes.
 
@@ -198,7 +198,7 @@ sequenceDiagram
 The finished application starts through:
 
 ```powershell
-character-agent start
+ember start
 ```
 
 A Windows PowerShell wrapper may call the same launcher. It must not contain a separate implementation of startup policy.
@@ -212,7 +212,7 @@ The browser frontend is served by the application. A production launch does not 
 | Ollama | Independent local model service | Attach to existing service |
 | LiveKit Server | Separate realtime service | Check/start where configured as managed |
 | Kokoro-FastAPI | Separate TTS service | Check/start where configured as managed |
-| `character-agent` | Main application process | Launcher/composition root |
+| `ember-agent` | Main application process | Launcher/composition root |
 | Memory engine and async facade | In-process libraries | Constructed and closed by composition |
 | EventBus, AttentionPolicy | In-process | Application-owned |
 | ToolRouter, TaskRouter, prompt composer | In-process | Application-owned |
@@ -220,7 +220,7 @@ The browser frontend is served by the application. A production launch does not 
 | Inference gateway | Local child process by default | Application-owned |
 | Odysseus worker bridge | Optional separate process/profile | Start/connect only when configured |
 | MCP servers | In-process client plus natural external server processes | Per-server configuration |
-| Frontend | Browser application | Served/opened by `character-agent` |
+| Frontend | Browser application | Served/opened by `ember-agent` |
 
 Suggested configurable endpoints:
 
@@ -1416,7 +1416,7 @@ Never replay uncertain effects automatically.
 
 ## 19. One progressively implemented inference gateway
 
-The gateway is owned by `character-agent`, even when deployed separately.
+The gateway is owned by `ember-agent`, even when deployed separately.
 
 It owns no model weights.
 
@@ -1837,18 +1837,18 @@ OS paths, service commands, sandbox implementation, and provider locations remai
 
 ## 28. Repository and release structure
 
-### `character-memory`
+### `ember-memory`
 
 ```text
-character-memory/
+ember-memory/
 ├── packages/
-│   ├── memory-abi/src/character_memory_abi/
+│   ├── memory-abi/src/ember_memory_abi/
 │   │   ├── models/
 │   │   ├── protocols.py
 │   │   ├── serialization.py
 │   │   ├── versions.py
 │   │   └── errors.py
-│   ├── memory-engine/src/character_memory_engine/
+│   ├── memory-engine/src/ember_memory_engine/
 │   │   ├── backends/sqlite/
 │   │   ├── sources/
 │   │   ├── characters/
@@ -1860,7 +1860,7 @@ character-memory/
 │   │   ├── consolidation/
 │   │   ├── bundles/
 │   │   └── migrations/
-│   └── memory-importers/src/character_memory_importers/
+│   └── memory-importers/src/ember_memory_importers/
 │       ├── base/
 │       ├── chatgpt/
 │       └── memory_summary/
@@ -1871,11 +1871,11 @@ character-memory/
 └── docs/adr/
 ```
 
-### `character-agent`
+### `ember-agent`
 
 ```text
-character-agent/
-├── src/character_agent/
+ember-agent/
+├── src/ember_agent/
 │   ├── runtime/
 │   │   ├── app.py
 │   │   ├── composition.py
@@ -1907,7 +1907,7 @@ character-agent/
 
 Only two first-party product repositories.
 
-Gateway, bus, routers, and bridge remain in `character-agent`.
+Gateway, bus, routers, and bridge remain in `ember-agent`.
 
 Odysseus is a pinned third-party dependency/checkout.
 
@@ -1926,35 +1926,35 @@ Retain inspection/import/extract/audit/status, character create/seed/grant, reca
 Examples:
 
 ```powershell
-character-memory import chatgpt export.zip --library personal --resume
-character-memory import memory-summary memories.md --library personal
-character-memory search "computer specs" --character primary --explain
-character-memory archive-search "Berlin" --character primary --from 2025-01-01 --to 2026-01-01 --role user
-character-memory sources <memory-id> --character primary
-character-memory forget <memory-id> --character primary
-character-memory rebuild-indexes --character primary
-character-memory export character --character primary --self-contained --output primary.zip
+ember-memory import chatgpt export.zip --library personal --resume
+ember-memory import memory-summary memories.md --library personal
+ember-memory search "computer specs" --character primary --explain
+ember-memory archive-search "Berlin" --character primary --from 2025-01-01 --to 2026-01-01 --role user
+ember-memory sources <memory-id> --character primary
+ember-memory forget <memory-id> --character primary
+ember-memory rebuild-indexes --character primary
+ember-memory export character --character primary --self-contained --output primary.zip
 ```
 
 ### Application CLI
 
 ```powershell
-character-agent start
-character-agent status
-character-agent stop
+ember start
+ember status
+ember stop
 
-character-agent gateway status
-character-agent providers list
-character-agent providers check odysseus
-character-agent tasks list --character primary
-character-agent tasks show <task-id>
-character-agent tasks cancel <task-id>
-character-agent tasks retry <task-id>
+ember gateway status
+ember providers list
+ember providers check odysseus
+ember tasks list --character primary
+ember tasks show <task-id>
+ember tasks cancel <task-id>
+ember tasks retry <task-id>
 
-character-agent tools list --character primary
-character-agent skills inspect .\skill
-character-agent skills import .\skill
-character-agent runtime backup --output runtime-backup
+ember tools list --character primary
+ember skills inspect .\skill
+ember skills import .\skill
+ember runtime backup --output runtime-backup
 ```
 
 Maintenance gateway startup uses the same implementation and ownership rules.
@@ -2110,7 +2110,7 @@ Retain portable resources, provider metadata round trips, duplicate IDs, require
 
 ### A. Core startup without harness
 
-Run `character-agent start` with valid memory, model, LiveKit, and Kokoro; Odysseus absent.
+Run `ember start` with valid memory, model, LiveKit, and Kokoro; Odysseus absent.
 
 Verify memory, voice, native tools, configured direct MCP, browser readiness, and unavailable-provider reporting.
 

@@ -1,7 +1,7 @@
 # Project instructions
 
 This workspace stages two independently packaged first-party projects:
-`character-memory/` and `character-agent/`. Do not introduce a third product
+`ember-memory/` and `ember-agent/`. Do not introduce a third product
 repository or vendor an external agent framework into either core.
 
 `PLAN.md` is the authoritative design for all future tasks. Read it, especially
@@ -17,7 +17,7 @@ fixtures establish test behavior only and cannot establish export capabilities.
 - Character business logic depends on public ABI/client contracts. Concrete
   memory construction belongs in composition, maintenance, or backend adapters.
 - All future primary-model generation, including warmup/extraction, goes through
-  the single character-agent gateway. No direct Ollama generation fallback.
+  the single ember gateway. No direct Ollama generation fallback.
 - Personality and durable memory are independent of optional providers.
 - Canonical IDs, models, schemas, migrations, and importer normalization are
   provisional until their planned phases; do not mistake scaffold versions for
@@ -50,6 +50,7 @@ The quality gate from the workspace root is:
 `uv sync --locked`, `uv run --locked ruff format --check .`,
 `uv run --locked ruff check .`, `uv run --locked pyright`, and `uv run --locked pytest`.
 `python scripts/check.py` runs the same installed checks without downloading packages.
-After setup, use the installed `character-memory` and `character-agent` CLI entry points.
+After setup, use the installed `ember-memory` and `ember-agent` CLI entry points.
+The main application command is `ember`; `ember-agent` is a component alias.
 Keep tests meaningful: archive safety/privacy and architectural boundaries need
 coverage; empty placeholder directories do not need tests.
