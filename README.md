@@ -47,7 +47,7 @@ Production normalized import, indexed retrieval, extraction, generation, voice,
 UI and service startup await their planned phases. Canonical fallback retrieval
 works with truthful degraded coverage. Review
 [phase 2 architecture](docs/phase-2-canonical-engine.md) and
-[ADR 0003](ember-memory/docs/adr/0003-canonical-engine-and-workers.md).
+[Memory ADR 0003](ember-memory/docs/adr/0003-canonical-engine-and-workers.md).
 This delivery stops for architecture review before phase 3.
 
 ## Setup (PowerShell)
@@ -119,3 +119,11 @@ See [public-format research](docs/phase-0-research.md) and the
 See [phase 0 runbook](docs/phase-0-runbook.md), [phase -1 status](docs/phase-minus-one.md),
 and the [current plan](PLAN.md). The [original supplied design](docs/design-plan.md)
 is retained as a historical snapshot and must not override PLAN.md.
+
+## Architecture decisions
+
+Start with [the root ADR index](docs/adr/README.md) for implemented phases and
+integration. [Memory ADRs](ember-memory/docs/adr/README.md) own memory detail;
+[agent ADRs](ember-agent/docs/adr/README.md) own runtime/gateway decisions, including
+those still planned. Numbers are local to each tree. PLAN remains authoritative;
+indexes link decisions to actual phase status and acceptance evidence.

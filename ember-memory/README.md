@@ -11,7 +11,7 @@ Memory ABI/Normalized Archive 0.1.0 contracts are implemented experimentally;
 Phase 2 implements engine 0.1.0: local canonical SQLite storage, immutable
 provenance/revisions, temporal primitives, owned sync/async clients and degraded
 retrieval. See [the review](../docs/phase-2-canonical-engine.md) and
-[ADR 0003](docs/adr/0003-canonical-engine-and-workers.md). Remaining empty folders
+[Memory ADR 0003](docs/adr/0003-canonical-engine-and-workers.md). Remaining empty folders
 mark later ownership without advertising an implementation.
 
 ```powershell
@@ -26,3 +26,11 @@ quality gate from the workspace root. Importer unit tests and synthetic fixtures
 are colocated under `packages/memory-importers/tests/`.
 Raw sources and real reports belong in ignored local storage. The nested `.gitignore`
 also protects private files if this root becomes its own Git repository.
+
+## Architecture documentation
+
+[Memory ADRs](docs/adr/README.md) own backend/contract detail and link to
+[root ADRs](../docs/adr/README.md), which record delivery and agent integration.
+Numbering is independent; qualify by component/path. Shared runbooks and phase
+walkthroughs remain in root docs. PLAN is authoritative; accepted planned
+capabilities are not implementation claims.

@@ -176,7 +176,7 @@ Phase 3 next adds the real-importer/realtime slice and minimal P0 gateway; actua
 historical-recall acceptance still requires the export. No phase 3 implementation
 or model workload began in this delivery.
 
-[ADR 0003](../ember-memory/docs/adr/0003-canonical-engine-and-workers.md) records
+[Memory ADR 0003](../ember-memory/docs/adr/0003-canonical-engine-and-workers.md) records
 these decisions. This delivery stops for user architecture review.
 
 ## Interface example

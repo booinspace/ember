@@ -24,3 +24,11 @@ no assumed runtime tag for the descriptive model name in the user request.
 strict Pyright, and pytest configuration lives in `../pyproject.toml`; run the
 quality gate from the workspace root. Runtime/configuration/readiness reports use
 strict Pydantic v2 models; mutable internal state remains ordinary Python state.
+
+## Architecture documentation
+
+[Agent ADRs](docs/adr/README.md) own runtime/composition/gateway decisions and link to
+[root ADRs](../docs/adr/README.md) for delivery outcomes. Memory detail belongs to
+[memory ADRs](../ember-memory/docs/adr/README.md). Numbers are local to each tree.
+Existing configuration/client dependencies do not imply a shipped runtime; PLAN
+remains authoritative.

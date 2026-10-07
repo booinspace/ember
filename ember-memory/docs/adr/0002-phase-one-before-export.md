@@ -17,3 +17,13 @@ preserving migration/version discipline. No historical data is replaced or inven
 ABI 1.0 requires the real-source, character/gateway and backup/restore acceptance
 in PLAN.md. Neither the 0.1 package version nor schema validation establishes that
 acceptance, a running backend, approved knowledge, or correct model behavior.
+
+## Root phase record and current implementation
+
+Generic contracts are implemented; actual-source and ABI 1.0 gates remain open.
+[Root ADR 0004](../../../docs/adr/0004-phase-one-contracts.md) records the delivery
+and shared importer/engine/agent interface consequence. This memory record owns the
+decision to ship provisional contracts before actual-source review.
+[Memory ADR 0003](0003-canonical-engine-and-workers.md) now implements storage/clients
+without converting schema validation into approval or actual-export acceptance.
+See [the scoped ADR index](README.md).

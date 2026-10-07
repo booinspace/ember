@@ -15,7 +15,8 @@ Phase 1 generic ABI/archive 0.1 core is implemented and experimental. Engine wor
 can use its contracts while source-dependent acceptance remains open. Read
 `docs/phase-1-contracts.md` and the current compatibility matrix before extending it.
 Phase 2 engine 0.1.0 is implemented and awaiting user architecture review; read
-`docs/phase-2-canonical-engine.md` and ADR 0003 before extending it. Phase 3 has
+`docs/phase-2-canonical-engine.md` and
+`ember-memory/docs/adr/0003-canonical-engine-and-workers.md` before extending it. Phase 3 has
 not started. Deliver one phase at a time: define behavior, ownership, existing
 abstractions, necessary primitives, invariants, failures and acceptance tests before
 implementation. Keep ADR/current PLAN status updated, explain introduced coupling,
@@ -64,3 +65,12 @@ After setup, use the installed `ember-memory` and `ember-agent` CLI entry points
 The main application command is `ember`; `ember-agent` is a component alias.
 Keep tests meaningful: archive safety/privacy and architectural boundaries need
 coverage; empty placeholder directories do not need tests.
+
+## ADR ownership and navigation
+
+`docs/adr/README.md` indexes every implemented phase and cross-component decision.
+Root phase ADRs record delivery, integration/coupling and open gates; component
+ADRs own detail and link back. Each tree has independent numbering: qualify by
+component/path. Update root index/phase record and affected component ADR together.
+Do not imply a runtime feature is implemented because its interface/dependency
+exists. PLAN remains authoritative.

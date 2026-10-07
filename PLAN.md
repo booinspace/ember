@@ -2256,7 +2256,9 @@ for the implemented contract surface and remaining acceptance boundaries.
 Phase 2 canonical engine is implemented experimentally as engine 0.1.0 with
 SQLite schema 0.1.0 / user_version 1; ABI/archive contracts remain 0.1.0. Synthetic
 storage, policy, temporal, crash and async acceptance pass. See
-`docs/phase-2-canonical-engine.md` and ADR 0003 for architecture and coupling.
+`docs/phase-2-canonical-engine.md` and
+`ember-memory/docs/adr/0003-canonical-engine-and-workers.md` for architecture
+and coupling. Root phase status is in `docs/adr/0005-phase-two-canonical-engine.md`.
 Phase 0b and source-dependent acceptance remain open. Phase 3 has not started.
 
 ### Phase architecture review workflow
@@ -2302,6 +2304,14 @@ Migrations back up, acquire ownership, validate, rebuild derived data, and resto
 Operational restoration never automatically resumes uncertain external effects.
 
 ### ADRs
+
+`docs/adr/README.md` is the workspace architecture index. Root ADRs record each
+implemented phase and cross-component integration; `ember-memory/docs/adr/` and
+`ember-agent/docs/adr/` own detailed component decisions and link back. Numbering
+is independent: qualify references by component/path. Update root phase status and
+affected component ADRs together. Preserve history and distinguish planned,
+implemented, pending-review and acceptance states. ADRs explain decisions; this
+PLAN remains authoritative for design and engineering standards.
 
 | Decision | Consequence |
 |---|---|

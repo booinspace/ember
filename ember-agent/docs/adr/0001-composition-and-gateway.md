@@ -14,3 +14,21 @@ No direct Ollama generation fallback is permitted. Metadata checks may be read-o
 
 Optional providers cannot own personality/history, memory policy, voice continuity,
 or inference priority. Phase -1 does not launch or claim a functioning runtime.
+
+## Implemented status and root/component relationship
+
+Composition/gateway ownership remains accepted design. Phase -1 configuration/
+doctor is implemented, phase 1 provides the public ABI, and phase 2 provides
+engine-owned clients. Agent composition, gateway, LiveKit and complete application
+startup/shutdown have not been implemented.
+
+[Root phase -1](../../../docs/adr/0001-phase-minus-one-scope.md),
+[root phase 1](../../../docs/adr/0004-phase-one-contracts.md) and
+[root phase 2](../../../docs/adr/0005-phase-two-canonical-engine.md) record delivered
+outcomes. [Memory ADR 0003](../../../ember-memory/docs/adr/0003-canonical-engine-and-workers.md)
+owns database/worker detail; agent composition will drain its clients and close the
+engine off the realtime loop. SQLite is embedded and requires no separate database
+server. Gateway process ownership is a separate future agent responsibility.
+
+[Agent ADR index](README.md) explains scope/independent numbering;
+[root ADR index](../../../docs/adr/README.md) is the application navigation point.

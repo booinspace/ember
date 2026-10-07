@@ -145,3 +145,18 @@ child-process crash/WAL recovery. All committed sources are synthetic. Linux CI
 is configured but not executed locally. Actual-export and ABI 1.0 acceptance remain
 open. See [phase 2 review](../../../docs/phase-2-canonical-engine.md) for the coupling
 map, behavior and limits. Stop for user review before phase 3.
+
+## Root integration and embedded SQLite lifecycle
+
+[Root ADR 0005](../../../docs/adr/0005-phase-two-canonical-engine.md) records the phase
+outcome and application integration; this memory record owns backend details.
+[The ADR index](README.md) uses component-local numbering: this is Memory ADR 0003,
+distinct from the root phase 0a record.
+
+SQLite runs inside Ember's Python process through standard-library sqlite3. It needs
+no separate Python SQLite package, server, listener or daemon. An explicitly opened
+CanonicalEngine owns connections/workers until close; close drains them while .db
+files retain data. A future instance reopens the same root. Keeping a background
+process alive is unnecessary for persistence. Package import has no database/startup
+side effects. Agent composition will own this lifetime when implemented; the
+phase 2 library does not implement the launcher/runtime.
