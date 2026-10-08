@@ -57,3 +57,10 @@ class UnsupportedQueryError(MemoryError):
 
     code = "unsupported_query"
     safe_message = "The requested query semantics are unsupported."
+
+
+class BundleError(MemoryError):
+    """Invalid/incomplete bundle or unsafe publication/restore destination."""
+
+    code = "bundle_invalid"
+    safe_message = "Bundle integrity, coverage, dependencies or destination validation failed."

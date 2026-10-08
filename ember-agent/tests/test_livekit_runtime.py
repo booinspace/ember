@@ -30,9 +30,12 @@ from ember_agent.runtime.config import ConfigurationError, load_config
 from ember_agent.runtime.livekit_config import credentials, server_yaml
 from ember_agent.runtime.livekit_runtime import RuntimeServices
 from ember_agent.runtime.processes import OwnedProcess, RuntimeLease
+from ember_memory_abi.common import CanonicalId
+from ember_memory_abi.memory import EntityRef
 from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 from ember_memory_engine.authoring import MemoryAuthoringService, NewMemoryInput, ensure_subject
+from ember_memory_engine.models import StoreInfo
 
 EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
 
@@ -191,21 +194,151 @@ def room_config(tmp_path: Path, executable: str, *, real: bool) -> Path:
     return path
 
 
-async def exercise_room(path: Path, *, real: bool) -> None:
-    config = load_config(path, require_model_pin=True)
-    config.runtime_root.mkdir(exist_ok=True)
-    # Seed an isolated synthetic observation and reopen to prove canonical restart.
-    with CanonicalEngine(config.data_root) as engine:
+def portable_seed(root: Path) -> tuple[Path, StoreInfo, EntityRef, CanonicalId]:
+    """Build/approve/seed synthetic library evidence, then restore its selective closure."""
+    from ember_memory_abi.archive import (
+        ContentPart,
+        Document,
+        ImportCursor,
+        NormalizedArchiveBatch,
+        ProcessingSpecRef,
+    )
+    from ember_memory_abi.evidence import (
+        Evidence,
+        EvidenceAssertion,
+        SourceRef,
+        make_evidence_span,
+        source_text_sha256,
+    )
+    from ember_memory_abi.memory import (
+        CandidateMemory,
+        Entity,
+        EntityRef,
+        EpisodePayload,
+        MemoryContent,
+        MemoryDraft,
+    )
+    from ember_memory_engine.bundles import BundleService, restore_bundles
+    from ember_memory_engine.library import (
+        ApprovalRequest,
+        KnowledgeSelection,
+        LibraryService,
+        SeedRequest,
+    )
+
+    stamp = "2026-10-08T00:00:00.000000Z"
+    text = "My favorite color is cobalt blue."
+    with CanonicalEngine(root) as engine:
+        library = engine.create_library("synthetic-room-library")
         character = engine.create_character()
         subject = ensure_subject(engine, character.store_id)
-        author = MemoryAuthoringService(
-            engine, subject, authority=MutationAuthority(mode="confirmed_user")
+        service = LibraryService(engine, authority=MutationAuthority(mode="confirmed_user"))
+        origin = EntityRef(store_id=library.store_id, entity_id=uuid4())
+        service.put_entity(
+            library.store_id, Entity(reference=origin, revision=1, name="Synthetic user")
         )
-        receipt = author.create(
-            NewMemoryInput(idempotency_key="favorite", text="My favorite color is cobalt blue.")
+        reference = SourceRef(
+            source_store_id=library.store_id,
+            record_kind="document",
+            record_id=uuid4(),
+            record_revision=1,
+        )
+        part = ContentPart(
+            part_id=uuid4(),
+            kind="text",
+            status="available",
+            text=text,
+            content_sha256=source_text_sha256(text),
+        )
+        document = Document(source=reference, recorded_at=stamp, parts=(part,))
+        engine.archive(library.store_id).write_batch(
+            NormalizedArchiveBatch(
+                source_store_id=library.store_id,
+                source_namespace=library.namespace,
+                idempotency_key="source",
+                processing_spec=ProcessingSpecRef(
+                    name="ember.synthetic-room", version="0.1.0", specification_sha256="a" * 64
+                ),
+                records=(document,),
+                resume_cursor=ImportCursor(
+                    logical_inventory_sha256="b" * 64,
+                    component_sha256="c" * 64,
+                    next_record_index=1,
+                    adapter="synthetic",
+                    adapter_version="0.1.0",
+                ),
+            )
+        )
+        evidence = Evidence(
+            evidence_id=uuid4(),
+            source=reference.model_copy(update={"part_id": part.part_id}),
+            span=make_evidence_span(text, 0, len(text)),
+        )
+        draft = MemoryDraft(
+            content=MemoryContent(
+                kind="episode",
+                payload=EpisodePayload(event=text, participants=(origin,)),
+                modality="FACTUAL_ASSERTION",
+                confidence=1.0,
+                importance=0.7,
+                evidence=(
+                    EvidenceAssertion(
+                        evidence=evidence,
+                        relation="supports",
+                        modality="FACTUAL_ASSERTION",
+                        authority="synthetic_review",
+                        verdict="confirmed",
+                    ),
+                ),
+            )
+        )
+        candidate = CandidateMemory(
+            candidate_id=uuid4(),
+            owner_store_id=library.store_id,
+            revision=1,
+            draft=draft,
+            recorded_at=stamp,
+        )
+        approved = service.approve(
+            library.store_id, ApprovalRequest(idempotency_key="approve", candidate=candidate)
+        )
+        receipt = service.seed(
+            character.store_id,
+            SeedRequest(
+                idempotency_key="seed",
+                library_id=library.store_id,
+                selections=(KnowledgeSelection(knowledge_id=approved.knowledge_id, revision=1),),
+            ),
         )
         identity = receipt.affected[0].memory_id
-    engine = CanonicalEngine(config.data_root)
+    output = root.parent / "portable-seed-bundle"
+    BundleService(root).export_character(character.store_id, output, mode="self_contained")
+    restored = root.parent / "restored-data"
+    restore_bundles((output,), restored)
+    return restored, character, subject, identity
+
+
+async def exercise_room(path: Path, *, real: bool, portable: bool = False) -> None:
+    config = load_config(path, require_model_pin=True)
+    config.runtime_root.mkdir(exist_ok=True)
+    memory_root = config.data_root
+    if portable:
+        memory_root, character, subject, identity = await asyncio.to_thread(
+            portable_seed, memory_root
+        )
+    else:
+        # Seed an isolated synthetic observation and reopen to prove canonical restart.
+        with CanonicalEngine(config.data_root) as engine:
+            character = engine.create_character()
+            subject = ensure_subject(engine, character.store_id)
+            author = MemoryAuthoringService(
+                engine, subject, authority=MutationAuthority(mode="confirmed_user")
+            )
+            receipt = author.create(
+                NewMemoryInput(idempotency_key="favorite", text="My favorite color is cobalt blue.")
+            )
+            identity = receipt.affected[0].memory_id
+    engine = CanonicalEngine(memory_root)
     memory = InProcessAsyncMemoryClient(engine.character(character.store_id))
     author = MemoryAuthoringService(
         engine, subject, authority=MutationAuthority(mode="confirmed_user")
@@ -457,3 +590,21 @@ def test_memory_owner_is_released_even_when_dialogue_drain_fails(
         runtime.close_workers()
     with CanonicalEngine(config.data_root) as reopened:
         assert reopened.character(identity).character_id == identity
+
+
+@pytest.mark.integration
+def test_actual_room_recalls_independent_seed_after_portable_restore(
+    tmp_path: Path, livekit_executable: str
+) -> None:
+    path = room_config(tmp_path, livekit_executable, real=False)
+    asyncio.run(exercise_room(path, real=False, portable=True))
+
+
+@pytest.mark.integration
+def test_actual_room_qwen_recalls_independent_seed_after_portable_restore(
+    tmp_path: Path, livekit_executable: str
+) -> None:
+    if not os.environ.get("EMBER_REAL_CONFIG"):
+        pytest.skip("Set EMBER_REAL_CONFIG for pinned real-model portable-seed acceptance.")
+    path = room_config(tmp_path, livekit_executable, real=True)
+    asyncio.run(exercise_room(path, real=True, portable=True))

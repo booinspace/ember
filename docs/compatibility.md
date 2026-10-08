@@ -6,12 +6,12 @@
 | Memory ABI / Normalized Archive | 0.1.0 / 0.1.0 | Generic core implemented; source-dependent and integration acceptance open |
 | Predicate definitions | 0.1.0 | Six conservative initial definitions; no automatic activation |
 | Canonical object JSON | ember.canonical-json@0.1.0 | Specified/tested Python 3.12 byte encoding |
-| Canonical engine package | 0.1.1 in the working tree | Phase 2 baseline 0.1.0; phase 3 adds provider-independent authoring and maintenance-only bounded latest-source lookup; public ABI/schema unchanged |
+| Canonical engine package | 0.2.0 in the working tree | Phase 4 library approval/seeds/bundles and grant expiry; public ABI/archive remain 0.1.0 |
 | CLI/importer/agent packages | 0.1.0 in the working tree | Phase 3 components implemented; operator-reviewed real-source memory adoption remains open |
 | Reconnaissance report | ember-memory.reconnaissance/0.0.2 | Nested/streamed/directory preparation inspection |
 | Deployment TOML | config_version = 1 | Validated preparation format; no runtime guarantee |
-| Canonical SQLite schema | 0.1.0 / user_version 1 | Initial owned schema; created by explicit engine composition |
-| Bundle format | Planned 0.1.x, phase 4 | Not implemented/frozen |
+| Canonical SQLite schema | 0.2.0 / user_version 2 | Additive, backed-up migration from schema 1; preserves canonical IDs/history |
+| Bundle format | 0.1.0 experimental | Scoped registry, source/linked character/selective evidence bundles; validated new-root restore |
 | P0 gateway/runtime contracts | 0.1.0 draft | Synthetic and short real-model probes passed earlier; sustained GPU and full voice-room delivery remain unverified |
 | Official ZIP replay metadata | 0.3.0, importer-private | Nested ZIP import, metadata-only recovery and no-op replay verified; not a Memory ABI/schema change or published release |
 | Provider/extended scheduling contracts | Pending their phases | P3/P4, P1/P2 and provider integration remain at their planned phases |
@@ -40,3 +40,14 @@ Pre-1.0 contract changes require an explicit compatibility matrix and, once cano
 state exists, migrations/backups. They do not authorize wiping history. ABI 1.0
 freezes only after the real-source/gateway/character/restore acceptance in PLAN.md.
 See [phase 2 architecture](phase-2-canonical-engine.md) for storage and recovery limits.
+
+
+Phase 4 acceptance and migration/bundle limits are recorded in
+[Root ADR 0007](adr/0007-phase-four-libraries-characters-bundles.md) and
+[Memory ADR 0005](../ember-memory/docs/adr/0005-libraries-seeds-and-bundles.md).
+The first explicit open of a schema-1 root upgrades each store under ownership,
+with a consistent pre-upgrade .backup.db retained beside its canonical database.
+Restore never changes an existing root. It validates a supplied complete bundle
+set and constructs a new root with the original character/library UUIDs and
+providers disabled. Selective snapshots preserve explicit partial coverage; they
+cannot serve as complete shared source libraries or resume imports into them.

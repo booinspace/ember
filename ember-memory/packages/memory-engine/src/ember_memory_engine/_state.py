@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from ember_memory_abi.common import (
     CanonicalId,
     canonical_object_sha256,
+    timestamp_from_datetime,
     timestamp_to_unix_microseconds,
 )
 from ember_memory_abi.errors import (
@@ -129,7 +130,7 @@ class CharacterState:
                 (
                     "SELECT 1 FROM source_grants WHERE source_store_id=? AND record_kind=? "
                     "AND record_id=? AND record_revision=? AND part_id IN (?, '') AND "
-                    "capability=?"
+                    "capability=? AND (expires_at IS NULL OR expires_at>?)"
                 ),
                 (
                     str(reference.source_store_id),
@@ -138,6 +139,7 @@ class CharacterState:
                     reference.record_revision,
                     str(reference.part_id) if reference.part_id else "",
                     capability,
+                    timestamp_from_datetime(self.database.clock.now()),
                 ),
             ).fetchone()
             is not None
@@ -224,6 +226,12 @@ class CharacterState:
                     MemorySource(evidence=assertion.evidence, availability="available", quote=quote)
                 )
         self.check_policy(connection, epoch)
+        # Expiry can pass while a source is resolved without changing policy_epoch.
+        if any(
+            not self.source_permitted(connection, item.evidence.source, "evidence_read")
+            for item in sources
+        ):
+            raise AccessDeniedError()
         return tuple(sources)
 
     def claim_keys(self, connection: sqlite3.Connection, draft: MemoryDraft) -> tuple[str, ...]:

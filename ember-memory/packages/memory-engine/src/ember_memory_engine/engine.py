@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 from pydantic import TypeAdapter, ValidationError
 
 from ember_memory_abi.archive import SourceRecord
-from ember_memory_abi.common import CanonicalId, canonical_object_sha256
+from ember_memory_abi.common import CanonicalId, canonical_object_sha256, timestamp_from_datetime
 from ember_memory_abi.errors import (
     AccessDeniedError,
     InvalidEvidenceError,
@@ -19,7 +19,7 @@ from ember_memory_abi.errors import (
     SourceUnavailableError,
 )
 from ember_memory_abi.evidence import Evidence, SourceRef, validate_evidence
-from ember_memory_abi.memory import Entity
+from ember_memory_abi.memory import Entity, MemorySource
 
 from .archive import SqliteArchiveStore, source_text
 from .database import SqliteDatabase, load_model, model_bytes, payload_hash, row_text
@@ -197,6 +197,10 @@ class CanonicalEngine:
             raise SourceUnavailableError()
         return item
 
+    def maintenance_store(self, identity: CanonicalId) -> tuple[StoreInfo, SqliteDatabase]:
+        """Engine-internal maintenance access; never expose this capability to runtime tools."""
+        return self._store(identity)
+
     def archive(self, store_id: CanonicalId) -> SqliteArchiveStore:
         """Construct a trusted maintenance archive writer; never expose it to model/harness
         tools.
@@ -253,7 +257,31 @@ class CanonicalEngine:
         """Verify exact evidence against original normalized source/part, never a summary or
         concatenation.
         """
-        record = self.resolve(evidence.source)
+        try:
+            record = self.resolve(evidence.source)
+        except SourceUnavailableError:
+            _, database = self._store(evidence.source.source_store_id)
+
+            def quote(connection: sqlite3.Connection) -> str:
+                row = connection.execute(
+                    "SELECT * FROM materialized_evidence WHERE evidence_id=?",
+                    (str(evidence.evidence_id),),
+                ).fetchone()
+                if row is None:
+                    raise SourceUnavailableError()
+                materialized = load_model(row, MemorySource)
+                if materialized.evidence != evidence or materialized.quote is None:
+                    raise InvalidEvidenceError()
+                return materialized.quote
+
+            try:
+                with closing(
+                    sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True)
+                ) as connection:
+                    connection.row_factory = sqlite3.Row
+                    return quote(connection)
+            except sqlite3.Error as error:
+                raise SourceUnavailableError() from error
         reference = SourceRef.model_validate(
             {**record.source.model_dump(), "part_id": evidence.source.part_id}
         )
@@ -319,8 +347,16 @@ class CanonicalEngine:
         """Trusted maintenance registers owned entities/revisions; never automatically merge
         aliases.
         """
+        self.put_owned_entity(character_id, entity, character_only=True)
+
+    def put_owned_entity(
+        self, character_id: CanonicalId, entity: Entity, *, character_only: bool = False
+    ) -> None:
+        """Register a trusted store-owned entity; public character calls retain their kind check."""
         info, database = self._store(character_id)
-        if info.kind != "character" or entity.reference.store_id != character_id:
+        if (
+            character_only and info.kind != "character"
+        ) or entity.reference.store_id != character_id:
             raise AccessDeniedError()
         snapshot = Entity.model_validate_json(entity.model_dump_json())
 
@@ -368,6 +404,13 @@ class CanonicalEngine:
         info, database = self._store(character_id)
         if info.kind != "character" or not grant.capabilities:
             raise AccessDeniedError()
+        grant = SourceGrant.model_validate_json(grant.model_dump_json())
+        if grant.extensions:
+            raise AccessDeniedError()
+        if grant.expires_at is not None and grant.expires_at <= timestamp_from_datetime(
+            self.clock.now()
+        ):
+            raise AccessDeniedError()
         for reference in grant.references:
             source_info, _ = self._store(reference.source_store_id)
             if source_info.kind == "character" and reference.source_store_id != character_id:
@@ -383,7 +426,54 @@ class CanonicalEngine:
                 for reference in grant.references:
                     for capability in grant.capabilities:
                         connection.execute(
-                            "INSERT OR IGNORE INTO source_grants VALUES(?,?,?,?,?,?)",
+                            "INSERT INTO source_grants VALUES(?,?,?,?,?,?,?) ON CONFLICT "
+                            "DO UPDATE SET expires_at=excluded.expires_at",
+                            (
+                                str(reference.source_store_id),
+                                reference.record_kind,
+                                str(reference.record_id),
+                                reference.record_revision,
+                                str(reference.part_id) if reference.part_id else "",
+                                capability,
+                                grant.expires_at,
+                            ),
+                        )
+                connection.execute("UPDATE store_metadata SET policy_epoch=policy_epoch+1")
+                _, stamp = database.recorded_stamp(connection)
+                connection.execute(
+                    (
+                        "INSERT INTO "
+                        "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
+                        "SELECT 'grant_changed',NULL,NULL,policy_epoch,? FROM store_metadata"
+                    ),
+                    (stamp,),
+                )
+
+                connection.execute(
+                    "INSERT INTO audit_events VALUES(?,?,?,?,?)",
+                    (str(uuid4()), "grant_source", None, stamp, "trusted_maintenance"),
+                )
+
+        database.write(write)
+
+    def revoke_grant(self, character_id: CanonicalId, grant: SourceGrant) -> None:
+        """Revoke only selected exact snapshots/capabilities, retaining adopted beliefs.
+
+        Revocation never resolves a source, so unavailable libraries can be revoked.
+        It does not remove suppression or expand another character's permissions.
+        """
+        info, database = self._store(character_id)
+        if info.kind != "character" or grant.extensions:
+            raise AccessDeniedError()
+
+        def write(connection: sqlite3.Connection) -> None:
+            with database.transaction(connection):
+                for reference in grant.references:
+                    for capability in grant.capabilities:
+                        connection.execute(
+                            "DELETE FROM source_grants WHERE source_store_id=? "
+                            "AND record_kind=? AND record_id=? AND record_revision=? "
+                            "AND part_id=? AND capability=?",
                             (
                                 str(reference.source_store_id),
                                 reference.record_kind,
@@ -396,12 +486,13 @@ class CanonicalEngine:
                 connection.execute("UPDATE store_metadata SET policy_epoch=policy_epoch+1")
                 _, stamp = database.recorded_stamp(connection)
                 connection.execute(
-                    (
-                        "INSERT INTO "
-                        "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
-                        "SELECT 'grant_changed',NULL,NULL,policy_epoch,? FROM store_metadata"
-                    ),
+                    "INSERT INTO index_outbox(kind,policy_epoch,recorded_at_us) "
+                    "SELECT 'grant_revoked',policy_epoch,? FROM store_metadata",
                     (stamp,),
+                )
+                connection.execute(
+                    "INSERT INTO audit_events VALUES(?,?,?,?,?)",
+                    (str(uuid4()), "revoke_grant", None, stamp, "trusted_maintenance"),
                 )
 
         database.write(write)

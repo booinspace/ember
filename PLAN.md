@@ -2627,13 +2627,88 @@ For every phase, review this PLAN and the existing implementation first:
 
 Record decisions and introduced coupling in an ADR; explain meaningful decisions
 as work proceeds. Deliver tested behavior and an architecture summary, then stop
-for the user's review before starting the next phase. Current checkpoint: phase 3
-implementation review, with operator-reviewed real-claim adoption still open. Stop
-for architecture review before phase 4.
+for the user's review before starting the next phase. Current checkpoint: Phase 4 implementation review. Phase 3 operator-reviewed
+real-claim adoption remains open and is not replaced by synthetic acceptance.
+The user authorized Phase 4; stop for architecture review before Phase 5.
 
 Model integration is not deferred for a pending build: the model exists. Phase 3 starts baseline validation; later phases test their specific features.
 
 Early phases do not perform unimplemented background model workloads through P0.
+
+### Phase 4 implementation record — 2026-10-08
+
+The user authorized libraries/characters/bundles implementation on the existing
+Phase 3 storage and text runtime. The eight architectural checks and coupling are
+recorded in Root ADR 0007 and Memory ADR 0005. Desired behavior is independent
+character snapshots with explicit current policy, plus linked and selective backup
+and restore. Reuse ABI candidates/approvals/entities/origins/evidence, existing
+canonical workers, source resolver, suppression, receipts and root ownership.
+New maintenance primitives are LibraryService, BundleService, versioned bundle
+manifests and partial materialized evidence. No new daemon or model workload.
+
+Engine 0.2.0 / canonical schema 0.2.0 (user_version 2) add library candidates,
+immutable approvals and approved entity revisions; seed receipts/entity origins;
+materialized evidence/coverage; and grant expiry. Schema 1 upgrades create fresh
+consistent recovery backups before additive transactions. Failure rolls back the
+store and permits retry. Public ABI/archive remain unchanged at 0.1.0.
+
+Manual library approval validates owned entities and exact evidence. Independent
+seeds receive new destination belief/entity UUIDs, remapped semantic references,
+origin metadata and supporting evidence_read grants. All destination effects,
+receipt/audit/outbox and suppression checks commit atomically. Seeds imply no
+archive_search grant. Exact revocation and expiry retain beliefs, while source
+reads/search/context enforce current capabilities. Forgetting a seed suppresses
+its source/claim/origin dependencies and prevents resurrection through a new seed
+key, without changing other characters or the library.
+
+Source bundles back up complete libraries/raw sources/assets/manifests/specifications
+once. Linked character bundles preserve full owned state/config and explicit UUID
+library dependencies. Self-contained bundles construct fresh selected databases,
+including belief histories/pins/receipts/suppression, minimal entities and stable
+human-subject/personality configuration. They materialize only authorized original
+spans, preserving logical IDs, exact bytes/hashes and coordinates, with explicit
+partial coverage. They exclude unrelated history, unquoted text even in the same
+message, raw ZIPs/assets and derived indexes. Original source/archive resolution
+remains unavailable in partial libraries; exact evidence reads work through the
+same ABI. Evidence-only libraries reject source writes/full backup claims.
+
+Bundles use an inspectable directory/manifest format 0.1.0, relative paths,
+streamed file SHA-256 and consistent scoped registry snapshots. Exclusive offline
+maintenance uses the existing root lock as its source-deletion/ownership barrier.
+Writable projections use local scratch space and only closed snapshots are copied
+into backup staging, so NAS backup destinations acquire no live projection owner.
+Restore verifies coverage, dependencies, copied bytes, DB identity/schema,
+approved origins and permitted evidence before atomically publishing a new local
+root. It never merges/overwrites live state or starts providers. Linked restores
+reuse one library for multiple characters. Selective export has explicit 10,000
+memory / 100,000 revision/span / 64 MiB selected-model / 64 MiB quote bounds and a
+2 MiB manifest bound; oversized selections fail. Grant matching is constant-time
+per row. Character core, graph importer, LiveKit transport and P0 scheduling stay
+behind their existing interfaces, with no bundle dependency in business logic.
+
+Acceptance covers grants/expiry during delivery; approval and seed replay;
+frozen entity snapshots; independent updates/forgetting and denied reseed;
+atomic multi-seed failure; consistent linked restore/stale dependency rejection;
+selective Unicode evidence/privacy; continued native memory authoring; preserved
+suppression; invalid versions/hashes/paths; ownership/no-overwrite/publication
+failure; backed-up migration/rollback/retry; and operator CLI execution.
+Actual LiveKit tests prove approved library → independent seed → selective export
+→ restore/restart → injected ABI recall → P0/Qwen streamed answer → exact quote,
+plus continued explicit memory entry. All such claims use isolated synthetic data.
+The private official ZIP and its zero approved memories remain unchanged.
+
+Validation results: locked setup passed for root, agent and memory workspaces;
+Ruff formatting/lint and strict Pyright passed; all 332 pytest tests passed on
+Windows/Python 3.12.15 with the installed LiveKit Server and pinned non-MTP Qwen
+configuration enabled (no skipped tests). This includes 27 new memory acceptance
+tests and two new actual-room portable-seed tests, one using real Qwen. The ABI
+schema check and all three lockfile checks passed. The gate used one explicitly
+owned gateway to satisfy the older real-model test's running-gateway prerequisite;
+cleanup left only independently managed Ollama listening. Private personal source
+state was not approved or altered by the synthetic tests. See docs/phase-4-runbook.md for Windows commands.
+Phase 3's real-source operator approval, Linux/large-scale and ABI 1.0 gates remain
+explicitly open; indexing is Phase 5 and full model extraction Phase 6. Review the
+Phase 4 architecture before starting Phase 5.
 
 ### Freeze and final hardening
 

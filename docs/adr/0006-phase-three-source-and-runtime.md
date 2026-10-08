@@ -131,3 +131,11 @@ One canonical owner supplies the room; no per-job engine or ABI/schema change.
 This completes the runnable text transport slice, while exact real-export claim
 review/adoption acceptance remains open. Browser/audio and full Phase 8 deployment
 composition remain future work. Stop for architecture review before Phase 4.
+
+
+## Phase 4 transition — 2026-10-08
+
+The user authorized Phase 4 implementation. [Root ADR 0007](0007-phase-four-libraries-characters-bundles.md)
+now owns that review checkpoint, extending the existing seed/grant primitives with
+approved library snapshots, independent adoption and portable bundles. This does
+not close Phase 3's operator-reviewed real-export claim gate or add voice support.

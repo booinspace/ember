@@ -32,10 +32,12 @@ def _arguments(argv: list[str] | None) -> _InspectionArguments:
     parser = argparse.ArgumentParser(
         prog="ember-memory",
         epilog="Maintenance: import, character, remember, recall, sources, propose, confirm. "
+        "Phase 4: library-entity, library-propose, library-approve, library-show, "
+        "seed, grant, revoke, forget-preview, forget, bundle. "
         "Use ember-memory COMMAND --help for their arguments.",
     )
     parser.add_argument(
-        "--version", action="version", version="%(prog)s 0.1.0 (phase 3 maintenance)"
+        "--version", action="version", version="%(prog)s 0.1.0 (phase 4 maintenance)"
     )
     commands = parser.add_subparsers(dest="command", required=True)
     inspect = commands.add_parser("inspect", help="Read-only source inventory and reconnaissance")
@@ -100,6 +102,11 @@ def main(argv: list[str] | None = None) -> int:
     an existing file or the source, and default diagnostics omit private source values.
     """
     actual = sys.argv[1:] if argv is None else argv
+    from .libraries import COMMANDS as LIBRARY_COMMANDS
+    from .libraries import main as library_main
+
+    if actual and actual[0] in LIBRARY_COMMANDS:
+        return library_main(actual)
     from .operations import COMMANDS
     from .operations import main as maintenance_main
 

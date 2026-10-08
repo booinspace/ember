@@ -179,6 +179,12 @@ class SqliteArchiveStore:
             }
         )
         with self.database.transaction(connection):
+            if (
+                connection.execute("SELECT coverage FROM store_coverage").fetchone()[0]
+                == "evidence_only"
+            ):
+                raise UnsupportedWriteError()
+
             existing = connection.execute(
                 "SELECT request_sha256,receipt_json FROM archive_receipts WHERE idempotency_key=?",
                 (batch.idempotency_key,),

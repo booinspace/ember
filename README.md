@@ -174,3 +174,12 @@ character bindings. Voice/browser remain future integration; real imported claim
 review/adoption remains the open Phase 3 gate. See
 [the agent runbook](ember-agent/README.md) and
 [Agent ADR 0003](ember-agent/docs/adr/0003-managed-livekit-text-runtime.md).
+
+
+Phase 4 adds reviewed library snapshots, independent character seeds, current
+source policy, linked backups and selective exact-evidence portability. See the
+[Windows maintenance runbook](docs/phase-4-runbook.md) and
+[architecture review](docs/adr/0007-phase-four-libraries-characters-bundles.md).
+Bundle/restore operations are exclusive offline maintenance; restored providers
+remain disabled until explicitly configured and started. Phase 3's real archive
+claim approval remains an operator review step. Stop for review before Phase 5.

@@ -329,7 +329,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
 name = "ember-memory-engine"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "ember-memory/packages/memory-engine" }
 dependencies = [
     { name = "ember-memory-abi" },

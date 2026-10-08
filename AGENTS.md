@@ -17,7 +17,7 @@ can use its contracts while source-dependent acceptance remains open. Read
 Phase 2 engine 0.1.0 is implemented and awaiting user architecture review; read
 `docs/phase-2-canonical-engine.md` and
 `ember-memory/docs/adr/0003-canonical-engine-and-workers.md` before extending it.
-Phase 3 implementation is in progress and the official ZIP has been imported into a
+Phase 3 importer/text-runtime implementation is verified and the official ZIP is in a
 private library. Read PLAN section 11 and
 `docs/adr/0006-phase-three-source-and-runtime.md` before changing it. The ZIP importer,
 P0/runtime slice and managed single-room LiveKit text startup are implemented; preserve the private source
@@ -31,6 +31,14 @@ phase at a time: define behavior, ownership, existing abstractions,
 necessary primitives, invariants, failures and acceptance tests before implementation.
 Keep ADR/current PLAN status updated, explain introduced coupling, validate, then stop
 for user review before the next phase.
+Phase 4 libraries/characters/bundles are implemented. Read
+`docs/adr/0007-phase-four-libraries-characters-bundles.md`,
+`ember-memory/docs/adr/0005-libraries-seeds-and-bundles.md`, and
+`docs/phase-4-runbook.md` before extending them. Engine/schema 0.2.0 adds backed-up
+schema-1 migration; ABI/archive remain 0.1.0. Bundle maintenance requires an
+exclusive root owner, and restore publishes a new root with providers disabled.
+Evidence-only libraries are partial provenance stores, not rewritten source
+messages. Await Phase 4 architecture review before Phase 5.
 
 ## Boundaries
 

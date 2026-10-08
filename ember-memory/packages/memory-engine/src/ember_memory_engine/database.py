@@ -3,7 +3,7 @@
 import sqlite3
 from collections.abc import Callable, Generator
 from concurrent.futures import Future
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from hashlib import sha256
 from pathlib import Path
 from threading import Barrier, Lock, get_ident
@@ -21,7 +21,13 @@ from ember_memory_abi.errors import DeadlineExceededError, UnsupportedVersionErr
 from .errors import CorruptStoreError, EngineBusyError, StorageError
 from .models import Clock
 from .ownership import StoreLock, validate_local_root
-from .schema import IMMUTABLE_TABLES, SCHEMA_SQL, SCHEMA_VERSION
+from .schema import (
+    IMMUTABLE_TABLES,
+    PHASE_FOUR_IMMUTABLE,
+    PHASE_FOUR_SQL,
+    SCHEMA_SQL,
+    SCHEMA_VERSION,
+)
 from .workers import OwnedWorkers
 
 
@@ -94,6 +100,9 @@ class SqliteDatabase:
         self._closed = False
         try:
             self.writer.submit(lambda: self._initialize(kind, namespace)).result()
+        except sqlite3.Error as error:
+            self.close()
+            raise StorageError() from error
         except Exception:
             self.close()
             raise
@@ -121,7 +130,7 @@ class SqliteDatabase:
         version_value: object = connection.execute("PRAGMA user_version").fetchone()[0]
         if not isinstance(version_value, int):
             raise CorruptStoreError()
-        if version_value not in {0, SCHEMA_VERSION}:
+        if version_value not in {0, 1, SCHEMA_VERSION}:
             raise UnsupportedVersionError()
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -137,10 +146,12 @@ class SqliteDatabase:
                     + (
                         SCHEMA_SQL.split("CREATE TABLE source_records")[0]
                         if kind == "registry"
-                        else SCHEMA_SQL
+                        else SCHEMA_SQL + PHASE_FOUR_SQL
                     )
                 )
-                for table in () if kind == "registry" else IMMUTABLE_TABLES:
+                for table in (
+                    () if kind == "registry" else (*IMMUTABLE_TABLES, *PHASE_FOUR_IMMUTABLE)
+                ):
                     for action in ("UPDATE", "DELETE"):
                         connection.execute(
                             f"CREATE TRIGGER immutable_{table}_{action.lower()} "
@@ -161,6 +172,49 @@ class SqliteDatabase:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
+        if version_value == 1:
+            row = connection.execute(
+                "SELECT store_id,kind,namespace FROM store_metadata"
+            ).fetchone()
+            if row is None or (
+                row_text(row, "store_id"),
+                row_text(row, "kind"),
+                row_text(row, "namespace"),
+            ) != (str(self.store_id), kind, namespace):
+                raise CorruptStoreError()
+            if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise CorruptStoreError()
+            # The OS-held store lock is the deletion/migration barrier. Preserve a
+            # consistent pre-upgrade image before any schema write; never overwrite it.
+            backup_path = self.path.with_suffix(".schema-1.backup.db")
+            if backup_path.exists():
+                from uuid import uuid4
+
+                backup_path = self.path.with_suffix(f".schema-1-{uuid4()}.backup.db")
+            self.backup(backup_path, connection=connection)
+            try:
+                connection.executescript(
+                    "BEGIN IMMEDIATE;\n" + (PHASE_FOUR_SQL if kind != "registry" else "")
+                )
+                for table in () if kind == "registry" else PHASE_FOUR_IMMUTABLE:
+                    for action in ("UPDATE", "DELETE"):
+                        connection.execute(
+                            f"CREATE TRIGGER immutable_{table}_{action.lower()} "
+                            f"BEFORE {action} ON {table} BEGIN "
+                            "SELECT RAISE(ABORT, 'immutable canonical revision'); END"
+                        )
+                connection.execute(
+                    "INSERT INTO schema_versions VALUES(?,?)",
+                    (SCHEMA_VERSION, timestamp_from_datetime(self.clock.now())),
+                )
+                connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                    raise CorruptStoreError()
+                connection.commit()
+            except BaseException:
+                if connection.in_transaction:
+                    connection.rollback()
+                raise
         row = connection.execute("SELECT store_id,kind,namespace FROM store_metadata").fetchone()
         if row is None or (
             row_text(row, "store_id"),
@@ -171,6 +225,30 @@ class SqliteDatabase:
         integrity: object = connection.execute("PRAGMA quick_check").fetchone()[0]
         if integrity != "ok":
             raise CorruptStoreError()
+
+    def backup(self, destination: Path, *, connection: sqlite3.Connection | None = None) -> None:
+        """Create a consistent new SQLite image, never a live DB/WAL file copy.
+
+        An explicit connection is only supplied by the owning migration thread.
+        Ordinary maintenance runs the SQLite backup on an owned reader.
+        """
+
+        def copy(source: sqlite3.Connection) -> None:
+            with destination.open("xb"):
+                pass
+            try:
+                with closing(sqlite3.connect(destination)) as target:
+                    source.backup(target, pages=256)
+                    if target.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                        raise CorruptStoreError()
+            except BaseException:
+                destination.unlink(missing_ok=True)
+                raise
+
+        if connection is None:
+            self.read(copy)
+        else:
+            copy(connection)
 
     def _run[T](self, work: Callable[[sqlite3.Connection], T], read_only: bool) -> T:
         try:
@@ -250,3 +328,11 @@ class SqliteDatabase:
         self.writer.shutdown()
         self.readers.shutdown()
         self._owner.close()
+
+    def __enter__(self) -> "SqliteDatabase":
+        """Own an explicitly scoped maintenance database."""
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        """Drain workers before releasing the store lock."""
+        self.close()

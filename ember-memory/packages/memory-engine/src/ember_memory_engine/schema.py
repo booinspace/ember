@@ -1,6 +1,6 @@
-"""Canonical SQLite schema 0.1.0, with immutable revision/evidence rows and separate indexes."""
+"""Canonical SQLite schema 0.2.0: immutable baseline plus backed-up additive migration."""
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA_SQL = """
 CREATE TABLE store_metadata (
     store_id TEXT PRIMARY KEY, kind TEXT NOT NULL, namespace TEXT NOT NULL,
@@ -147,4 +147,46 @@ IMMUTABLE_TABLES = (
     "memory_dependencies",
     "memory_supersessions",
     "audit_events",
+)
+
+# Additive 0.2 schema; existing canonical revisions and public ABI remain unchanged.
+PHASE_FOUR_SQL = """
+ALTER TABLE source_grants ADD COLUMN expires_at TEXT;
+CREATE TABLE candidates (
+    candidate_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL,
+    PRIMARY KEY(candidate_id,revision)
+);
+CREATE TABLE approved_knowledge (
+    knowledge_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL,
+    PRIMARY KEY(knowledge_id,revision)
+);
+CREATE TABLE knowledge_entities (
+    knowledge_id TEXT NOT NULL, knowledge_revision INTEGER NOT NULL,
+    entity_id TEXT NOT NULL, entity_revision INTEGER NOT NULL,
+    PRIMARY KEY(knowledge_id,knowledge_revision,entity_id)
+);
+CREATE TABLE maintenance_receipts (
+    idempotency_key TEXT PRIMARY KEY, operation TEXT NOT NULL,
+    request_sha256 TEXT NOT NULL, receipt_json TEXT NOT NULL
+);
+CREATE TABLE entity_origins (
+    origin_store_id TEXT NOT NULL, origin_entity_id TEXT NOT NULL, entity_id TEXT NOT NULL,
+    PRIMARY KEY(origin_store_id,origin_entity_id), UNIQUE(entity_id)
+);
+CREATE TABLE materialized_evidence (
+    evidence_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE TABLE store_coverage (
+    coverage TEXT NOT NULL CHECK(coverage IN ('full','evidence_only','selected_character'))
+);
+INSERT INTO store_coverage VALUES('full');
+"""
+PHASE_FOUR_IMMUTABLE = (
+    "candidates",
+    "approved_knowledge",
+    "knowledge_entities",
+    "entity_origins",
+    "materialized_evidence",
 )

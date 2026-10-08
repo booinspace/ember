@@ -12,7 +12,7 @@ package = false
 dev = [
     "ember-agent[local-deployment]==0.1.0",
     "ember-memory==0.1.0",
-    "ember-memory-engine==0.1.1",
+    "ember-memory-engine==0.2.0",
     "pytest>=8.3,<10",
     "types-jsonschema>=4.23,<5",
     "pyright>=1.1.390,<2",

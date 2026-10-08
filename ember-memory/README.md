@@ -34,3 +34,21 @@ also protects private files if this root becomes its own Git repository.
 Numbering is independent; qualify by component/path. Shared runbooks and phase
 walkthroughs remain in root docs. PLAN is authoritative; accepted planned
 capabilities are not implementation claims.
+
+
+## Phase 4 library and bundle maintenance
+
+Engine 0.2.0 now supports operator-reviewed immutable library approvals,
+independent character seeds/entity snapshots, exact expiring grants/revocation,
+suppression across reseeding, consistent linked backups and selective portable
+exact-evidence export/restore. Public ABI/archive remain 0.1.0. Old canonical
+schema 1 upgrades additively to schema 2 with recovery backups; no history is reset.
+
+Use the [Windows runbook](../docs/phase-4-runbook.md),
+[Memory ADR 0005](docs/adr/0005-libraries-seeds-and-bundles.md) and
+[root phase review](../docs/adr/0007-phase-four-libraries-characters-bundles.md).
+Maintenance requires an exclusive canonical owner; stop chat first. Restore takes
+an explicit complete bundle set and publishes a new local root with providers
+disabled. It preserves logical character/library IDs and exact provenance, while
+selective exports retain truthful partial archive coverage. No automatic personal
+memory approval, new indexing, background extraction or voice feature is implied.

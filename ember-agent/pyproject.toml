@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local-deployment = ["ember-memory-engine==0.1.1"]
+local-deployment = ["ember-memory-engine==0.2.0"]
 
 [project.scripts]
 ember = "ember_agent.cli:main"

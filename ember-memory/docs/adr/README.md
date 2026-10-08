@@ -11,6 +11,7 @@ rather than duplicating schemas, evidence policy or worker implementation.
 | [Memory ADR 0002](0002-phase-one-before-export.md) | Experimental ABI/archive 0.1.0 implemented before the personal export | [Root phase 1](../../../docs/adr/0004-phase-one-contracts.md) |
 | [Memory ADR 0003](0003-canonical-engine-and-workers.md) | Engine 0.1.0 implemented/tested; review checkpoint before phase 3 | [Root phase 2](../../../docs/adr/0005-phase-two-canonical-engine.md) |
 | [Memory ADR 0004](0004-source-import-and-authoring.md) | Official ZIP replay and native human entry implemented; private import verified, operator-reviewed claim adoption remains open | [Root phase 3](../../../docs/adr/0006-phase-three-source-and-runtime.md) |
+| [Memory ADR 0005](0005-libraries-seeds-and-bundles.md) | Library approval/seeds, expiring grants, linked/selective bundles and schema 0.2.0 implemented; review checkpoint | [Root phase 4](../../../docs/adr/0007-phase-four-libraries-characters-bundles.md) |
 
 Phase 0a preparation is recorded in
 [root reconnaissance](../../../docs/adr/0003-phase-zero-reconnaissance.md) and its

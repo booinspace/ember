@@ -257,7 +257,10 @@ def search_archive(
     scan_limit = 4096
     limited = False
     predicates: list[str] = []
-    parameters: list[str | int] = [str(state.character_id)]
+    parameters: list[str | int] = [
+        str(state.character_id),
+        timestamp_from_datetime(state.database.clock.now()),
+    ]
     for column, values in (
         ("source_store_id", tuple(str(item) for item in query.source_store_ids)),
         ("record_kind", query.record_kinds),
@@ -269,7 +272,8 @@ def search_archive(
         "SELECT * FROM (SELECT ? AS source_store_id,record_kind,record_id,"
         "MAX(revision) AS record_revision FROM source_records GROUP BY record_kind,record_id "
         "UNION SELECT source_store_id,record_kind,record_id,record_revision FROM "
-        "source_grants WHERE capability='archive_search' AND part_id='')"
+        "source_grants WHERE capability='archive_search' AND part_id='' "
+        "AND (expires_at IS NULL OR expires_at>?))"
     )
     if predicates:
         sql += " WHERE " + " AND ".join(predicates)
@@ -353,7 +357,12 @@ def search_archive(
                 break
     state.check_policy(connection, epoch)
     return ArchiveSearchResponse(
-        results=tuple(results),
+        results=tuple(
+            item
+            for item in results
+            if not isinstance(item.record, ArchiveChunk)
+            and state.source_permitted(connection, item.record.source, "archive_search")
+        ),
         coverage=coverage(
             state,
             "canonical_archive_scan",
@@ -419,6 +428,18 @@ def retrieve_context(
             if cost <= remaining_archive:
                 archive.append(result)
                 remaining_archive -= cost
+    archive = [
+        item
+        for item in archive
+        if (
+            all(
+                state.source_permitted(connection, span.evidence.source, "archive_search")
+                for span in item.record.source_spans
+            )
+            if isinstance(item.record, ArchiveChunk)
+            else state.source_permitted(connection, item.record.source, "archive_search")
+        )
+    ]
     dependency_map = {
         item.evidence.source.identity_key(): item.evidence.source
         for result in memories

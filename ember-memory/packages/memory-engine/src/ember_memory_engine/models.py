@@ -5,7 +5,7 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import Field
 
-from ember_memory_abi.common import CanonicalId, ContractModel, Revision, WireString
+from ember_memory_abi.common import CanonicalId, ContractModel, Revision, UtcTimestamp, WireString
 from ember_memory_abi.evidence import SourceRef
 
 
@@ -76,6 +76,7 @@ class SourceGrant(ContractModel):
 
     references: Annotated[tuple[SourceRef, ...], Field(min_length=1, max_length=1000)]
     capabilities: frozenset[Literal["evidence_read", "archive_search"]]
+    expires_at: UtcTimestamp | None = None
 
 
 class ForgetImpact(ContractModel):
