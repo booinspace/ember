@@ -305,7 +305,12 @@ class SqliteArchiveStore:
         actual: object = previous["revision"] if previous is not None else None
         if reference.record_revision != (actual + 1 if isinstance(actual, int) else 1):
             raise RevisionConflictError(ErrorDetails(record_id=reference.record_id))
-        recorded_at, _ = self.database.recorded_stamp(connection)
+        recorded_at, recorded_us = self.database.recorded_stamp(connection)
+        connection.execute(
+            "INSERT INTO index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
+            "SELECT ?,?,?,policy_epoch,? FROM store_metadata",
+            ("source_changed", str(reference.record_id), reference.record_revision, recorded_us),
+        )
         record = record.model_copy(update={"recorded_at": recorded_at})
         payload = model_bytes(record)
         source_time = record.created_time.value if isinstance(record, (Message, Document)) else None

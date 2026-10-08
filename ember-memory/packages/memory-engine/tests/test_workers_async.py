@@ -56,13 +56,15 @@ def test_cancelled_running_read_keeps_worker_owned_and_drain_is_async(
     started, release = Event(), Event()
     original_submit = store.submit
 
-    def submit[T](work: Callable[[sqlite3.Connection], T], *, write: bool = False) -> Future[T]:
+    def submit[T](
+        work: Callable[[sqlite3.Connection], T], *, write: bool = False, deep: bool = False
+    ) -> Future[T]:
         def delayed(connection: sqlite3.Connection) -> T:
             started.set()
             assert release.wait(5)
             return work(connection)
 
-        return original_submit(delayed, write=write)
+        return original_submit(delayed, write=write, deep=deep)
 
     monkeypatch.setattr(store, "submit", submit)
     client = InProcessAsyncMemoryClient(store)
@@ -138,14 +140,16 @@ def test_write_timeout_after_commit_resolves_with_identical_key(
     committed, release = Event(), Event()
     original_submit = store.submit
 
-    def submit[T](work: Callable[[sqlite3.Connection], T], *, write: bool = False) -> Future[T]:
+    def submit[T](
+        work: Callable[[sqlite3.Connection], T], *, write: bool = False, deep: bool = False
+    ) -> Future[T]:
         def delayed(connection: sqlite3.Connection) -> T:
             result = work(connection)
             committed.set()
             assert release.wait(5)
             return result
 
-        return original_submit(delayed, write=write)
+        return original_submit(delayed, write=write, deep=deep)
 
     monkeypatch.setattr(store, "submit", submit)
     client = InProcessAsyncMemoryClient(store)

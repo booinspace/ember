@@ -42,6 +42,7 @@ from .database import (
 )
 from .errors import CorruptStoreError
 from .models import ForgetImpact, MutationAuthority, TokenCounter
+from .retrieval_port import RetrievalBackend
 
 
 class CharacterState:
@@ -53,11 +54,13 @@ class CharacterState:
         resolver: SourceResolver,
         authority: MutationAuthority,
         token_counter: TokenCounter,
+        retriever: RetrievalBackend | None = None,
     ) -> None:
         self.database = database
         self.resolver = resolver
         self.authority = authority
         self.tokens = token_counter
+        self.retriever = retriever
         self.predicates = initial_predicates()
 
         def register(connection: sqlite3.Connection) -> None:

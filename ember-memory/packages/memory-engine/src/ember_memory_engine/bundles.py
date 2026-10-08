@@ -26,7 +26,7 @@ from .errors import BundleError, CorruptStoreError
 from .library import KnowledgeSelection, LibraryService, entity_references
 from .models import StoreInfo
 from .ownership import validate_local_root
-from .schema import SCHEMA_VERSION
+from .schema import PHASE_FIVE_SQL, SCHEMA_VERSION
 
 
 def _directory(info: StoreInfo) -> str:
@@ -476,7 +476,7 @@ class BundleService:
 
         def copy(connection: sqlite3.Connection) -> None:
             with closing(sqlite3.connect(path)) as target:
-                target.executescript(SCHEMA_SQL + PHASE_FOUR_SQL)
+                target.executescript(SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL)
 
                 def transfer(
                     table: str, permitted: Callable[[sqlite3.Row], bool] | None = None
@@ -626,7 +626,7 @@ def _read_manifest(bundle: Path) -> BundleManifest:
                 *(str(item) for item in manifest.dependencies),
             }
             or registry.execute("PRAGMA quick_check").fetchone()[0] != "ok"
-            or registry.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION
+            or registry.execute("PRAGMA user_version").fetchone()[0] not in {2, SCHEMA_VERSION}
         ):
             raise BundleError()
     for snapshot in manifest.stores:
@@ -645,7 +645,7 @@ def _read_manifest(bundle: Path) -> BundleManifest:
             ) != (str(snapshot.store.store_id), snapshot.store.kind, snapshot.store.namespace):
                 raise BundleError()
             if (
-                connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION
+                connection.execute("PRAGMA user_version").fetchone()[0] not in {2, SCHEMA_VERSION}
                 or connection.execute("PRAGMA quick_check").fetchone()[0] != "ok"
                 or connection.execute("SELECT coverage FROM store_coverage").fetchone()[0]
                 != snapshot.coverage

@@ -64,3 +64,17 @@ class BundleError(MemoryError):
 
     code = "bundle_invalid"
     safe_message = "Bundle integrity, coverage, dependencies or destination validation failed."
+
+
+class EmbeddingError(MemoryError):
+    """Missing/invalid local encoder or input that would require silent truncation."""
+
+    code = "embedding_unavailable"
+    safe_message = "Local embedding assets, input bounds or vector validation failed."
+
+
+class IndexError(MemoryError):
+    """Derived index is unavailable/corrupt/stale; canonical state remains authoritative."""
+
+    code = "derived_index_unavailable"
+    safe_message = "The derived index cannot satisfy this operation; canonical state is retained."

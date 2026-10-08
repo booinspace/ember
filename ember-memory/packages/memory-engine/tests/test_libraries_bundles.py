@@ -472,7 +472,7 @@ def _legacy(root: Path) -> None:
                 for table in (*PHASE_FOUR_IMMUTABLE, "maintenance_receipts", "store_coverage"):
                     connection.execute(f"DROP TABLE {table}")
                 connection.execute("ALTER TABLE source_grants DROP COLUMN expires_at")
-            connection.execute("DELETE FROM schema_versions WHERE version=2")
+            connection.execute("DELETE FROM schema_versions WHERE version>1")
             connection.execute("PRAGMA user_version=1")
             connection.commit()
 
@@ -919,3 +919,61 @@ def test_bundle_projection_databases_use_local_workspace(
         first, tmp_path / "portable", mode="self_contained"
     )
     assert manifest.kind == "character"
+
+
+@pytest.mark.integration
+def test_schema_two_upgrade_backs_up_and_retries_failed_ddl(
+    engine: CanonicalEngine,
+    source_fixture: SourceFixture,
+    draft: MemoryDraft,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import closing
+
+    import ember_memory_engine.database as database_module
+    from ember_memory_engine.errors import StorageError
+
+    identity = source_fixture.character_id
+    memory_id = (
+        engine.character(identity, authority=AUTHORITY)
+        .remember(RememberRequest(idempotency_key="schema-two", draft=draft))
+        .affected[0]
+        .memory_id
+    )
+    before = engine.character(identity).get(memory_id).model_dump_json()
+    root = engine.root
+    engine.close()
+    paths = (
+        root / "registry.db",
+        *root.glob("libraries/*/memory.db"),
+        *root.glob("characters/*/memory.db"),
+    )
+    for path in paths:
+        with closing(sqlite3.connect(path)) as connection:
+            if path.name != "registry.db":
+                for name in (
+                    "memory_retrieval_identity",
+                    "memory_retrieval_order",
+                    "memory_pointer",
+                    "source_conversation",
+                ):
+                    connection.execute(f"DROP INDEX {name}")
+            connection.execute("DELETE FROM schema_versions WHERE version>2")
+            connection.execute("PRAGMA user_version=2")
+            connection.commit()
+    original = database_module.PHASE_FIVE_SQL
+    monkeypatch.setattr(database_module, "PHASE_FIVE_SQL", original + "INVALID SQL;")
+    with pytest.raises(StorageError):
+        CanonicalEngine(root)
+    character_path = root / "characters" / str(identity) / "memory.db"
+    with closing(sqlite3.connect(character_path)) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+    monkeypatch.setattr(database_module, "PHASE_FIVE_SQL", original)
+    with CanonicalEngine(root) as reopened:
+        assert reopened.character(identity).get(memory_id).model_dump_json() == before
+        assert reopened.character(identity).get_sources(memory_id)[0].quote == TEXT
+    for backup in root.rglob("*.schema-2*.backup.db"):
+        with closing(sqlite3.connect(backup)) as connection:
+            assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+            assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+    assert len(tuple(root.rglob("*.schema-2*.backup.db"))) >= 3

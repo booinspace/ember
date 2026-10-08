@@ -105,6 +105,11 @@ def mutate(
             (request.idempotency_key, operation, request_hash, model_bytes(receipt)),
         )
         connection.execute(
+            "INSERT INTO index_outbox(kind,record_id,policy_epoch,recorded_at_us) "
+            "SELECT ?,?,policy_epoch,? FROM store_metadata",
+            (operation, str(affected[0].memory_id) if affected else None, recorded),
+        )
+        connection.execute(
             "INSERT INTO audit_events VALUES(?,?,?,?,?)",
             (
                 str(receipt.operation_id),

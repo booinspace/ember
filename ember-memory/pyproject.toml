@@ -7,7 +7,7 @@ name = "ember-memory"
 version = "0.1.0"
 description = "Source import and explicit memory maintenance for Ember"
 requires-python = ">=3.12,<3.13"
-dependencies = ["ember-memory-importers==0.1.0", "ember-memory-engine==0.2.0"]
+dependencies = ["ember-memory-importers==0.1.0", "ember-memory-engine[search]==0.3.0"]
 
 [project.scripts]
 ember-memory = "ember_memory_cli.main:main"

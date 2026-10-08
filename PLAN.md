@@ -2627,9 +2627,9 @@ For every phase, review this PLAN and the existing implementation first:
 
 Record decisions and introduced coupling in an ADR; explain meaningful decisions
 as work proceeds. Deliver tested behavior and an architecture summary, then stop
-for the user's review before starting the next phase. Current checkpoint: Phase 4 implementation review. Phase 3 operator-reviewed
+for the user's review before starting the next phase. Current checkpoint: Phase 5 implementation/acceptance review. Phase 3 operator-reviewed
 real-claim adoption remains open and is not replaced by synthetic acceptance.
-The user authorized Phase 4; stop for architecture review before Phase 5.
+The user authorized Phase 5; stop for architecture review before Phase 6.
 
 Model integration is not deferred for a pending build: the model exists. Phase 3 starts baseline validation; later phases test their specific features.
 
@@ -2709,6 +2709,56 @@ state was not approved or altered by the synthetic tests. See docs/phase-4-runbo
 Phase 3's real-source operator approval, Linux/large-scale and ABI 1.0 gates remain
 explicitly open; indexing is Phase 5 and full model extraction Phase 6. Review the
 Phase 4 architecture before starting Phase 5.
+
+### Phase 5 implementation record — 2026-10-08
+
+The user authorized retrieval/indexing on the existing architecture. The eight
+checks and coupling are in `docs/adr/0008-phase-five-retrieval-and-indexes.md`, with
+backend detail in Memory ADR 0006 and commands in `docs/phase-5-runbook.md`.
+
+Implemented graph-safe grouping; actual-tokenizer chunks with exact original spans;
+FTS5 and pinned local CPU BGE-small ONNX embeddings; sqlite-vec and scope-first hybrid
+recall; deep archive filters/literal verification; diagnostics, validated generation
+replacement and explicit rebuild/update. Library indexes are shared once; character
+belief/native indexes remain independent. No primary-Qwen embedding/reranking calls,
+new server, hidden reasoning or automatic imported-claim approval are introduced.
+
+ABI 0.2.0 adds typed query modes/entity/predicate/conversation/date filters and recent
+native context control; canonical payloads/archive 0.1.0 stay unchanged. Engine/schema
+0.3.0 (user_version 3) adds canonical covering/expression indexes after profiling.
+Schema-1/2 migrations take consistent backups before DDL, preserve IDs/history and
+rollback/retry failures. Bundle 0.1.0 restore accepts schema 2/3 and upgrades before
+publishing the new root. Lockfiles and generated ABI schemas match these versions.
+
+The composition root optionally loads verified CPU assets and enables coalesced
+post-commit replay of existing compatible indexes. Separate bounded derived, query
+encoding, foreground native and deep native workers preserve loop ownership. A soft
+150 ms recall miss returns partial lexical/structured/native context; running native
+jobs retain admission and leases until completion. Current grants, suppression,
+expiry, canonical revisions/dependencies and policy are checked before delivery.
+
+Refresh copies a previous immutable index then replays affected memories, entities
+and conversation neighborhoods, reusing exact unchanged vectors. Copying remains
+O(index bytes); it is not claimed to be O(changes). Two published generations are
+retained plus leased/open files. Startup never downloads or performs a rebuild.
+
+The final repository gate passed 360 tests with actual CPU BGE, LiveKit Server and
+pinned Qwen through the authenticated production gateway, including restored seed
+recall and post-commit native-memory indexing. Ruff formatting/lint, strict Pyright,
+generated schema checks and all three offline lockfile checks passed. The aggregate report
+`docs/phase-5-benchmark.json` measures 40 samples after five warmups on 100,000
+repeated accepted beliefs and one native document: hybrid p95 94.30 ms, structured
+1.41 ms, ID 0.06 ms, provenance 2.56 ms, startup 502.89 ms. Scoped FTS candidates
+51.64 ms exceed the 30 ms target; native vector scan excluding encoding 86.25 ms
+exceeds 80 ms. One partial response occurred including warmups. Full performance
+acceptance remains open; targets are not relaxed. No diverse 500,000-message /
+250,000-chunk capacity, small-mutation timing or Linux claim is made. The official
+export retained 50,520 canonical records and produced 18,761 visible source-part
+projections and 22,179 chunks (245,608,448 derived bytes, two retained generations).
+One hundred sampled chunks/181 original spans passed exact verification; maximum
+stored embedding input is 480 tokens. Approved imported knowledge remains zero. Real-source claim review, full extraction/summary
+import, full voice/browser integration, Linux and ABI 1.0 remain separate gates.
+Stop here for architecture review before Phase 6.
 
 ### Freeze and final hardening
 

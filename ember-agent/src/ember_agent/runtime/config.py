@@ -80,6 +80,7 @@ class DeploymentConfig(RuntimeModel):
     max_input_tokens: PositiveInteger
     output_reserve_tokens: PositiveInteger
     services: DeployedServices
+    embedding_directory: Path | None = None
 
     @property
     def model_pin_configured(self) -> bool:
@@ -125,6 +126,10 @@ class _AudioSettings(RuntimeModel):
     tts_voice: Annotated[str, Field(min_length=1)]
 
 
+class _SearchSettings(RuntimeModel):
+    embedding_directory: str = ""
+
+
 class _DeploymentSettings(RuntimeModel):
     config_version: Annotated[int, Field(ge=1, le=1)]
     active_profile: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]
@@ -134,6 +139,7 @@ class _DeploymentSettings(RuntimeModel):
     gateway: _GatewaySettings
     providers: _Providers
     audio: _AudioSettings
+    search: _SearchSettings = _SearchSettings()
 
 
 def _read_settings(path: Path) -> _DeploymentSettings:
@@ -269,4 +275,9 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         max_input_tokens=settings.model.max_input_tokens,
         output_reserve_tokens=settings.model.output_reserve_tokens,
         services=_validate_services(settings, path.resolve().parent, runtime_root),
+        embedding_directory=(
+            (path.resolve().parent / settings.search.embedding_directory).resolve()
+            if settings.search.embedding_directory
+            else None
+        ),
     )

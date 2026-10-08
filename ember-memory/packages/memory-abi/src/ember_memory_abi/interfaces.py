@@ -61,10 +61,13 @@ class TemporalQuery(ContractModel):
 class MemoryQuery(ContractModel):
     """Bounded belief query scoped by trusted client identity, not a model-supplied character ID."""
 
-    text: str = Field(default="", repr=False)
-    kinds: tuple[WireString, ...] = ()
-    modalities: tuple[WireString, ...] = ()
-    lifecycles: tuple[WireString, ...] = ("active",)
+    text: str = Field(default="", max_length=8192, repr=False)
+    predicates: Annotated[tuple[WireString, ...], Field(max_length=128)] = ()
+    entity_ids: Annotated[tuple[CanonicalId, ...], Field(max_length=128)] = ()
+    mode: Literal["hybrid", "lexical", "semantic", "structured"] = "hybrid"
+    kinds: Annotated[tuple[WireString, ...], Field(max_length=128)] = ()
+    modalities: Annotated[tuple[WireString, ...], Field(max_length=128)] = ()
+    lifecycles: Annotated[tuple[WireString, ...], Field(max_length=128)] = ("active",)
     temporal: TemporalQuery = Field(default_factory=TemporalQuery)
     limit: ResultLimit = 20
     cursor: str | None = None
@@ -74,10 +77,14 @@ class MemoryQuery(ContractModel):
 class ArchiveQuery(ContractModel):
     """Deep archive query; filters can only narrow current grants and suppression."""
 
-    text: str = Field(default="", repr=False)
-    source_store_ids: tuple[CanonicalId, ...] = ()
-    record_kinds: tuple[WireString, ...] = ()
-    roles: tuple[WireString, ...] = ()
+    text: str = Field(default="", max_length=8192, repr=False)
+    mode: Literal["hybrid", "lexical", "semantic", "literal"] = "hybrid"
+    conversation_ids: Annotated[tuple[CanonicalId, ...], Field(max_length=128)] = ()
+    source_from: UtcTimestamp | None = None
+    source_until: UtcTimestamp | None = None
+    source_store_ids: Annotated[tuple[CanonicalId, ...], Field(max_length=128)] = ()
+    record_kinds: Annotated[tuple[WireString, ...], Field(max_length=128)] = ()
+    roles: Annotated[tuple[WireString, ...], Field(max_length=128)] = ()
     include_alternative_branches: bool = True
     temporal: TemporalQuery = Field(default_factory=TemporalQuery)
     limit: ResultLimit = 20
@@ -143,6 +150,7 @@ class ContextRequest(ContractModel):
     memory_token_budget: Annotated[int, Field(gt=0)]
     archive_token_budget: NonnegativeInteger = 0
     summary_token_budget: NonnegativeInteger = 0
+    include_recent_native: bool = True
     include_pinned: bool = True
     include_summaries: bool = True
     options: RequestOptions = Field(default_factory=RequestOptions)

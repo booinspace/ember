@@ -47,3 +47,8 @@ mode = "disabled"
 [audio]
 stt_device = "cpu"
 tts_voice = "af_alloy"
+
+# Explicit setup only: python scripts/setup_embeddings.py --help
+# CPU encoding; absent assets leave canonical/lexical recall available.
+[search]
+embedding_directory = "" # e.g. "../../.local/models/bge-small-en-v1.5"

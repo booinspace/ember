@@ -2,15 +2,15 @@
 
 | Surface | Current version | Status |
 |---|---|---|
-| Memory ABI package | 0.1.0 | Experimental typed contracts; canonical engine implements them |
-| Memory ABI / Normalized Archive | 0.1.0 / 0.1.0 | Generic core implemented; source-dependent and integration acceptance open |
+| Memory ABI package | 0.2.0 | Experimental typed contracts; canonical engine implements them |
+| Memory ABI / Normalized Archive | 0.2.0 / 0.1.0 | Generic core implemented; source-dependent and integration acceptance open |
 | Predicate definitions | 0.1.0 | Six conservative initial definitions; no automatic activation |
 | Canonical object JSON | ember.canonical-json@0.1.0 | Specified/tested Python 3.12 byte encoding |
-| Canonical engine package | 0.2.0 in the working tree | Phase 4 library approval/seeds/bundles and grant expiry; public ABI/archive remain 0.1.0 |
+| Canonical engine package | 0.3.0 in the working tree | Phase 5 derived retrieval/indexes; ABI 0.2.0, archive 0.1.0 |
 | CLI/importer/agent packages | 0.1.0 in the working tree | Phase 3 components implemented; operator-reviewed real-source memory adoption remains open |
 | Reconnaissance report | ember-memory.reconnaissance/0.0.2 | Nested/streamed/directory preparation inspection |
 | Deployment TOML | config_version = 1 | Validated preparation format; no runtime guarantee |
-| Canonical SQLite schema | 0.2.0 / user_version 2 | Additive, backed-up migration from schema 1; preserves canonical IDs/history |
+| Canonical SQLite schema | 0.3.0 / user_version 3 | Additive covering/expression indexes; backed-up schema-1/2 upgrades preserve canonical IDs/history |
 | Bundle format | 0.1.0 experimental | Scoped registry, source/linked character/selective evidence bundles; validated new-root restore |
 | P0 gateway/runtime contracts | 0.1.0 draft | Synthetic and short real-model probes passed earlier; sustained GPU and full voice-room delivery remain unverified |
 | Official ZIP replay metadata | 0.3.0, importer-private | Nested ZIP import, metadata-only recovery and no-op replay verified; not a Memory ABI/schema change or published release |
@@ -22,7 +22,7 @@ official ZIP was imported privately. Operator-reviewed real-source adoption rema
 open. See [the implementation record in PLAN](../PLAN.md) and
 [Root ADR 0006](adr/0006-phase-three-source-and-runtime.md).
 
-Agent and engine package dependencies pin `ember-memory-abi==0.1.0`. The ABI depends
+Agent and engine package dependencies pin `ember-memory-abi==0.2.0`. The ABI depends
 only on Pydantic and Python's standard library. Sibling editable installs remain
 local development wiring; lockfiles are not evidence of a published release.
 
@@ -51,3 +51,18 @@ Restore never changes an existing root. It validates a supplied complete bundle
 set and constructs a new root with the original character/library UUIDs and
 providers disabled. Selective snapshots preserve explicit partial coverage; they
 cannot serve as complete shared source libraries or resume imports into them.
+
+
+Phase 5 adds query modes/filters and a default native-context option. Existing
+canonical JSON and Normalized Archive models retain their original identity;
+ABI-0.1 consumers with strict extra-field rejection must update before accepting
+new query JSON. Generated schemas for 0.1.0 and 0.2.0 are retained explicitly.
+The ABI remains SQLite/ONNX/LiveKit independent. Concrete search dependencies
+are optional engine adapters installed by workspace/local-deployment extras.
+
+Schema 3 extends phase 4 without rewriting canonical payloads. Schema-1/2 stores
+receive consistent versioned `.backup.db` snapshots before migration. Bundle 0.1.0
+accepts schema-2/3 databases, upgrades in staging and omits disposable indexes.
+Derived layout 0.4.0 is independently versioned; missing/older model/layout indexes
+require explicit maintenance and degrade safely. See
+[Phase 5 architecture](adr/0008-phase-five-retrieval-and-indexes.md).

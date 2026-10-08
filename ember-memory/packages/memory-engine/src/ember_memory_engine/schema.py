@@ -1,6 +1,6 @@
-"""Canonical SQLite schema 0.2.0: immutable baseline plus backed-up additive migration."""
+"""Canonical SQLite schema 0.3.0: immutable baseline plus backed-up additive migration."""
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA_SQL = """
 CREATE TABLE store_metadata (
     store_id TEXT PRIMARY KEY, kind TEXT NOT NULL, namespace TEXT NOT NULL,
@@ -190,3 +190,19 @@ PHASE_FOUR_IMMUTABLE = (
     "entity_origins",
     "materialized_evidence",
 )
+
+# Cover only immutable headers, not large JSON/evidence. These B-trees accelerate
+# canonical eligibility; FTS/embedding/chunk data remain disposable and separate.
+PHASE_FIVE_SQL = """
+CREATE INDEX IF NOT EXISTS memory_retrieval_identity ON memory_revisions(
+    memory_id,revision,lifecycle,kind,modality,valid_from_us,valid_until_us,importance,recorded_at_us
+);
+CREATE INDEX IF NOT EXISTS memory_retrieval_order ON memory_revisions(
+    lifecycle,importance DESC,recorded_at_us DESC,memory_id,revision,kind,modality,
+    valid_from_us,valid_until_us
+);
+CREATE INDEX IF NOT EXISTS memory_pointer ON memories(memory_id,current_revision);
+CREATE INDEX IF NOT EXISTS source_conversation ON source_records(
+    json_extract(payload_json,'$.conversation.record_id'),record_kind,record_id,revision
+);
+"""

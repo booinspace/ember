@@ -41,6 +41,7 @@ from .database import (
     SqliteDatabase,
 )
 from .models import ForgetImpact, MutationAuthority, TokenCounter
+from .retrieval_port import RetrievalBackend
 
 
 class SqliteMemoryStore:
@@ -52,9 +53,10 @@ class SqliteMemoryStore:
         resolver: SourceResolver,
         authority: MutationAuthority,
         token_counter: TokenCounter,
+        retriever: RetrievalBackend | None = None,
     ) -> None:
         self.database = database
-        self.state = CharacterState(database, resolver, authority, token_counter)
+        self.state = CharacterState(database, resolver, authority, token_counter, retriever)
 
     @property
     def character_id(self) -> CanonicalId:
@@ -62,7 +64,7 @@ class SqliteMemoryStore:
         return self.database.store_id
 
     def capabilities(self) -> MemoryCapabilities:
-        """Report canonical fallback/provenance support, without advertising phase 5 indexes."""
+        """Report implemented modes and current character index availability."""
         mutations = (
             (
                 "remember",
@@ -91,6 +93,8 @@ class SqliteMemoryStore:
             ),
             supported_predicates=tuple(definition.name for definition in self.state.predicates),
             retrieval_modes=(
+                "hybrid_if_indexed",
+                "deep_archive_if_indexed",
                 "canonical_structured",
                 "canonical_literal_fallback",
                 "recent",
@@ -98,14 +102,16 @@ class SqliteMemoryStore:
                 "provenance",
             ),
             mutations=mutations,
-            index_status="degraded",
+            index_status="available"
+            if self.state.retriever and self.state.retriever.available()
+            else "degraded",
         )
 
     def submit[T](
-        self, work: Callable[[sqlite3.Connection], T], *, write: bool = False
+        self, work: Callable[[sqlite3.Connection], T], *, write: bool = False, deep: bool = False
     ) -> Future[T]:
         """Engine-internal owned work boundary used by the async ABI facade."""
-        return self.database.submit(work, write=write)
+        return self.database.submit(work, write=write, deep=deep)
 
     def get(
         self,
@@ -202,9 +208,9 @@ class SqliteMemoryStore:
         """Search current explicit snapshots/native sources, never widening grants after
         reimport.
         """
-        return self.database.read(
-            lambda connection: retrieval.search_archive(self.state, connection, query)
-        )
+        return self.database.submit(
+            lambda connection: retrieval.search_archive(self.state, connection, query), deep=True
+        ).result()
 
     def retrieve_context(self, request: ContextRequest) -> RetrievalContext:
         """Build budgeted structured context with owned source dependencies, not a model prompt."""

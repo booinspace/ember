@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from concurrent.futures import Future
 from contextlib import closing
 from pathlib import Path
 from threading import RLock
@@ -23,7 +24,9 @@ from ember_memory_abi.memory import Entity, MemorySource
 
 from .archive import SqliteArchiveStore, source_text
 from .database import SqliteDatabase, load_model, model_bytes, payload_hash, row_text
-from .errors import CorruptStoreError, EngineClosedError
+from .embedding import EncodingPool
+from .errors import CorruptStoreError, EngineBusyError, EngineClosedError, IndexError
+from .index_storage import IndexStore
 from .models import (
     Clock,
     MutationAuthority,
@@ -34,6 +37,9 @@ from .models import (
     Utf8ByteBudget,
 )
 from .ownership import validate_local_root
+from .search_contracts import Encoder, IndexGeneration
+from .vector_search import VectorPool
+from .workers import OwnedWorkers
 
 if TYPE_CHECKING:
     from .character import SqliteMemoryStore
@@ -54,6 +60,8 @@ class CanonicalEngine:
         clock: Clock | None = None,
         token_counter: TokenCounter | None = None,
         max_pending: int = 16,
+        encoder: Encoder | None = None,
+        auto_refresh: bool = False,
     ) -> None:
         self.root = validate_local_root(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -62,6 +70,15 @@ class CanonicalEngine:
         self.max_pending = max_pending
         self._guard = RLock()
         self._closed = False
+        self.auto_refresh = auto_refresh
+        self._refreshes: dict[CanonicalId, Future[IndexGeneration]] = {}
+        self._dirty_indexes: set[CanonicalId] = set()
+        self.index_error_count = 0
+        self.encoding = EncodingPool(encoder)
+        self.fast_vectors = VectorPool(name="ember-fast-vectors", cache_mib=192)
+        self.deep_vectors = VectorPool(name="ember-deep-vectors", cache_mib=64)
+        self.index_writer = OwnedWorkers(1, max_pending=2, name="ember-derived-writer")
+        self.indexes: dict[CanonicalId, IndexStore] = {}
         self._stores: dict[CanonicalId, tuple[StoreInfo, SqliteDatabase]] = {}
         self._unavailable_libraries: dict[CanonicalId, StoreInfo] = {}
         self._source_adapter: TypeAdapter[SourceRecord] = TypeAdapter(SourceRecord)
@@ -138,6 +155,8 @@ class CanonicalEngine:
             max_pending=self.max_pending,
         )
         self._stores[info.store_id] = (info, database)
+        self.indexes[info.store_id] = IndexStore(database.path, info.store_id)
+        database.on_write = lambda: self._queue_refresh(info.store_id)
         return database
 
     def _create(self, info: StoreInfo) -> StoreInfo:
@@ -213,12 +232,19 @@ class CanonicalEngine:
     ) -> "SqliteMemoryStore":
         """Bind a synchronous ABI client through trusted composition, read-only by default."""
         from .character import SqliteMemoryStore
+        from .indexed_retrieval import IndexedRetriever
 
         info, database = self._store(character_id)
         if info.kind != "character":
             raise AccessDeniedError()
         return SqliteMemoryStore(
-            database, self, authority or MutationAuthority(), self.token_counter
+            database,
+            self,
+            authority or MutationAuthority(),
+            self.token_counter,
+            IndexedRetriever(
+                character_id, self.indexes, self.encoding, self.fast_vectors, self.deep_vectors
+            ),
         )
 
     def resolve(self, reference: SourceRef) -> SourceRecord:
@@ -389,6 +415,12 @@ class CanonicalEngine:
                         payload_hash(payload),
                     ),
                 )
+                _, stamp = database.recorded_stamp(connection)
+                connection.execute(
+                    "INSERT INTO index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
+                    "SELECT ?,?,?,policy_epoch,? FROM store_metadata",
+                    ("entity_changed", str(snapshot.reference.entity_id), snapshot.revision, stamp),
+                )
                 for alias in (snapshot.name, *snapshot.aliases):
                     connection.execute(
                         "INSERT OR IGNORE INTO entity_aliases VALUES(?,?)",
@@ -396,6 +428,69 @@ class CanonicalEngine:
                     )
 
         database.write(write)
+
+    def rebuild_index(
+        self, store_id: CanonicalId, encoder: Encoder, *, reuse: bool = False
+    ) -> IndexGeneration:
+        """Explicit blocking maintenance on the separate derived writer; never startup work."""
+        from .index_builder import IndexBuilder
+
+        return self.index_writer.submit(
+            lambda: IndexBuilder(self, encoder).rebuild(store_id, reuse=reuse)
+        ).result()
+
+    def update_index(self, store_id: CanonicalId, encoder: Encoder) -> IndexGeneration:
+        """Explicit blocking outbox replay on the separate derived writer."""
+        from .index_updates import update
+
+        return self.index_writer.submit(lambda: update(self, encoder, store_id)).result()
+
+    @property
+    def index_jobs_pending(self) -> int:
+        """Coalesced store refreshes still owned by the derived writer."""
+        with self._guard:
+            return len(self._refreshes)
+
+    def _queue_refresh(self, store_id: CanonicalId) -> None:
+        # Called only after a successful canonical write. A missing/incompatible
+        # index requires explicit setup, never an automatic full startup rebuild.
+        encoder = self.encoding.encoder
+        if not self.auto_refresh or encoder is None:
+            return
+        with self._guard:
+            if self._closed:
+                return
+            if store_id in self._refreshes:
+                self._dirty_indexes.add(store_id)
+                return
+            try:
+                generation, _ = self.indexes[store_id].active()
+                if (
+                    generation.layout != "ember.search-layout@0.4.0"
+                    or generation.embedding != encoder.specification
+                ):
+                    return
+                from .index_updates import update
+
+                future = self.index_writer.submit(lambda: update(self, encoder, store_id))
+            except (IndexError, EngineBusyError, EngineClosedError):
+                # The durable outbox is still pending; later writes/explicit update
+                # can catch up. Search reports pending coverage immediately.
+                return
+            self._refreshes[store_id] = future
+
+            def completed(job: Future[IndexGeneration]) -> None:
+                error = None if job.cancelled() else job.exception()
+                with self._guard:
+                    self._refreshes.pop(store_id, None)
+                    retry = store_id in self._dirty_indexes
+                    self._dirty_indexes.discard(store_id)
+                    if error is not None:
+                        self.index_error_count += 1
+                    if retry and not self._closed:
+                        self._queue_refresh(store_id)
+
+            future.add_done_callback(completed)
 
     def grant_source(self, character_id: CanonicalId, grant: SourceGrant) -> None:
         """Grant explicit existing snapshots only; library/native capabilities cannot cross
@@ -528,10 +623,19 @@ class CanonicalEngine:
                 return
             self._closed = True
             stores = tuple(self._stores.values())
+        self.index_writer.shutdown()
         for kind in ("character", "library"):
             for info, database in stores:
                 if info.kind == kind:
                     database.close()
+        self.fast_vectors.close()
+        self.deep_vectors.close()
+        for index in self.indexes.values():
+            try:
+                index.prune()
+            except (IndexError, sqlite3.Error, OSError):
+                pass
+        self.encoding.close()
         self.registry.close()
 
     def __enter__(self) -> "CanonicalEngine":

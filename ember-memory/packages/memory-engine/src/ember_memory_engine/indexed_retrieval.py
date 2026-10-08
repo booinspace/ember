@@ -1,0 +1,744 @@
+"""Scope-first FTS/vector fusion with final canonical revision/evidence/policy checks."""
+
+import re
+import sqlite3
+from concurrent.futures import Future, TimeoutError
+from contextlib import closing
+from time import monotonic
+from uuid import UUID
+
+from pydantic import ValidationError
+
+from ember_memory_abi.archive import Document, Message
+from ember_memory_abi.common import (
+    CanonicalId,
+    canonical_object_sha256,
+    timestamp_from_datetime,
+    timestamp_to_unix_microseconds,
+)
+from ember_memory_abi.errors import AccessDeniedError, NotFoundError, SourceUnavailableError
+from ember_memory_abi.interfaces import (
+    ArchiveQuery,
+    ArchiveResult,
+    ArchiveSearchResponse,
+    MemoryQuery,
+    MemoryResult,
+    RankingExplanation,
+    RetrievalCoverage,
+    SearchResponse,
+)
+from ember_memory_abi.memory import ArchiveChunk, Entity, FactPayload, Memory
+
+from ._state import CharacterState
+from .database import load_model, row_int, row_text
+from .embedding import EncodingPool
+from .errors import EmbeddingError, EngineBusyError, IndexError
+from .index_storage import IndexStore, connect
+from .retrieval import memory_scope
+from .search_contracts import IndexGeneration
+from .vector_search import VectorPool, VectorRequest
+
+
+def fts_expression(text: str) -> str:
+    """Compile bounded Unicode terms as literal FTS expressions, never user SQL/operators."""
+    return " OR ".join(
+        '"' + term + '"' for term in dict.fromkeys(re.findall(r"[^\W_]\w*", text.casefold())[:32])
+    )
+
+
+def _attach(connection: sqlite3.Connection, state: CharacterState) -> None:
+    connection.execute(
+        "ATTACH DATABASE ? AS canonical", (state.database.path.as_uri() + "?mode=ro",)
+    )
+
+
+def _canonical_scope(
+    state: CharacterState, query: MemoryQuery, *, lookup: bool
+) -> tuple[str, tuple[str | int, ...]]:
+    sql, values = memory_scope(state, query, metadata_only=True, index_lookup=lookup)
+    sql = sql.rsplit(" ORDER BY ", 1)[0]
+    for table in ("memory_revisions", "memories", "suppression_targets", "memory_dependencies"):
+        sql = re.sub(r"\b" + table + r"\b", "canonical." + table, sql)
+    return sql, values[:-1]
+
+
+def _memory_eligibility(
+    state: CharacterState, query: MemoryQuery
+) -> tuple[str, tuple[str | int, ...]]:
+    sql, values = _canonical_scope(state, query, lookup=True)
+    return (
+        "d.kind='memory' AND EXISTS(SELECT 1 FROM (" + sql + ") eligible "
+        "WHERE eligible.memory_id=d.target_id AND eligible.revision=d.revision)",
+        values,
+    )
+
+
+def _memory_vector_ids(state: CharacterState, query: MemoryQuery) -> str:
+    """Stream canonical eligibility once; avoid a correlated lookup per projected vector."""
+    sql, _ = _canonical_scope(state, query, lookup=False)
+    return (
+        "SELECT e.id FROM (" + sql + ") eligible "
+        "CROSS JOIN documents d INDEXED BY doc_target ON d.kind='memory' "
+        "AND d.target_id=eligible.memory_id AND d.revision=eligible.revision "
+        "CROSS JOIN embedding_records e INDEXED BY vector_target ON e.document_id=d.id"
+    )
+
+
+def projected_memory_scope(
+    state: CharacterState, query: MemoryQuery
+) -> tuple[str, tuple[str | int, ...]]:
+    """Use certified immutable headers only while their canonical outbox remains current."""
+    clauses = ["d.kind='memory'", "d.recall_eligible=1", "d.is_current=1"]
+    values: list[str | int] = []
+    for column, items in (
+        ("d.memory_kind", query.kinds),
+        ("d.modality", query.modalities),
+        ("d.predicate", query.predicates),
+    ):
+        if items:
+            clauses.append(column + " IN (" + ",".join("?" for _ in items) + ")")
+            values.extend(items)
+    lifecycle = (
+        (*query.lifecycles, "superseded")
+        if (query.temporal.valid_at and "active" in query.lifecycles)
+        else query.lifecycles
+    )
+    if lifecycle:
+        clauses.append("d.lifecycle IN (" + ",".join("?" for _ in lifecycle) + ")")
+        values.extend(lifecycle)
+    at = timestamp_to_unix_microseconds(
+        query.temporal.valid_at or timestamp_from_datetime(state.database.clock.now())
+    )
+    if query.temporal.valid_at:
+        clauses.append(
+            "d.valid_from_us IS NOT NULL AND d.valid_from_us<=? AND "
+            "((d.valid_until_us IS NOT NULL AND ?<d.valid_until_us) OR "
+            "(d.valid_until_us IS NULL AND d.open_end_known=1))"
+        )
+    else:
+        clauses.append(
+            "(d.valid_from_us IS NULL OR d.valid_from_us<=?) "
+            "AND (d.valid_until_us IS NULL OR ?<d.valid_until_us)"
+        )
+    values.extend((at, at))
+    if query.entity_ids:
+        clauses.append(
+            "EXISTS(SELECT 1 FROM json_each(d.entity_keys) entity "
+            "WHERE entity.value IN (" + ",".join("?" for _ in query.entity_ids) + "))"
+        )
+        values.extend(str(item) for item in query.entity_ids)
+    return " AND ".join(clauses), tuple(values)
+
+
+def _archive_eligibility(
+    state: CharacterState, query: ArchiveQuery
+) -> tuple[str, tuple[str | int, ...]]:
+    now = timestamp_from_datetime(state.database.clock.now())
+    values: list[str | int] = [str(state.character_id), now]
+    # Every chunk dependency must be in current whole-record archive scope. The
+    # same-message part suppression check matches canonical conservative forgetting.
+    denied = """
+        NOT (p.source_store_id=? OR EXISTS(
+            SELECT 1 FROM canonical.source_grants g WHERE g.source_store_id=p.source_store_id
+            AND g.record_kind=p.record_kind AND g.record_id=p.record_id
+            AND g.record_revision=p.revision AND g.part_id='' AND g.capability='archive_search'
+            AND (g.expires_at IS NULL OR g.expires_at>?)))
+        OR EXISTS(SELECT 1 FROM documents sibling JOIN canonical.suppression_targets s
+            ON s.target_kind='source'
+            AND s.target_key IN (sibling.source_key,sibling.whole_source_key)
+            WHERE sibling.kind='message' AND sibling.source_store_id=p.source_store_id
+            AND sibling.record_kind=p.record_kind AND sibling.record_id=p.record_id)
+    """
+    filters: list[str] = []
+    for column, items in (("p.role", query.roles), ("p.record_kind", query.record_kinds)):
+        if items:
+            filters.append(column + " NOT IN (" + ",".join("?" for _ in items) + ")")
+            values.extend(items)
+    if query.conversation_ids:
+        filters.append(
+            "substr(p.conversation_id,1,36) NOT IN ("
+            + ",".join("?" for _ in query.conversation_ids)
+            + ")"
+        )
+        values.extend(str(item) for item in query.conversation_ids)
+    for boundary, comparator in ((query.source_from, "<"), (query.source_until, ">=")):
+        if boundary:
+            filters.append("(p.source_at_us IS NULL OR p.source_at_us" + comparator + "?)")
+            values.append(timestamp_to_unix_microseconds(boundary))
+    if query.temporal.valid_at:
+        filters.append("(p.source_at_us IS NULL OR p.source_at_us<>?)")
+        values.append(timestamp_to_unix_microseconds(query.temporal.valid_at))
+    if query.temporal.recorded_before:
+        filters.append("p.recorded_at_us>=?")
+        values.append(timestamp_to_unix_microseconds(query.temporal.recorded_before))
+    if filters:
+        denied = "(" + denied + ") OR " + " OR ".join(filters)
+    # A synthetic dependency for message projections lets the same scope predicate
+    # serve both full-source FTS and exact chunk vectors.
+    base = (
+        "d.kind IN ('message','chunk') "
+        "AND EXISTS(SELECT 1 FROM chunk_dependencies present WHERE present.document_id=d.id) "
+        "AND NOT EXISTS(SELECT 1 "
+        "FROM chunk_dependencies c JOIN documents p ON p.kind='message' "
+        "AND p.source_store_id=c.source_store_id AND p.record_kind=c.record_kind "
+        "AND p.record_id=c.record_id AND p.revision=c.revision AND p.part_id=c.part_id "
+        "WHERE c.document_id=d.id AND (" + denied + "))"
+    )
+    if not query.include_alternative_branches:
+        base += " AND d.branch IN ('selected','not_applicable')"
+    return base, tuple(values)
+
+
+def _adjustments(
+    canonical: sqlite3.Connection, memory: Memory, score: float, query: MemoryQuery, now_us: int
+) -> tuple[RankingExplanation, ...]:
+    """Bound non-vector contributions: importance 15%, entity 10%, recency 10%."""
+    adjustments = [
+        RankingExplanation(
+            method="bounded_importance_v1",
+            score=score * 0.15 * memory.content.importance,
+            reasons=("IMPORTANT",),
+        )
+    ]
+    payload = memory.content.payload
+    if isinstance(payload, FactPayload):
+        row = canonical.execute(
+            "SELECT * FROM entities WHERE entity_id=? ORDER BY revision DESC LIMIT 1",
+            (str(payload.subject.entity_id),),
+        ).fetchone()
+        if row is not None:
+            entity = load_model(row, Entity)
+            if payload.subject.entity_id in query.entity_ids or any(
+                name.casefold() in query.text.casefold() for name in (entity.name, *entity.aliases)
+            ):
+                adjustments.append(
+                    RankingExplanation(
+                        method="bounded_entity_v1",
+                        score=score * 0.10,
+                        reasons=("ENTITY_MATCH",),
+                    )
+                )
+        if payload.predicate in query.predicates:
+            adjustments.append(
+                RankingExplanation(
+                    method="structured_scope_v1",
+                    score=0.0,
+                    reasons=("STRUCTURED_FACT_MATCH",),
+                )
+            )
+    age = max(0, now_us - timestamp_to_unix_microseconds(memory.temporal.recorded_at))
+    recency = max(0.0, 1.0 - age / (30 * 86400 * 1_000_000))
+    adjustments.append(
+        RankingExplanation(
+            method="bounded_recency_v1",
+            score=score * 0.10 * recency,
+            reasons=("TEMPORAL_MATCH",),
+        )
+    )
+    return tuple(adjustments)
+
+
+class IndexedRetriever:
+    """A character-bound backend using library-shared generations and an owned CPU pool."""
+
+    def __init__(
+        self,
+        identity: CanonicalId,
+        indexes: dict[CanonicalId, IndexStore],
+        pool: EncodingPool,
+        fast_vectors: VectorPool,
+        deep_vectors: VectorPool,
+    ) -> None:
+        self.identity = identity
+        self.indexes = indexes
+        self.pool = pool
+        self.fast_vectors = fast_vectors
+        self.deep_vectors = deep_vectors
+        self.last_failure: str | None = None
+        self._epoch: int | None = None
+
+    def available(self) -> bool:
+        """Report only a readable character generation; no filesystem/model repair or download."""
+        try:
+            _, path = self.indexes[self.identity].active()
+            with closing(connect(path, immutable=True, require_extension=False)) as connection:
+                connection.execute("SELECT count(*) FROM metadata").fetchone()
+            return True
+        except (IndexError, sqlite3.Error):
+            return False
+
+    def _candidates(
+        self,
+        state: CharacterState,
+        index: IndexStore,
+        scope: str,
+        values: tuple[str | int, ...],
+        text: str,
+        mode: str,
+        deadline: float,
+        vector_ids: str | None = None,
+        plain_current: bool = False,
+        deep: bool = False,
+    ) -> tuple[
+        IndexGeneration,
+        list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]],
+        tuple[str, ...],
+    ]:
+        generation, path = index.active()
+        reasons: list[str] = []
+        lexical: list[int] = []
+        semantic: list[int] = []
+        with closing(connect(path, immutable=True, require_extension=False)) as connection:
+            _attach(connection, state)
+            connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)
+            vector_job: Future[tuple[int, ...]] | None = None
+            if mode not in {"lexical", "literal", "structured"}:
+                if (
+                    self.pool.encoder is None
+                    or self.pool.encoder.specification != generation.embedding
+                ):
+                    reasons.append("semantic_encoder_missing_or_profile_mismatch")
+                else:
+                    eligible_ids = vector_ids or (
+                        "SELECT e.id FROM embedding_records e JOIN documents d "
+                        "ON d.id=e.document_id WHERE " + scope
+                    )
+                    parameters = values
+                    if plain_current and generation.layout in {
+                        "ember.search-layout@0.3.0",
+                        "ember.search-layout@0.4.0",
+                    }:
+                        now = timestamp_to_unix_microseconds(
+                            timestamp_from_datetime(state.database.clock.now())
+                        )
+                        statement = (
+                            "SELECT document_id FROM vec_documents WHERE embedding MATCH ? "
+                            "AND k=40 "
+                            "AND active=1 AND valid_from<=? AND valid_until>? ORDER BY distance"
+                        )
+                        parameters = (now, now)
+                    else:
+                        statement = (
+                            "SELECT e.document_id FROM vec_documents v JOIN embedding_records e ON "
+                            "e.id=v.rowid WHERE v.embedding MATCH ? AND k=40 "
+                            "AND v.rowid IN (" + eligible_ids + ") ORDER BY v.distance"
+                        )
+                    release = index.lease(path)
+                    try:
+                        vector_job = (self.deep_vectors if deep else self.fast_vectors).submit(
+                            VectorRequest(
+                                generation=path,
+                                canonical=state.database.path,
+                                statement=statement,
+                                parameters=parameters,
+                                encoding=self.pool.query(text),
+                                release=release,
+                            )
+                        )
+                    except (EmbeddingError, EngineBusyError):
+                        release()
+                        reasons.append("semantic_deadline_or_admission_miss")
+            try:
+                if mode == "literal":
+                    connection.create_function(
+                        "ember_casefold", 1, str.casefold, deterministic=True
+                    )
+                    lexical = [
+                        row_int(row, "id")
+                        for row in connection.execute(
+                            "SELECT d.id FROM documents d WHERE d.kind='message' AND "
+                            + scope
+                            + " AND instr(ember_casefold(d.text),?)>0 "
+                            "ORDER BY d.source_at_us,d.id LIMIT 40",
+                            (*values, text.casefold()),
+                        ).fetchall()
+                    ]
+                elif mode not in {"semantic", "structured"} and fts_expression(text):
+                    rows = connection.execute(
+                        "SELECT d.id FROM document_fts CROSS JOIN documents d "
+                        "ON d.id=document_fts.rowid "
+                        "WHERE document_fts MATCH ? AND "
+                        + scope
+                        + " ORDER BY document_fts.rank LIMIT 40",
+                        (fts_expression(text), *values),
+                    ).fetchall()
+                    lexical = [row_int(row, "id") for row in rows]
+            except sqlite3.OperationalError as error:
+                if error.sqlite_errorcode != sqlite3.SQLITE_INTERRUPT:
+                    raise
+                reasons.append("lexical_soft_deadline_miss")
+            if vector_job is not None:
+                try:
+                    semantic = list(
+                        vector_job.result(timeout=max(0.0, deadline - monotonic() - 0.015))
+                    )
+                except (EmbeddingError, EngineBusyError, IndexError, TimeoutError):
+                    reasons.append("semantic_deadline_or_admission_miss")
+            # Candidate computation is deadline-bounded. Final exact-ID reads are
+            # bounded by 80 candidates and must still enforce canonical policy.
+            connection.set_progress_handler(None, 0)
+            ranks: dict[int, list[RankingExplanation]] = {}
+            for candidates, reason in ((lexical, "LEXICAL_MATCH"), (semantic, "SEMANTIC_MATCH")):
+                for rank, identity in enumerate(candidates, 1):
+                    contribution = 1.0 / (60 + rank)
+                    ranks.setdefault(identity, []).append(
+                        RankingExplanation(
+                            method="reciprocal_rank_fusion_v1",
+                            score=contribution,
+                            reasons=(reason,),
+                            extensions={"ember.rank": rank},
+                        )
+                    )
+            result: list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]] = []
+            for identity, explanations in ranks.items():
+                row = connection.execute(
+                    "SELECT * FROM documents d WHERE d.id=? AND " + scope, (identity, *values)
+                ).fetchone()
+                if row is not None:
+                    result.append(
+                        (row, sum(item.score for item in explanations), tuple(explanations))
+                    )
+            result.sort(key=lambda item: (-item[1], row_int(item[0], "id")))
+            return generation, result, tuple(reasons)
+
+    def memory(
+        self, state: CharacterState, canonical: sqlite3.Connection, query: MemoryQuery
+    ) -> SearchResponse | None:
+        """Filter canonical scope before top-k, then fuse/rank/deduplicate verified revisions."""
+        epoch = state.policy_epoch(canonical)
+        if epoch != self._epoch:
+            self.pool.invalidate()
+            self._epoch = epoch
+        deadline = monotonic() + 0.15
+        try:
+            index = self.indexes[self.identity]
+            previous, path = index.active()
+            pending = (
+                canonical.execute(
+                    "SELECT 1 FROM index_outbox WHERE sequence>? AND kind NOT IN "
+                    "('source_changed','pin','unpin','record_access') LIMIT 1",
+                    (previous.outbox_sequence,),
+                ).fetchone()
+                is not None
+            )
+            certified = (
+                previous.header_projection is not None
+                and not pending
+                and query.temporal.recorded_before is None
+                and index.certified(previous, path)
+            )
+            scope, values = (
+                projected_memory_scope(state, query)
+                if certified
+                else _memory_eligibility(state, query)
+            )
+            generation, candidates, reasons = self._candidates(
+                state,
+                self.indexes[self.identity],
+                scope,
+                values,
+                query.text,
+                query.mode,
+                deadline,
+                None if certified else _memory_vector_ids(state, query),
+                plain_current=(
+                    certified
+                    and not query.kinds
+                    and not query.modalities
+                    and not query.predicates
+                    and not query.entity_ids
+                    and query.lifecycles == ("active",)
+                    and query.temporal.valid_at is None
+                ),
+            )
+            current_clock = row_int(
+                canonical.execute("SELECT recorded_clock_us FROM store_metadata").fetchone(),
+                "recorded_clock_us",
+            )
+            pending = (
+                canonical.execute(
+                    "SELECT 1 FROM index_outbox WHERE sequence>? AND kind NOT IN "
+                    "('source_changed','pin','unpin','record_access') LIMIT 1",
+                    (generation.outbox_sequence,),
+                ).fetchone()
+                is not None
+            )
+            stale = pending or (not certified and current_clock != generation.canonical_clock_us)
+            result: list[MemoryResult] = []
+            seen: set[str] = set()
+            for row, score, ranking in candidates:
+                if certified and generation.layout == "ember.search-layout@0.4.0":
+                    if row_text(row, "payload_key") in seen:
+                        continue
+                if result and monotonic() > deadline:
+                    reasons = (*reasons, "final_validation_soft_deadline_miss")
+                    break
+                memory = state.read_memory(
+                    canonical, UUID(row_text(row, "target_id")), row_int(row, "revision")
+                )
+                # Exact active/history eligibility is checked again on the character
+                # connection; a stale index can never deliver an obsolete current row.
+                sql, params = memory_scope(
+                    state, query.model_copy(update={"text": "", "limit": 100})
+                )
+                verify = sql.rsplit(" ORDER BY ", 1)[0] + " AND r.memory_id=? AND r.revision=?"
+                if (
+                    canonical.execute(
+                        verify, (*params[:-1], str(memory.memory_id), memory.revision)
+                    ).fetchone()
+                    is None
+                ):
+                    continue
+                fingerprint = canonical_object_sha256(memory.content.payload)
+                if (
+                    certified
+                    and generation.layout == "ember.search-layout@0.4.0"
+                    and (fingerprint != row_text(row, "payload_key"))
+                ):
+                    raise IndexError()
+                if fingerprint in seen:
+                    continue
+                seen.add(fingerprint)
+                adjustments = _adjustments(
+                    canonical,
+                    memory,
+                    score,
+                    query,
+                    timestamp_to_unix_microseconds(
+                        timestamp_from_datetime(state.database.clock.now())
+                    ),
+                )
+                result.append(
+                    MemoryResult(
+                        memory=memory,
+                        score=score + sum(item.score for item in adjustments),
+                        ranking=(*ranking, *adjustments),
+                    )
+                )
+            if stale and query.mode != "semantic":
+                sql, params = memory_scope(state, query.model_copy(update={"limit": 100}))
+                dirty = sql.rsplit(" ORDER BY ", 1)[0] + (
+                    " AND r.recorded_at_us>? ORDER BY r.recorded_at_us DESC LIMIT 100"
+                )
+                terms = re.findall(r"[^\W_]\w*", query.text.casefold())[:32]
+                from .index_builder import memory_text
+
+                present = {item.memory.memory_id for item in result}
+                for row in canonical.execute(dirty, (*params[:-1], generation.canonical_clock_us)):
+                    memory = load_model(row, Memory)
+                    projected = memory_text(memory, {}).casefold()
+                    if memory.memory_id not in present and any(term in projected for term in terms):
+                        result.append(
+                            MemoryResult(
+                                memory=memory,
+                                score=1.0 / 61,
+                                ranking=(
+                                    RankingExplanation(
+                                        method="pending_canonical_lexical",
+                                        score=1.0 / 61,
+                                        reasons=("LEXICAL_MATCH", "DEGRADED_FALLBACK"),
+                                    ),
+                                ),
+                            )
+                        )
+                        present.add(memory.memory_id)
+            if stale or "semantic_deadline_or_admission_miss" in reasons:
+                sql, params = memory_scope(
+                    state,
+                    query.model_copy(update={"text": "", "limit": 6}),
+                    metadata_only=True,
+                    recent_first=True,
+                )
+                present = {item.memory.memory_id for item in result}
+                for row in canonical.execute(sql, params).fetchall():
+                    identity = UUID(row_text(row, "memory_id"))
+                    if identity not in present:
+                        memory = state.read_memory(canonical, identity, row_int(row, "revision"))
+                        result.append(
+                            MemoryResult(
+                                memory=memory,
+                                score=0.001,
+                                ranking=(
+                                    RankingExplanation(
+                                        method="bounded_recent_structured_fallback_v1",
+                                        score=0.001,
+                                        reasons=("DEGRADED_FALLBACK", "STRUCTURED_FACT_MATCH"),
+                                    ),
+                                ),
+                            )
+                        )
+                        present.add(identity)
+            result.sort(key=lambda item: (-item.score, str(item.memory.memory_id)))
+            state.check_policy(canonical, epoch)
+            return SearchResponse(
+                results=tuple(result[: query.limit]),
+                coverage=RetrievalCoverage(
+                    status="partial" if reasons or stale else "complete",
+                    index_status="available",
+                    reason_codes=(*reasons, *(("index_outbox_pending",) if stale else ())),
+                    extensions={
+                        "ember.retrieval": {
+                            "generation": str(generation.generation),
+                            "policy_epoch": epoch,
+                            "ranker": generation.ranker,
+                            "distance_metric": generation.distance_metric,
+                            "certified_headers": certified,
+                            "outbox_sequence": generation.outbox_sequence,
+                            "soft_deadline_ms": 150,
+                            "mode": query.mode,
+                            "temporal": query.temporal.model_dump_json(),
+                        }
+                    },
+                ),
+            )
+        except (IndexError, sqlite3.Error, ValidationError, ValueError):
+            self.last_failure = "missing_or_corrupt_derived_index"
+            return None
+
+    def archive(
+        self, state: CharacterState, canonical: sqlite3.Connection, query: ArchiveQuery
+    ) -> ArchiveSearchResponse | None:
+        """Search shared archive projections with whole-scope eligibility and exact provenance."""
+        epoch = state.policy_epoch(canonical)
+        if epoch != self._epoch:
+            self.pool.invalidate()
+            self._epoch = epoch
+        deadline = monotonic() + 0.5
+        scope, values = _archive_eligibility(state, query)
+        stores = canonical.execute(
+            "SELECT DISTINCT source_store_id FROM source_grants WHERE capability='archive_search'"
+        ).fetchall()
+        identities = {self.identity, *(UUID(row_text(row, "source_store_id")) for row in stores)}
+        if query.source_store_ids:
+            identities.intersection_update(query.source_store_ids)
+        result: list[ArchiveResult] = []
+        generations: list[str] = []
+        reasons: list[str] = []
+        try:
+            for identity in sorted(identities, key=str):
+                if identity not in self.indexes:
+                    reasons.append("source_index_unavailable")
+                    continue
+                if self.indexes[identity].source_coverage() == "evidence_only":
+                    reasons.append("source_library_evidence_only")
+                try:
+                    generation, candidates, partial = self._candidates(
+                        state,
+                        self.indexes[identity],
+                        scope,
+                        values,
+                        query.text,
+                        query.mode,
+                        deadline,
+                        deep=True,
+                    )
+                except IndexError:
+                    reasons.append("source_index_unavailable")
+                    continue
+                if self.indexes[identity].source_pending(generation):
+                    reasons.append("source_index_outbox_pending")
+                generations.append(str(generation.generation))
+                reasons.extend(partial)
+                for row, score, ranking in candidates:
+                    branch = row_text(row, "branch")
+                    if row_text(row, "kind") == "chunk" and query.mode != "literal":
+                        chunk = ArchiveChunk.model_validate_json(row_text(row, "payload_json"))
+                        permitted = True
+                        for span in chunk.source_spans:
+                            ref = span.evidence.source
+                            if not state.source_permitted(canonical, ref, "archive_search"):
+                                permitted = False
+                                break
+                            quote = state.resolver.validate(span.evidence)
+                            if quote != chunk.text[span.start_codepoint : span.end_codepoint]:
+                                raise IndexError()
+                        if permitted:
+                            result.append(
+                                ArchiveResult(
+                                    record=chunk, score=score, ranking=ranking, branch_status=branch
+                                )
+                            )
+                    elif row_text(row, "kind") == "message":
+                        from ember_memory_abi.evidence import SourceRef
+
+                        ref = SourceRef.model_validate_json(row_text(row, "payload_json"))
+                        if not state.source_permitted(canonical, ref, "archive_search"):
+                            continue
+                        record = state.resolver.resolve(ref)
+                        if not isinstance(record, (Message, Document)):
+                            continue
+                        if any(
+                            state.source_suppressed(
+                                canonical,
+                                record.source.model_copy(update={"part_id": part.part_id}),
+                            )
+                            for part in record.parts
+                        ):
+                            continue
+                        if query.mode == "literal" and not any(
+                            part.text and query.text.casefold() in part.text.casefold()
+                            for part in record.parts
+                        ):
+                            continue
+                        result.append(
+                            ArchiveResult(
+                                record=record, score=score, ranking=ranking, branch_status=branch
+                            )
+                        )
+            if not generations:
+                return None
+            result.sort(key=lambda item: -item.score)
+            seen: set[str] = set()
+            unique: list[ArchiveResult] = []
+            for item in result:
+                key = (
+                    str(item.record.chunk_id)
+                    if isinstance(item.record, ArchiveChunk)
+                    else str(item.record.source.identity_key())
+                )
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(item)
+            # Expiry can change without a policy epoch mutation while native work
+            # runs. Recheck every delivered dependency at the final boundary.
+            unique = [
+                item
+                for item in unique
+                if (
+                    all(
+                        state.source_permitted(canonical, span.evidence.source, "archive_search")
+                        for span in item.record.source_spans
+                    )
+                    if isinstance(item.record, ArchiveChunk)
+                    else state.source_permitted(canonical, item.record.source, "archive_search")
+                )
+            ]
+            state.check_policy(canonical, epoch)
+            return ArchiveSearchResponse(
+                results=tuple(unique[: query.limit]),
+                coverage=RetrievalCoverage(
+                    status="partial" if reasons else "complete",
+                    index_status="available",
+                    reason_codes=tuple(dict.fromkeys(reasons)),
+                    extensions={
+                        "ember.retrieval": {
+                            "generations": ",".join(generations),
+                            "policy_epoch": epoch,
+                            "soft_deadline_ms": 500,
+                            "mode": query.mode,
+                            "temporal": query.temporal.model_dump_json(),
+                        }
+                    },
+                ),
+            )
+        except (
+            IndexError,
+            sqlite3.Error,
+            SourceUnavailableError,
+            AccessDeniedError,
+            NotFoundError,
+            ValidationError,
+            ValueError,
+        ):
+            self.last_failure = "archive_projection_or_policy_changed"
+            return None

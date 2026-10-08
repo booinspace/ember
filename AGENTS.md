@@ -38,7 +38,15 @@ Phase 4 libraries/characters/bundles are implemented. Read
 schema-1 migration; ABI/archive remain 0.1.0. Bundle maintenance requires an
 exclusive root owner, and restore publishes a new root with providers disabled.
 Evidence-only libraries are partial provenance stores, not rewritten source
-messages. Await Phase 4 architecture review before Phase 5.
+messages. Phase 5 retrieval/indexing is implemented. Read
+`docs/adr/0008-phase-five-retrieval-and-indexes.md`,
+`ember-memory/docs/adr/0006-derived-retrieval-and-generations.md` and
+`docs/phase-5-runbook.md`. Current engine/schema are 0.3.0 (user_version 3), ABI
+0.2.0 and archive/bundle 0.1.0. Canonical covering indexes are backed-up additive
+migrations; immutable derived generations are disposable and scope-checked.
+Explicit setup installs CPU embeddings; startup never downloads/rebuilds. Updates
+reuse vectors but copy the derived database. Await Phase 5 architecture review
+before Phase 6, keeping the larger capacity/platform gates explicit.
 
 ## Boundaries
 

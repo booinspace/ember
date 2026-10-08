@@ -81,13 +81,14 @@ class InProcessAsyncMemoryClient:
         *,
         deadline: str | None = None,
         write: bool = False,
+        deep: bool = False,
     ) -> T:
         clock = self._store.database.clock
         check_deadline(clock, deadline)
         with self._guard:
             if self._closed:
                 raise EngineClosedError()
-            future = self._store.submit(work, write=write)
+            future = self._store.submit(work, write=write, deep=deep)
             self._jobs.add(cast(Future[object], future))
         future.add_done_callback(self._completed)
         wrapped = asyncio.wrap_future(future)
@@ -137,6 +138,7 @@ class InProcessAsyncMemoryClient:
         return await self._invoke(
             lambda connection: retrieval.search_archive(self._store.state, connection, query),
             deadline=query.options.deadline_at,
+            deep=True,
         )
 
     async def retrieve_context(self, request: ContextRequest) -> RetrievalContext:
@@ -144,6 +146,7 @@ class InProcessAsyncMemoryClient:
         return await self._invoke(
             lambda connection: retrieval.retrieve_context(self._store.state, connection, request),
             deadline=request.options.deadline_at,
+            deep=request.archive_query is not None,
         )
 
     async def get(

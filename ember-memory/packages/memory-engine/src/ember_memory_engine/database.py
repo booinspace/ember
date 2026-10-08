@@ -23,6 +23,7 @@ from .models import Clock
 from .ownership import StoreLock, validate_local_root
 from .schema import (
     IMMUTABLE_TABLES,
+    PHASE_FIVE_SQL,
     PHASE_FOUR_IMMUTABLE,
     PHASE_FOUR_SQL,
     SCHEMA_SQL,
@@ -95,9 +96,11 @@ class SqliteDatabase:
         self._owner = StoreLock(path.with_suffix(".owner.lock"))
         self.writer = OwnedWorkers(1, max_pending=max_pending, name=f"ember-write-{store_id}")
         self.readers = OwnedWorkers(2, max_pending=max_pending, name=f"ember-read-{store_id}")
+        self.deep_readers = OwnedWorkers(1, max_pending=4, name=f"ember-deep-{store_id}")
         self._connections: dict[int, sqlite3.Connection] = {}
         self._guard = Lock()
         self._closed = False
+        self.on_write: Callable[[], None] | None = None
         try:
             self.writer.submit(lambda: self._initialize(kind, namespace)).result()
         except sqlite3.Error as error:
@@ -130,7 +133,7 @@ class SqliteDatabase:
         version_value: object = connection.execute("PRAGMA user_version").fetchone()[0]
         if not isinstance(version_value, int):
             raise CorruptStoreError()
-        if version_value not in {0, 1, SCHEMA_VERSION}:
+        if version_value not in {0, 1, 2, SCHEMA_VERSION}:
             raise UnsupportedVersionError()
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -146,7 +149,7 @@ class SqliteDatabase:
                     + (
                         SCHEMA_SQL.split("CREATE TABLE source_records")[0]
                         if kind == "registry"
-                        else SCHEMA_SQL + PHASE_FOUR_SQL
+                        else SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL
                     )
                 )
                 for table in (
@@ -172,7 +175,7 @@ class SqliteDatabase:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
-        if version_value == 1:
+        if version_value in {1, 2}:
             row = connection.execute(
                 "SELECT store_id,kind,namespace FROM store_metadata"
             ).fetchone()
@@ -186,17 +189,24 @@ class SqliteDatabase:
                 raise CorruptStoreError()
             # The OS-held store lock is the deletion/migration barrier. Preserve a
             # consistent pre-upgrade image before any schema write; never overwrite it.
-            backup_path = self.path.with_suffix(".schema-1.backup.db")
+            backup_path = self.path.with_suffix(f".schema-{version_value}.backup.db")
             if backup_path.exists():
                 from uuid import uuid4
 
-                backup_path = self.path.with_suffix(f".schema-1-{uuid4()}.backup.db")
+                backup_path = self.path.with_suffix(f".schema-{version_value}-{uuid4()}.backup.db")
             self.backup(backup_path, connection=connection)
             try:
                 connection.executescript(
-                    "BEGIN IMMEDIATE;\n" + (PHASE_FOUR_SQL if kind != "registry" else "")
+                    "BEGIN IMMEDIATE;\n"
+                    + (
+                        ((PHASE_FOUR_SQL if version_value == 1 else "") + PHASE_FIVE_SQL)
+                        if kind != "registry"
+                        else ""
+                    )
                 )
-                for table in () if kind == "registry" else PHASE_FOUR_IMMUTABLE:
+                for table in (
+                    () if kind == "registry" or version_value != 1 else PHASE_FOUR_IMMUTABLE
+                ):
                     for action in ("UPDATE", "DELETE"):
                         connection.execute(
                             f"CREATE TRIGGER immutable_{table}_{action.lower()} "
@@ -252,7 +262,10 @@ class SqliteDatabase:
 
     def _run[T](self, work: Callable[[sqlite3.Connection], T], read_only: bool) -> T:
         try:
-            return work(self._connection(read_only))
+            result = work(self._connection(read_only))
+            if not read_only and self.on_write is not None:
+                self.on_write()
+            return result
         except sqlite3.Error as error:
             if getattr(error, "sqlite_errorcode", None) in {
                 sqlite3.SQLITE_BUSY,
@@ -262,10 +275,10 @@ class SqliteDatabase:
             raise StorageError() from error
 
     def submit[T](
-        self, work: Callable[[sqlite3.Connection], T], *, write: bool = False
+        self, work: Callable[[sqlite3.Connection], T], *, write: bool = False, deep: bool = False
     ) -> Future[T]:
         """Submit bounded work to the appropriate owner group; no inline SQLite on callers."""
-        group = self.writer if write else self.readers
+        group = self.writer if write else (self.deep_readers if deep else self.readers)
         return group.submit(lambda: self._run(work, not write))
 
     def read[T](self, work: Callable[[sqlite3.Connection], T]) -> T:
@@ -315,6 +328,8 @@ class SqliteDatabase:
         self._closed = True
         self.writer.stop_admission()
         self.readers.stop_admission()
+        self.deep_readers.stop_admission()
+        self.deep_readers.executor.submit(self._close_connection).result()
         self.writer.executor.submit(self._close_connection).result()
         barrier = Barrier(2)
 
@@ -327,6 +342,7 @@ class SqliteDatabase:
             job.result()
         self.writer.shutdown()
         self.readers.shutdown()
+        self.deep_readers.shutdown()
         self._owner.close()
 
     def __enter__(self) -> "SqliteDatabase":

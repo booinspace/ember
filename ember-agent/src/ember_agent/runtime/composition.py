@@ -11,6 +11,8 @@ from ember_memory_abi.errors import MemoryError
 from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 from ember_memory_engine.authoring import MemoryAuthoringService, NewMemoryInput, ensure_subject
+from ember_memory_engine.embedding import BgeEncoder
+from ember_memory_engine.errors import EmbeddingError
 
 from ..character.core import CharacterCore, Personality
 from ..inference.client import HttpGatewayClient
@@ -31,7 +33,15 @@ class LocalRuntime:
 
     def __init__(self, config: DeploymentConfig) -> None:
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ember-runtime-owner")
-        self.engine = CanonicalEngine(config.data_root)
+        encoder = None
+        self.semantic_status = "not_configured"
+        if config.embedding_directory is not None:
+            try:
+                encoder = BgeEncoder(config.embedding_directory)
+                self.semantic_status = "available"
+            except EmbeddingError:
+                self.semantic_status = "unavailable_lexical_fallback"
+        self.engine = CanonicalEngine(config.data_root, encoder=encoder, auto_refresh=True)
         try:
             config.runtime_root.mkdir(parents=True, exist_ok=True)
             binding_path = config.runtime_root / (config.active_profile + "-character.json")

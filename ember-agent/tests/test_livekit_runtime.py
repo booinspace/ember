@@ -3,11 +3,13 @@
 import asyncio
 import json
 import os
+import secrets
 import shutil
 import socket
 import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from time import monotonic
 from uuid import uuid4
 
 import pytest
@@ -52,9 +54,19 @@ def example_text() -> str:
 
 
 def free_port() -> int:
-    with socket.socket() as service:
-        service.bind(("127.0.0.1", 0))
-        return service.getsockname()[1]
+    # Probe random user ports below the usual Windows ephemeral range. Repeated
+    # bind(port=0) can return an entire consecutive UDP-excluded range, making
+    # retries fail together even though most user ports remain available.
+    for _ in range(100):
+        candidate = 10000 + secrets.randbelow(35000)
+        with socket.socket() as service, socket.socket(type=socket.SOCK_DGRAM) as datagram:
+            try:
+                service.bind(("127.0.0.1", candidate))
+                datagram.bind(("0.0.0.0", candidate))
+            except OSError:
+                continue
+            return candidate
+    raise RuntimeError("No TCP/UDP test port outside platform exclusions was available.")
 
 
 def test_credentials_persist_and_tokens_have_only_room_text_authority(tmp_path: Path) -> None:
@@ -175,7 +187,10 @@ def room_config(tmp_path: Path, executable: str, *, real: bool) -> Path:
     )
     content = content.replace('tag = ""', 'tag = "synthetic"')
     content = content.replace('expected_digest = ""', 'expected_digest = "' + "a" * 64 + '"')
-    signal, tcp, udp = free_port(), free_port(), free_port()
+    ports: set[int] = set()
+    while len(ports) < 3:
+        ports.add(free_port())
+    signal, tcp, udp = sorted(ports)
     while len({signal, tcp, udp}) != 3:
         signal, tcp, udp = free_port(), free_port(), free_port()
     content = content.replace(
@@ -318,7 +333,9 @@ def portable_seed(root: Path) -> tuple[Path, StoreInfo, EntityRef, CanonicalId]:
     return restored, character, subject, identity
 
 
-async def exercise_room(path: Path, *, real: bool, portable: bool = False) -> None:
+async def exercise_room(
+    path: Path, *, real: bool, portable: bool = False, indexed: bool = False
+) -> None:
     config = load_config(path, require_model_pin=True)
     config.runtime_root.mkdir(exist_ok=True)
     memory_root = config.data_root
@@ -338,11 +355,27 @@ async def exercise_room(path: Path, *, real: bool, portable: bool = False) -> No
                 NewMemoryInput(idempotency_key="favorite", text="My favorite color is cobalt blue.")
             )
             identity = receipt.affected[0].memory_id
-    engine = CanonicalEngine(memory_root)
+    encoder = None
+    if indexed:
+        from ember_memory_engine.embedding import BgeEncoder
+
+        encoder = await asyncio.to_thread(
+            BgeEncoder,
+            Path(os.environ.get("EMBER_EMBEDDING_MODEL", ".local/models/bge-small-en-v1.5")),
+        )
+        with CanonicalEngine(memory_root) as index_owner:
+            index_owner.rebuild_index(character.store_id, encoder)
+    engine = CanonicalEngine(memory_root, encoder=encoder, auto_refresh=indexed)
     memory = InProcessAsyncMemoryClient(engine.character(character.store_id))
     author = MemoryAuthoringService(
         engine, subject, authority=MutationAuthority(mode="confirmed_user")
     )
+    if indexed:
+        from ember_memory_abi.interfaces import MemoryQuery
+
+        response = await memory.search(MemoryQuery(text="preferred hue", mode="semantic"))
+        assert response.coverage.index_status == "available" and response.results
+        assert any("SEMANTIC_MATCH" in rank.reasons for rank in response.results[0].ranking)
     fake = FakeModel()
     client = None
     if real:
@@ -407,6 +440,14 @@ async def exercise_room(path: Path, *, real: bool, portable: bool = False) -> No
         assert (
             await participant.remember("another", "My synthetic animal is an otter.") == "applied"
         )
+        if indexed:
+            deadline = monotonic() + 5
+            while engine.index_jobs_pending and monotonic() < deadline:
+                await asyncio.sleep(0.01)
+            assert engine.index_jobs_pending == 0 and engine.index_error_count == 0
+            refreshed = await memory.search(MemoryQuery(text="otter", mode="lexical"))
+            assert refreshed.results and refreshed.coverage.status == "complete"
+
         if not real:
             replay = TurnInput(request_id=result.request_id, text="What is my favorite color?")
             with pytest.raises(rtc.RpcError):
@@ -514,54 +555,56 @@ def test_runtime_starts_managed_servers_and_drains_only_owned_processes(
             }
             self.wfile.write(json.dumps(value).encode() + b"\n")
 
-    backend = ThreadingHTTPServer(("127.0.0.1", 0), OllamaFixture)
-    thread = Thread(target=backend.serve_forever, name="synthetic-ollama")
-    thread.start()
-    path = room_config(tmp_path, livekit_executable, real=False)
-    gateway_port = free_port()
-    content = (
-        path.read_text()
-        .replace("http://127.0.0.1:11434", f"http://127.0.0.1:{backend.server_port}")
-        .replace("http://127.0.0.1:11435", f"http://127.0.0.1:{gateway_port}")
-    )
-    path.write_text(content)
-    config = load_config(path, require_model_pin=True)
+    with ThreadingHTTPServer(("127.0.0.1", 0), OllamaFixture) as backend:
+        thread = Thread(target=backend.serve_forever, name="synthetic-ollama")
+        path = room_config(tmp_path, livekit_executable, real=False)
+        gateway_port = free_port()
+        content = (
+            path.read_text()
+            .replace("http://127.0.0.1:11434", f"http://127.0.0.1:{backend.server_port}")
+            .replace("http://127.0.0.1:11435", f"http://127.0.0.1:{gateway_port}")
+        )
+        path.write_text(content)
+        config = load_config(path, require_model_pin=True)
 
-    async def run() -> None:
-        stop = asyncio.Event()
-        task = asyncio.create_task(run_runtime(config, path, stop=stop))
-        client = None
+        async def run() -> None:
+            stop = asyncio.Event()
+            task = asyncio.create_task(run_runtime(config, path, stop=stop))
+            client = None
+            try:
+                discovery = config.runtime_root / "livekit-room.json"
+                async with asyncio.timeout(30):
+                    while not discovery.exists():
+                        if task.done():
+                            await task
+                        await asyncio.sleep(0.05)
+                binding = RoomBinding.model_validate_json(discovery.read_bytes())
+                secret = credentials(config.services.livekit.credentials_file, create=False)
+                client = RoomClient(binding)
+                await client.connect(secret.token(binding.room, USER_IDENTITY))
+                assert (
+                    await client.remember("color", "My favorite color is cobalt blue.") == "applied"
+                )
+                output, result = await client.ask("What is my favorite color?")
+                assert "cobalt" in output and result.retained_memories == 1
+            finally:
+                if client:
+                    await client.aclose()
+                stop.set()
+                await asyncio.wait_for(task, 20)
+            assert not (config.runtime_root / "livekit-room.json").exists()
+            state = json.loads((config.runtime_root / "gateway-state.json").read_text())
+            assert state["status"] == "complete"
+            with socket.socket() as connection:
+                assert connection.connect_ex(("127.0.0.1", gateway_port)) != 0
+
+        thread.start()
         try:
-            discovery = config.runtime_root / "livekit-room.json"
-            async with asyncio.timeout(30):
-                while not discovery.exists():
-                    if task.done():
-                        await task
-                    await asyncio.sleep(0.05)
-            binding = RoomBinding.model_validate_json(discovery.read_bytes())
-            secret = credentials(config.services.livekit.credentials_file, create=False)
-            client = RoomClient(binding)
-            await client.connect(secret.token(binding.room, USER_IDENTITY))
-            assert await client.remember("color", "My favorite color is cobalt blue.") == "applied"
-            output, result = await client.ask("What is my favorite color?")
-            assert "cobalt" in output and result.retained_memories == 1
+            asyncio.run(run())
         finally:
-            if client:
-                await client.aclose()
-            stop.set()
-            await asyncio.wait_for(task, 20)
-        assert not (config.runtime_root / "livekit-room.json").exists()
-        state = json.loads((config.runtime_root / "gateway-state.json").read_text())
-        assert state["status"] == "complete"
-        with socket.socket() as connection:
-            assert connection.connect_ex(("127.0.0.1", gateway_port)) != 0
-
-    try:
-        asyncio.run(run())
-    finally:
-        backend.shutdown()
-        backend.server_close()
-        thread.join(timeout=5)
+            backend.shutdown()
+            backend.server_close()
+            thread.join(timeout=5)
     assert len(requests) == 1 and "cobalt blue" in json.dumps(requests[0]["messages"])
 
 
@@ -608,3 +651,36 @@ def test_actual_room_qwen_recalls_independent_seed_after_portable_restore(
         pytest.skip("Set EMBER_REAL_CONFIG for pinned real-model portable-seed acceptance.")
     path = room_config(tmp_path, livekit_executable, real=True)
     asyncio.run(exercise_room(path, real=True, portable=True))
+
+
+@pytest.mark.end_to_end
+def test_actual_room_qwen_uses_rebuilt_cpu_bge_index_after_portable_restore(
+    tmp_path: Path,
+    livekit_executable: str,
+) -> None:
+    if not os.environ.get("EMBER_REAL_CONFIG"):
+        pytest.skip("Set EMBER_REAL_CONFIG for the pinned Qwen indexed room acceptance.")
+    directory = Path(os.environ.get("EMBER_EMBEDDING_MODEL", ".local/models/bge-small-en-v1.5"))
+    if not (directory / "embedding.json").is_file():
+        pytest.skip("Install the pinned CPU BGE assets for indexed room acceptance.")
+    path = room_config(tmp_path, livekit_executable, real=True)
+    asyncio.run(exercise_room(path, real=True, portable=True, indexed=True))
+
+
+def test_test_port_allocator_retries_occupied_tcp_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    with socket.socket() as occupied:
+        # Reserve a user port, then make the allocator encounter that collision
+        # before the independently probed free TCP/UDP candidate.
+        for _ in range(100):
+            blocked = 10000 + secrets.randbelow(35000)
+            try:
+                occupied.bind(("127.0.0.1", blocked))
+                break
+            except OSError:
+                continue
+        else:
+            pytest.fail("Could not reserve a test user port.")
+        candidate = free_port()
+        values = iter((blocked - 10000, candidate - 10000))
+        monkeypatch.setattr(secrets, "randbelow", lambda limit: next(values))
+        assert free_port() == candidate

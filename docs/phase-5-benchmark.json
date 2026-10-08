@@ -1,0 +1,65 @@
+{
+  "extensions": {},
+  "version": "ember.search-benchmark@0.1.0",
+  "canonical_startup_ms": 502.894000033848,
+  "source_records": 1,
+  "memory_revisions": 100000,
+  "semantic_profile": "ember.onnx-cpu-cls@0.1.0",
+  "measurements": {
+    "structured": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 1.0954999597743154,
+      "p95_ms": 1.4129000483080745
+    },
+    "lexical": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 56.0888999607414,
+      "p95_ms": 58.679700014181435
+    },
+    "semantic_including_cached_encoding": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 88.63984991330653,
+      "p95_ms": 90.35850001964718
+    },
+    "hybrid": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 91.43530006986111,
+      "p95_ms": 94.3031000206247
+    },
+    "deep_archive": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 96.90420003607869,
+      "p95_ms": 99.26229994744062
+    },
+    "fts_scoped_candidates": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 51.09330004779622,
+      "p95_ms": 51.63709993939847
+    },
+    "semantic_scoped_scan_excluding_encoding": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 83.97400000831112,
+      "p95_ms": 86.24630002304912
+    },
+    "id": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 0.054699950851500034,
+      "p95_ms": 0.058999983593821526
+    },
+    "provenance": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 1.9651500042527914,
+      "p95_ms": 2.5631000753492117
+    }
+  },
+  "partial_responses": 1
+}

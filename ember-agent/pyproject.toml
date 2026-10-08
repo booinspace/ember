@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Memory-aware character slice and local P0 gateway for Ember"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "ember-memory-abi==0.1.0",
+    "ember-memory-abi==0.2.0",
     "pydantic>=2.10,<3",
     "httpx>=0.28,<1",
     "jsonschema>=4.23,<5",
@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local-deployment = ["ember-memory-engine==0.2.0"]
+local-deployment = ["ember-memory-engine[search]==0.3.0"]
 
 [project.scripts]
 ember = "ember_agent.cli:main"
