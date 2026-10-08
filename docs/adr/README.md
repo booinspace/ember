@@ -19,6 +19,8 @@ acceptance evidence and remaining limits. They do not make a planned feature liv
 | Phase 5: retrieval/indexes | [Root ADR 0008](0008-phase-five-retrieval-and-indexes.md) | 360 tests passed including real BGE/LiveKit/Qwen; architecture review and full performance/capacity acceptance open | [Memory ADR 0006](../../ember-memory/docs/adr/0006-derived-retrieval-and-generations.md); [runbook](../phase-5-runbook.md) |
 | Phase 6: full extraction | [Root ADR 0009](0009-phase-six-extraction-and-background-inference.md) | Extractor 0.1.2 exact-evidence/schema fix; 408-test full gate passed; five-window private archive sample produced four pending proposals; architecture review pending | [Memory ADR 0007](../../ember-memory/docs/adr/0007-extraction-jobs-and-summary-sources.md); [Agent ADR 0004](../../ember-agent/docs/adr/0004-conservative-background-gateway.md); [operator runbook](../phase-6-runbook.md) |
 | Planned Phase 7/8: Deep Associative Recall and phase AC | [Root ADR 0010](0010-planned-deep-associative-recall-and-phase-acceptance.md) | Proposed documentation only; full phase criteria and deep-recall architecture, no runtime delivery | [PLAN retrieval design](../../PLAN.md#deep-associative-recall-planned-phase-8-architecture); [phase criteria](../../PLAN.md#acceptance-evidence-and-phase-completion); component implementation ADRs remain prospective |
+| Planned Phase 7: bounded user profile | [Root ADR 0011](0011-planned-phase-seven-user-profile.md) | Planned documentation only; revision-bound profile pins, text integration, invalidation and measured budgets | [PLAN profile design](../../PLAN.md#bounded-user-profile-planned-phase-7); [Phase 7 criteria](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation); component implementation records remain prospective |
+| Proposed Phase 7 implementation | [Root ADR 0012](0012-planned-phase-seven-implementation.md) | Pre-code architecture review; no implementation or AC completion claim | [Implementation proposal and AC matrix](../phase-7-implementation-proposal.md); native authority, consolidation/time, profile integration and performance gates |
 
 
 Phase 0b's supported export inspection and import are verified; saved-memory
@@ -34,6 +36,10 @@ Phase 7 and later remain planned. [PLAN's Phase 7/8 acceptance criteria](../../P
 now require policy-controlled automatic native capture and independent native/imported
 recall controls; [Root ADR 0009](0009-phase-six-extraction-and-background-inference.md#planned-phase-78-acceptance-clarification-2026-10-08)
 records the planned scope without claiming runtime delivery.
+[Root ADR 0011](0011-planned-phase-seven-user-profile.md) adds the bounded source-backed
+user profile to Phase 7 terminal/LiveKit text deliverables. Phase 8 reuses its pin
+budgets, dependency invalidation and source controls; neither phase is implemented
+by this documentation update.
 Early grant/suppression/temporal primitives in phase 2 do not close the later
 seeding, bundle, indexing, extraction or consolidation acceptance gates.
 

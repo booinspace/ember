@@ -128,3 +128,11 @@ while retaining prior future Phase 7/8 criteria and all historical delivery reco
 A phase completion claim must map AC to evidence and distinguish unrun service/platform
 gates. Stop at documentation/architecture review; no Phase 7/8 runtime implementation
 or change to existing schema/ABI/gateway versions is performed in this task.
+
+## Planned Phase 7 profile extension
+
+[Root ADR 0011](0011-planned-phase-seven-user-profile.md) adds bounded query-independent
+profile pins to the ordinary context baseline in Phase 7. Deep recall reuses that
+profile and its dependency/source-selection checks without duplicating its prompt
+content or allocation. Existing deep-recall limits and historical evidence remain
+unchanged; this extension is documentation only.

@@ -122,6 +122,7 @@ flowchart TD
     DeepRecall --> MemoryClient
     MemoryClient --> Memory["Canonical memory platform"]
     Memory --> Private["Independent character state"]
+    Private --> Profile["Bounded revision-bound user profile pins — planned Phase 7"]
     Memory --> Library["Shared import library and source vault"]
 
     Core --> Tools["ToolRouter"]
@@ -1423,9 +1424,115 @@ Replacement builds a separate generation, validates it, switches the pointer, an
 
 ## 13. Retrieval, diagnostics, and degraded operation
 
+### Bounded user profile: planned Phase 7
+
+Status: planned, not implemented. Phase 7 adds a small per-character profile of the
+identified conversation user's stable accepted facts and explicit communication
+preferences. It accompanies unrelated questions without relying on a lexical/vector
+match. A NAS question can therefore include the user's preferred name, pronouns and
+response-style preference alongside networking recall. Phase 7 delivers this in the
+existing terminal and LiveKit text paths; Phase 8 reuses it for browser/audio and
+source-selection controls. This is selected memory data, not a second personality.
+
+Ownership and reuse:
+
+- ember-memory owns deterministic eligibility/selection, revision-bound pins,
+  profile policy, operator exclusions and dependency validation in the existing
+  character store. No source import, candidate approval or seed occurs on a profile
+  read; only already accepted character memories can contribute.
+- ember-agent owns formatting, the final prompt budget and delivery/history
+  dependency checks. It consumes public typed clients; composition binds the same
+  engine owner used by ordinary recall. No SQL/private engine access enters the core.
+- Reuse PinnedMemory, pin/unpin/get_pinned, ContextRequest.include_pinned,
+  RetrievalContext, structured predicates/entities, temporal metadata and existing
+  origin/evidence/suppression dependencies. Return profile pins and their supporting
+  Memory revisions with ordinary retrieve_context; do not issue one get per field,
+  an additional vector query, archive hydration or another Qwen call.
+- Necessary additions are a small typed/versioned profile policy and pin-purpose/
+  management/dependency metadata. Extend existing contracts/storage additively only
+  where current pin metadata cannot represent ownership and durable exclusions;
+  negotiate any new public capability and preserve legacy client defaults. Do not
+  add a profile daemon, separate database, free-text biography, duplicate canonical
+  memories or a parallel profile retrieval API. Derived selections are rebuildable.
+
+Eligibility and selection:
+
+- Initially allow registered predicates for preferred name, explicitly stated
+  pronouns, known timezone and explicit communication preferences. Bind every field
+  to the identified user's canonical entity; another participant's facts cannot fill
+  it. Additional fields require explicit operator configuration and supported rules.
+- Require active accepted revisions, appropriate identified-user authority or
+  recorded human confirmation, supported kind/modality, current validity and allowed
+  origin/source scope. Preserve approved seeded provenance. An unapproved summary,
+  candidate, raw message, assistant speculation, plan, hypothetical or inferred trait
+  cannot become profile knowledge merely because it is salient or high-confidence.
+- Apply Phase 7 conflict/supersession rules before selecting a current field. Omit
+  unresolved alternatives or unknown current-state claims with a specific reason;
+  never choose a winner solely by import/recorded time, similarity or model confidence.
+- Enable the initial allowlisted profile by default for eligible accepted facts;
+  expose an explicit per-character disable setting and field controls. This requires
+  no manual pinning or additional acceptance of already accepted knowledge.
+- Select deterministically by explicit operator choices and versioned field priority,
+  with stable identity tie-breaks only among semantically equivalent eligible facts.
+  Start with at most eight automatic profile entries. Manual pins retain operator
+  priority; automatic refresh cannot overwrite them or re-enable excluded fields.
+- Preserve purpose/manager metadata so removing an automatic selection cannot delete
+  a manual pin on the same memory. Persist field exclusions by user entity/predicate,
+  with identity/redirect dependencies, so replacement revisions or re-extraction do
+  not silently undo an operator's exclusion. Re-enabling is an explicit control.
+
+Budget, validity and failure behavior:
+
+- Profile entries and manual pins share section 25's existing 384-token Pins
+  allocation; profiles do not increase the 7,000-token input ceiling or consume the
+  six ordinary recall slots. Count rendered values, labels and qualifiers. Deduplicate
+  the same memory across profile/pins/ordinary/deep context; report excluded/dropped
+  fields rather than claiming every profile fact fits every turn.
+- Preserve memory ID/revision, source/origin dependencies, validity/expiry and policy/
+  selection version through prompt inclusion and memory-dependent history. Cached
+  selection is bound to character, policy/source selection and supporting revisions;
+  invalidate on mutation, correction, disable/forget, suppression, revoked/expired
+  grants, source unavailability, profile changes and validity boundaries. Revalidate
+  before inclusion and during delivery; stop unsafe delivery and evict dependent
+  cached/history context. A wall-clock TTL alone is not sufficient.
+- A corrected name drops the old pin and may select the eligible replacement only
+  after normal acceptance rules. A missing/stale/unsupported profile omits affected
+  fields and exposes partial/disabled reasons; it never serves last-known private
+  values to hide a failure. Healthy ordinary recall/chat can continue without a
+  profile. Canonical integrity failures retain existing failure behavior.
+- Canonical profile pins remain usable when FTS/vectors/encoder are unavailable.
+  Profile reads and small invalidation/reselection run on existing bounded workers;
+  background rebuilding must not hold the realtime loop or force model warmup.
+- Inspect included/omitted fields, priority, supporting revisions/evidence and policy
+  through the existing authorized memory/CLI controls. Settings persist per character,
+  independently of model tag, capture policy and imported-library approval. Phase 8
+  source switches also filter profile pins/caches/history by preserved origins;
+  enabling a profile never expands grants or activates an imported claim.
+- Render all profile values as attributed untrusted observations. A communication
+  preference may inform style within trusted personality/security rules; it cannot
+  replace those rules, change authority, run a tool or rewrite configuration.
+
+Root ADR 0011 records this planned decision. P7-AC-10 through P7-AC-17 and sections
+25, 30 and 31 own acceptance; this update changes no runtime/schema/ABI version.
+
 ### Fast recall
 
 Search character-owned accepted beliefs, pins, entities, and recent native context.
+The planned Phase 7 profile adds bounded query-independent pins to this same context
+operation, while retaining one hybrid query and six distinct ordinary recall slots.
+
+Phase 7 ordinary-chat complexity limits: one retrieve_context request including the
+bounded profile/pins, one existing hybrid query, zero related resolve/expand calls,
+zero archive hydration and no relationship traversal or full relationship read
+manifest construction. Delivery validation carries only the selected memory/source
+references and necessary policy/selection/time stamps: at most 256 distinct references
+combined and 64 KiB serialized metadata. Deduplicate and trim whole dependent history
+turns if those limits would be exceeded; do not weaken final access/expiry checks.
+Capability-supported validation batches the union of selected dependencies at
+prompt preparation, before generation and before visible delivery/final completion,
+replacing serial per-ID calls. Metadata-only progress does not trigger relationship
+checks. Unsupported clients retain equivalent bounded checks. No separate profile cache, rebuild queue or change
+subscription system is justified without measured need over simple indexed selection.
 
 Initial limits:
 
@@ -2439,6 +2546,17 @@ Selected schemas must remain valid complete schemas. Selected skill procedures m
 
 Pins are bounded and prioritized; the UI reports pins that do not fit.
 
+Phase 7's user profile uses this existing Pins category (starting at 384 tokens),
+shared with manual pins. Compose its current eligible facts on every supported text
+turn, even when the query is unrelated; enabling semantic recall or deep recall is
+not required. Keep it as untrusted memory data, with revision/source dependencies,
+not trusted system/personality instructions. Profile and ordinary/deep recall copies
+of the same memory appear once. Manual priorities remain effective; omit lower-priority
+profile fields with explicit budget reasons before sacrificing mandatory input.
+Phase 7 implements and measures this bounded pin accounting using the available
+verified tokenizer or conservative guard; Phase 8 completes the other category/UI
+work. No profile-specific context enlargement or extra summarizing model call.
+
 If mandatory content cannot fit, return a typed prompt-overflow error or request a smaller input/configuration correction. Never silently truncate core instructions or let the backend discard context.
 
 Increasing context is considered only after reducing unnecessary content and measuring VRAM/latency.
@@ -2753,6 +2871,32 @@ Retain warm p95 targets:
 
 Targets require measurement.
 
+### Bounded user profile performance gate (Phase 7, not yet measured)
+
+Compare the same ordinary queries, character, encoder/index and model configuration
+with the profile disabled and enabled. Include unrelated queries, up to eight eligible
+profile entries plus manual pins, cold/warm caches, corrections/revocation and index
+refresh. Measure selection/canonical validation/formatting, complete context latency,
+ABI call/SQL counts, event-loop responsiveness, rendered profile tokens and model
+prefill/time to first visible token separately. Report all samples and omissions.
+
+Initial profile selection/validation/formatting target: warm p95 <=10 ms. The complete
+fast path retains its 150 ms soft deadline and section 30 targets; profile work never
+adds a query embedding, KNN search, source-text hydration or primary-model call.
+Measure invalidation and bounded worker contention rather than trusting a cache hit.
+Added prompt tokens have a prefill cost; record that tradeoff instead of claiming
+zero added end-to-end latency. Preserve all Phase 5 benchmark evidence and open gates.
+
+Use a fixed sanitized unrelated-query suite to compare required profile-field inclusion
+and response behavior with the profile enabled/disabled, including corrections and
+forbidden fields. Record the demonstrated benefit alongside latency, prompt tokens,
+SQL rows/ABI calls and dependency count/bytes. Compare serial and batched validation
+on identical dependency sets, including complete streamed-turn cost and invalidation.
+Relationship resolve/expand work must remain absent from ordinary-turn traces. Start
+with indexed selection and direct bounded validation; add a cache/projection layer only
+if paired measurements justify it. A failed complexity/performance gate remains open;
+an optional fallback never substitutes for meeting Phase 7 acceptance.
+
 ### Deep Associative Recall performance gate (Phase 8, not yet measured)
 
 Keep the original Phase 5 measurements and misses unchanged. The 94.30 ms warm p95
@@ -2849,6 +2993,29 @@ Delete FTS/vectors/search DB, restart degraded, resolve provenance, rebuild, and
 Embedding replacement changes only derived generations.
 
 Portable export preserves required evidence and excludes unrelated history.
+
+### Bounded user profile acceptance (Phase 7)
+
+Use sanitized accepted-memory fixtures and both fake/public and in-process clients:
+
+- A preferred name, explicit pronouns and communication preference accompany a NAS
+  query with no matching profile search terms, after restart and in both text paths.
+- Another participant/character, pending import, assistant-only assertion, inferred
+  trait, hypothetical and unconfirmed conflicting fact cannot fill profile fields.
+- Correction, supersession, disable/forget, source suppression, grant expiry/revoke,
+  source unavailability and validity boundaries invalidate pins, cached context and
+  memory-dependent retained history, including changes during streamed delivery.
+- Explicit field exclusion/manual pin/profile-disable decisions survive refresh,
+  redirects, re-extraction, model changes and supported bundle restore. Rebuilding
+  derived state cannot undo them. Phase 8 adds origin-based source-switch tests.
+- Profile/manual pins share their allocation, ordinary recall retains six distinct
+  slots, duplicate references appear once, qualifiers remain intact, oversized
+  fields are omitted with reasons and injected profile text gains no authority.
+- Missing indexes/encoder or unsupported profile capability yield truthful bounded
+  fallback; the core uses no SQL, new owner, hidden background task or extra inference.
+- Representative real-Qwen text integration demonstrates the supplied profile can
+  inform an unrelated answer. Inspect prompt inclusion separately from model wording;
+  a name need not be forced into every reply. Run section 30's profile measurements.
 
 ### Deep Associative Recall quality and isolation acceptance
 
@@ -3062,7 +3229,7 @@ Each phase leaves working, tested behavior.
 | **4 — Libraries/characters/bundles** | Grants, suppression, independent seeds, linked backup, selective materialization |
 | **5 — Retrieval/indexes** | Grouping, FTS, BGE-small, sqlite-vec, hybrid, diagnostics, rebuild |
 | **6 — Full extraction** | Structured model extraction, resumable jobs, policies/summary import; **same gateway gains P3/P4 queues and conservative admission** |
-| **7 — Consolidation/time** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance, origin preservation and bounded relationship/temporal prerequisites for Phase 8 |
+| **7 — Consolidation/time + user profile** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance, bounded source-backed profile pins in terminal/LiveKit text, origin preservation and bounded relationship/temporal prerequisites for Phase 8 |
 | **8 — Stable application integration** | Browser/audio/memory, automatic native capture and source controls, **Deep Associative Recall** with explicit invocation/inspection/cancellation and measured fast-path isolation, prompt budgets, **single-command composition/startup/shutdown**, health and portability |
 | **9 — Generic agent foundations** | Events/attention, ToolProvider/TaskRouter foundations, operational store; **same gateway gains P1/P2, reservation, fairness/accounting** |
 | **10 — Direct MCP** | Discovery, normalization, credentials, scoped authority, UI |
@@ -3338,7 +3505,15 @@ Owner: engine for source/candidate policy; agent for conservative P3/P4 admissio
 
 These are planned requirements, not delivered Phase 6 behavior. Memory policy,
 evidence validation, lifecycle and canonical writes remain owned by ember-memory.
-Ember-agent schedules work and consumes public memory contracts.
+Ember-agent schedules work, formats the bounded user profile in the existing text
+paths, and consumes public memory contracts. Section 13 defines profile selection,
+ownership and invalidation; this is a Phase 7 runtime deliverable, not deferred
+until browser/audio integration.
+
+The [Phase 7 implementation proposal](docs/phase-7-implementation-proposal.md) and
+[Root ADR 0012](docs/adr/0012-planned-phase-seven-implementation.md) record the
+pre-code architecture review. They map all 17 criteria to changes and evidence;
+neither is an implementation/completion claim.
 
 - **P7-AC-01:** Provide an idempotent, policy-controlled acceptance path for character-owned
   native conversation candidates. A model proposes claims; the engine verifies
@@ -3375,10 +3550,54 @@ Ember-agent schedules work and consumes public memory contracts.
   branch separation and bounded joins. Relationship projections remain rebuildable;
   absence cannot force an unbounded traversal or a backend dependency in agent code.
 
+- **P7-AC-10:** Build a bounded per-character user profile solely from eligible accepted
+  memories, including explicitly approved/seeded imports with their origins. Preferred
+  name, explicit pronouns and response-style facts appear in prepared context for an
+  unrelated NAS question after restart, independently of lexical/vector similarity.
+- **P7-AC-11:** Version deterministic field/authority/modality/validity selection and
+  user-entity binding. Pending candidates, raw/summary-only proposals, other speakers,
+  unsupported predicates, inferred traits and unresolved current-state conflicts are
+  omitted with reasons; model confidence/import recency cannot resolve them alone.
+- **P7-AC-12:** Reuse revision-bound PinnedMemory/typed retrieval contracts and the
+  existing engine owner. Ordinary retrieve_context returns profile data with its one
+  hybrid search, without per-field get calls, additional embeddings/KNN, archive
+  hydration, new services or profile-generation inference. Version/negotiate minimal
+  new policy/pin-management metadata and preserve legacy client behavior.
+- **P7-AC-13:** At most eight automatic profile entries and manual pins share the
+  existing 384-token Pins allocation; rendered overhead/qualifiers count. Preserve
+  manual priorities, six distinct ordinary recall slots and final input/response
+  budgets. Deduplicate shared memory references and diagnose every budget omission.
+- **P7-AC-14:** Exact memory/source/origin, selection-policy and time dependencies
+  invalidate cached profile/prompt/history on correction, lifecycle/suppression,
+  revoked/expired grants, unavailable sources or validity boundaries. Test mutations
+  before prompt inclusion and during streaming; no stale/denied value is delivered
+  from a cache, redirect or replacement identity.
+- **P7-AC-15:** Separate automatic selection from manual pin ownership; preserve
+  manual pins, explicit field inclusion/exclusion and profile-disable choices through
+  refresh, re-extraction, restart/model changes and supported bundle restore. Profile
+  refresh cannot approve/seed candidates, change personality/grants or resurrect an
+  excluded/suppressed fact. Characters retain independent selection and controls.
+- **P7-AC-16:** Terminal and LiveKit text use the same profile-aware composer/public
+  client. Authorized CLI inspection exposes included/omitted fields, policy, original
+  evidence and revision dependencies; default logs remain content-free. Canonical
+  pins work without search indexes, unsupported/unavailable profiles degrade honestly,
+  and injected profile values cannot override trusted instructions or authority.
+- **P7-AC-17:** Map fake/in-process, restart/invalidation and real-Qwen text integration
+  to profile evidence. Section 30's paired cold/warm/refresh measurements record calls,
+  selection/validation/formatting (warm p95 <=10 ms), complete recall, serialized cost
+  and prefill/TTFT. Retain the fast 150 ms soft deadline and existing performance
+  targets; no historical benchmark or unrun capacity gate is claimed as passed.
+  Demonstrate profile benefit on the fixed unrelated-query suite, verify ordinary
+  turns perform no relationship expansion/full-manifest work, and measure bounded
+  batched validation against the equivalent serial baseline. Enforce section 13's
+  reference/metadata caps; further caching layers require measured justification.
+
 ### Phase 8 acceptance criteria: automatic capture and memory source controls
 
 These requirements extend application memory integration; browser/audio, prompt
-budgets, composition, health and portability deliverables remain required.
+budgets, composition, health and portability deliverables remain required. Reuse the
+Phase 7 profile and its dependency/control contracts rather than implementing a second
+profile. Phase 8 source selection covers that profile as well as ordinary/deep recall.
 
 - **P8-AC-01:** Normal supported chat automatically records completed conversation sources and
   durably queues candidate extraction under a configured per-character native
@@ -3401,8 +3620,9 @@ budgets, composition, health and portability deliverables remain required.
 - **P8-AC-05:** Apply source selection to seeded character memories by their recorded origins,
   not merely archive grants. Enforce it before retrieval limits/ranking and final
   prompt inclusion, including lexical/semantic fallback, pins, summaries,
-  consolidated memories and known memory-dependent caches/history. Re-enabling
-  restores eligible existing records without reseeding; it never overrides
+  consolidated memories, the Phase 7 user profile and known memory-dependent
+  caches/history. Re-enabling restores eligible existing records without reseeding;
+  it never overrides
   forgetting, suppression or current access restrictions.
 - **P8-AC-06:** Source switches govern durable memory recall and separately permitted archive
   retrieval, not the current user input or ordinary live conversation history.
@@ -3428,14 +3648,17 @@ budgets, composition, health and portability deliverables remain required.
 
 - **P8-AC-10:** A supported browser text/control path and local STT–Qwen–Kokoro audio
   path use the same personality, memory client and prompt composer; ordinary recall
-  remains the bounded six-memory fast path without deep planning/hydration calls.
+  remains the bounded six-memory fast path plus eligible Phase 7 profile pins,
+  without deep planning/hydration calls. Profile controls/inspection share the text
+  implementation and source-selection enforcement.
 - **P8-AC-11:** Single-command composition starts/attaches installed configured
   services, serves the production browser and reports feature readiness. Startup,
   degraded text-only/control states, shutdown/crash and ownership conflicts pass
   section 32's relevant core tests. Setup, not startup, downloads dependencies.
 - **P8-AC-12:** Prompt category accounting/whole-turn trimming preserves mandatory
-  input, personality and response reserve. Actual serialized cost fits 8K context;
-  excessive input reports overflow rather than silent backend truncation.
+  input, personality and response reserve. Profile/manual pins share their existing
+  category and are not duplicated in deep answers. Actual serialized cost fits 8K
+  context; excessive input reports overflow rather than silent backend truncation.
 - **P8-AC-13:** Explicit Deep Associative Recall from browser and supported text/
   spoken controls works through the running engine owner with no harness, MCP,
   extra LLM planning call or competing maintenance process.
@@ -3987,6 +4210,11 @@ not require the optional harness or an elaborate graph/planner. Its release gate
 P8-AC-13 through P8-AC-22 and sections 13, 30–33; existing Phase 5/6 delivery is unchanged.
 
 Live preemption is conditional on measured acceptance; conservative scheduling is a valid documented fallback.
+
+The bounded source-backed user profile is a planned Phase 7 v1 requirement under
+P7-AC-10 through P7-AC-17. It uses existing pin/retrieval contracts and survives model
+replacement; Phase 8 browser/audio/source controls reuse it. Root ADR 0011 records
+the design, without changing historical Phase 5/6 delivery status.
 
 ### Deferred
 
