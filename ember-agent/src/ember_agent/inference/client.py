@@ -1,6 +1,7 @@
 """Strict gateway transport; no alternate upstream or automatic generation retry."""
 
 from collections.abc import AsyncGenerator
+from uuid import UUID
 
 import httpx
 from pydantic import ValidationError
@@ -26,6 +27,19 @@ class HttpGatewayClient:
             return GatewayHealth.model_validate_json(response.content)
         except (httpx.HTTPError, ValidationError) as error:
             raise GatewayError("gateway_unavailable") from error
+
+    async def session(self, identity: UUID, *, connected: bool) -> None:
+        """Reserve/release a trusted realtime lifetime, waiting for safe native quiescence."""
+        try:
+            response = await self.client.put(
+                "/v1/realtime/" + str(identity),
+                headers=self.headers,
+                json={"connected": connected},
+                timeout=190,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise GatewayError("realtime_reservation_failed") from error
 
     async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
         """Validate identities/order and require an explicit end; partial EOF is never success."""

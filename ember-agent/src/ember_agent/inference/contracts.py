@@ -44,7 +44,7 @@ class ToolDefinition(RuntimeModel):
 class GatewayRequest(RuntimeModel):
     """Bounded immutable generation request; authenticated P0 scope is server-owned."""
 
-    version: Literal["0.1.0"] = "0.1.0"
+    version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     request_id: UUID4
     context_id: UUID4
     workload: Literal["P0", "P1", "P2", "P3", "P4"] = "P0"
@@ -53,6 +53,7 @@ class GatewayRequest(RuntimeModel):
     max_output_tokens: Annotated[int, Field(gt=0, le=1192)] = 512
     deadline_at: UtcTimestamp
     output: Literal["text", "json"] = "text"
+    output_schema: dict[str, JsonValue] | None = None
     tools: Annotated[tuple[ToolDefinition, ...], Field(max_length=16)] = ()
 
 
@@ -81,7 +82,7 @@ class GatewayEvent(RuntimeModel):
     request_id: UUID4
     context_id: UUID4
     sequence: Annotated[int, Field(ge=0)]
-    kind: Literal["start", "text", "tools", "end", "error"]
+    kind: Literal["start", "progress", "text", "tools", "end", "error"]
     text: str = Field(default="", repr=False)
     calls: tuple[ToolCall, ...] = ()
     usage: GenerationUsage | None = None
@@ -107,14 +108,18 @@ class GatewayEvent(RuntimeModel):
 class GatewayHealth(RuntimeModel):
     """Admission/upstream identity state; it does not imply voice or full application readiness."""
 
-    version: Literal["0.1.0"] = "0.1.0"
+    version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     status: Literal["ready", "busy", "quiescence_required", "draining", "upstream_unavailable"]
     model: str
     digest: str
     context_tokens: int
     active_request_id: UUID | None = None
     journal_status: Literal["available", "failed"] = "available"
-    supported_workloads: tuple[Literal["P0"], ...] = ("P0",)
+    supported_workloads: tuple[Literal["P0", "P3", "P4"], ...] = ("P0", "P3", "P4")
+    queued_p3: int = 0
+    queued_p4: int = 0
+    realtime_sessions: tuple[UUID, ...] = ()
+    scheduling: Literal["conservative"] = "conservative"
 
 
 class ModelClient(Protocol):

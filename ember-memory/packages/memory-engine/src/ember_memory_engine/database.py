@@ -26,6 +26,8 @@ from .schema import (
     PHASE_FIVE_SQL,
     PHASE_FOUR_IMMUTABLE,
     PHASE_FOUR_SQL,
+    PHASE_SIX_IMMUTABLE,
+    PHASE_SIX_SQL,
     SCHEMA_SQL,
     SCHEMA_VERSION,
 )
@@ -133,7 +135,7 @@ class SqliteDatabase:
         version_value: object = connection.execute("PRAGMA user_version").fetchone()[0]
         if not isinstance(version_value, int):
             raise CorruptStoreError()
-        if version_value not in {0, 1, 2, SCHEMA_VERSION}:
+        if version_value not in {0, 1, 2, 3, SCHEMA_VERSION}:
             raise UnsupportedVersionError()
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -149,15 +151,17 @@ class SqliteDatabase:
                     + (
                         SCHEMA_SQL.split("CREATE TABLE source_records")[0]
                         if kind == "registry"
-                        else SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL
+                        else SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL + PHASE_SIX_SQL
                     )
                 )
                 for table in (
-                    () if kind == "registry" else (*IMMUTABLE_TABLES, *PHASE_FOUR_IMMUTABLE)
+                    ()
+                    if kind == "registry"
+                    else (*IMMUTABLE_TABLES, *PHASE_FOUR_IMMUTABLE, *PHASE_SIX_IMMUTABLE)
                 ):
                     for action in ("UPDATE", "DELETE"):
                         connection.execute(
-                            f"CREATE TRIGGER immutable_{table}_{action.lower()} "
+                            f"CREATE TRIGGER IF NOT EXISTS immutable_{table}_{action.lower()} "
                             f"BEFORE {action} ON {table} BEGIN "
                             "SELECT RAISE(ABORT, 'immutable canonical revision'); END"
                         )
@@ -175,7 +179,7 @@ class SqliteDatabase:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
-        if version_value in {1, 2}:
+        if version_value in {1, 2, 3}:
             row = connection.execute(
                 "SELECT store_id,kind,namespace FROM store_metadata"
             ).fetchone()
@@ -199,17 +203,27 @@ class SqliteDatabase:
                 connection.executescript(
                     "BEGIN IMMEDIATE;\n"
                     + (
-                        ((PHASE_FOUR_SQL if version_value == 1 else "") + PHASE_FIVE_SQL)
+                        (
+                            (PHASE_FOUR_SQL if version_value == 1 else "")
+                            + PHASE_FIVE_SQL
+                            + PHASE_SIX_SQL
+                        )
                         if kind != "registry"
                         else ""
                     )
                 )
                 for table in (
-                    () if kind == "registry" or version_value != 1 else PHASE_FOUR_IMMUTABLE
+                    ()
+                    if kind == "registry"
+                    else (
+                        (*PHASE_FOUR_IMMUTABLE, *PHASE_SIX_IMMUTABLE)
+                        if version_value == 1
+                        else PHASE_SIX_IMMUTABLE
+                    )
                 ):
                     for action in ("UPDATE", "DELETE"):
                         connection.execute(
-                            f"CREATE TRIGGER immutable_{table}_{action.lower()} "
+                            f"CREATE TRIGGER IF NOT EXISTS immutable_{table}_{action.lower()} "
                             f"BEFORE {action} ON {table} BEGIN "
                             "SELECT RAISE(ABORT, 'immutable canonical revision'); END"
                         )

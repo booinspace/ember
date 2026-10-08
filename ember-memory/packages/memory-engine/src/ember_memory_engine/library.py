@@ -42,6 +42,8 @@ from .database import load_model, model_bytes, payload_hash, row_int, row_text
 from .engine import CanonicalEngine
 from .errors import IdempotencyConflictError
 from .models import MutationAuthority
+from .source_access import source_keys
+from .specifications import specification_rows
 
 
 class ApprovalRequest(ContractModel):
@@ -175,6 +177,12 @@ class LibraryService:
                 ):
                     if reference.source_store_id != library_id:
                         raise AccessDeniedError()
+                    if connection.execute(
+                        "SELECT 1 FROM suppression_targets WHERE target_kind='source' "
+                        "AND target_key IN (?,?)",
+                        source_keys(reference),
+                    ).fetchone():
+                        raise AccessDeniedError()
                     self.engine.resolve(reference)
                 for item in assertions:
                     self.engine.persist_evidence(
@@ -212,6 +220,15 @@ class LibraryService:
                     ("approved_knowledge", approved),
                 ):
                     payload = model_bytes(snapshot)
+                    if table == "candidates":
+                        staged = connection.execute(
+                            "SELECT * FROM candidates WHERE candidate_id=? AND revision=?",
+                            (str(candidate.candidate_id), candidate.revision),
+                        ).fetchone()
+                        if staged is not None:
+                            if load_model(staged, CandidateMemory) != candidate:
+                                raise RevisionConflictError()
+                            continue
                     connection.execute(
                         f"INSERT INTO {table} VALUES(?,?,?,?)",
                         (
@@ -295,6 +312,17 @@ class LibraryService:
                 snapshots = tuple(
                     self.knowledge(request.library_id, item) for item in request.selections
                 )
+                _, source_database = self.engine.maintenance_store(request.library_id)
+                for knowledge in snapshots:
+                    references = tuple(p.specification for p in knowledge.draft.content.provenance)
+                    definitions = source_database.read(
+                        lambda source, references=references: specification_rows(source, references)
+                    )
+                    for definition in definitions:
+                        connection.execute(
+                            "INSERT OR IGNORE INTO processing_specs VALUES(?,?,?)",
+                            tuple(definition),
+                        )
                 mapping: dict[tuple[CanonicalId, CanonicalId], EntityRef] = {}
                 for knowledge in snapshots:
                     for reference in entity_references(knowledge.draft):

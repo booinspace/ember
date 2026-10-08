@@ -17,12 +17,15 @@ acceptance evidence and remaining limits. They do not make a planned feature liv
 | Phase 3: importer/realtime slice | [Root ADR 0006](0006-phase-three-source-and-runtime.md) | ZIP import, P0 and runnable managed LiveKit text slice verified; operator-reviewed claim adoption remains open | [PLAN section 11](../../PLAN.md); [Memory ADR 0004](../../ember-memory/docs/adr/0004-source-import-and-authoring.md); [Agent ADR 0002](../../ember-agent/docs/adr/0002-phase-three-p0-turn-slice.md); [Agent ADR 0003](../../ember-agent/docs/adr/0003-managed-livekit-text-runtime.md) |
 | Phase 4: libraries/characters/bundles | [Root ADR 0007](0007-phase-four-libraries-characters-bundles.md) | Implemented; 332 tests passed including actual LiveKit/Qwen; architecture review checkpoint | [Memory ADR 0005](../../ember-memory/docs/adr/0005-libraries-seeds-and-bundles.md); [Windows runbook](../phase-4-runbook.md) |
 | Phase 5: retrieval/indexes | [Root ADR 0008](0008-phase-five-retrieval-and-indexes.md) | 360 tests passed including real BGE/LiveKit/Qwen; architecture review and full performance/capacity acceptance open | [Memory ADR 0006](../../ember-memory/docs/adr/0006-derived-retrieval-and-generations.md); [runbook](../phase-5-runbook.md) |
+| Phase 6: full extraction | [Root ADR 0009](0009-phase-six-extraction-and-background-inference.md) | Extractor 0.1.2 exact-evidence/schema fix; 408-test full gate passed; five-window private archive sample produced four pending proposals; architecture review pending | [Memory ADR 0007](../../ember-memory/docs/adr/0007-extraction-jobs-and-summary-sources.md); [Agent ADR 0004](../../ember-agent/docs/adr/0004-conservative-background-gateway.md); [operator runbook](../phase-6-runbook.md) |
+
 
 Phase 0b's supported export inspection and import are verified; saved-memory
 inclusion remains unestablished. Phase 3 implementation and private import passed
 the recorded checks; exact-claim operator review/adoption remains open. Phase 4 library/character/bundle
 implementation is recorded separately in Root ADR 0007. Phase 5 implementation and open acceptance gates are recorded in Root ADR 0008.
-Phase 6 and later phases remain planned.
+Phase 6 implementation is recorded in Root ADR 0009; stop for architecture review before Phase 7.
+Phase 7 and later remain planned.
 Early grant/suppression/temporal primitives in phase 2 do not close the later
 seeding, bundle, indexing, extraction or consolidation acceptance gates.
 

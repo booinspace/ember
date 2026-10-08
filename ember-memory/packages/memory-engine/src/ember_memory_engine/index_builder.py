@@ -2,14 +2,11 @@
 
 import json
 import sqlite3
-from collections.abc import Iterator
 from contextlib import ExitStack, closing
 from hashlib import sha256
 from uuid import UUID, uuid4
 
-from pydantic import TypeAdapter
-
-from ember_memory_abi.archive import Conversation, Document, GraphNode, Message, SourceRecord
+from ember_memory_abi.archive import Document, Message
 from ember_memory_abi.common import (
     canonical_object_sha256,
     timestamp_from_datetime,
@@ -33,45 +30,8 @@ from .engine import CanonicalEngine
 from .errors import IndexError
 from .index_storage import INDEX_SQL, connect
 from .search_contracts import Encoder, IndexGeneration
-
-_ADAPTER: TypeAdapter[SourceRecord] = TypeAdapter(SourceRecord)
-
-
-def source_keys(reference: SourceRef) -> tuple[str, str]:
-    """Match canonical suppression keys across source revisions; part and whole are independent."""
-
-    def key(part: str | None) -> str:
-        return canonical_object_sha256(
-            {
-                "store": str(reference.source_store_id),
-                "kind": reference.record_kind,
-                "id": str(reference.record_id),
-                "part": part,
-            }
-        )
-
-    return key(str(reference.part_id) if reference.part_id else None), key(None)
-
-
-def source_rows(
-    connection: sqlite3.Connection, watermark: int, selection: str = ""
-) -> Iterator[SourceRecord]:
-    """Fetch bounded pages and close cursors before tokenization/inference."""
-    last = 0
-    while True:
-        rows = connection.execute(
-            "SELECT rowid AS source_rowid,* FROM source_records WHERE rowid>? AND "
-            "recorded_at_us<=? " + selection + " ORDER BY rowid LIMIT 256",
-            (last, watermark),
-        ).fetchall()
-        if not rows:
-            return
-        for row in rows:
-            last = row_int(row, "source_rowid")
-            payload = row_text(row, "payload_json")
-            if sha256(payload.encode()).hexdigest() != row_text(row, "payload_sha256"):
-                raise IndexError()
-            yield _ADAPTER.validate_json(payload)
+from .source_access import source_keys, source_rows
+from .source_graph import selected_path
 
 
 def memory_text(memory: Memory, names: dict[str, str]) -> str:
@@ -274,51 +234,6 @@ class IndexBuilder:
 
             target.commit()
 
-    def _graph(
-        self, source: sqlite3.Connection, reference: SourceRef
-    ) -> tuple[dict[tuple[str, int], int], bool]:
-        row = source.execute(
-            "SELECT * FROM source_records WHERE record_kind='conversation' AND "
-            "record_id=? AND revision=?",
-            (str(reference.record_id), reference.record_revision),
-        ).fetchone()
-        if row is None:
-            return {}, False
-        conversation = load_model(row, Conversation)
-        if conversation.selection is None or conversation.selection.status != "resolved":
-            return {}, False
-        selected: dict[tuple[str, int], int] = {}
-        previous: SourceRef | None = None
-        for position, node in enumerate(conversation.selection.path):
-            row = source.execute(
-                "SELECT * FROM source_records WHERE record_kind='graph_node' AND "
-                "record_id=? AND revision=?",
-                (str(node.record_id), node.record_revision),
-            ).fetchone()
-            if row is None:
-                return {}, False
-            record = load_model(row, GraphNode)
-            if (
-                record.conversation != reference
-                or (previous is None and record.parent is not None)
-                or (
-                    previous is not None
-                    and (
-                        record.parent is None
-                        or record.parent.status != "resolved"
-                        or record.parent.target != previous
-                    )
-                )
-            ):
-                return {}, False
-            previous = record.source
-            if record.message:
-                key = (str(record.message.record_id), record.message.record_revision)
-                if key in selected:
-                    return {}, False
-                selected[key] = position
-        return selected, True
-
     def project_sources(
         self,
         source: sqlite3.Connection,
@@ -352,7 +267,7 @@ class IndexBuilder:
                 if key not in cache:
                     if len(cache) >= 32:
                         cache.clear()
-                    cache[key] = self._graph(source, record.conversation)
+                    cache[key] = selected_path(source, record.conversation)
                 selected, resolved = cache[key]
                 membership = (str(record.source.record_id), record.source.record_revision)
                 branch = (

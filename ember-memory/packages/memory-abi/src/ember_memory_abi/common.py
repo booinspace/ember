@@ -9,7 +9,7 @@ from typing import Annotated, cast
 
 from pydantic import UUID4, AfterValidator, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-ABI_VERSION = "0.2.0"
+ABI_VERSION = "0.3.0"
 ARCHIVE_VERSION = "0.1.0"
 CANONICAL_JSON_SPEC = "ember.canonical-json@0.1.0"
 

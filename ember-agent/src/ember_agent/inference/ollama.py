@@ -111,7 +111,7 @@ class OllamaUpstream:
             },
         }
         if request.output == "json":
-            body["format"] = "json"
+            body["format"] = request.output_schema if request.output_schema is not None else "json"
         if request.tools:
             adapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
             body["tools"] = adapter.validate_python(

@@ -106,8 +106,8 @@ def test_stream_strips_split_reasoning_and_has_terminal_usage(tmp_path: Path) ->
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("workload", ["P1", "P2", "P3", "P4"])
-def test_only_p0_before_upstream(tmp_path: Path, workload: str) -> None:
+@pytest.mark.parametrize("workload", ["P1", "P2"])
+def test_future_workloads_rejected_before_upstream(tmp_path: Path, workload: str) -> None:
     async def run() -> None:
         config = configuration(tmp_path)
         upstream = FakeUpstream()

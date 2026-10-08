@@ -26,7 +26,8 @@ from .errors import BundleError, CorruptStoreError
 from .library import KnowledgeSelection, LibraryService, entity_references
 from .models import StoreInfo
 from .ownership import validate_local_root
-from .schema import PHASE_FIVE_SQL, SCHEMA_VERSION
+from .schema import PHASE_FIVE_SQL, PHASE_SIX_IMMUTABLE, PHASE_SIX_SQL, SCHEMA_VERSION
+from .specifications import specification_rows
 
 
 def _directory(info: StoreInfo) -> str:
@@ -476,7 +477,7 @@ class BundleService:
 
         def copy(connection: sqlite3.Connection) -> None:
             with closing(sqlite3.connect(path)) as target:
-                target.executescript(SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL)
+                target.executescript(SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL + PHASE_SIX_SQL)
 
                 def transfer(
                     table: str, permitted: Callable[[sqlite3.Row], bool] | None = None
@@ -495,6 +496,13 @@ class BundleService:
                     "suppression_targets",
                 ):
                     transfer(table)
+                references = tuple(
+                    provenance.specification
+                    for memory in memories
+                    for provenance in memory.content.provenance
+                )
+                for definition in specification_rows(connection, references):
+                    target.execute("INSERT INTO processing_specs VALUES(?,?,?)", tuple(definition))
                 for table in (
                     "memories",
                     "memory_revisions",
@@ -566,7 +574,7 @@ class BundleService:
                             "INSERT INTO materialized_evidence VALUES(?,?,?)",
                             (str(item.evidence.evidence_id), payload, payload_hash(payload)),
                         )
-                for table in (*IMMUTABLE_TABLES, *PHASE_FOUR_IMMUTABLE):
+                for table in (*IMMUTABLE_TABLES, *PHASE_FOUR_IMMUTABLE, *PHASE_SIX_IMMUTABLE):
                     for action in ("UPDATE", "DELETE"):
                         target.execute(
                             f"CREATE TRIGGER immutable_{table}_{action.lower()} "
@@ -626,7 +634,7 @@ def _read_manifest(bundle: Path) -> BundleManifest:
                 *(str(item) for item in manifest.dependencies),
             }
             or registry.execute("PRAGMA quick_check").fetchone()[0] != "ok"
-            or registry.execute("PRAGMA user_version").fetchone()[0] not in {2, SCHEMA_VERSION}
+            or registry.execute("PRAGMA user_version").fetchone()[0] not in {2, 3, SCHEMA_VERSION}
         ):
             raise BundleError()
     for snapshot in manifest.stores:
@@ -645,7 +653,8 @@ def _read_manifest(bundle: Path) -> BundleManifest:
             ) != (str(snapshot.store.store_id), snapshot.store.kind, snapshot.store.namespace):
                 raise BundleError()
             if (
-                connection.execute("PRAGMA user_version").fetchone()[0] not in {2, SCHEMA_VERSION}
+                connection.execute("PRAGMA user_version").fetchone()[0]
+                not in {2, 3, SCHEMA_VERSION}
                 or connection.execute("PRAGMA quick_check").fetchone()[0] != "ok"
                 or connection.execute("SELECT coverage FROM store_coverage").fetchone()[0]
                 != snapshot.coverage

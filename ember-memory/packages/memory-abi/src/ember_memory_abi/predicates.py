@@ -101,8 +101,12 @@ def validate_memory_write(
     if unsupported_extension_names(draft, supported_extension_names):
         raise UnsupportedWriteError()
     if not isinstance(content.payload, FactPayload):
-        expected_modality = {"episode": "FACTUAL_ASSERTION", "goal": "GOAL", "plan": "PLAN"}
-        if content.modality != expected_modality[content.kind]:
+        allowed = {
+            "episode": KNOWN_MODALITIES - {"GOAL", "PLAN"},
+            "goal": {"GOAL"},
+            "plan": {"PLAN"},
+        }
+        if content.modality not in allowed[content.kind]:
             raise UnsupportedWriteError()
         return
     payload = content.payload

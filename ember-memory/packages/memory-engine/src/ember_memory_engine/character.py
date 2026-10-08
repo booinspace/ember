@@ -33,6 +33,7 @@ from ember_memory_abi.memory import (
     MemorySource,
     PinnedMemory,
 )
+from ember_memory_abi.predicates import KNOWN_MODALITIES
 
 from . import mutations, retrieval
 from ._state import CharacterState
@@ -81,16 +82,7 @@ class SqliteMemoryStore:
         )
         return MemoryCapabilities(
             supported_kinds=("fact", "episode", "goal", "plan"),
-            supported_modalities=tuple(
-                sorted(
-                    {
-                        modality
-                        for definition in self.state.predicates
-                        for modality in definition.allowed_modalities
-                    }
-                    | {"GOAL", "PLAN"}
-                )
-            ),
+            supported_modalities=tuple(sorted(KNOWN_MODALITIES)),
             supported_predicates=tuple(definition.name for definition in self.state.predicates),
             retrieval_modes=(
                 "hybrid_if_indexed",

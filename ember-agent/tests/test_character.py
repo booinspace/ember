@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from livekit.agents import llm
@@ -225,8 +226,14 @@ def test_text_composition_human_entry_and_stable_identity(
     runtime = LocalRuntime(config)
     identity = runtime.memory.character_id
     runtime.core.model = FakeModel()
+    session = AsyncMock()
+    monkeypatch.setattr(runtime.model, "session", session)
     asyncio.run(runtime.chat())
     runtime.close_workers()
+    assert session.await_count == 2
+    assert session.await_args_list[0].kwargs == {"connected": True}
+    assert session.await_args_list[1].kwargs == {"connected": False}
+    assert session.await_args_list[0].args == session.await_args_list[1].args
     output = capsys.readouterr().out
     assert "Memory applied" in output and "Synthetic visible reply" in output
     assert "idempotency" in output.lower()

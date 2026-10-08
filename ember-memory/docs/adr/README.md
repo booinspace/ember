@@ -13,6 +13,8 @@ rather than duplicating schemas, evidence policy or worker implementation.
 | [Memory ADR 0004](0004-source-import-and-authoring.md) | Official ZIP replay and native human entry implemented; private import verified, operator-reviewed claim adoption remains open | [Root phase 3](../../../docs/adr/0006-phase-three-source-and-runtime.md) |
 | [Memory ADR 0005](0005-libraries-seeds-and-bundles.md) | Library approval/seeds, expiring grants, linked/selective bundles and schema 0.2.0 implemented; review checkpoint | [Root phase 4](../../../docs/adr/0007-phase-four-libraries-characters-bundles.md) |
 | [Memory ADR 0006](0006-derived-retrieval-and-generations.md) | Graph-safe FTS/CPU BGE/sqlite-vec, hybrid scope, immutable generations/replay; 360-test gate passed, full performance/capacity acceptance and review pending | [Root phase 5](../../../docs/adr/0008-phase-five-retrieval-and-indexes.md) |
+| [Memory ADR 0007](0007-extraction-jobs-and-summary-sources.md) | Structured exact-evidence proposals, extractor 0.1.2 claim schema, pinned resumable jobs and review; 408-test full gate passed; four private archive proposals await operator review | [Root phase 6](../../../docs/adr/0009-phase-six-extraction-and-background-inference.md) |
+
 
 Phase 0a preparation is recorded in
 [root reconnaissance](../../../docs/adr/0003-phase-zero-reconnaissance.md) and its

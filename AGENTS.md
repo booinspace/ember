@@ -41,12 +41,23 @@ Evidence-only libraries are partial provenance stores, not rewritten source
 messages. Phase 5 retrieval/indexing is implemented. Read
 `docs/adr/0008-phase-five-retrieval-and-indexes.md`,
 `ember-memory/docs/adr/0006-derived-retrieval-and-generations.md` and
-`docs/phase-5-runbook.md`. Current engine/schema are 0.3.0 (user_version 3), ABI
-0.2.0 and archive/bundle 0.1.0. Canonical covering indexes are backed-up additive
+`docs/phase-5-runbook.md`. Phase 5 introduced engine/schema 0.3.0 (user_version 3), ABI
+0.2.0 and archive/bundle 0.1.0; Phase 6 versions are recorded below. Canonical covering indexes are backed-up additive
 migrations; immutable derived generations are disposable and scope-checked.
 Explicit setup installs CPU embeddings; startup never downloads/rebuilds. Updates
-reuse vectors but copy the derived database. Await Phase 5 architecture review
-before Phase 6, keeping the larger capacity/platform gates explicit.
+reuse vectors but copy the derived database. The user authorized Phase 6; Phase 5's larger capacity/platform and measured
+performance gates remain explicit and open. Phase 6 structured extraction, summary
+import/review and conservative P3/P4 admission are implemented. Read
+`docs/adr/0009-phase-six-extraction-and-background-inference.md`,
+`ember-memory/docs/adr/0007-extraction-jobs-and-summary-sources.md`,
+`ember-agent/docs/adr/0004-conservative-background-gateway.md` and
+`docs/phase-6-runbook.md` before extending them. Current engine/schema are 0.4.0
+(user_version 4), ABI 0.3.0 and gateway wire 0.2.0; archive/bundle remain 0.1.0.
+Jobs pin source/model/prompt/schema/policy hashes; completed windows commit atomically
+and only explicit operator review/approval/seed enters character recall. The user has
+authorized a bounded sample from the existing private archive; do not interpret that as
+approval of any proposal. Stop for architecture review before Phase 7; no automatic
+personal claim adoption, consolidation or preemption is implied.
 
 ## Boundaries
 

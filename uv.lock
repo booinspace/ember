@@ -254,13 +254,13 @@ dependencies = [
 
 [package.optional-dependencies]
 local-deployment = [
-    { name = "ember-memory-engine", extra = ["search"] },
+    { name = "ember-memory-engine", extra = ["processing", "search"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "ember-memory-abi", editable = "ember-memory/packages/memory-abi" },
-    { name = "ember-memory-engine", extras = ["search"], marker = "extra == 'local-deployment'", editable = "ember-memory/packages/memory-engine" },
+    { name = "ember-memory-engine", extras = ["search", "processing"], marker = "extra == 'local-deployment'", editable = "ember-memory/packages/memory-engine" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "jsonschema", specifier = ">=4.23,<5" },
@@ -281,7 +281,7 @@ source = { virtual = "." }
 dev = [
     { name = "ember-agent", extra = ["local-deployment"] },
     { name = "ember-memory" },
-    { name = "ember-memory-engine", extra = ["search"] },
+    { name = "ember-memory-engine", extra = ["processing", "search"] },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -294,7 +294,7 @@ dev = [
 dev = [
     { name = "ember-agent", extras = ["local-deployment"], editable = "ember-agent" },
     { name = "ember-memory", editable = "ember-memory" },
-    { name = "ember-memory-engine", extras = ["search"], editable = "ember-memory/packages/memory-engine" },
+    { name = "ember-memory-engine", extras = ["search", "processing"], editable = "ember-memory/packages/memory-engine" },
     { name = "pyright", specifier = ">=1.1.390,<2" },
     { name = "pytest", specifier = ">=8.3,<10" },
     { name = "ruff", specifier = ">=0.9,<1" },
@@ -306,19 +306,19 @@ name = "ember-memory"
 version = "0.1.0"
 source = { editable = "ember-memory" }
 dependencies = [
-    { name = "ember-memory-engine", extra = ["search"] },
+    { name = "ember-memory-engine", extra = ["processing", "search"] },
     { name = "ember-memory-importers" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "ember-memory-engine", extras = ["search"], editable = "ember-memory/packages/memory-engine" },
+    { name = "ember-memory-engine", extras = ["search", "processing"], editable = "ember-memory/packages/memory-engine" },
     { name = "ember-memory-importers", editable = "ember-memory/packages/memory-importers" },
 ]
 
 [[package]]
 name = "ember-memory-abi"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "ember-memory/packages/memory-abi" }
 dependencies = [
     { name = "pydantic" },
@@ -329,7 +329,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
 name = "ember-memory-engine"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "ember-memory/packages/memory-engine" }
 dependencies = [
     { name = "ember-memory-abi" },
@@ -337,6 +337,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+processing = [
+    { name = "httpx" },
+]
 search = [
     { name = "numpy" },
     { name = "onnxruntime" },
@@ -347,13 +350,14 @@ search = [
 [package.metadata]
 requires-dist = [
     { name = "ember-memory-abi", editable = "ember-memory/packages/memory-abi" },
+    { name = "httpx", marker = "extra == 'processing'", specifier = ">=0.28,<1" },
     { name = "numpy", marker = "extra == 'search'", specifier = ">=2,<3" },
     { name = "onnxruntime", marker = "extra == 'search'", specifier = ">=1.20,<2" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "sqlite-vec", marker = "extra == 'search'", specifier = ">=0.1.6,<0.2" },
     { name = "tokenizers", marker = "extra == 'search'", specifier = ">=0.21,<1" },
 ]
-provides-extras = ["search"]
+provides-extras = ["processing", "search"]
 
 [[package]]
 name = "ember-memory-importers"

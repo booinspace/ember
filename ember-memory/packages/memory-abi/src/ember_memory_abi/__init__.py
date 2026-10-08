@@ -6,7 +6,7 @@ from .evidence import Evidence, EvidenceAssertion, EvidenceSpan, SourceRef, vali
 from .interfaces import ArchiveWriter, AsyncMemoryClient, MemoryStore
 from .memory import ApprovedKnowledge, CandidateMemory, Memory
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "ABI_VERSION",

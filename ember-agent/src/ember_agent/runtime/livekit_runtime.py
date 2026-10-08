@@ -176,7 +176,10 @@ class RuntimeServices:
                             raise ConfigurationError("Existing gateway model pin does not match.")
                         if health.context_tokens != self.config.context_tokens:
                             raise ConfigurationError("Existing gateway context does not match.")
-                        if health.status != "ready" or health.journal_status != "available":
+                        if (
+                            health.status not in {"ready", "busy"}
+                            or health.journal_status != "available"
+                        ):
                             raise ConfigurationError(
                                 "Gateway is not ready; inspect its health/state."
                             )
@@ -227,6 +230,14 @@ async def run_runtime(
         services = RuntimeServices(config, config_path)
         cleanup.push_async_callback(services.aclose)
         value = await services.start()
+        foreground_token = await asyncio.to_thread(
+            read_token, config.runtime_root / "gateway.token"
+        )
+        reservation = HttpGatewayClient(config.services.gateway.endpoint, foreground_token)
+        cleanup.push_async_callback(reservation.aclose)
+        cleanup.push_async_callback(reservation.session, services.instance, connected=False)
+        async with asyncio.timeout(config.services.livekit.startup_timeout_seconds):
+            await reservation.session(services.instance, connected=True)
         runtime = await asyncio.to_thread(LocalRuntime, config)
         cleanup.push_async_callback(asyncio.to_thread, runtime.close_workers)
         cleanup.push_async_callback(runtime.aclose)

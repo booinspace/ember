@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections.abc import Callable
 from concurrent.futures import Future
 from contextlib import closing
 from pathlib import Path
@@ -73,6 +74,7 @@ class CanonicalEngine:
         self.auto_refresh = auto_refresh
         self._refreshes: dict[CanonicalId, Future[IndexGeneration]] = {}
         self._dirty_indexes: set[CanonicalId] = set()
+        self._processing_active: set[CanonicalId] = set()
         self.index_error_count = 0
         self.encoding = EncodingPool(encoder)
         self.fast_vectors = VectorPool(name="ember-fast-vectors", cache_mib=192)
@@ -215,6 +217,23 @@ class CanonicalEngine:
         if item is None:
             raise SourceUnavailableError()
         return item
+
+    def acquire_processing(self, job_id: CanonicalId) -> Callable[[], None]:
+        """Prevent duplicate concurrent runners in this root; keep admission through drain."""
+        from .processing_contracts import ProcessingError
+
+        with self._guard:
+            if self._closed:
+                raise EngineClosedError()
+            if self._processing_active:
+                raise ProcessingError("job_already_running")
+            self._processing_active.add(job_id)
+
+        def release() -> None:
+            with self._guard:
+                self._processing_active.discard(job_id)
+
+        return release
 
     def maintenance_store(self, identity: CanonicalId) -> tuple[StoreInfo, SqliteDatabase]:
         """Engine-internal maintenance access; never expose this capability to runtime tools."""

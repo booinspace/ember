@@ -1,7 +1,8 @@
-"""P0 admission and owned generation; caller cancellation does not release the runner slot."""
+"""P0/P3/P4 admission; caller cancellation does not release the owned runner slot."""
 
 import asyncio
 import json
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -34,6 +35,9 @@ class Generation:
     detached: bool = False
     task: asyncio.Task[None] | None = None
     sequence: int = 0
+    on_detach: Callable[[], None] | None = None
+    expiry: asyncio.TimerHandle | None = None
+    heartbeat: asyncio.TimerHandle | None = None
 
     def emit(self, kind: str, **fields: object) -> None:
         if self.detached:
@@ -74,6 +78,8 @@ class Generation:
                     break
         finally:
             self.detached = True
+            if self.on_detach is not None:
+                self.on_detach()
 
 
 class P0Gateway:
@@ -86,6 +92,9 @@ class P0Gateway:
         *,
         record: Callable[[str, GatewayRequest], Awaitable[None]] | None = None,
         uncertain: bool = False,
+        sessions: tuple[UUID, ...] = (),
+        record_sessions: Callable[[tuple[UUID, ...]], Awaitable[None]] | None = None,
+        background_queue_limit: int = 8,
     ) -> None:
         self.config = config
         self.upstream = upstream
@@ -95,6 +104,14 @@ class P0Gateway:
         self.closed = False
         self.journal_failed = False
         self.used_ids: set[UUID] = set()
+        self.completed_ids: deque[UUID] = deque()
+        self.sessions = set(sessions)
+        self._session_guard = asyncio.Lock()
+        self.record_sessions = record_sessions
+        self.background_queue_limit = background_queue_limit
+        self.pending: dict[str, deque[Generation]] = {"P3": deque(), "P4": deque()}
+        self.dispatcher: asyncio.Task[None] | None = None
+        self._next_background = "P3"
 
     def input_cost(self, request: GatewayRequest) -> int:
         """Conservative UTF-8 serialization plus role/template allowance until tokenizer pinning."""
@@ -112,14 +129,23 @@ class P0Gateway:
         request = GatewayRequest.model_validate_json(request.model_dump_json())
         if self.closed:
             raise GatewayError("draining")
-        if request.workload != "P0":
+        if request.workload not in {"P0", "P3", "P4"}:
             raise GatewayError("unsupported_workload")
         if request.model != self.config.model_tag:
             raise GatewayError("model_not_allowlisted")
+        if self.journal_failed:
+            raise GatewayError("journal_unavailable")
         if self.uncertain:
             raise GatewayError("quiescence_required")
-        if self.active is not None:
+        if request.workload == "P0" and self.active is not None:
             raise GatewayError("busy")
+        if (
+            request.workload != "P0"
+            and len(self.pending[request.workload]) >= self.background_queue_limit
+        ):
+            raise GatewayError("background_queue_full")
+        if request.workload != "P0" and (request.output != "json" or request.tools):
+            raise GatewayError("background_requires_structured_output")
         deadline = datetime.fromisoformat(request.deadline_at.replace("Z", "+00:00"))
         if deadline <= datetime.now(UTC):
             raise GatewayError("deadline_exceeded")
@@ -130,7 +156,9 @@ class P0Gateway:
         if request.request_id in self.used_ids:
             raise GatewayError("duplicate_request")
         if len(self.used_ids) >= 10000:
-            raise GatewayError("request_registry_full")
+            if not self.completed_ids:
+                raise GatewayError("request_registry_full")
+            self.used_ids.discard(self.completed_ids.popleft())
         if len({item.function.name for item in request.tools}) != len(request.tools):
             raise GatewayError("duplicate_tool_definition")
         for definition in request.tools:
@@ -143,7 +171,32 @@ class P0Gateway:
                 Draft202012Validator.check_schema(schema)
             except Exception as error:
                 raise GatewayError("invalid_tool_schema") from error
+        if request.output_schema is not None:
+            if request.output != "json" or len(json.dumps(request.output_schema)) > 16000:
+                raise GatewayError("invalid_output_schema")
+            try:
+                Draft202012Validator.check_schema(request.output_schema)
+            except Exception as error:
+                raise GatewayError("invalid_output_schema") from error
+            references = json.dumps(request.output_schema)
+            if any(item in references for item in ("http:", "https:", "file:")):
+                raise GatewayError("external_schema_reference")
         job = Generation(request)
+        if request.workload != "P0":
+            self.used_ids.add(request.request_id)
+            self.pending[request.workload].append(job)
+            job.emit("start")
+            loop = asyncio.get_running_loop()
+            job.expiry = loop.call_later(
+                max(0.0, (deadline - datetime.now(UTC)).total_seconds()),
+                self._remove_pending,
+                job,
+                "deadline_exceeded",
+            )
+            job.on_detach = lambda: self._remove_pending(job, "subscriber_detached")
+            self._heartbeat(job)
+            self._wake_background()
+            return job
         self.active = job
         try:
             await self.upstream.verify()
@@ -156,6 +209,152 @@ class P0Gateway:
         job.task = asyncio.create_task(self._pump(job), name="ember-p0-" + str(request.request_id))
         return job
 
+    def _remove_pending(self, job: Generation, code: str) -> None:
+        queue = self.pending.get(job.request.workload)
+        if queue is None or job not in queue:
+            return
+        queue.remove(job)
+        if job.expiry is not None:
+            job.expiry.cancel()
+        if job.heartbeat is not None:
+            job.heartbeat.cancel()
+        job.emit("error", code=code)
+        self.completed_ids.append(job.request.request_id)
+
+    def _heartbeat(self, job: Generation) -> None:
+        if job not in self.pending[job.request.workload]:
+            return
+        if job.detached:
+            self._remove_pending(job, "subscriber_detached")
+            return
+        job.emit("progress")
+        job.heartbeat = asyncio.get_running_loop().call_later(5, self._heartbeat, job)
+
+    def _wake_background(self) -> None:
+        if (
+            self.closed
+            or self.uncertain
+            or self.journal_failed
+            or self.active is not None
+            or self.sessions
+        ):
+            return
+        if self.dispatcher is not None and not self.dispatcher.done():
+            return
+        if not any(self.pending.values()):
+            return
+        self.dispatcher = asyncio.create_task(self._dispatch(), name="ember-background-dispatch")
+
+        def completed(task: asyncio.Task[None]) -> None:
+            if not task.cancelled() and task.exception() is not None:
+                self.uncertain = True
+                for queue in self.pending.values():
+                    for job in tuple(queue):
+                        self._remove_pending(job, "scheduler_failed")
+            elif not self.closed:
+                self._wake_background()
+
+        self.dispatcher.add_done_callback(completed)
+
+    def _park(self, job: Generation) -> None:
+        # Metadata checks have not generated tokens. Return the step to its FIFO
+        # boundary when realtime ownership arrives during admission.
+        self.active = None
+        if job.detached:
+            self.completed_ids.append(job.request.request_id)
+            return
+        self.pending[job.request.workload].appendleft(job)
+        deadline = datetime.fromisoformat(job.request.deadline_at.replace("Z", "+00:00"))
+        job.expiry = asyncio.get_running_loop().call_later(
+            max(0.0, (deadline - datetime.now(UTC)).total_seconds()),
+            self._remove_pending,
+            job,
+            "deadline_exceeded",
+        )
+        self._heartbeat(job)
+
+    async def _dispatch(self) -> None:
+        if (
+            self.active is not None
+            or self.sessions
+            or self.closed
+            or self.uncertain
+            or self.journal_failed
+        ):
+            return
+        choices = (self._next_background, "P4" if self._next_background == "P3" else "P3")
+        queue = next((self.pending[name] for name in choices if self.pending[name]), None)
+        if queue is None:
+            return
+        job = queue.popleft()
+        self._next_background = "P4" if job.request.workload == "P3" else "P3"
+        if job.expiry is not None:
+            job.expiry.cancel()
+        if job.heartbeat is not None:
+            job.heartbeat.cancel()
+        self.active = job
+        try:
+            deadline = datetime.fromisoformat(job.request.deadline_at.replace("Z", "+00:00"))
+            if deadline <= datetime.now(UTC):
+                raise GatewayError("deadline_exceeded")
+            await self.upstream.verify()
+            if self.sessions or job.detached:
+                self._park(job)
+                return
+            if self.record:
+                await self.record("running", job.request)
+            if self.sessions or job.detached:
+                if self.record:
+                    await self.record("complete", job.request)
+                self._park(job)
+                return
+        except Exception as error:
+            self.active = None
+            self.completed_ids.append(job.request.request_id)
+            job.emit(
+                "error", code=error.code if isinstance(error, GatewayError) else "admission_failed"
+            )
+            return
+        job.task = asyncio.create_task(
+            self._pump(job), name="ember-background-" + str(job.request.request_id)
+        )
+
+    async def session(self, identity: UUID, *, connected: bool) -> None:
+        """Reserve before waiting for background quiescence; idle connected sessions block it.
+
+        Journal failure leaves background blocked. No native cancellation or release
+        proof is inferred from an HTTP disconnect or apparent idle gap.
+        """
+        if connected:
+            if self.closed:
+                raise GatewayError("draining")
+            if identity not in self.sessions and len(self.sessions) >= 32:
+                raise GatewayError("session_limit")
+            self.sessions.add(identity)
+        async with self._session_guard:
+            proposed = self.sessions if connected else self.sessions - {identity}
+            try:
+                if self.record_sessions is not None:
+                    await self.record_sessions(tuple(sorted(proposed, key=str)))
+            except Exception as error:
+                self.sessions.add(identity)
+                self.journal_failed = True
+                raise GatewayError("session_journal_failed") from error
+            if not connected:
+                # Keep admission blocked until durable disconnection succeeds.
+                self.sessions.discard(identity)
+        if connected:
+            # A dispatcher can be between journal admission and starting its pump.
+            if self.dispatcher is not None and not self.dispatcher.done():
+                await asyncio.shield(self.dispatcher)
+            active = self.active
+            if active is not None and active.request.workload != "P0" and active.task is not None:
+                await asyncio.shield(active.task)
+            if self.uncertain:
+                raise GatewayError("quiescence_required")
+        else:
+            self._wake_background()
+
     async def _pump(self, job: Generation) -> None:
         request = job.request
         started = monotonic()
@@ -166,7 +365,8 @@ class P0Gateway:
         json_text: list[str] = []
         json_size = 0
         tools: dict[int, NativeTool] = {}
-        job.emit("start")
+        if job.sequence == 0:
+            job.emit("start")
         try:
             remaining = max(
                 0,
@@ -251,6 +451,11 @@ class P0Gateway:
                         json.dumps(parsed, allow_nan=False)
                     except ValueError as error:
                         raise GatewayError("invalid_structured_output") from error
+                    if request.output_schema is not None:
+                        validator = Draft202012Validator(request.output_schema)
+                        validate = cast(Callable[[object], bool], validator.is_valid)  # pyright: ignore[reportUnknownMemberType]
+                        if not validate(parsed):
+                            raise GatewayError("structured_schema_mismatch")
                     job.emit("text", text=raw)
                 calls = self._tools(request, tools)
                 if calls:
@@ -292,6 +497,8 @@ class P0Gateway:
             )
         finally:
             self.active = None
+            self.completed_ids.append(job.request.request_id)
+            self._wake_background()
 
     def _tools(self, request: GatewayRequest, tools: dict[int, NativeTool]) -> tuple[ToolCall, ...]:
         definitions = {item.function.name: item.function for item in request.tools}
@@ -341,11 +548,19 @@ class P0Gateway:
             digest=self.config.model_digest,
             context_tokens=self.config.context_tokens,
             active_request_id=self.active.request.request_id if self.active else None,
+            queued_p3=len(self.pending["P3"]),
+            queued_p4=len(self.pending["P4"]),
+            realtime_sessions=tuple(sorted(self.sessions, key=str)),
         )
 
     async def aclose(self) -> None:
         """Stop admission, drain owned work, then close transport without stopping Ollama."""
         self.closed = True
+        for queue in self.pending.values():
+            for job in tuple(queue):
+                self._remove_pending(job, "draining")
+        if self.dispatcher is not None:
+            await asyncio.shield(self.dispatcher)
         if self.active is not None and self.active.task is not None:
             await asyncio.shield(self.active.task)
         await self.upstream.aclose()

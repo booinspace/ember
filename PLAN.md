@@ -2627,9 +2627,10 @@ For every phase, review this PLAN and the existing implementation first:
 
 Record decisions and introduced coupling in an ADR; explain meaningful decisions
 as work proceeds. Deliver tested behavior and an architecture summary, then stop
-for the user's review before starting the next phase. Current checkpoint: Phase 5 implementation/acceptance review. Phase 3 operator-reviewed
-real-claim adoption remains open and is not replaced by synthetic acceptance.
-The user authorized Phase 5; stop for architecture review before Phase 6.
+for the user's review before starting the next phase. Current checkpoint: Phase 6
+architecture review. The user authorized Phase 6 after Phase 5; its implementation
+and synthetic/real-service acceptance are recorded below. Phase 3 personal claim
+adoption and Phase 5 performance/capacity gates remain open. Stop before Phase 7.
 
 Model integration is not deferred for a pending build: the model exists. Phase 3 starts baseline validation; later phases test their specific features.
 
@@ -2759,6 +2760,100 @@ One hundred sampled chunks/181 original spans passed exact verification; maximum
 stored embedding input is 480 tokens. Approved imported knowledge remains zero. Real-source claim review, full extraction/summary
 import, full voice/browser integration, Linux and ABI 1.0 remain separate gates.
 Stop here for architecture review before Phase 6.
+
+### Phase 6 implementation record (2026-10-08)
+
+Phase 6 is implemented and validated; stop for operator architecture review before
+Phase 7. See `docs/adr/0009-phase-six-extraction-and-background-inference.md`,
+`ember-memory/docs/adr/0007-extraction-jobs-and-summary-sources.md`,
+`ember-agent/docs/adr/0004-conservative-background-gateway.md` and
+`docs/phase-6-runbook.md` for ownership, introduced coupling and exact PowerShell commands.
+
+The eight-check review reused canonical archive/evidence validation, initial predicates,
+candidate/approval/seeding contracts, bounded workers, outbox/index maintenance and the
+existing one gateway. Necessary new primitives are pinned processing specifications,
+immutable source windows/headers, durable per-window checkpoints/failures/candidate
+associations/review decisions, an injected ExtractionModel Protocol, the independent
+summary adapter, and conservative P3/P4 queues with trusted realtime ownership. Shared
+canonical source paging/suppression identities and graph traversal serve both indexing
+and processing; extraction does not require an index. No agent dependency entered the
+ABI/importers/engine, and no native generation fallback or second GPU scheduler exists.
+
+The `chatgpt_memory_summary@0.1.0` adapter preserves exact UTF-8 text/Markdown (8 MiB)
+or documented JSON memory entries (64 MiB/100,000 entries), with explicit text-field
+selection, namespace/crosswalk IDs, append-only revisions and resumable batches of 128.
+Raw originals remain verbatim. It does not guess saved-memory inclusion in conversations,
+normalize hidden reasoning, approve beliefs or create embeddings. Dates remain unknown
+where the source does not establish them. The official ZIP/private library was not
+reimported. The operator started three pinned jobs against that existing library. The
+first two are retained as failed diagnostics; neither created candidates. The third
+completed its five-window sample with four pending proposals. No proposal was approved or
+seeded.
+
+Structured model extraction sends P3/P4 only through the pinned local gateway. Jobs pin
+canonical watermark/source revisions/hashes, model tag/digest, extractor/prompt/schema/
+policy hashes and bounded window settings. Default windows contain at most 1,800 UTF-8
+bytes, 64 codepoints of overlap and four proposed claims per complete output, capped at
+1,192 output tokens. Each model step has separate request/context IDs and no canonical
+write transaction. Exact original Unicode quotes are verified before staged entities,
+candidates, initial policy decisions and completion checkpoints commit atomically.
+Extractor `ember.atomic-claims@0.1.2` requires an explicit nullable `quote_start`, asks
+for unique exact quotes when possible and verifies supplied repeated-quote offsets. Its
+discriminated schema requires complete fact fields and null fact-only fields for other
+claim types. These revisions correct prompt/schema mismatches found in initial operator
+archive samples; their prompt/schema hashes require a new job key. Malformed/incomplete/ambiguous output fails
+with safe codes. Completed windows are
+skipped on resume; failed steps require explicit retry. Status reports aggregate counts
+and up to sixteen failed-step ordinals/attempts/codes. One engine root owns one bounded
+processing runner; cancellation retains ownership until worker/native draining.
+
+All eleven planned modalities are retained rather than upgraded into facts. The
+`activation.conservative@0.1.0` policy records inputs, exact definition/version, verdict
+and reasons, checking thresholds, semantics, authority, ambiguity, exact duplicates,
+single-valued predicate conflicts and previous rejections. Summary confidence is capped
+at 0.79. Imported personal activation requires operator review of exact original quotes;
+manual approval is a separately retained override and does not fabricate confidence or
+independent corroboration. Model verdicts never confer approval/ownership/grants.
+Review files expose immutable candidate hashes/evidence and accept only edited operator
+decisions. Reevaluation appends changed verdicts without rewriting accepted beliefs.
+Existing approval/seed receipts support retry; file application is per candidate, not
+one whole-file transaction. Current suppression is rechecked before inference, review,
+approval and seeding. Re-extraction proposes new candidates, preserves rejection history
+and does not overwrite manual corrections. Semantic merging, valid-time correction and
+supersession remain Phase 7, including deeper cross-source evidence consolidation.
+
+The same agent gateway admits authenticated P3/P4 JSON workloads with eight queued slots
+per class, FIFO within each class and alternating service between classes. It retains
+one active upstream generation using the existing model/context configuration. JSON is
+buffered until completed/schema-validated. Idle connected terminal/LiveKit host sessions
+block background work. Realtime startup reserves first, parks work still in metadata
+admission or waits for an already running step to drain. Queue expiry/detachment removes
+pending work; active disconnects do not prove cancellation or release the runner. Session
+ownership survives restart and journal failure closes admission. Explicit operator
+quiescence recovery remains required for stale ownership/uncertain native outcomes.
+P1/P2/full accounting remain Phase 9 and measured preemption Phase 13.
+
+Experimental versions are ABI 0.3.0, engine/schema 0.4.0 (user_version 4) and gateway
+wire 0.2.0; archive/bundle remain 0.1.0. Schema 1/2/3 upgrades preserve IDs/revisions and
+retain consistent backups before DDL, with transactional rollback. Full source bundles
+retain resumable jobs and immutable review/policy history. Independent seeds/selective
+exports retain only referenced generic extraction/policy definitions and exact selected
+evidence; private bulk jobs/proposals/review logs are omitted from selective bundles.
+Their partial source coverage is explicit and cannot claim full import/extraction replay.
+
+Final gate: **408 tests passed, no skips**, on Windows/Python 3.12.15 with actual pinned
+non-MTP Qwen, CPU BGE and LiveKit enabled. Ruff formatting/lint and strict Pyright passed.
+The real synthetic path extracts a saved preference via P3/Qwen, reviews/approves it,
+seeds a separate character, builds embeddings, restarts canonical ownership, retrieves
+semantically and streams a Qwen reply through the actual LiveKit agent/LLM hook. Existing
+actual room tests also pass. Additional acceptance covers source fidelity/Unicode,
+reasoning exclusion, policy pinning/reevaluation, unsupported semantics, conflicts,
+rejection/re-extraction, malformed transport, checkpoints/atomic rollback, migration
+failure/restore, source suppression, safe session/queue races, credentials, journal
+failure and full/selective bundle specification closure. Four proposals from the first
+private sample remain pending exact-evidence operator review; successful windows do not certify
+perfect corpus-wide claim completeness. Phase 5 performance/capacity/Linux and full
+voice/browser/ABI 1.0 gates remain open. Stop before Phase 7.
 
 ### Freeze and final hardening
 

@@ -1,15 +1,18 @@
 # ember — local character stack
 
-ember is a local character application with durable memory and realtime interaction.
-[PLAN.md](PLAN.md) is authoritative for all future tasks, including its engineering
-language and code-quality standards. The official ChatGPT export has been inspected
-and imported into a private library. Phase 0a preparation, supported phase 0b export
-handling, phase 1 contracts and phase 2 canonical engine are implemented. Phase 3
-importer and P0/runtime work have passed the repository quality gate; operator-reviewed
-personal claim adoption stays open. [PLAN section 11](PLAN.md) records source findings,
-implementation, measured costs and open gates. Read
-[Root ADR 0006](docs/adr/0006-phase-three-source-and-runtime.md) before continuing
-phase 3 or starting phase 4.
+Ember is a local character application with durable memory and realtime interaction.
+[PLAN.md](PLAN.md) is authoritative, including engineering standards and phase order.
+Phases 0–4 are implemented, Phase 5 retrieval/indexing is implemented with documented
+performance/capacity gates, and Phase 6 adds structured extraction, saved-memory summary
+import and conservative P3/P4 inference admission. The final Phase 6 gate passed 406
+tests with real Qwen/BGE/LiveKit enabled. Stop for architecture review before Phase 7.
+
+The official ChatGPT ZIP is private source history; starting Ember does not activate
+personal claims. Import/extract/review/approve/seed/index using the
+[Phase 6 PowerShell runbook](docs/phase-6-runbook.md). Personal Phase 6 imports/extraction
+are left to the operator. [Root ADR 0009](docs/adr/0009-phase-six-extraction-and-background-inference.md)
+records ownership, coupling, tests and limits. LiveKit remains text-only; voice/browser
+integration is Phase 8. Saved-memory inclusion in the ZIP remains unestablished.
 
 Two independently packaged project roots are staged here:
 
@@ -53,23 +56,21 @@ the archive establishes it.
   metadata and absent/null distinctions; separate sanitized report models.
 - Default reports contain counts/shapes/hashes, without message text, titles,
   external IDs, raw reasoning, or raw member filenames.
-- Experimental Memory ABI / Normalized Archive 0.1.0 with exact Unicode evidence,
+- Experimental Memory ABI 0.3.0 / Normalized Archive 0.1.0 with exact Unicode evidence,
   temporal/predicate semantics, typed client protocols, and reproducible schemas.
-- Engine 0.1.0: immutable SQLite sources/beliefs, exact provenance, temporal
+- Engine 0.4.0: immutable SQLite sources/beliefs, exact provenance, temporal
   queries, grants/suppression, and bounded sync/async clients.
 - Deployment TOML validation and truthful scaffold readiness reporting.
 - Synthetic fixtures and offline tests for source safety, privacy, ambiguity,
   configuration, and architectural ownership.
 - Planned package/module directories and independently isolated data/runtime roots.
 
-The completed phase 2 baseline has canonical fallback retrieval with truthful
-degraded coverage. Phase 3 adds JSON/manual-memory, P0/text and LiveKit work plus
-the verified official ZIP importer. One operator-reviewed real-source memory
-adoption check remains open. Indexed retrieval, general extraction and complete
-voice/UI/startup await their planned phases. Review
-[phase 2 architecture](docs/phase-2-canonical-engine.md) and
-[Memory ADR 0003](ember-memory/docs/adr/0003-canonical-engine-and-workers.md).
-Stop for phase 3 architecture review before phase 4.
+The runtime recalls accepted character memories using structured, lexical/semantic/hybrid
+retrieval with CPU BGE and sqlite-vec. Phase 6 extraction proposes exact-evidence memories
+through the existing gateway; explicit operator approval and seeding make them character
+beliefs. Maintenance commands and the runtime take exclusive canonical root ownership.
+See [Phase 5 retrieval](docs/phase-5-runbook.md),
+[Phase 6 processing](docs/phase-6-runbook.md) and the [ADR index](docs/adr/README.md).
 
 ## Setup (PowerShell)
 
@@ -102,8 +103,8 @@ Run installed quality tools without downloading packages, and prepare local stag
 
 The quality gate checks Ruff formatting/lint, strict Pyright production typing, and
 pytest (including explicitly marked synthetic CLI end-to-end tests). The same gate
-is configured for Windows and Linux CI. Service-dependent integration tests will be
-added when those components exist; the current suite requires no models or services.
+is configured for Windows and Linux CI. Service-dependent integration tests use temporary synthetic roots and run when their
+explicit local prerequisites are provided; otherwise they skip. Offline tests need no models.
 See [engineering standards](docs/engineering-standards.md) for exact commands.
 Local preparation creates empty staging directories without databases, character
 identities, grants, or seeds.
@@ -119,7 +120,8 @@ Both supplied Q4_K_M tags and full digests have local private configs in
 `.local/config/deployment.non-mtp.toml` and `.local/config/deployment.mtp.toml`.
 Use either with `--require-model-pin`. See [model profiles](docs/model-profiles.md).
 A stored inventory/configured pin still needs a fresh phase 3 runtime verification.
-`ember start` currently fails explicitly because the runtime is not built.
+`ember start` hosts the configured managed LiveKit text runtime; use the same config
+for `ember livekit-chat`. Startup attaches to Ollama and never downloads dependencies.
 
 ## When the export arrives
 
@@ -182,4 +184,13 @@ source policy, linked backups and selective exact-evidence portability. See the
 [architecture review](docs/adr/0007-phase-four-libraries-characters-bundles.md).
 Bundle/restore operations are exclusive offline maintenance; restored providers
 remain disabled until explicitly configured and started. Phase 3's real archive
-claim approval remains an operator review step. Stop for review before Phase 5.
+claim approval remains an operator review step. Phase 5 retrieval and Phase 6 processing extend this baseline. Stop for architecture
+review before Phase 7.
+
+
+Phase 6 adds `ember-memory summary import` and `extract create/run/status/cancel/
+reevaluate/review/apply/seed`. [The operator runbook](docs/phase-6-runbook.md) contains
+complete PowerShell settings/commands for your saved-memory text or documented JSON
+format and for the existing official-export library. It starts gateway-only inference
+while the canonical runtime is stopped, then reviews/seeds/indexes your chosen character.
+Import and extraction are local operations and do not use a hosted model API.

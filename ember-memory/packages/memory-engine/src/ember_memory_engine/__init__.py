@@ -6,7 +6,7 @@ from .character import SqliteMemoryStore
 from .engine import CanonicalEngine
 from .models import MutationAuthority, SourceGrant, SourceKey, SourceKeyAssignment
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "CanonicalEngine",

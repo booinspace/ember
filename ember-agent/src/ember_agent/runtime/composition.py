@@ -4,6 +4,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import UUID4, ValidationError
 
@@ -113,44 +114,53 @@ class LocalRuntime:
         self.pool.shutdown(wait=True)
 
     async def chat(self) -> None:
+        """Hold conservative realtime ownership for the entire connected terminal session."""
+        identity = uuid4()
+        try:
+            await self.model.session(identity, connected=True)
+            await self._chat()
+        finally:
+            try:
+                await self.model.session(identity, connected=False)
+            finally:
+                await self.aclose()
+
+    async def _chat(self) -> None:
         """Foreground text loop using the same character core as the LiveKit adapter."""
         print(
             "Character: "
             + str(self.memory.character_id)
             + ". Use /remember KEY TEXT to save; /quit to finish."
         )
-        try:
-            while True:
-                try:
-                    text = await read_line("You: ")
-                except EOFError:
-                    break
-                if text.strip() == "/quit":
-                    break
-                if text.startswith("/remember "):
-                    parts = text.split(" ", 2)
-                    if len(parts) != 3:
-                        print("Usage: /remember KEY TEXT")
-                        continue
-                    try:
-                        request = NewMemoryInput(idempotency_key=parts[1], text=parts[2])
-                        receipt = await asyncio.wrap_future(
-                            self.pool.submit(self.author.create, request)
-                        )
-                        print("Memory " + receipt.outcome + ".")
-                    except MemoryError as error:
-                        print(str(error))
-                    except ValidationError:
-                        print("Memory input is invalid.")
+        while True:
+            try:
+                text = await read_line("You: ")
+            except EOFError:
+                break
+            if text.strip() == "/quit":
+                break
+            if text.startswith("/remember "):
+                parts = text.split(" ", 2)
+                if len(parts) != 3:
+                    print("Usage: /remember KEY TEXT")
                     continue
                 try:
-                    turn = await self.core.prepare(text)
-                    print(self.personality.name + ": ", end="", flush=True)
-                    async for event in self.core.stream(turn):
-                        if event.kind == "text":
-                            print(event.text, end="", flush=True)
-                    print()
-                except (GatewayError, MemoryError) as error:
+                    request = NewMemoryInput(idempotency_key=parts[1], text=parts[2])
+                    receipt = await asyncio.wrap_future(
+                        self.pool.submit(self.author.create, request)
+                    )
+                    print("Memory " + receipt.outcome + ".")
+                except MemoryError as error:
                     print(str(error))
-        finally:
-            await self.aclose()
+                except ValidationError:
+                    print("Memory input is invalid.")
+                continue
+            try:
+                turn = await self.core.prepare(text)
+                print(self.personality.name + ": ", end="", flush=True)
+                async for event in self.core.stream(turn):
+                    if event.kind == "text":
+                        print(event.text, end="", flush=True)
+                print()
+            except (GatewayError, MemoryError) as error:
+                print(str(error))

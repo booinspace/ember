@@ -1,6 +1,6 @@
-"""Canonical SQLite schema 0.3.0: immutable baseline plus backed-up additive migration."""
+"""Canonical SQLite schema 0.4.0: immutable baseline plus backed-up additive migration."""
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA_SQL = """
 CREATE TABLE store_metadata (
     store_id TEXT PRIMARY KEY, kind TEXT NOT NULL, namespace TEXT NOT NULL,
@@ -206,3 +206,63 @@ CREATE INDEX IF NOT EXISTS source_conversation ON source_records(
     json_extract(payload_json,'$.conversation.record_id'),record_kind,record_id,revision
 );
 """
+
+
+# Processing metadata is durable; prompts and unfinished model output are not.
+PHASE_SIX_SQL = """
+CREATE TABLE IF NOT EXISTS processing_specs (
+    specification_sha256 TEXT PRIMARY KEY, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS processing_jobs (
+    job_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE, request_sha256 TEXT NOT NULL,
+    payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, status TEXT NOT NULL,
+    completed_windows INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS processing_windows (
+    job_id TEXT NOT NULL, ordinal INTEGER NOT NULL, window_sha256 TEXT NOT NULL,
+    payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL, status TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0, error_code TEXT,
+    PRIMARY KEY(job_id,ordinal), UNIQUE(job_id,window_sha256)
+);
+CREATE INDEX IF NOT EXISTS processing_pending ON processing_windows(job_id,status,ordinal);
+CREATE TRIGGER IF NOT EXISTS immutable_processing_jobs_headers
+BEFORE UPDATE OF job_id,idempotency_key,request_sha256,payload_json,payload_sha256
+ON processing_jobs
+BEGIN SELECT RAISE(ABORT, 'immutable processing definition'); END;
+CREATE TRIGGER IF NOT EXISTS immutable_processing_windows_headers
+BEFORE UPDATE OF job_id,ordinal,window_sha256,payload_json,payload_sha256 ON processing_windows
+BEGIN SELECT RAISE(ABORT, 'immutable processing window'); END;
+
+CREATE TABLE IF NOT EXISTS processing_candidates (
+    job_id TEXT NOT NULL, ordinal INTEGER NOT NULL, candidate_id TEXT NOT NULL,
+    revision INTEGER NOT NULL, fingerprint TEXT NOT NULL, conflict_key TEXT, value_key TEXT,
+    PRIMARY KEY(candidate_id,revision)
+);
+CREATE INDEX IF NOT EXISTS processing_job_candidates ON processing_candidates(
+    job_id,ordinal,candidate_id
+);
+CREATE INDEX IF NOT EXISTS processing_claim ON processing_candidates(conflict_key,value_key);
+CREATE INDEX IF NOT EXISTS processing_fingerprint ON processing_candidates(fingerprint);
+CREATE TABLE IF NOT EXISTS processing_failures (
+    failure_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
+    attempt INTEGER NOT NULL, code TEXT NOT NULL, recorded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS activation_decisions (
+    decision_id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS activation_candidate ON activation_decisions(candidate_id,revision);
+CREATE TABLE IF NOT EXISTS review_decisions (
+    decision_id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    fingerprint TEXT NOT NULL, decision TEXT NOT NULL,
+    recorded_at TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS review_fingerprint ON review_decisions(fingerprint,recorded_at);
+"""
+PHASE_SIX_IMMUTABLE = (
+    "processing_specs",
+    "processing_candidates",
+    "processing_failures",
+    "activation_decisions",
+    "review_decisions",
+)

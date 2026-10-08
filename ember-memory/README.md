@@ -5,14 +5,18 @@ retrieval, extraction, consolidation, seeds, and bundles.
 
 The uv workspace contains separately packaged `memory-abi`, `memory-engine`, and
 `memory-importers`; the workspace root packages the maintenance CLI from `cli/src`.
-Phase 0a implements read-only nested-ZIP/directory reconnaissance, streamed
-conversation statistics, and provisional typed source-adapter models. Public
-Memory ABI/Normalized Archive 0.1.0 contracts are implemented experimentally;
-Phase 2 implements engine 0.1.0: local canonical SQLite storage, immutable
-provenance/revisions, temporal primitives, owned sync/async clients and degraded
-retrieval. See [the review](../docs/phase-2-canonical-engine.md) and
-[Memory ADR 0003](docs/adr/0003-canonical-engine-and-workers.md). Remaining empty folders
-mark later ownership without advertising an implementation.
+Current experimental versions are ABI 0.3.0, engine/schema 0.4.0 (user_version 4),
+and archive/bundle 0.1.0. Source inspection/import, canonical storage/provenance,
+independent library approval/seeds/bundles and Phase 5 retrieval are implemented.
+Phase 6 adds explicit saved-memory summary import, model-based exact-evidence proposals,
+pinned resumable jobs, persistent policy/review decisions and operator seeding commands.
+It uses the same agent-owned gateway through an injected model Protocol/optional HTTP
+adapter. Source import and extraction never automatically activate personal beliefs.
+
+Read [the Phase 6 operator runbook](../docs/phase-6-runbook.md),
+[Memory ADR 0007](docs/adr/0007-extraction-jobs-and-summary-sources.md) and
+[the current compatibility matrix](../docs/compatibility.md). Stop for architecture
+review before Phase 7. Phase 5's performance/capacity gates remain explicit.
 
 ```powershell
 uv sync --locked --all-packages --python 3.12
@@ -38,7 +42,7 @@ capabilities are not implementation claims.
 
 ## Phase 4 library and bundle maintenance
 
-Engine 0.2.0 now supports operator-reviewed immutable library approvals,
+The Phase 4 baseline introduced engine 0.2.0 support for operator-reviewed immutable library approvals,
 independent character seeds/entity snapshots, exact expiring grants/revocation,
 suppression across reseeding, consistent linked backups and selective portable
 exact-evidence export/restore. Public ABI/archive remain 0.1.0. Old canonical
@@ -52,3 +56,13 @@ an explicit complete bundle set and publishes a new local root with providers
 disabled. It preserves logical character/library IDs and exact provenance, while
 selective exports retain truthful partial archive coverage. No automatic personal
 memory approval, new indexing, background extraction or voice feature is implied.
+
+
+Phase 5 adds structured/FTS/CPU BGE/sqlite-vec/hybrid recall and disposable derived
+index generations. Phase 6 general extraction is separate maintenance: `summary import`
+preserves originals, `extract create/run/status` processes immutable source windows,
+`extract review/apply` records exact operator decisions, and `extract seed` adopts actual
+approved library knowledge. `index update` builds/replays the character's embeddings.
+Use [the complete commands](../docs/phase-6-runbook.md) with the runtime stopped and a
+model-pinned gateway alone. Schema upgrades retain backups and full source bundles can
+resume processing jobs. No personal import was run during Phase 6 implementation.

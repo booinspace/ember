@@ -10,6 +10,8 @@ These records own character/runtime, composition, prompts, gateway and providers
 | [Agent ADR 0001](0001-composition-and-gateway.md) | Historical Phase -1 configuration/design; extended by Agent ADR 0002/0003 | [Phase -1](../../../docs/adr/0001-phase-minus-one-scope.md), [phase 1](../../../docs/adr/0004-phase-one-contracts.md), [phase 2](../../../docs/adr/0005-phase-two-canonical-engine.md) |
 | [Agent ADR 0002](0002-phase-three-p0-turn-slice.md) | P0/turn slice implemented and covered by the current full test gate; real-source memory adoption and full voice-room acceptance remain open | [Root phase 3](../../../docs/adr/0006-phase-three-source-and-runtime.md) |
 | [Agent ADR 0003](0003-managed-livekit-text-runtime.md) | Managed server/gateway startup, single SDK text room, participant, credentials and ownership; real-room acceptance | [Root phase 3](../../../docs/adr/0006-phase-three-source-and-runtime.md) |
+| [Agent ADR 0004](0004-conservative-background-gateway.md) | Same gateway gains scoped P3/P4 queues, schema output and durable realtime ownership; 406-test full gate passed; architecture review pending | [Root phase 6](../../../docs/adr/0009-phase-six-extraction-and-background-inference.md) |
+
 
 The offline doctor, composition, gateway/text commands and LiveKit adapter exist.
 Managed LiveKit text startup and a terminal participant are implemented in

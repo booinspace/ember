@@ -84,3 +84,20 @@ authenticates a matching existing one. It uses temporary synthetic memory.
 ownership, room protocol and remaining limits. [Root ADRs](../docs/adr/README.md)
 record delivery across both components; [memory ADRs](../ember-memory/docs/adr/README.md)
 own canonical memory. IDs are local to each ADR tree. `../PLAN.md` remains authoritative.
+
+
+## Phase 6 conservative background inference
+
+The same gateway now supports P3/P4 structured extraction using separate background
+credentials, bounded queues and immutable model/context settings. Terminal chat and the
+LiveKit host reserve their whole connected lifetime, including idle time; startup waits
+for active background work to drain before opening the character. It does not preempt
+the native model. Session ownership persists across gateway restart and journal failure
+closes admission. P1/P2/full scheduling remain Phase 9 and measured preemption Phase 13.
+
+Run personal imports/extraction with `ember-memory` yourself using
+[the Phase 6 runbook](../docs/phase-6-runbook.md), with only `ember gateway` running and
+the canonical runtime stopped. Review/approve/seed/index before starting chat. See
+[Agent ADR 0004](docs/adr/0004-conservative-background-gateway.md) and
+[Root ADR 0009](../docs/adr/0009-phase-six-extraction-and-background-inference.md).
+The final full Phase 6 gate passed 406 tests with actual Qwen/BGE/LiveKit enabled.
