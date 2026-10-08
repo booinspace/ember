@@ -935,6 +935,352 @@ Produce sanitized structural fixtures and coverage/capability reports.
 
 Do not assume saved memories are included.
 
+### Observed export and phase 3 implementation record — 2026-10-07
+
+The official `OpenAI-export.zip` has been inspected and imported into a separate
+private canonical library. This section records the implemented architecture,
+verified behavior, measured costs and the remaining operator-reviewed acceptance
+gate. The implementation keeps the code readable and efficient.
+
+The original private baseline is
+`.local/reports/openai-export-2026-10-07-recon.json`; the updated recognizer report
+is `.local/reports/openai-export-2026-10-07-phase3-recon.json`. Original source
+fingerprints, identifiers, member paths and normalized personal messages remain in
+ignored `.local/` state. Tracked documentation and fixtures contain aggregate
+findings or synthetic data. The exact original archive is preserved in the library
+raw-source vault. Importing it did not activate memories.
+
+#### Observed capabilities
+
+| Observation | Source-backed finding |
+|---|---|
+| Physical bundle | 881,600,298 bytes; 818 inventoried files; 1,978,407,645 bytes of combined uncompressed inventory, including nested containers and their children |
+| Conversation layout | 13 JSON array shards, all inside the same nested export container; its `user.json` is in that same container |
+| Conversation scale | 1,205 distinct conversations; 24,055 messages; 25,260 graph nodes; largest conversation has 1,695 nodes |
+| Graph observations | 110 branch points; 1,205 null-message roots; no parent cycles or duplicate child edges recorded by the baseline scan |
+| Parse coverage | No invalid/deferred JSON or deferred nested containers in the baseline scan; about 5.5 seconds for read-only inspection on this machine |
+| Source components | 783 asset candidates, one HTML history, one account-metadata candidate, 16 other files and four nested ZIPs |
+| Nested archives | One conversation-bearing export ZIP plus three other ZIPs; do not treat attachment ZIPs as additional accounts or dialogue automatically |
+| Content types | 18,362 `text`, 1,486 `multimodal_text`, 2,393 `thoughts`, and 1,814 records subsequently identified as `reasoning_recap` |
+| Source time | Conversation/message creation uses numeric Unix-second candidates, including fractions; many message update times are null |
+| Legacy visible replies | 2,304 assistant text messages have null channel, recipient `all`, successful completion and `end_turn=true`; do not discard these solely for lacking a channel label |
+| Attachment observations | 652 attachment-metadata entries and 1,663 structured-reference candidates; these counts do not establish successful file resolution |
+| Saved memories | No memory-named component was identified; saved-memory inclusion remains unestablished and is not inferred from conversation text |
+
+The first inspector knew about `thoughts` but reported `reasoning_recap` under a
+hashed unknown content type. The updated full inspection confirms all 13 shards
+were structurally parsed, with zero warnings, and classifies all 1,814 recap
+messages explicitly. Retain the first report as historical evidence. The combined
+reasoning/recap count is 4,207; both types are excluded from normalization and the
+preserved raw archive remains their only retained representation.
+
+The supplied scraper source remains a separate namespace and adapter. Its 219
+conversations, 5,585 messages and 989 failed-conversation entries are partial
+observations. Do not merge its identity mappings into the official export merely
+because IDs or content resemble each other.
+
+#### 1. Desired behavior
+
+Provide `ember-memory import chatgpt-zip <archive> --source-namespace <scope>` as
+an offline maintenance operation. Preserve the exact archive, stream its supported
+conversation components, retain every graph branch and null-message root, and
+commit immutable normalized source records with faithful coverage. Repeating the
+same import adds no revisions. An interrupted import resumes with the same IDs,
+part IDs, record revisions and batch inputs, including inside a large conversation.
+
+Explicit human memory entry remains independent of exports. A supported explicit
+source claim becomes an unapproved deterministic proposal with exact evidence;
+confirmation uses the existing character-bound mutation path. Imported dialogue
+does not automatically become belief, personality, grants or system instructions.
+
+#### 2. Ownership and introduced coupling
+
+| Owner | Responsibility and dependency |
+|---|---|
+| Importers | ZIP layout, provider keys, visibility rules, guarded parsing, private replay metadata and coverage; depend on ABI and an injected maintenance port |
+| Engine | Canonical IDs/revisions, source keys, atomic transactions/cursors/receipts, evidence, authority and bounded database workers |
+| Maintenance composition | Translate the importer port to engine operations, bind namespace/store and acquire offline ownership |
+| Agent composition | Bind stable character/personality, construct clients and expose explicit human entry |
+| Character/LiveKit | Consume `AsyncMemoryClient` and model transport; own prompt/delivery behavior without importing ZIP or SQLite internals |
+
+The only new storage coupling is a bounded bulk source-revision lookup on the
+engine maintenance API. Keep it out of the public Memory ABI and ordinary character
+logic. A library may contain tens of thousands of original messages while fast
+recall still queries the character's accepted beliefs. Parsing/hashing/import must
+never run on the realtime event loop or cause full-library scans per user turn.
+
+The current engine has one owner per data root. Use offline maintenance ownership
+for import; do not bypass locks to write alongside the running text application.
+The later active-owner control interface belongs to application integration.
+
+#### 3. Existing abstractions to reuse
+
+Reuse the phase 0 nested-ZIP inspection and guarded JSON event reader, the generic
+ArchiveWriter/SourceRecord contracts, UUID4 source IDs, exact SourceRef/Evidence,
+immutable revisions, source keys, import cursors, receipts, grants, suppression,
+MemoryStore/AsyncMemoryClient and the existing P0 gateway. Source namespaces remain
+explicit. There is no need for a ChatGPT-specific memory database or runtime client.
+
+#### 4. Necessary new primitives and data flow
+
+Use an internal verified ZIP component reader and an importer-private replay plan.
+The pipeline has two bounded normalization passes after inspection/preservation:
+
+```text
+inspect container and classify supported conversation scope
+  -> preserve one exact content-addressed ZIP
+  -> pass A: stream one graph, prepare keys, bulk-read previous revisions,
+             normalize, record only reconstruction metadata and hashes
+  -> atomically publish the complete private replay checkpoint
+  -> pass B: stream one graph, reconstruct and verify the planned records,
+             commit bounded record/key/cursor/receipt batches
+  -> return coverage and explicit completion
+```
+
+Stage a nested container in a private temporary file only when random-access ZIP
+reading requires it; spill after 8 MiB and release it on every exit. Group shards
+by containing ZIP so each container is staged once per pass. Do not expand the
+archive into a directory tree or separately copy all assets and HTML.
+
+The checkpoint header binds store, namespace, raw and logical source fingerprints,
+qualified component identities/hashes, adapter and processing versions. For each
+conversation retain a single set of record metadata: source-key assignment,
+canonical revision, ordered part UUIDs, batch boundaries and reconstruction hash.
+Store the store ID once in the header; avoid repeating whole SourceRefs alongside
+the same key assignment. The checkpoint must contain no message bodies, titles,
+tool payloads or reasoning. Provider IDs/locators are private metadata.
+
+Two passes intentionally exchange some offline parsing time for small checkpoints
+and reproducible crash recovery. Keep one conversation's source/canonical bodies
+in memory at a time. Bound metadata too: start with a 64 MiB checkpoint cap, the
+existing guarded 64 MiB per-conversation parser, a 10,000 normalized-record limit
+per conversation, and 256-record write batches within ABI's 1,000-record maximum.
+Fail with explicit coverage if a bound is exceeded. Measure these limits before
+changing them. The observed largest graph fits the record limit.
+
+#### 5. Contracts and invariants
+
+- Publish replay metadata before the first canonical write. Uncommitted future
+  node/part IDs must survive a crash: assigning new UUIDs on retry would break
+  references already committed by earlier batches of the same conversation.
+- Capture planned revisions and ordered part IDs, not just provider-to-UUID keys.
+  Recomputing from partially updated latest rows would increment revisions and
+  change the idempotent request. Reconstruct exact planned inputs from the pinned
+  raw source and versioned adapter, then verify their normalized hash.
+- Keys, records, cursor and receipt still commit together in each engine batch.
+  Replay metadata is not a second canonical identity owner. Existing committed
+  crosswalks remain authoritative; never silently remap a provider key.
+- Use an unambiguous, versioned provider-key encoding for conversation/node pairs.
+  Do not make slash concatenation a permanent identity contract. Preserve existing
+  JSON/scraper mappings; new ZIP key semantics require an explicit adapter version
+  or reviewed reconciliation, not an implicit migration.
+- Batch source-revision reads on the existing worker, querying only latest rows.
+  Preserve payload-hash/store/row-identity checks. Do not dispatch a separate worker
+  round trip for each node/message or read all old revisions unnecessarily.
+- Preserve ordered graph edges and alternative branches. Record ambiguous current
+  selection; never repair or flatten it to justify automatic activation. Partial
+  graphs are not eligible for automatic proposal promotion.
+- Exclude `thoughts`, `reasoning_recap`, `reasoning`, analysis/reasoning channels
+  and explicitly hidden metadata before copying text to normalized records.
+  Preserve the exact original only in the raw archive.
+- Recognize assistant visibility using explicit `final`/`commentary` channels with
+  ordinary supported content and recipient checks. For null-channel legacy text,
+  require assistant role, content type `text`, recipient `all`, status
+  `finished_successfully`, `end_turn=true` and no hidden flag. Retain the original
+  null channel; this is a versioned derived visibility rule, not invented metadata.
+- Preserve each visible string part separately with exact UTF-8 hashes and Unicode
+  evidence coordinates. Retain unsupported multimodal parts as typed absences;
+  record their resolution disposition rather than fetch attachments remotely.
+- Keep asset bytes and full attachment pointers in the raw ZIP; keep inspected
+  hashes/qualified locators in private source inventory. Initial archive-only
+  assets are unavailable to runtime attachment consumers until an explicit resolver
+  can validate a local match. Never advertise resolved assets solely from filenames.
+- Source times remain source observations; null/unsupported times stay unknown.
+  Import recorded time never supplies missing world validity or source time.
+- Keep complete component cursors for fast no-op replay. Verify the pinned source
+  and checkpoint before skipping completed work; an empty response alone does not
+  prove completion. Changed sources create a new import run and immutable revisions.
+
+Source snapshots currently favor coherent historical relationships. Measure their
+storage growth on edited re-exports before changing snapshot granularity. Do not
+silently change the meaning of versioned SourceRefs or rewrite old evidence to
+save bytes. Start with the immediate storage improvement of metadata-only recovery
+and one preserved raw container; compression/dedup migrations require their own
+measured decision and compatibility handling.
+
+#### 6. Failure behavior
+
+Reject unsafe/reparse paths, duplicate or ambiguous components, changed fingerprints,
+duplicate conversation IDs across unsupported scopes, corrupt metadata, unsupported
+wrappers and parser bounds with fixed content-free diagnostics. Commit no source
+records during inspection or planning. If writing is interrupted, retain completed
+batches and retry their exact planned identities. If a checkpoint is lost after
+commits, require recovery of that checkpoint; do not invent fresh IDs or delete
+canonical state. Existing archives, receipts and evidence remain recoverable.
+
+Do not interpret another attachment ZIP/account as the same source implicitly.
+Report unsupported/unresolved components honestly. No automatic remote fetch,
+model processing, activation, seeding or grant expansion occurs during import.
+
+#### 7. Acceptance and performance evidence required
+
+Create small wholly synthetic fixtures matching the observed nested wrapper,
+numbered array shards, null roots, branch structure, legacy completion flags,
+`thoughts`/`reasoning_recap`, fractional clocks, multimodal parts and unknown metadata.
+Do not promote personal excerpts or actual reasoning into tracked tests.
+
+Verify interrupted recovery within a conversation exceeding 256 records, exact
+replay without revisions, changed-source revisions, stable Unicode part evidence,
+completed-cursor skip, lost/corrupt checkpoint behavior, source/hash/scope binding,
+unsupported attachment coverage and exclusion of all hidden text from checkpoint,
+canonical storage, candidates, prompts and logs. Verify separate characters keep
+independent adopted beliefs and current suppression/grants still control evidence.
+
+Measure real import/replay wall time, peak resident memory, checkpoint bytes,
+canonical DB/WAL bytes and preserved-source bytes. Inspection's 5.5-second baseline
+is an observation, not an import-performance promise. Confirm unrelated accepted-
+belief recall remains bounded as this archive grows; retain the existing 150 ms
+fast-recall target for later indexed acceptance. No full-archive parser or model
+extraction may become part of conversational recall. Profile before adding native
+code, compression, another service or parallel ownership.
+
+Complete the actual-source narrow path: select an explicitly supported real user
+claim, produce a deterministic unapproved candidate, confirm exact evidence,
+adopt into character-owned memory, restart, recall via the injected client and
+LiveKit/P0 gateway, and resolve the original quote. If no real statement matches
+the current whole-message GPU rule, add one narrow source-backed production rule
+with sanitized acceptance or report the remaining gate; synthetic recall is not
+real-source acceptance. Full library approval/seed receipts/bundles remain phase 4.
+
+Run the locked quality gate and schema reproducibility check after implementation.
+Revalidate the installed SDK/gateway paths only as needed for new runtime changes.
+Short synthetic MTP/non-MTP probes already worked, but sustained load, peak KV/VRAM,
+full voice-room delivery and measured preemption are not established by those probes.
+
+#### 8. Implementation record and stopping point
+
+The following phase 3 work is implemented in the existing two-component architecture:
+
+- `ember-memory import chatgpt-zip <archive> --source-namespace <scope>` uses the
+  typed maintenance CLI and existing `ImportTarget`, archive writer, engine owner,
+  source records, evidence, cursors and receipts. The importer does not depend on
+  SQLite internals; the CLI composition adapts its bounded port to the engine.
+- `zip_source.py` verifies the preserved archive and inspected member hashes,
+  stages nested containers with an 8 MiB in-memory threshold, and streams each
+  bounded conversation graph without expanding the archive tree.
+- `zip_pipeline.py` writes version 0.3.0 metadata before canonical writes. The
+  checkpoint binds the store, namespace, raw and logical fingerprints, qualified
+  member identities/hashes, key adapter and processing specification. It stores
+  key assignments once and references each record by identity index, planned
+  revision, part IDs, batch boundaries and record hash. It contains no message
+  bodies, titles, tool payloads or reasoning.
+- The new `chatgpt_zip_v1` source-key encoding serializes conversation/node ID pairs
+  unambiguously. Existing JSON and scraper crosswalks keep their prior adapter keys.
+  The engine bulk-reads up to 10,000 latest revisions in one reader task, using
+  SQLite-safe SQL chunks and validating payload hashes, store/row identity and
+  revision. This remains maintenance-only and does not extend the public Memory ABI.
+- Pass A plans one conversation at a time and publishes a complete checkpoint.
+  Pass B reconstructs the exact records and commits the planned batches of at most
+  256 records with source keys, cursor and receipt. Missing or corrupt metadata
+  after a partial commit fails closed; completed cursors skip replay without new
+  revisions. Changed exports append coherent revisions and retain existing part IDs.
+- The visibility rule retains supported user text and explicit assistant
+  `final`/`commentary` content, plus the observed completed legacy text shape.
+  `thoughts`, `reasoning_recap`, analysis/reasoning, hidden flags and non-visible
+  assistant/tool content never enter normalized text. Unsupported parts remain
+  typed absences; archive assets are not fetched or advertised as resolved.
+
+The injected `latest_many` lookup is the only new database-facing coupling. The
+engine owns its SQLite worker and atomic writes; maintenance owns offline import;
+the agent and character remain independent of ZIP and SQLite. Archive parsing,
+hashing and revision reads stay outside realtime turns. No public ABI, canonical
+schema, runtime memory server or model dependency was added for this importer.
+
+Acceptance evidence completed on 2026-10-07:
+
+- Synthetic nested-ZIP tests cover branches, null-message roots, legacy visibility,
+  `thoughts`/`reasoning_recap`, Unicode, unsupported attachment parts, collision-safe
+  provider IDs, no-op replay, changed-source revisions, stable part IDs, namespace
+  binding, and corrupt/lost checkpoint behavior.
+- A synthetic graph with 1,201 records interrupted after its first 256-record
+  batch resumed with the planned IDs and wrote the remaining 945 records. Its
+  1,201-key revision lookup crossed the SQLite query chunk boundary.
+- The updated private inspector report covers all 818 files and 13 conversation
+  shards, with 1,205 conversations, 24,055 messages, 25,260 graph nodes, 4,207
+  reasoning/recap messages excluded, zero invalid/deferred conversation shards,
+  zero warnings, and saved memories still `not_established`.
+- The private import wrote 50,520 canonical records across 13 complete cursors.
+  Their summed cursor positions equal 50,520; all 50,520 record IDs are distinct
+  and at revision 1. A subsequent replay wrote zero records. The import report
+  records 18,761 available text parts, 5,198 excluded parts and zero failures.
+- The original ZIP is 881,600,298 bytes; the persistent checkpoint is 16,947,692
+  bytes and the canonical SQLite database is 170,311,680 bytes. The initial import
+  took 138.6 seconds. A temporary instrumented re-import took 134.07 seconds and
+  sampled 268,574,720 bytes peak process RSS at 50 ms intervals; it reused the
+  preserved raw ZIP and removed its temporary database automatically. A complete
+  no-op replay took 7.0 seconds including re-inspection and source verification.
+  These are machine-local measurements, not latency guarantees.
+- `scripts/check.py` passed formatting (132 files), Ruff, strict Pyright, and the
+  complete test suite: 294 passed, one opt-in real-model test skipped.
+- All three `uv.lock` files pass `uv lock --check --offline`, and
+  `scripts/export_contract_schemas.py --check` passed. `uv sync --locked --offline`
+  could not build the local editable package because Hatchling is not available in
+  this machine's package cache; the already-installed development environment ran
+  the complete gate successfully.
+
+The phase 3 code and import path are ready for architecture review; the later
+2026-10-08 runtime record below extends this delivery with real LiveKit text rooms. The existing
+whole-message primary-GPU rule matched zero of the archive's 9,778 user messages,
+so no real-source candidate or character memory was created. To finish that narrow
+acceptance, add a source-backed extraction rule with sanitized tests or choose a
+specific supported claim for operator review; do not infer a fact from nearby
+dialogue. Saved-memory inclusion remains unestablished. Full voice-room delivery,
+sustained GPU/VRAM load and preemption remain later or separately unverified gates;
+generalized P3/P4 extraction stays deferred.
+
+Stop here for the user's phase 3 architecture review before phase 4.
+
+### Phase 3 LiveKit text-runtime integration — 2026-10-08
+
+The user's requested runtime slice now includes `ember start --config <deployment>`
+and `ember livekit-chat --config <same-deployment>`. This is the Phase 3 text slice
+of the existing launcher design, not completion of Phase 8 browser/audio/provider
+integration. [Agent ADR 0003](ember-agent/docs/adr/0003-managed-livekit-text-runtime.md)
+records the eight architecture checks, introduced coupling and remaining scope.
+
+Composition manages an explicitly installed LiveKit Server and the existing P0
+gateway, authenticates occupied/attached services, constructs one LocalRuntime
+canonical owner and dispatches one SDK AgentSession to a created room. A terminal
+participant uses room-scoped tokens and explicit RPC input; replies use the SDK's
+lk.transcription text streams. Typed input explicitly prepares the existing memory
+hook because programmatic SDK text generation does not invoke the audio hook.
+Ready acknowledgement waits for SDK participant/output initialization. Explicit
+human memory authoring uses composition's existing service, and SDK copies of
+history are cleared after each turn so CharacterCore remains the history owner.
+
+Generated credentials, room bindings and child metadata stay in ignored runtime
+state. A retained Windows job handle bounds owned descendants and kills them if the
+launcher crashes; no persisted PID or occupied port confers stop/adoption authority.
+The gateway exposes authenticated graceful shutdown for launcher-owned instances.
+Single-room dispatch avoids per-job workers competing for the engine's data-root lock.
+No memory ABI/schema or importer change was required. Direct terminal chat remains
+independent of LiveKit. Startup never installs or downloads dependencies.
+
+Explicit setup installed checksum-verified LiveKit Server 1.13.9. Actual room tests
+used the installed LiveKit Agents 1.8.5 SDK. Real server/session/participant tests
+proved reopened synthetic memory recall, source quote resolution, explicit authoring,
+replay/unauthorized RPC rejection and managed service cleanup. An actual non-MTP
+Qwen request also recalled the synthetic remembered color through the real room/P0
+path. This is real transport/model acceptance with synthetic memory, not proof of
+a real export claim. The importer still contains no approved personal beliefs.
+
+Current quality evidence: formatting, Ruff and strict Pyright pass; 301 tests passed and two opt-in real-model tests skipped. The separate actual-Qwen room test passed. Locked root and agent dependency
+setup succeeded. No Phase 4 work began. All Phase 3 acceptance remains conditional
+on operator review/adoption of one exact real imported claim and its restart/recall/
+provenance test. Full library seed/bundle semantics, indexed recall, general extraction,
+voice/browser integration and sustained GPU/preemption testing remain in their
+planned phases.
+
 ### Pipeline
 
 ```text
@@ -2246,12 +2592,13 @@ Each phase leaves working, tested behavior.
 | **12 — Portable skills** | Loader, requirements/resources, provider metadata/translation |
 | **13 — Preemption hardening** | Actual cancellation/runner/GPU/context-switch contention testing; enable live preemption only after acceptance |
 
-Phase 1's generic ABI/archive 0.1 core can advance while the personal export is
-pending. Source-dependent mappings and actual-export acceptance remain open;
-synthetic conformance does not satisfy them. Phase 2 may use generic records for
-engine development. Phase 3 model/gateway foundations do not depend on an export,
-but its real-import/historical-recall acceptance does. See `docs/phase-1-contracts.md`
-for the implemented contract surface and remaining acceptance boundaries.
+Phase 1's generic ABI/archive 0.1 core advanced while the personal export was
+pending. The official export has now been inventoried, normalized and imported in
+its supported conversation scope. The updated report explicitly leaves saved-memory
+inclusion unestablished; no memory facts are inferred from dialogue. Synthetic
+conformance remains separate from those source-backed findings. Phase 2 may use
+generic records for engine development. See `docs/phase-1-contracts.md` for the
+implemented contract surface and remaining acceptance boundaries.
 
 Phase 2 canonical engine is implemented experimentally as engine 0.1.0 with
 SQLite schema 0.1.0 / user_version 1; ABI/archive contracts remain 0.1.0. Synthetic
@@ -2259,7 +2606,11 @@ storage, policy, temporal, crash and async acceptance pass. See
 `docs/phase-2-canonical-engine.md` and
 `ember-memory/docs/adr/0003-canonical-engine-and-workers.md` for architecture
 and coupling. Root phase status is in `docs/adr/0005-phase-two-canonical-engine.md`.
-Phase 0b and source-dependent acceptance remain open. Phase 3 has not started.
+Phase 0b's supported export inventory, normalization and coverage disposition are
+verified; saved-memory inclusion remains unknown. Phase 3 implementation and the
+private ZIP import have passed the recorded checks. The operator-reviewed real
+source claim/adoption path remains open; see section 11 and Root ADR 0006. Do not
+activate imported claims without reviewing their exact evidence.
 
 ### Phase architecture review workflow
 
@@ -2276,8 +2627,9 @@ For every phase, review this PLAN and the existing implementation first:
 
 Record decisions and introduced coupling in an ADR; explain meaningful decisions
 as work proceeds. Deliver tested behavior and an architecture summary, then stop
-for the user's review before starting the next phase. Current checkpoint: phase 2
-ready for review, phase 3 pending review.
+for the user's review before starting the next phase. Current checkpoint: phase 3
+implementation review, with operator-reviewed real-claim adoption still open. Stop
+for architecture review before phase 4.
 
 Model integration is not deferred for a pending build: the model exists. Phase 3 starts baseline validation; later phases test their specific features.
 

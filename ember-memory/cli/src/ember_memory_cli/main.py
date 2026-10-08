@@ -29,8 +29,14 @@ class ReportWriteError(OSError):
 
 
 def _arguments(argv: list[str] | None) -> _InspectionArguments:
-    parser = argparse.ArgumentParser(prog="ember-memory")
-    parser.add_argument("--version", action="version", version="%(prog)s 0.0.0 (phase 0a)")
+    parser = argparse.ArgumentParser(
+        prog="ember-memory",
+        epilog="Maintenance: import, character, remember, recall, sources, propose, confirm. "
+        "Use ember-memory COMMAND --help for their arguments.",
+    )
+    parser.add_argument(
+        "--version", action="version", version="%(prog)s 0.1.0 (phase 3 maintenance)"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     inspect = commands.add_parser("inspect", help="Read-only source inventory and reconnaissance")
     adapters = inspect.add_subparsers(dest="adapter", required=True)
@@ -93,6 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     Argparse retains its standard help/usage exit behavior. Reports never overwrite
     an existing file or the source, and default diagnostics omit private source values.
     """
+    actual = sys.argv[1:] if argv is None else argv
+    from .operations import COMMANDS
+    from .operations import main as maintenance_main
+
+    if actual and actual[0] in COMMANDS:
+        return maintenance_main(actual)
     arguments = _arguments(argv)
     if arguments.output.exists() or arguments.output.resolve() == arguments.archive.resolve():
         print("Report output must be a new file separate from the source archive.", file=sys.stderr)

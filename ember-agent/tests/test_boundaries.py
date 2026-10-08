@@ -45,3 +45,27 @@ def test_agent_engine_construction_stays_in_composition_maintenance_or_adapters(
         )
         if not allowed:
             assert "ember_memory_engine" not in _imports(path), path
+
+
+def test_importer_normalization_has_no_concrete_engine_or_agent_dependency() -> None:
+    root = ROOT / "ember-memory/packages/memory-importers/src"
+    for path in root.rglob("*.py"):
+        assert not _imports(path) & {"ember_memory_engine", "ember_agent", "livekit", "httpx"}
+
+
+def test_only_gateway_upstream_adapter_contains_native_generation_route() -> None:
+    root = ROOT / "ember-agent/src/ember_agent"
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        routes = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value in {"/api/chat", "/api/generate"}
+        ]
+        if routes:
+            assert path.relative_to(root).as_posix() == "inference/ollama.py"
+    for directory in ("character", "realtime"):
+        for path in (root / directory).rglob("*.py"):
+            assert not _imports(path) & {"httpx", "ember_memory_engine", "sqlite3"}

@@ -30,11 +30,31 @@ class ServiceSettings(RuntimeModel):
     mode: ManagementMode
 
 
+class LiveKitSettings(ServiceSettings):
+    """Installed server identity, private credentials and bounded lifecycle settings."""
+
+    executable: str = "livekit-server"
+    credentials_file: Path | None = None
+    tcp_port: Annotated[int, Field(gt=0, le=65535)] = 7881
+    udp_port: Annotated[int, Field(gt=0, le=65535)] = 7882
+    startup_timeout_seconds: Annotated[float, Field(gt=0, le=120)] = 20.0
+    shutdown_timeout_seconds: Annotated[float, Field(gt=0, le=200)] = 30.0
+
+
+class _LiveKitSettings(ServiceSettings):
+    executable: Annotated[str, Field(min_length=1)] = "livekit-server"
+    credentials_file: str = ""
+    tcp_port: Annotated[int, Field(gt=0, le=65535)] = 7881
+    udp_port: Annotated[int, Field(gt=0, le=65535)] = 7882
+    startup_timeout_seconds: Annotated[float, Field(gt=0, le=120)] = 20.0
+    shutdown_timeout_seconds: Annotated[float, Field(gt=0, le=200)] = 30.0
+
+
 class DeployedServices(RuntimeModel):
     """Named runtime services; port availability alone never establishes ownership."""
 
     ollama: ServiceSettings
-    livekit: ServiceSettings
+    livekit: LiveKitSettings
     kokoro: ServiceSettings
     gateway: ServiceSettings
 
@@ -82,7 +102,7 @@ class _ModelSettings(RuntimeModel):
 
 class _SupportServices(RuntimeModel):
     ollama: ServiceSettings
-    livekit: ServiceSettings
+    livekit: _LiveKitSettings
     kokoro: ServiceSettings
 
 
@@ -180,15 +200,42 @@ def _validate_model(settings: _ModelSettings, require_model_pin: bool) -> tuple[
     return tag, digest
 
 
-def _validate_services(settings: _DeploymentSettings) -> DeployedServices:
+def _validate_services(
+    settings: _DeploymentSettings, base: Path, runtime_root: Path
+) -> DeployedServices:
     services = DeployedServices(
         ollama=settings.services.ollama,
-        livekit=settings.services.livekit,
+        livekit=LiveKitSettings(
+            endpoint=settings.services.livekit.endpoint,
+            mode=settings.services.livekit.mode,
+            executable=(
+                str((base / settings.services.livekit.executable).resolve())
+                if "/" in settings.services.livekit.executable
+                or "\\" in settings.services.livekit.executable
+                else settings.services.livekit.executable
+            ),
+            credentials_file=(
+                (base / settings.services.livekit.credentials_file).resolve()
+                if settings.services.livekit.credentials_file
+                else runtime_root / "livekit-credentials.json"
+            ),
+            tcp_port=settings.services.livekit.tcp_port,
+            udp_port=settings.services.livekit.udp_port,
+            startup_timeout_seconds=settings.services.livekit.startup_timeout_seconds,
+            shutdown_timeout_seconds=settings.services.livekit.shutdown_timeout_seconds,
+        ),
         kokoro=settings.services.kokoro,
         gateway=ServiceSettings(endpoint=settings.gateway.endpoint, mode=settings.gateway.mode),
     )
     for name, service in services.items():
         _validate_endpoint(service, name)
+    signal_port = urlsplit(services.livekit.endpoint).port
+    if services.livekit.mode == "managed" and urlsplit(services.livekit.endpoint).hostname == "::1":
+        raise ConfigurationError("Managed LiveKit requires IPv4 loopback; attach for IPv6.")
+    if len({signal_port, services.livekit.tcp_port, services.livekit.udp_port}) != 3:
+        raise ConfigurationError("LiveKit signalling, TCP and UDP ports must differ.")
+    if services.livekit.mode == "managed" and services.livekit.endpoint.startswith("wss:"):
+        raise ConfigurationError("Managed local LiveKit uses ws; TLS requires an attached server.")
     if services.ollama.mode != "attach":
         raise ConfigurationError("Ollama must remain independently managed in this deployment.")
     if settings.gateway.preemption_enabled:
@@ -221,5 +268,5 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         context_tokens=settings.model.context_tokens,
         max_input_tokens=settings.model.max_input_tokens,
         output_reserve_tokens=settings.model.output_reserve_tokens,
-        services=_validate_services(settings),
+        services=_validate_services(settings, path.resolve().parent, runtime_root),
     )

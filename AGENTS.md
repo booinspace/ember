@@ -16,11 +16,21 @@ can use its contracts while source-dependent acceptance remains open. Read
 `docs/phase-1-contracts.md` and the current compatibility matrix before extending it.
 Phase 2 engine 0.1.0 is implemented and awaiting user architecture review; read
 `docs/phase-2-canonical-engine.md` and
-`ember-memory/docs/adr/0003-canonical-engine-and-workers.md` before extending it. Phase 3 has
-not started. Deliver one phase at a time: define behavior, ownership, existing
-abstractions, necessary primitives, invariants, failures and acceptance tests before
-implementation. Keep ADR/current PLAN status updated, explain introduced coupling,
-validate, then stop for user review before the next phase.
+`ember-memory/docs/adr/0003-canonical-engine-and-workers.md` before extending it.
+Phase 3 implementation is in progress and the official ZIP has been imported into a
+private library. Read PLAN section 11 and
+`docs/adr/0006-phase-three-source-and-runtime.md` before changing it. The ZIP importer,
+P0/runtime slice and managed single-room LiveKit text startup are implemented; preserve the private source
+scope and do not activate an imported personal claim without operator review of its
+exact evidence. The existing narrow GPU extractor matched zero archive messages.
+Read `ember-agent/docs/adr/0003-managed-livekit-text-runtime.md` for service/room
+ownership. Startup never downloads dependencies; `scripts/setup_livekit.ps1` is
+explicit setup. The remaining phase 3 gate needs a source-backed extraction rule with sanitized tests
+or a specific supported claim, then the reviewed adoption/restart path. Deliver one
+phase at a time: define behavior, ownership, existing abstractions,
+necessary primitives, invariants, failures and acceptance tests before implementation.
+Keep ADR/current PLAN status updated, explain introduced coupling, validate, then stop
+for user review before the next phase.
 
 ## Boundaries
 
@@ -43,8 +53,8 @@ validate, then stop for user review before the next phase.
   reports, logs, indexes, or prompts. Raw original sources remain verbatim.
 - Never fetch archive attachments remotely during inspection/import.
 - Do not infer saved memories are present from conversation text.
-- Preserve graph ambiguity, unknown metadata, source time, and evidence in the
-  canonical importer when implemented; do not flatten the graph prematurely.
+- Preserve graph ambiguity, source time, and evidence in the canonical importer;
+  unknown metadata remains in the verbatim raw archive. Do not flatten the graph.
 
 ## Development
 

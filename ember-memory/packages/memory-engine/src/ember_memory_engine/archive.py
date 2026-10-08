@@ -1,6 +1,7 @@
 """Atomic normalized archive revisions, provider crosswalks and resume cursors."""
 
 import sqlite3
+from concurrent.futures import Future
 from typing import Protocol
 from uuid import uuid4
 
@@ -29,7 +30,7 @@ from ember_memory_abi.errors import (
 )
 from ember_memory_abi.evidence import Evidence, SourceRef
 
-from .database import SqliteDatabase, model_bytes, payload_hash, row_text
+from .database import SqliteDatabase, model_bytes, payload_hash, row_int, row_text
 from .errors import CorruptStoreError, IdempotencyConflictError
 from .models import SourceKey, SourceKeyAssignment
 
@@ -137,6 +138,13 @@ class SqliteArchiveStore:
         )
         return self.database.write(
             lambda connection: self._write(connection, snapshot, frozen_keys)
+        )
+
+    def submit_batch(self, batch: NormalizedArchiveBatch) -> Future[ArchiveWriteReceipt]:
+        """Submit a snapshot to existing bounded writers without blocking a realtime event loop."""
+        snapshot = NormalizedArchiveBatch.model_validate_json(batch.model_dump_json())
+        return self.database.submit(
+            lambda connection: self._write(connection, snapshot, ()), write=True
         )
 
     def _write(
@@ -390,5 +398,90 @@ class SqliteArchiveStore:
                 ),
             ).fetchone()
             return ImportCursor.model_validate_json(row_text(row, "cursor_json")) if row else None
+
+        return self.database.read(read)
+
+    def latest_record(self, record_kind: str, record_id: CanonicalId) -> SourceRecord | None:
+        """Maintenance lookup for deterministic normalization; unknown identity returns None."""
+
+        def read(connection: sqlite3.Connection) -> SourceRecord | None:
+            row = connection.execute(
+                "SELECT payload_json,payload_sha256 FROM source_records WHERE record_kind=? "
+                "AND record_id=? ORDER BY revision DESC LIMIT 1",
+                (record_kind, str(record_id)),
+            ).fetchone()
+            if row is None:
+                return None
+            payload = row_text(row, "payload_json")
+            if payload_hash(payload) != row_text(row, "payload_sha256"):
+                raise CorruptStoreError()
+            try:
+                record = self._adapter.validate_json(payload)
+            except ValidationError as error:
+                raise CorruptStoreError() from error
+            if (
+                record.source.source_store_id,
+                record.source.record_kind,
+                record.source.record_id,
+            ) != (
+                self.source_store_id,
+                record_kind,
+                record_id,
+            ):
+                raise CorruptStoreError()
+            return record
+
+        return self.database.read(read)
+
+    def latest_records(
+        self, identities: tuple[tuple[str, CanonicalId], ...]
+    ) -> dict[tuple[str, CanonicalId], SourceRecord]:
+        """Resolve up to 10,000 current records in one reader task.
+
+        SQLite's bound-variable limit requires small SQL chunks, but all chunks run on
+        the same owned reader connection. This is intentionally an engine maintenance
+        API rather than a public Memory ABI operation.
+        """
+        if len(identities) > 10_000 or len(set(identities)) != len(identities):
+            raise ValueError("Source revision lookup must be bounded and unique.")
+        requested = set(identities)
+
+        def read(connection: sqlite3.Connection) -> dict[tuple[str, CanonicalId], SourceRecord]:
+            result: dict[tuple[str, CanonicalId], SourceRecord] = {}
+            for offset in range(0, len(identities), 450):
+                chunk = identities[offset : offset + 450]
+                placeholders = ",".join("(?,?)" for _ in chunk)
+                parameters = tuple(
+                    item for identity in chunk for item in (identity[0], str(identity[1]))
+                )
+                rows = connection.execute(
+                    "SELECT record_kind,record_id,revision,payload_json,payload_sha256 "
+                    "FROM source_records r "
+                    "WHERE (record_kind,record_id) IN ("
+                    + placeholders
+                    + ") AND revision=(SELECT MAX(h.revision) FROM source_records h "
+                    "WHERE h.record_kind=r.record_kind AND h.record_id=r.record_id)",
+                    parameters,
+                ).fetchall()
+                for row in rows:
+                    payload = row_text(row, "payload_json")
+                    if payload_hash(payload) != row_text(row, "payload_sha256"):
+                        raise CorruptStoreError()
+                    try:
+                        record = self._adapter.validate_json(payload)
+                    except ValidationError as error:
+                        raise CorruptStoreError() from error
+                    key = (record.source.record_kind, record.source.record_id)
+                    if (
+                        key not in requested
+                        or key in result
+                        or record.source.source_store_id != self.source_store_id
+                        or key[0] != row_text(row, "record_kind")
+                        or str(key[1]) != row_text(row, "record_id")
+                        or record.source.record_revision != row_int(row, "revision")
+                    ):
+                        raise CorruptStoreError()
+                    result[key] = record
+            return result
 
         return self.database.read(read)

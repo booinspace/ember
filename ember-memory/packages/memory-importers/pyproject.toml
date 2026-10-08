@@ -4,10 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ember-memory-importers"
-version = "0.0.0"
-description = "Offline source reconnaissance; canonical normalization is not implemented"
+version = "0.1.0"
+description = "Bounded source reconnaissance and resumable canonical JSON normalization"
 requires-python = ">=3.12,<3.13"
-dependencies = ["pydantic>=2.10,<3", "ijson>=3.4,<4"]
+dependencies = ["ember-memory-abi==0.1.0", "pydantic>=2.10,<3", "ijson>=3.4,<4"]
+
+[tool.uv.sources]
+ember-memory-abi = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ember_memory_importers"]

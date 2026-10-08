@@ -28,7 +28,7 @@ def test_pending_pin_validates_without_state_or_runtime_readiness(config_path: P
     assert not config.model_pin_configured
     assert not config.data_root.exists()
     report = readiness(config)
-    assert report.application == "scaffold_only"
+    assert report.application == "phase3_slice_only"
     assert report.voice == "not_implemented"
     assert all(service.health == "not_probed" for service in report.services.values())
     with pytest.raises(ConfigurationError, match="tag and digest"):
@@ -101,7 +101,7 @@ def test_cli_success_means_config_validity_only_and_start_fails(
 ) -> None:
     assert main(["doctor", "--config", str(config_path), "--json"]) == 0
     report = ReadinessReport.model_validate_json(capsys.readouterr().out)
-    assert report.character == "not_implemented"
+    assert report.character == "available_unprobed"
     assert main(["start"]) == 2
     assert main(["doctor", "--config", str(config_path), "--require-model-pin"]) == 2
 
@@ -116,7 +116,7 @@ def test_agent_entry_point_serializes_truthful_readiness(config_path: Path) -> N
     )
     assert completed.returncode == 0, completed.stderr
     report = ReadinessReport.model_validate_json(completed.stdout)
-    assert report.application == "scaffold_only"
+    assert report.application == "phase3_slice_only"
     assert report.model_pin == "pending"
 
 

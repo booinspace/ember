@@ -15,10 +15,10 @@ class ServiceHealth(RuntimeModel):
 class ReadinessReport(RuntimeModel):
     """Serialized preparation readiness; no field claims a functioning runtime."""
 
-    phase: Literal["1"] = "1"
+    phase: Literal["3"] = "3"
     configuration: Literal["valid"] = "valid"
-    application: Literal["scaffold_only"] = "scaffold_only"
-    character: Literal["not_implemented"] = "not_implemented"
+    application: Literal["phase3_slice_only"] = "phase3_slice_only"
+    character: Literal["available_unprobed"] = "available_unprobed"
     voice: Literal["not_implemented"] = "not_implemented"
     model_pin: Literal["configured_unverified", "pending"]
     services: dict[ServiceName, ServiceHealth]
@@ -34,10 +34,12 @@ def readiness(config: DeploymentConfig) -> ReadinessReport:
             name: ServiceHealth(mode=service.mode) for name, service in config.services.items()
         },
         blockers=(
-            "Actual ChatGPT export is required to complete phase 0b acceptance.",
-            "ABI/archive 0.1 contracts exist; storage and realtime runtime await later phases.",
+            "Official ZIP import is supported; saved-memory inclusion and "
+            "reviewed claim adoption remain open.",
+            "Phase 3 supports managed LiveKit text startup; "
+            "browser/audio integration remains phase 8.",
             (
-                "Configured model pin needs runtime revalidation and phase 3 measurements."
+                "Configured model pin needs fresh gateway health verification."
                 if config.model_pin_configured
                 else "Model pin configuration and phase 3 measurements are pending."
             ),

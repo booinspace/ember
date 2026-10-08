@@ -23,6 +23,13 @@ mode = "attach"
 [services.livekit]
 endpoint = "ws://127.0.0.1:7880"
 mode = "attach"
+# For ember start: set mode to managed after explicit setup, or attach with existing credentials.
+executable = "../../.local/tools/livekit/1.13.9/livekit-server.exe"
+credentials_file = "../../.local/runtime/livekit-credentials.json"
+tcp_port = 7881
+udp_port = 7882
+startup_timeout_seconds = 20.0
+shutdown_timeout_seconds = 30.0
 
 [services.kokoro]
 endpoint = "http://127.0.0.1:8880"

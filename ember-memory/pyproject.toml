@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ember-memory"
-version = "0.0.0"
-description = "Phase -1 maintenance CLI for the ember memory platform"
+version = "0.1.0"
+description = "Source import and explicit memory maintenance for Ember"
 requires-python = ">=3.12,<3.13"
-dependencies = ["ember-memory-importers==0.0.0"]
+dependencies = ["ember-memory-importers==0.1.0", "ember-memory-engine==0.1.1"]
 
 [project.scripts]
 ember-memory = "ember_memory_cli.main:main"

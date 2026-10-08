@@ -1,19 +1,48 @@
-"""Preparation commands; ember start cannot advertise a fake runtime."""
+"""Explicit configuration, P0 gateway and Phase 3 text-runtime commands."""
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from .runtime.config import ConfigurationError, load_config
+from .runtime.config import ConfigurationError, DeploymentConfig, load_config
 from .runtime.health import readiness
 
 
 class _StartArguments(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     command: Literal["start"]
+    config: Path
+
+
+class _GatewayArguments(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    command: Literal["gateway"]
+    config: Path
+    acknowledge_quiescence: bool
+
+
+class _ChatArguments(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    command: Literal["chat"]
+    config: Path
+
+
+class _LiveKitChatArguments(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    command: Literal["livekit-chat"]
+    config: Path
+    prompt: str | None
+
+
+class _BaselineArguments(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    command: Literal["baseline"]
+    config: Path
+    output: Path
 
 
 class _DoctorArguments(BaseModel):
@@ -24,46 +53,145 @@ class _DoctorArguments(BaseModel):
     json_output: bool
 
 
-type _Arguments = Annotated[_StartArguments | _DoctorArguments, Field(discriminator="command")]
+type _Arguments = Annotated[
+    _StartArguments
+    | _DoctorArguments
+    | _GatewayArguments
+    | _ChatArguments
+    | _BaselineArguments
+    | _LiveKitChatArguments,
+    Field(discriminator="command"),
+]
 
 
 def _arguments(argv: list[str] | None) -> _Arguments:
     parser = argparse.ArgumentParser(prog="ember")
-    parser.add_argument("--version", action="version", version="%(prog)s 0.0.0 (phase 1 core)")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0 (phase 3 slice)")
     commands = parser.add_subparsers(dest="command", required=True)
     doctor = commands.add_parser("doctor", help="Validate configuration without starting services")
     doctor.add_argument("--config", type=Path, required=True)
     doctor.add_argument("--require-model-pin", action="store_true")
     doctor.add_argument("--json", dest="json_output", action="store_true")
-    commands.add_parser("start", help="Reserved: application startup is implemented in phase 8")
+    start = commands.add_parser("start", help="Start the phase 3 LiveKit text runtime")
+    start.add_argument(
+        "--config", type=Path, default=Path("ember-agent/config/deployment.local.toml")
+    )
+    room_chat = commands.add_parser("livekit-chat", help="Join the running Ember LiveKit text room")
+    room_chat.add_argument("--config", type=Path, required=True)
+    room_chat.add_argument("--prompt", help="Send one prompt and exit")
+    gateway = commands.add_parser("gateway", help="Run the owned local P0 inference service")
+    gateway.add_argument("--config", type=Path, required=True)
+    gateway.add_argument(
+        "--acknowledge-quiescence",
+        action="store_true",
+        help="Assert that the previously interrupted runner has been verified idle",
+    )
+    chat = commands.add_parser("chat", help="Run the memory-aware foreground text slice")
+    chat.add_argument("--config", type=Path, required=True)
+    baseline = commands.add_parser("baseline", help="Measure synthetic foreground gateway cases")
+    baseline.add_argument("--config", type=Path, required=True)
+    baseline.add_argument("--output", type=Path, required=True)
     adapter: TypeAdapter[_Arguments] = TypeAdapter(_Arguments)
     return adapter.validate_python(vars(parser.parse_args(argv)))
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Report validated preparation settings; return 2 on configuration/unavailable-runtime errors.
+    """Run explicit maintenance/runtime commands; doctor remains offline.
 
-    No services are probed or started. Argparse retains its help/usage exit behavior,
+    Argparse retains its help/usage exit behavior,
     and domain error messages omit input values such as credentials and private paths.
     """
     arguments = _arguments(argv)
-    if arguments.command == "start":
-        print(
-            "Runtime is not implemented yet. Use doctor --config to check preparation.",
-            file=sys.stderr,
-        )
-        return 2
     try:
-        config = load_config(arguments.config, require_model_pin=arguments.require_model_pin)
+        config = load_config(
+            arguments.config,
+            require_model_pin=(
+                arguments.require_model_pin if arguments.command == "doctor" else True
+            ),
+        )
     except ConfigurationError as error:
         print(f"Configuration error: {error}", file=sys.stderr)
         return 2
+    if arguments.command != "doctor":
+        return _runtime(arguments, config)
     report = readiness(config)
     if arguments.json_output:
         print(report.model_dump_json(indent=2))
     else:
-        print("Phase 1 configuration is valid. Application/character/voice are not implemented.")
+        print("Phase 3 configuration is valid. Gateway/character health is not probed.")
         print(f"Model pin: {report.model_pin}. Service health: not probed.")
         for blocker in report.blockers:
             print(f"Pending: {blocker}")
     return 0
+
+
+async def _baseline(config: DeploymentConfig, token: str) -> str:
+    from .inference.client import HttpGatewayClient
+    from .maintenance.baseline import measure
+
+    # All filesystem work remains outside the running event loop at entry/exit.
+    client = HttpGatewayClient(config.services.gateway.endpoint, token)
+    try:
+        report = await measure(config, client)
+        return report.model_dump_json(indent=2)
+    finally:
+        await client.aclose()
+
+
+def _runtime(
+    arguments: _GatewayArguments
+    | _ChatArguments
+    | _BaselineArguments
+    | _StartArguments
+    | _LiveKitChatArguments,
+    config: DeploymentConfig,
+) -> int:
+    from livekit import api, rtc
+    from pydantic import ValidationError
+
+    from ember_memory_abi.errors import MemoryError
+
+    from .inference.contracts import GatewayError
+
+    try:
+        if not config.model_pin_configured:
+            raise ConfigurationError("A verified model pin is required for generation.")
+        if arguments.command == "start":
+            from .runtime.livekit_runtime import run_runtime
+
+            asyncio.run(run_runtime(config, arguments.config))
+        elif arguments.command == "livekit-chat":
+            from .runtime.livekit_runtime import run_participant
+
+            asyncio.run(run_participant(config, prompt=arguments.prompt))
+        elif arguments.command == "gateway":
+            from .inference.service import serve
+
+            serve(config, acknowledge_quiescence=arguments.acknowledge_quiescence)
+        elif arguments.command == "chat":
+            from .runtime.composition import LocalRuntime
+
+            runtime = LocalRuntime(config)
+            try:
+                asyncio.run(runtime.chat())
+            finally:
+                runtime.close_workers()
+        else:
+            token = (config.runtime_root / "gateway.token").read_text(encoding="utf-8").strip()
+            report_text = asyncio.run(_baseline(config, token))
+            arguments.output.parent.mkdir(parents=True, exist_ok=True)
+            with arguments.output.open("x", encoding="utf-8", newline="\n") as stream:
+                stream.write(report_text)
+            print("Content-free baseline written.")
+        return 0
+    except KeyboardInterrupt:
+        return 0
+    except (GatewayError, MemoryError, ConfigurationError) as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    except (api.TwirpError, rtc.ConnectError, rtc.RpcError, TimeoutError):
+        print("LiveKit connection or service shutdown failed.", file=sys.stderr)
+        return 2
+    except (OSError, ValueError, ValidationError):
+        print("Runtime input or local state is invalid.", file=sys.stderr)
+        return 2

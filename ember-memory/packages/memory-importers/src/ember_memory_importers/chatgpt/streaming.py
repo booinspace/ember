@@ -188,3 +188,52 @@ def inspect_conversation_stream(stream: BinaryReader, limits: InspectionLimits) 
         return result
     except (events.error_type, StopIteration, UnicodeError, OverflowError) as error:
         raise ConversationJsonError("Invalid conversation JSON.") from error
+
+
+def iter_conversation_stream(stream: BinaryReader, limits: InspectionLimits) -> Iterator[JsonValue]:
+    """Yield bounded original graphs from an array, wrapper, or single conversation.
+
+    Reuse inspection's duplicate-key, depth, event, numeric and byte guards. The
+    iterator contains private source data and must be consumed to EOF to validate
+    the entire component; callers must never log yielded objects.
+    """
+    events = _Events(stream, limits)
+
+    def array() -> Iterator[JsonValue]:
+        while True:
+            events.reset()
+            entry = events.next()
+            if entry[0] == "end_array":
+                return
+            yield events.value(entry)
+
+    try:
+        first = events.next()
+        if first[0] == "start_array":
+            yield from array()
+        elif first[0] == "start_map":
+            fields: dict[str, JsonValue] = {}
+            wrapped = False
+            while (entry := events.next())[0] != "end_map":
+                event, key = entry
+                if event != "map_key" or not isinstance(key, str) or key in fields:
+                    raise ConversationJsonError("Duplicate or invalid root key.")
+                if len(fields) >= 10_000:
+                    raise ConversationLimitError("Root field limit exceeded.")
+                start = events.next()
+                if key == "conversations" and start[0] == "start_array":
+                    wrapped = True
+                    fields[key] = []
+                    yield from array()
+                else:
+                    fields[key] = events.value(start)
+            if not wrapped:
+                if not isinstance(fields.get("mapping"), dict):
+                    raise ConversationJsonError("Unsupported conversation root.")
+                yield fields
+        else:
+            raise ConversationJsonError("Unsupported conversation root.")
+        if next(events.events, None) is not None:
+            raise ConversationJsonError("Trailing JSON data.")
+    except (events.error_type, StopIteration, UnicodeError, OverflowError) as error:
+        raise ConversationJsonError("Invalid conversation JSON.") from error

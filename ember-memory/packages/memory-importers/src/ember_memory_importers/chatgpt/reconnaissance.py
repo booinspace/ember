@@ -72,12 +72,13 @@ KNOWN_CONTENT = frozenset(
         "execution_output",
         "reasoning",
         "thoughts",
+        "reasoning_recap",
         "model_editable_context",
         "user_editable_context",
     }
 )
 REASONING_CHANNELS = frozenset({"analysis", "reasoning"})
-REASONING_CONTENT = frozenset({"reasoning", "thoughts"})
+REASONING_CONTENT = frozenset({"reasoning", "thoughts", "reasoning_recap"})
 ANOMALIES = (
     "malformed_conversations",
     "missing_or_invalid_mapping",

@@ -5,17 +5,21 @@ is the authoritative design, phase order and engineering standard. ADRs record w
 an architectural choice was made, its owner, coupling, invariants, failure behavior,
 acceptance evidence and remaining limits. They do not make a planned feature live.
 
-## Implemented phases and decisions
+## Phase status and decisions
 
 | Phase/decision | Root record | Delivered status | Component detail |
 |---|---|---|---|
 | Phase -1: preparation | [Root ADR 0001](0001-phase-minus-one-scope.md) | Scaffold, offline inspection/configuration and shared engineering tooling implemented | [Memory ownership](../../ember-memory/docs/adr/0001-ownership.md); [agent composition boundary](../../ember-agent/docs/adr/0001-composition-and-gateway.md) |
 | Project naming | [Root ADR 0002](0002-ember-name.md) | Ember application/component naming implemented | Both package READMEs and CLI aliases |
-| Phase 0a: reconnaissance | [Root ADR 0003](0003-phase-zero-reconnaissance.md) | Public-format hypotheses, bounded inspection and provisional source models implemented; phase 0b pending actual archive | [Research](../phase-0-research.md); [source model](../phase-0-source-model.md) |
+| Phase 0a: reconnaissance | [Root ADR 0003](0003-phase-zero-reconnaissance.md) | Preparation implemented; official ZIP now inspected, phase 0b source-dependent acceptance still open | [Research](../phase-0-research.md); [source model](../phase-0-source-model.md); [current findings](../../PLAN.md) |
 | Phase 1: ABI/archive | [Root ADR 0004](0004-phase-one-contracts.md) | Experimental ABI/archive 0.1.0 implemented; source-dependent and ABI 1.0 acceptance open | [Memory ADR 0002](../../ember-memory/docs/adr/0002-phase-one-before-export.md) |
 | Phase 2: canonical engine | [Root ADR 0005](0005-phase-two-canonical-engine.md) | Engine 0.1.0 implemented and tested; architecture review checkpoint before phase 3 | [Memory ADR 0003](../../ember-memory/docs/adr/0003-canonical-engine-and-workers.md); [walkthrough](../phase-2-canonical-engine.md) |
+| Phase 3: importer/realtime slice | [Root ADR 0006](0006-phase-three-source-and-runtime.md) | ZIP import, P0 and runnable managed LiveKit text slice verified; operator-reviewed claim adoption remains open | [PLAN section 11](../../PLAN.md); [Memory ADR 0004](../../ember-memory/docs/adr/0004-source-import-and-authoring.md); [Agent ADR 0002](../../ember-agent/docs/adr/0002-phase-three-p0-turn-slice.md); [Agent ADR 0003](../../ember-agent/docs/adr/0003-managed-livekit-text-runtime.md) |
 
-Phase 0b is not complete. Phase 3 and later phases have not been implemented.
+Phase 0b's supported export inspection and import are verified; saved-memory
+inclusion remains unestablished. Phase 3 implementation and private import passed
+the recorded checks; exact-claim operator review/adoption remains open. Phase 4
+and later phases have not been implemented.
 Early grant/suppression/temporal primitives in phase 2 do not close the later
 seeding, bundle, indexing, extraction or consolidation acceptance gates.
 

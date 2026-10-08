@@ -1,10 +1,15 @@
-# ember — local character stack (phase 2 core)
+# ember — local character stack
 
 ember is a local character application with durable memory and realtime interaction.
 [PLAN.md](PLAN.md) is authoritative for all future tasks, including its engineering
-language and code-quality standards. The actual ChatGPT export is pending.
-Phase 0a preparation, phase 1 contracts and phase 2 canonical engine are implemented. Phase 0b
-actual-export acceptance and source-dependent contract review remain pending.
+language and code-quality standards. The official ChatGPT export has been inspected
+and imported into a private library. Phase 0a preparation, supported phase 0b export
+handling, phase 1 contracts and phase 2 canonical engine are implemented. Phase 3
+importer and P0/runtime work have passed the repository quality gate; operator-reviewed
+personal claim adoption stays open. [PLAN section 11](PLAN.md) records source findings,
+implementation, measured costs and open gates. Read
+[Root ADR 0006](docs/adr/0006-phase-three-source-and-runtime.md) before continuing
+phase 3 or starting phase 4.
 
 Two independently packaged project roots are staged here:
 
@@ -25,11 +30,25 @@ The main command is `ember`; memory maintenance uses `ember-memory`.
 root after setup, run `uv run --locked ember --help` or
 `uv run --locked ember-memory --help`.
 
+Import a ChatGPT ZIP as a private source library with an explicit account scope:
+
+```powershell
+uv run --locked ember-memory import chatgpt-zip 'C:\path\to\OpenAI-export.zip' `
+  --source-namespace 'chatgpt-export' --root '.local\data'
+```
+
+The import preserves the original ZIP and reports normalized coverage. It does not
+create or activate character memories; saved-memory inclusion is reported only when
+the archive establishes it.
+
 ## Working behavior now
 
 - Python 3.12 packaging, uv workspaces/local dependencies, and CLI entry points.
 - Read-only ZIP/directory inventory, bounded nested containers and numbered shards,
   raw/member/logical SHA-256 fingerprints, and streamed conversation observations.
+- Offline `ember-memory import chatgpt-zip` with exact raw preservation, metadata-only
+  replay checkpoints, bounded SQLite batches, graph/branch preservation and explicit
+  hidden-reasoning/attachment coverage. Imported dialogue does not activate beliefs.
 - Provisional typed ChatGPT source models preserving all graph branches, unknown
   metadata and absent/null distinctions; separate sanitized report models.
 - Default reports contain counts/shapes/hashes, without message text, titles,
@@ -43,12 +62,14 @@ root after setup, run `uv run --locked ember --help` or
   configuration, and architectural ownership.
 - Planned package/module directories and independently isolated data/runtime roots.
 
-Production normalized import, indexed retrieval, extraction, generation, voice,
-UI and service startup await their planned phases. Canonical fallback retrieval
-works with truthful degraded coverage. Review
+The completed phase 2 baseline has canonical fallback retrieval with truthful
+degraded coverage. Phase 3 adds JSON/manual-memory, P0/text and LiveKit work plus
+the verified official ZIP importer. One operator-reviewed real-source memory
+adoption check remains open. Indexed retrieval, general extraction and complete
+voice/UI/startup await their planned phases. Review
 [phase 2 architecture](docs/phase-2-canonical-engine.md) and
 [Memory ADR 0003](ember-memory/docs/adr/0003-canonical-engine-and-workers.md).
-This delivery stops for architecture review before phase 3.
+Stop for phase 3 architecture review before phase 4.
 
 ## Setup (PowerShell)
 
@@ -127,3 +148,29 @@ integration. [Memory ADRs](ember-memory/docs/adr/README.md) own memory detail;
 [agent ADRs](ember-agent/docs/adr/README.md) own runtime/gateway decisions, including
 those still planned. Numbers are local to each tree. PLAN remains authoritative;
 indexes link decisions to actual phase status and acceptance evidence.
+
+## Phase 3 LiveKit text runtime
+
+Run the explicit dependency setup once: `./scripts/setup_livekit.ps1`. Existing
+private machine configs now enable the installed managed LiveKit Server. Startup
+does not download dependencies. From the workspace root, start the text runtime:
+
+```powershell
+.\ember-agent\.venv\Scripts\ember.exe start --config .\.local\config\deployment.non-mtp.toml
+```
+
+In another PowerShell window, join the same configured character:
+
+```powershell
+.\ember-agent\.venv\Scripts\ember.exe livekit-chat --config .\.local\config\deployment.non-mtp.toml
+```
+
+Use `/remember KEY TEXT`, ask about the memory, then stop and restart the runtime
+and reconnect before asking again to verify persistence beyond conversation history.
+The client reports recalled-memory counts. Ctrl+C in the runtime drains the room
+and stops only launcher-owned services. Ollama and authenticated attached services
+remain running. MTP/non-MTP are alternative profiles with independent current
+character bindings. Voice/browser remain future integration; real imported claim
+review/adoption remains the open Phase 3 gate. See
+[the agent runbook](ember-agent/README.md) and
+[Agent ADR 0003](ember-agent/docs/adr/0003-managed-livekit-text-runtime.md).

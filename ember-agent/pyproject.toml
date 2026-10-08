@@ -4,13 +4,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ember-agent"
-version = "0.0.0"
-description = "Phase -1 configuration and readiness checks for ember"
+version = "0.1.0"
+description = "Memory-aware character slice and local P0 gateway for Ember"
 requires-python = ">=3.12,<3.13"
-dependencies = ["ember-memory-abi==0.1.0", "pydantic>=2.10,<3"]
+dependencies = [
+    "ember-memory-abi==0.1.0",
+    "pydantic>=2.10,<3",
+    "httpx>=0.28,<1",
+    "jsonschema>=4.23,<5",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+    "livekit-agents>=1.8.5,<1.9",
+    "livekit>=1.1.20,<2",
+    "livekit-api>=1.2.1,<2",
+]
 
 [project.optional-dependencies]
-local-deployment = ["ember-memory-engine==0.1.0"]
+local-deployment = ["ember-memory-engine==0.1.1"]
 
 [project.scripts]
 ember = "ember_agent.cli:main"

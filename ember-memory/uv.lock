@@ -21,14 +21,18 @@ wheels = [
 
 [[package]]
 name = "ember-memory"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "ember-memory-engine" },
     { name = "ember-memory-importers" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "ember-memory-importers", editable = "packages/memory-importers" }]
+requires-dist = [
+    { name = "ember-memory-engine", editable = "packages/memory-engine" },
+    { name = "ember-memory-importers", editable = "packages/memory-importers" },
+]
 
 [[package]]
 name = "ember-memory-abi"
@@ -43,7 +47,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
 name = "ember-memory-engine"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/memory-engine" }
 dependencies = [
     { name = "ember-memory-abi" },
@@ -58,15 +62,17 @@ requires-dist = [
 
 [[package]]
 name = "ember-memory-importers"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/memory-importers" }
 dependencies = [
+    { name = "ember-memory-abi" },
     { name = "ijson" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "ember-memory-abi", editable = "packages/memory-abi" },
     { name = "ijson", specifier = ">=3.4,<4" },
     { name = "pydantic", specifier = ">=2.10,<3" },
 ]
