@@ -118,6 +118,8 @@ flowchart TD
     API --> Core
 
     Core --> MemoryClient["Injected AsyncMemoryClient"]
+    Core --> DeepRecall["DeepRecallService — planned Phase 8"]
+    DeepRecall --> MemoryClient
     MemoryClient --> Memory["Canonical memory platform"]
     Memory --> Private["Independent character state"]
     Memory --> Library["Shared import library and source vault"]
@@ -666,6 +668,15 @@ A worker may receive a task-bound read-only broker capability with:
 - Expiry/revocation.
 
 No memory mutations, pins, grant management, or canonical source writes are exposed.
+
+### Planned associative lookup compatibility
+
+Deep Associative Recall's minimal optional RelatedLookupClient, temporal interval
+filters, read profile and ReadManifest are specified in section 13. Their semantics
+remain backend-independent and character-bound. Version and negotiate additions:
+legacy strict decoders receive the legacy response shape unless they advertise the
+new capability; unchanged operations keep their defaults. Current ABI 0.3.0, schemas
+and implemented client capabilities are not changed by this plan update.
 
 ---
 
@@ -1426,11 +1437,13 @@ Apply structured scope first, rank fusion, bounded entity/importance/time adjust
 
 Ranking remains versioned behind retriever/reranker interfaces.
 
-No realtime model-based reranker.
+No realtime model-based reranker. Fast recall does not invoke the planned Deep
+Associative Recall service, expand related records or hydrate sources. Installing
+the Phase 8 capability leaves this path and its soft deadline unchanged.
 
 Vector filtering must search eligible records correctly rather than discard an unrestricted tiny top-k.
 
-### Deep archive
+### Deep Archive Search
 
 Separate mode:
 
@@ -1441,6 +1454,316 @@ Separate mode:
 - Provenance navigation.
 
 Use for historical wording, first known mention, broad history, insufficient confidence, or exact evidence.
+
+### Deep Associative Recall: planned Phase 8 architecture
+
+Status: design only, not implemented. Deep Associative Recall investigates related
+accepted memories and, separately, authorized source observations. Deep Archive Search
+is the existing primitive that retrieves/verifies historical passages; neither is
+a claim that every imported statement is an accepted character belief.
+
+#### 1. Desired behavior and invocation
+
+Ordinary conversation continues using retrieve_context: one hybrid recall, approximately
+six ordinary memories, existing fallback and a 150 ms soft deadline. It never performs
+recursive expansion, extra query-planning inference, source hydration or timeline
+construction simply because deep recall is installed.
+
+Phase 8 exposes an explicit browser "Recall deeply" action and text command/control
+against the running application's owner. A supported explicit spoken request can use
+a deterministic control phrase; it does not need another routing LLM. Optional automatic
+selection is opt-in, versioned and explains its trigger; ambiguous intent asks/offers
+rather than silently making every conversational question expensive.
+
+Example: investigate the NAS/Tailscale/MagicDNS/AdGuard/OPNsense project, distinguish
+other networking incidents, and answer with the best-supported reconstruction or a
+clarification. Search completion is not the same as exhaustive autobiographical recall.
+
+#### 2. Ownership, reuse and implementation constraints
+
+- ember-agent owns DeepRecallService, invocation/cancellation and conversation-local
+  date/time interpretation, bounded association selection/clustering, UI and prompt
+  condensation. It consumes public typed memory clients, never SQL or engine internals.
+- ember-memory owns indexed relationship/source lookup, temporal/scope filtering,
+  canonical revision/evidence validation, admission/worker/lease lifetime and access/
+  suppression. The engine compiles bounded indexed joins and returns permitted objects.
+- Composition injects a read-only deep client bound to the same character and engine.
+  Deep recall must not launch ember-memory maintenance or acquire another root owner.
+- Reuse search, search_archive, get, get_sources, TemporalQuery/ArchiveQuery,
+  MemoryResult/ArchiveResult/Evidence, existing graph grouping, origin/dependency
+  indexes, bounded workers, query cache and generation leases.
+- Phase 6 has two foreground canonical readers per store and one deep reader; separate
+  foreground/deep VectorPools, one two-slot EncodingPool and a derived writer already
+  exist. However search/get/get_sources currently use foreground admission, encoding
+  is FIFO, and BgeEncoder serializes ONNX with a shared lock (two intra-op threads).
+  Merely invoking these repeatedly or adding another executor does not isolate load.
+- Current CharacterCore passes a 4,096-unit ABI memory packing budget and renders
+  IDs/revisions/modality/payload under a conservative serialized-byte guard. The
+  section 25 768/640 token category allocations are planned composer policy, not
+  proof that all current prompts contain time/confidence/source metadata or use a
+  verified tokenizer. Implement/measure that policy in Phase 8; do not silently
+  enlarge the existing fast path for deep recall.
+- General memory_relationships/conflict-set traversal is planned, not a currently
+  complete graph API. Phase 7 must expose supported canonical transitions/redirects;
+  Phase 8 cannot infer missing project relationships from a table named in this plan.
+
+No new daemon, canonical store, vector service, graph database, GPU scheduler or
+persistent search-job framework is required. Deep result associations remain ephemeral,
+versioned interpretations and cannot mutate sources, beliefs, grants or personality.
+
+#### 3. Minimum public extensions and introduced coupling
+
+Existing search results do not efficiently expose memory-by-source/conversation
+neighborhoods, aliases/entity resolution or batched final dependency validation.
+Use one capability-gated, storage-independent optional RelatedLookupClient operation:
+
+```python
+class RelatedLookupClient(Protocol):
+    async def lookup_related(
+        self, request: RelatedLookupRequest
+    ) -> RelatedLookupResponse: ...
+```
+
+Its request has an intent (resolve/expand/validate), bounded memory ID/revision anchors,
+explicit SourceRefs, allowed relationship reasons, adjacency limit, temporal scope,
+original-query relevance terms, result/row limits and deadline. Character/source
+authority comes from its injected binding; identifiers/filters only narrow that scope.
+The response includes permitted memory/source references, minimal entity/alias and
+conversation/branch/time metadata, supported transition links, inclusion reasons,
+per-record validation/availability and coverage. No arbitrary SQL, graph queries,
+unbounded cursor crawl, raw file path or whole ungranted conversation is exposed.
+Batch expansion avoids N+1 engine round trips; validate intent rechecks the final
+dependency set without doing another similarity search.
+
+Composition also supplies a deep read profile for existing read operations, retaining
+their semantic contract. It propagates through nested cross-store resolution, encoding,
+KNN and canonical checks; old default clients remain foreground. The profile is a
+trusted lowering of admission, not a model-selected priority or authorization grant.
+A budgeted read handle lives only for this request and drains active jobs before release;
+it is not a new durable task system. Unsupported backends advertise lack of deep-profile/
+related-lookup support; they return a limited explicit mode or unavailable, never run
+the same large workload through foreground readers.
+
+Add only the concretely missing temporal filters to the existing public TemporalQuery:
+observed_from/observed_until and an optional valid-time interval, with explicit time-axis,
+unknown-date and half-open semantics. Apply them before candidate limits. Preserve
+valid_at/recorded_before meaning; recorded_before must use canonical historical
+revisions, not just today's index. ArchiveQuery already has source_from/source_until.
+
+A typed ReadManifest in retrieval coverage/related responses records touched logical
+store/generation IDs, watermarks, policy epochs and source-selection revision. It
+contains no physical paths and is not an authorization token. These are proposed
+additive pre-1.0 ABI capabilities: version schemas/compatibility, feature-negotiate,
+test fake/in-process clients and retain legacy defaults. No current version number
+or database schema is bumped by this documentation task.
+
+Agent-owned Pydantic contracts are DeepRecallRequest, DeepRecallBudget,
+TemporalInterpretation, RecallAssociation, RecallCluster and DeepRecallResult.
+Request identity, character/session/turn, invocation mode, original query, local
+reference time/timezone and budgets are bound by runtime. Result carries:
+
+- outcome (complete_within_budget/partial/unavailable/cancelled/deferred);
+- selected memory revisions and separately labelled archive observations;
+- anchor/association reasons, strength (explicit/source-supported/topical-hypothesis),
+  retrieval score separately from belief confidence, and uncertainty/conflicts;
+- observed/valid/recorded axes with unknowns/basis and separate likely-incident clusters;
+- exact evidence references and bounded excerpts, processing/seed origin references;
+- search frontier/hops, counters, limits hit, missing/skipped scopes and read manifest;
+- a dependency manifest and bounded prompt selection, never a prebuilt system prompt.
+
+The complete_within_budget outcome means the planned bounded investigation finished,
+not that all memories or the entire archive were searched.
+
+#### 4. Bounded algorithm and defensible associations
+
+1. Interpret the original question deterministically: retain full text, extract
+   named terms and explicit calendar expressions, and resolve known aliases through
+   the scoped lookup. Do not treat the common User subject or a generic device/topic
+   as a useful incident edge. Unknown entities remain lexical terms, not invented IDs.
+2. Run one initial scoped hybrid search, inspect at most 40 returned candidates,
+   select up to six nonredundant supported anchors with their original-query scores,
+   and retain alternative plausible anchors instead of forcing one project.
+3. Resolve anchor relationships in one bounded batch. Prefer explicit transition/
+   contradiction links, shared exact evidence and branch-compatible source neighbors.
+   Non-generic entity/predicate/value matches and temporal proximity are weaker clues.
+   A common conversation may contain many incidents and is not itself an incident ID.
+4. Expand at most two hops with a visited logical ID/revision/source-span set. Every
+   non-anchor needs both a recorded connection to an anchor and relevance to the
+   original query or its resolved time constraint. Neighbors sought as context can
+   support that relevance through the validated source connection; label the basis.
+   Lexical/entity structured expansion is the default; at most two additional
+   semantic queries retain the original query and add verified alias/project terms.
+   Never replace it with the last neighbor's text and recurse nearest neighbors.
+5. Query Deep Archive Search only within explicit archive_search grants and current
+   source selection. Narrow by anchored conversation/branch/date where justified.
+   Evidence_read grants permit cited spans, not browsing adjacent unquoted messages.
+   If accepted anchors are absent or insufficient, one original-query archive
+   search within granted time/scope can supply separately labelled source anchors;
+   it consumes the same limits and never manufactures an accepted memory.
+   Hydrate exact original spans only for selected ambiguities, transitions or evidence
+   requests. Missing/partial libraries cannot be fabricated from a chunk projection.
+6. Group source-supported related observations deterministically and construct
+   timelines with explicit time axes. Preserve mutually exclusive branches,
+   contradictions and low-support topical hypotheses in separate clusters.
+   Shared User, semantic similarity or date proximity alone cannot join incidents.
+   Don't propagate weak hypotheses transitively into strong incident membership.
+7. Recheck latest lifecycle/revision, historical-query eligibility, grants/expiry,
+   source selection and suppression for every delivered item/edge/quote. Remove
+   invalidated items and dependent clusters/excerpts; return partial or restart
+   once within the original budget if a coherent valid subset cannot be produced.
+8. Select compact nonredundant content within section 25's existing categories,
+   show the larger bounded result in the owner-bound UI, and make the final answer
+   through the normal P0 gateway. No extra inference is required for search or
+   deterministic condensation; model-generated connections are not corroboration.
+
+Canonically recorded contradictions/replacements may be examined as explicit typed
+links. Forgotten/inaccessible historical records remain excluded even where a
+supersession link names them. Ranking policy/thresholds are versioned and calibrated
+on the curated fixtures in section 31; no similarity score is a truth probability.
+If indexed joins need acceleration, add small generation-versioned relationship
+projections to the existing search database. They are rebuildable, encode only
+canonical supported links/source coordinates and require final policy checks.
+Do not require an elaborate persistent knowledge graph.
+
+#### 5. Temporal interpretation and uncertainty
+
+Resolve "last year" against the requesting conversation's reference date and IANA
+timezone: the preceding calendar year, converted to UTC half-open bounds. "Around
+September" without a year stays ambiguous; request clarification or show separately
+labelled candidate ranges. Never default to the import date or execution host clock.
+Preserve original source precision/timezone assumptions and unknown timestamps.
+
+"Before I moved" and "while I used the 3090" require a source-supported transition
+anchor. Device purchase alone does not establish replacement, and an intention to
+move does not establish residence. If a boundary/event date is unknown, retain a
+relative partial ordering and uncertainty; do not manufacture an exact interval.
+
+Distinguish event validity, the time a message observed/described it, and the time the
+engine recorded/believed it. A dated statement about an old event is not the event's
+date. Select the requested axis explicitly and disclose unknown-date omissions.
+Recency at seeding/recording must not override a user's historical scope.
+Summary-only sources without dates remain unknown, not evidence of "last year".
+
+#### 6. Starting resource limits and predictable termination
+
+These are configurable starting ceilings to benchmark, not measured latency promises.
+Every operation, including retries, validation and archive/evidence work, consumes
+the same request budget; keep a small reserve for final safety validation.
+
+| Resource | Starting ceiling / behavior |
+|---|---|
+| Anchor memories | 6 from at most 40 initial results |
+| Expansion depth | 2 hops; visited identities prevent cycles |
+| Expansion candidates | 24 per batch; 256 distinct inspected items overall |
+| Selected result records | 24 memories and 12 archive chunks |
+| Entity/alias expansions | 8 non-generic resolved entities |
+| Search calls / total ABI calls | 12 / 24, including final validation |
+| SQL statements / rows materialized | 4,096 / 2,048 total; count internal joins/reads too |
+| Uncached query embeddings | 3 total; 1 text per admitted encode, no deep batching |
+| Evidence hydration | 24 spans, at most 2,000 codepoints per selected excerpt |
+| Hydrated excerpt text / result | 32 KiB / 256 KiB serialized |
+| Request working allocation | 16 MiB excluding existing shared model/index residency |
+| Concurrency / queue | 1 active deep operation globally; 1 queued per character, 2 globally |
+| Overall wall deadline | 5 seconds from submission, including queue/admission; configurable |
+| Per native operation | Existing 150 ms memory / 500 ms archive soft limits; no automatic enlargement |
+| Optional prompt contribution | 768 memory + 640 shared excerpt tokens within existing 7,000 input ceiling |
+
+Exact evidence can be shorter-selected only by recomputing/validating its new original
+span; cutting a quote cannot keep its former coordinates/hash. Full larger sources
+remain a separately authorized user navigation operation, not prompt inflation.
+
+A limit/deadline yields a validated partial result with specific reasons and covered/
+unexplored frontier. No silently exhaustive answer. Exhausted validation reserve means
+drop unverifiable output rather than deliver it. Counts limit work/returned data;
+progress/deadline handlers and indexed query plans must also bound rows scanned.
+An SQL LIMIT is not proof that a whole-table/vector scan is cheap.
+
+#### 7. Isolation across shared CPU, SQLite, encoding and index refresh
+
+Extend the existing memory-owned admission controls rather than create a second
+inference scheduler. The foreground read profile retains both foreground readers and
+its existing native capacity. Every deep memory search/get/evidence/relationship call
+uses deep admission, including nested library reads and eligibility validation.
+
+At query encoding, replace FIFO-only dispatch with foreground-first bounded admission
+on the same owner: reserve foreground waiting capacity, permit at most one deep
+encode and no deep encode waiting ahead of a foreground request. Reuse compatible
+cached original-query vectors; protect foreground cache entries from deep variant
+eviction (initially at most 16 deep-only entries within the existing 128 total).
+Queued deep encodes can be cancelled without cancelling a shared foreground consumer.
+
+Admit one deep native/DB stage at a time; do not overlap it with deep encoding or a
+derived copy/encoding batch. After each bounded stage yield and recheck foreground
+waiting/running, user-speech/generation/TTS activity, cancellation and deadline.
+Pause new deep work during those foreground-active intervals; explicit investigation
+can run while awaiting its answer, but a new ordinary turn takes precedence.
+Index publication stays atomic; deep reads cannot hold long canonical transactions.
+Bound derived encoder batches and lock hold time so foreground-first query admission
+is not defeated by the existing shared BGE lock or ONNX intra-op CPU usage.
+
+Do not assume an in-flight KNN/ONNX call is preemptible. Measure its residual blocking
+and CPU/I/O competition, keep admission and generation leases until actual completion,
+and consume late failures. Cancellation stops new stages and queues immediately but
+does not detach an active native job or free its slot early. Use SQLite progress/
+interrupt only where verified for that operation and thread-owned connection.
+
+The safe fallback when residual native/encoding/copy contention misses section 30's
+regression gate is to pause/defer deep semantic/refresh work during realtime activity,
+returning indexed lexical/relationship partial coverage where measured safe; if those
+also contend, defer the whole investigation. If active native stages cannot pass
+the mid-flight foreground-arrival test, suspend that deep mode for the entire
+connected realtime session, offering limited recall or explicit realtime suspension
+for the investigation instead of relying on an apparent idle gap.
+Never satisfy isolation by silently
+raising ordinary deadlines, spawning encoders or dropping foreground admission.
+Expose the reason. Enable concurrent deep semantic mode only for measured profiles.
+
+Read manifests identify each operation's generation/watermark and canonical revision
+set. Existing native leases protect files per operation; do not pretend the current
+client provides a multi-operation snapshot. If generations change between stages,
+revalidate identities and mark changed coverage, or restart once within budget;
+never present a mixed frontier as an unchanged consistent/exhaustive snapshot.
+Historical queries use their own validity/recorded selection, not an unfiltered latest
+replacement. Source/policy changes are always checked independently of generation.
+
+Cancellation acknowledges stopping further work promptly; delivery and physical drain
+are separate states. Runtime shutdown drains the deep profile before closing the
+engine. Crash loses ephemeral investigation results; a new invocation rereads current
+state rather than replaying searches or promoting copied text. No persistent-job
+framework is needed for Phase 8.
+
+#### 8. Failure, roadmap and architecture handoff
+
+Unsupported capability/index/encoder/source permits only a bounded labelled fallback,
+not an unbounded canonical archive scan or unauthorized foreground execution.
+Revocation/forgetting/source-switch changes invalidate cached result text, edges,
+excerpts and known prompt/history dependencies before later delivery. Already spoken
+content cannot be erased; stop pending unsafe output and acknowledge changed coverage.
+Keep result sessions owner-bound and short-lived (initially 10 minutes, two results per
+character within the allocation); follow-up evidence navigation revalidates every read.
+Metadata/progress logs omit original queries, quotes, credentials and source paths.
+
+Phase 7 prepares traceable relationships/redirects/corrections, temporal indexed lookup
+and optional batched ABI capability. Phase 8 ships explicit invocation, DeepRecallService,
+deep admission/condensation, browser/text/voice integration and the acceptance gates.
+It depends on neither MCP/Odysseus nor the Phase 9 task/event runtime. Phase 9 can wrap
+the same service in events or delegated research with a scoped read broker; memory
+ownership and result validation do not move to the task store.
+
+Optional model-assisted planning is deferred until the appropriate Phase 9 P1/P2
+gateway capability is implemented and verified. P3/P4 remain prohibited during a
+connected realtime session; background work cannot masquerade as P0. Phase 13 alone
+can enable measured live inference preemption. Final conversational synthesis uses P0.
+
+[Root ADR 0010](docs/adr/0010-planned-deep-associative-recall-and-phase-acceptance.md)
+records this proposed eight-check design. At implementation, Memory ADR 0008 should
+record ABI/index/temporal/admission/lease detail and measured isolation; Agent ADR 0005
+should record invocation/result/prompt/control/lifecycle detail. These numbers are
+prospective unless another decision uses them first. Update component indexes and the
+root phase record with actual evidence then; historical Phase 5/6 ADRs are not rewritten
+to claim prior delivery. Open decisions are calibrated association thresholds and
+whether concurrent semantic stages pass the contention gate; conservative deferral
+is the specified fallback, not an unmeasured promise of no slowdown.
 
 ### Result explanations
 
@@ -1496,6 +1819,15 @@ Canonical mutations and index outbox events commit together.
 Separate database consistency uses final canonical checks, not assumed cross-database atomicity.
 
 CLI writes use active ownership/control interfaces or acquire offline writer ownership.
+
+### Planned deep-read admission
+
+Phase 8 extends these existing pools with the deep read profile and shared-resource
+admission defined in section 13. All cross-store/nested deep work must inherit that
+profile; reserving foreground executor slots alone does not reserve CPU, disk bandwidth
+or the shared encoder lock. Owned native jobs retain slots/files until completion even
+after their caller cancels. No competing maintenance owner, long canonical snapshot
+transaction or second inference scheduler is introduced.
 
 ### Forgetting
 
@@ -2131,6 +2463,35 @@ Keep diagnostic IDs/counts separate from raw sensitive text.
 
 Task-result delivery uses the existing excerpt allocation and P0 generation.
 
+### Planned Deep Associative Recall prompt selection
+
+For an explicitly requested deep answer, DeepRecallService supplies typed result data
+to the same character prompt composer. Deterministic selection/condensation replaces
+that turn's ordinary recalled-memory selection within the existing 768-token memory
+allocation; selected original spans share the existing 640-token archive/task/tool
+excerpt allocation. Diagnostic labels, dates, modalities, confidence/support limits,
+cluster ambiguity, citations and coverage all count toward those categories.
+Borrowing unused capacity follows the existing measured policy, not a larger deep-only
+context window. Keep final serialized input at most 7,000 with response reserve.
+
+Include the few highest-information supported statements, necessary contradictory/
+transition observations and compact citation IDs. Omitted relevant items/unknown times/
+incomplete search remain explicit; time/provenance may not be trimmed away if that
+would turn a qualified observation into an unqualified fact. Full processing/seed
+provenance and source navigation stay in the authorized inspector. Exact excerpts are
+validated source data, never trusted system instructions. No additional summarizing
+model call, canonical summary write or hidden reasoning is required.
+
+Final P0 generation synthesizes this data and tracks memory/source/selection dependencies
+through delivery and subsequent history. Current CharacterCore.current checks only
+latest active revisions; Phase 8 must validate historical deep items under their
+explicit valid/observed/recorded selector rather than misuse that current-only check
+or reactivate superseded memories. Final suppression/grants still use current policy.
+New ordinary turns do not inherit a cached
+deep-result blob automatically. Follow-up use is explicit, bounded and revalidated.
+Measure condensation/serialization and model prefill separately from retrieval.
+Ordinary fast turns retain their original representation/cost when deep mode is off.
+
 ---
 
 ## 26. Failure behavior
@@ -2150,6 +2511,10 @@ Task-result delivery uses the existing excerpt allocation and P0 generation.
 | Cancel/completion race | Attempt/terminal checks prevent false completion |
 | Deadline | Revoke new work, cancel, record timeout/effects |
 | Prompt overflow | Explain composition failure; no silent truncation |
+| Deep recall busy/resource limit | Bounded deferred/partial outcome; preserve foreground admission |
+| Deep recall cancellation/deadline | Stop new stages; validate partial delivery separately from native drain |
+| Deep recall source/policy changed | Invalidate affected items/edges/excerpts/context; no stale delivery |
+| Deep recall unsupported/missing index | Explicit limited/unavailable mode; no unbounded scan or bypass |
 
 No failure directly changes accepted beliefs.
 
@@ -2178,6 +2543,12 @@ Task state, skill packages, and saved artifacts may be an optional operational e
 Restoration does not automatically resume external writes or credentials.
 
 Character memory restores with providers disabled.
+
+Deep recall association clusters, cached excerpts, read manifests/handles and generation
+leases are ephemeral and are not new canonical bundle records. Restore preserves
+character identity, approved memories, exact source evidence, supported relationships
+and source-selection configuration; investigations rerun against restored current
+policy/indexes rather than restoring old authorization or promoting search hypotheses.
 
 ### Required backups
 
@@ -2323,6 +2694,16 @@ Maintenance gateway startup uses the same implementation and ownership rules.
 
 Retries revalidate current authority/context.
 
+### Planned live deep-recall controls
+
+Phase 8 exposes an application-owned deep request, inspection and cancellation path
+using the running character's injected client. A CLI/control client connects to that
+owner; it does not run offline memory maintenance alongside chat. Support explicit
+text/spoken invocation and the browser action with shared semantics. Show selected
+time interpretation, limits, clusters, accepted/observed distinctions, exact authorized
+source navigation and partial/deferred reasons. Automatic deep selection is separately
+opt-in; source/capture settings remain independent.
+
 ### Browser
 
 Retain memory/personality/provenance/forgetting/grant/backup controls.
@@ -2371,6 +2752,46 @@ Retain warm p95 targets:
 | Canonical startup | ≤2 seconds excluding models |
 
 Targets require measurement.
+
+### Deep Associative Recall performance gate (Phase 8, not yet measured)
+
+Keep the original Phase 5 measurements and misses unchanged. The 94.30 ms warm p95
+report used duplicate synthetic beliefs and cached queries; it is not a concurrent
+deep-recall benchmark or a guarantee on the imported personal corpus.
+
+Benchmark identical pinned hardware/model/encoder/index/profile/query mix with:
+(a) deep feature disabled, (b) enabled but idle, and (c) one active deep investigation
+plus queue saturation. Alternate/interleave runs; include CPU encodes, SQLite/native
+reads, source hydration and index-refresh/copy/encoder-lock contention. Test warm
+repeated and cold/distinct query vectors separately, realistic ordinary turn cadence,
+speech/generation/TTS activity and multiple-character request scopes. Compare at least
+1,000 fast recalls per condition and repeat runs; record all samples and confidence/
+variability, p50/p95/p99, timeout/partial/fallback/admission rates, CPU/RSS/I/O, queue/
+native drain time, cache behaviour, prompt build cost and final P0 TTFT.
+
+Starting release regression caps, to confirm with representative measurements and
+record in the implementation ADR before enabling concurrent mode:
+
+- p50 increase at most the smaller of 5 ms and 5% of its matched baseline.
+- p95 increase at most the smaller of 10 ms and 10% of its matched baseline.
+- p99 increase at most the smaller of 20 ms and 15% of its matched baseline.
+- Timeout/partial/fallback-rate increase at most one percentage point absolute;
+  saturated deep requests cannot deny the reserved foreground queue.
+- Retain the 150 ms soft fast-recall deadline and existing 50–100 ms warm p95 aim.
+  Caps do not hide an already failing idle baseline or close Phase 5 component gates.
+- Instrument every ordinary call: deep mode off must submit no expansion,
+  evidence hydration or planning work and add no deep prompt text.
+- Measure deep p50/p95/p99/completion/coverage versus resource limits and the curated
+  answer/evidence quality. The five-second deadline is a work bound, not a speed SLO.
+- If residual nonpreemptible work violates a cap, ship explicit conservative
+  deferral/limited retrieval for that contention profile; concurrent deep semantic
+  capability stays disabled. Do not silently loosen caps after observing a failure.
+
+Use diverse representative source-backed fixtures alongside synthetic worst-case
+fan-out/repetition/cycles and the section 30 scale targets. Machine-local reports are
+aggregate-only; any private-corpus benchmark requires authorized local operation and
+must not commit prompts, quotes or personal findings. New implementation evidence
+belongs to Phase 8, never in a rewritten Phase 5 historical report.
 
 ### Model/task metrics
 
@@ -2428,6 +2849,49 @@ Delete FTS/vectors/search DB, restart degraded, resolve provenance, rebuild, and
 Embedding replacement changes only derived generations.
 
 Portable export preserves required evidence and excludes unrelated history.
+
+### Deep Associative Recall quality and isolation acceptance
+
+Create a small versioned, curated sanitized source-backed suite with a frozen expected
+memory/evidence set, permitted scope, temporal interpretation and explicit forbidden
+connections. Include these scenarios:
+
+| Fixture | Required observable result |
+|---|---|
+| NAS/Tailscale/MagicDNS/AdGuard/OPNsense project | Retrieve at least three separately supported relevant records across source units; reconstruct only the supported project connections |
+| Same user/NAS/entity in unrelated incidents | No false single-incident merge or generic-User expansion |
+| Two plausible projects | Separate alternatives or clarification, not forced certainty |
+| Last year/September/before move/3090 period | Correct requesting-local calendar bounds or explicit ambiguity/unknown transition |
+| GPU/headset changes and opinions over time | Preserve current/past/recorded history and contradiction; purchase/intention is not replacement/completion |
+| Requested original quote | Exact source revision/coordinates/hash; no paraphrase labelled as a quote |
+| Useful evidence only in granted archive | Retrieve as attributed raw observation; no claim of accepted belief |
+| No grant, revoked grant, source switch or forgotten origin | Zero excluded observations, edges, snippets or inference from denied content |
+| Missing/corrupt/partial evidence or hidden reasoning | Honest unavailable/partial result; no fabricated quote or normalized hidden content |
+| Insufficient evidence | State limits/ask clarification rather than invent a coherent incident |
+| Cycles/fan-out, cancellation/expiry and saturated queue | Bounded termination and counters; late native work remains owned |
+| Rebuild/policy changes during expansion or delivery | Validated surviving subset with changed coverage or safe stop |
+
+Expected connections require exact supporting evidence; record textual source attribution
+as distinct from proof that an event occurred. Explanations, clusters and repeated quotes
+do not count as independent corroboration.
+
+Initial quality release gates: evidence/hash/coordinate correctness 100%; zero hidden/
+unauthorized output; zero unsupported incident links in adversarial fixtures; all
+required temporal/abstention/correction cases pass. On curated answerable queries,
+selected-item precision at least 0.85 and expected-support recall at least 0.80, macro
+averaged with per-query failures reported. Expected sets exclude denied records and
+define the budget-feasible gold support; also report full-corpus gold recall and
+unsearched/unknown-date coverage so budgets cannot conceal incompleteness. Distinguish
+retrieval selection from Qwen answer factuality and citation support; grade both.
+No more than two hops, and zero off-topic included items in explicit topic-drift tests.
+
+Calibrate thresholds/ranker version on a development subset, then freeze held-out
+queries before evaluating. Do not fit the expected set to actual output. These
+numbers are planned gates, not achieved scores; report failures rather than claim
+exhaustive memory. Verify the same orchestrator against fake/in-process contracts and
+the installed CPU/index backend, with a real local P0 answer and UI cancellation.
+Pair quality tests with section 30's performance gate; correctness alone does not
+authorize a contention profile.
 
 ### Tool/task/security tests
 
@@ -2543,6 +3007,20 @@ GPU A followed by explicit replacement with B supports current B, prior A, exact
 
 Buying B alone does not end A ownership.
 
+### Deep Associative Recall scenario (Phase 8)
+
+With MCP/Odysseus/task runtime disabled, ask the NAS question against sanitized native
+and independently seeded library memories plus explicitly granted archive passages.
+Request last-year scope, inspect separate plausible incidents, follow an exact quote,
+and produce a compact P0 answer. Revoke a source or forget an anchor during a second
+investigation and prove the dependent context cannot be delivered/reused. Rebuild an
+index during another run, cancel one request, saturate the deep queue, restart, and
+verify the same character/source controls plus truthful partial/cancelled coverage.
+
+Run ordinary recall alongside the investigation and refresh workloads; pass section
+30's matched regression gate or expose conservative deferral. No canonical belief,
+grant, extracted candidate or durable search task is written by deep retrieval.
+
 ### One-model/agentic scenario
 
 Prove model ownership, contexts, gateway routing, auxiliary-call coverage, preemption or conservative limitation, task survival, continuing I/O, structured completion, attention-based delivery, no belief bypass, and unchanged character after provider removal.
@@ -2584,8 +3062,8 @@ Each phase leaves working, tested behavior.
 | **4 — Libraries/characters/bundles** | Grants, suppression, independent seeds, linked backup, selective materialization |
 | **5 — Retrieval/indexes** | Grouping, FTS, BGE-small, sqlite-vec, hybrid, diagnostics, rebuild |
 | **6 — Full extraction** | Structured model extraction, resumable jobs, policies/summary import; **same gateway gains P3/P4 queues and conservative admission** |
-| **7 — Consolidation/time** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance and preserved origin dependencies |
-| **8 — Stable application integration** | Browser/audio/memory, automatic conversational memory capture, per-character native/imported recall controls, explicit prompt budgets, **single-command composition/startup/shutdown**, health and portability |
+| **7 — Consolidation/time** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance, origin preservation and bounded relationship/temporal prerequisites for Phase 8 |
+| **8 — Stable application integration** | Browser/audio/memory, automatic native capture and source controls, **Deep Associative Recall** with explicit invocation/inspection/cancellation and measured fast-path isolation, prompt budgets, **single-command composition/startup/shutdown**, health and portability |
 | **9 — Generic agent foundations** | Events/attention, ToolProvider/TaskRouter foundations, operational store; **same gateway gains P1/P2, reservation, fairness/accounting** |
 | **10 — Direct MCP** | Discovery, normalization, credentials, scoped authority, UI |
 | **11 — Odysseus delegation** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
@@ -2612,84 +3090,535 @@ private ZIP import have passed the recorded checks. The operator-reviewed real
 source claim/adoption path remains open; see section 11 and Root ADR 0006. Do not
 activate imported claims without reviewing their exact evidence.
 
+### Acceptance evidence and phase completion
+
+The criteria below are the consolidated phase gates. Stable AC IDs identify tests,
+measurements or manual acceptance evidence; they are requirements, not checked-off
+implementation claims. The historical records and owning ADRs below remain authoritative
+about what was actually run, on which profile/platform, and what remains open.
+A later implementation may satisfy an earlier open gate, but must record that evidence
+explicitly. Do not retroactively make Phases 0–6 depend on Deep Associative Recall.
+
+Every phase also requires the locked engineering quality gate, meaningful regression
+tests, privacy/injection/authority checks, truthful capability/degraded diagnostics,
+updated root/component ADRs and a reviewable architecture handoff using the eight
+checks below. Map each AC to its evidence and mark it passed, failed, blocked or
+not run in the delivery record. Dependency presence and passing unrelated tests do
+not establish feature acceptance. Real-model/service skips leave their gates open.
+No personal claim approval is implied by running a test or accepting an architecture.
+
+### Phase -1 acceptance criteria: preparation
+
+Owner: both product composition roots; scope is the historical scaffold.
+
+- **P-1-AC-01:** Python 3.12/uv installs the two independently packaged products and
+  their CLI entry points from locked configuration; the root remains development
+  tooling rather than a third product.
+- **P-1-AC-02:** Read-only inspection and deployment validation work on synthetic
+  fixtures with bounded input, safe errors and explicit unsupported/deferred states.
+- **P-1-AC-03:** Raw sources, personal text, credentials, runtime state and models
+  stay outside tracked fixtures/logs; ignored staging and example configuration
+  contain no live credentials.
+- **P-1-AC-04:** Ownership/dependency tests enforce the future memory ABI/composition
+  boundary and one gateway route; scaffold directories advertise no unimplemented
+  memory, generation or service capability.
+- **P-1-AC-05:** Setup/runbook/doctor instructions distinguish installed, configured,
+  running and verified features. No actual-export support or canonical semantics
+  are claimed merely from preparation.
+
+### Phase 0 acceptance criteria: source reconnaissance
+
+Owner: ember-memory importers; 0a observations are provisional until 0b.
+
+- **P0-AC-01:** 0a records primary-source format observations and uncertainties;
+  provisional models and synthetic fixtures do not certify this account's export.
+- **P0-AC-02:** Bounded ZIP/directory/nested-container inspection rejects unsafe
+  paths, links, malformed input and resource excess; it does not normalize/write
+  canonical records, fetch attachments or run inference.
+- **P0-AC-03:** 0b preserves the actual supplied export verbatim, verifies fingerprints
+  and inventories components, graph/selected-path ambiguity, clocks, actors,
+  channels, visibility, attachments and unknown content.
+- **P0-AC-04:** Capability/coverage reports distinguish present, absent, unavailable,
+  unknown and deferred content. Saved-memory inclusion requires observed evidence;
+  conversation text alone does not establish it.
+- **P0-AC-05:** Sanitized structural fixtures reproduce observed supported layouts,
+  edits/regenerations, missing nodes, unknown metadata and hidden-text exclusions
+  without copying private messages, identifiers or reasoning.
+- **P0-AC-06:** Repeat inspection is deterministic for the same input/specification;
+  original and updated reports remain identifiable. Source-dependent contract
+  assumptions are reconciled explicitly before claiming compatibility.
+
+### Phase 1 acceptance criteria: ABI and archive contracts
+
+Owner: ember-memory-abi; source-dependent findings remain subject to Phase 0b.
+
+- **P1-AC-01:** Typed sources, memory/candidates, entities, predicates, modality,
+  temporal models, queries, receipts and capability/error contracts validate their
+  declared invariants and reproduce the published experimental JSON schemas.
+- **P1-AC-02:** UUID/revision and canonical UTF-8 JSON/JSONL round trips preserve
+  same-major unknown extensions/readable values; backend row/vector/provider IDs
+  and physical paths never become public logical identity.
+- **P1-AC-03:** Exact evidence validates source revision, Unicode codepoint and UTF-8
+  byte coordinates, quote/source hashes and browser UTF-16 boundaries. Invalid
+  spans and hashes fail; search normalization cannot rewrite source evidence.
+- **P1-AC-04:** Unknown source times stay null with precision/basis/ambiguity;
+  observed, valid and recorded time remain distinct and half-open bounds validate.
+- **P1-AC-05:** Predicate value types, cardinality/replacement and all supported
+  modalities validate. Unknown reads are preserved without granting supported
+  write/activation semantics.
+- **P1-AC-06:** Sync/async client and writer conformance covers fake and in-process
+  implementations, expected revisions, idempotent requests and typed failures.
+  ABI imports no SQLite, LiveKit, Ollama, MCP or harness code.
+- **P1-AC-07:** Compatibility/schema matrices state experimental maturity, read/write
+  limits and later freeze gates. Schema validation is not approval, source resolution
+  or authorization.
+
+### Phase 2 acceptance criteria: canonical engine
+
+Owner: ember-memory-engine; application composition owns its lifetime.
+
+- **P2-AC-01:** Local SQLite persists normalized graph/source revisions, independent
+  character beliefs, entities, exact evidence and temporal/recorded history across
+  close/reopen and process crash without losing logical IDs.
+- **P2-AC-02:** Single-root/store ownership rejects competing writers and unsafe
+  roots; missing registered databases, unknown schemas and corruption never trigger
+  an implicit reset or new identity. No SQLite server/daemon is required.
+- **P2-AC-03:** Source keys/records/cursors/receipts commit atomically; memory
+  revisions/receipt/audit/outbox commit atomically. Fault injection and crash/WAL
+  tests prove rollback or replay, including within partially completed imports.
+- **P2-AC-04:** Compare-and-swap rejects stale revisions; equal idempotent retries
+  return the original receipt, changed requests under the same key fail, and nested
+  mutable input cannot rewrite persisted immutable history.
+- **P2-AC-05:** Grants, current lifecycle, exact evidence and suppression are checked
+  on reads/writes. Two characters cannot read or mutate each other's private state;
+  forgetting does not erase the shared source or another character's beliefs.
+- **P2-AC-06:** Bounded thread-owned writer/read workers and async facade keep blocking
+  work off the event loop. Queue saturation, deadlines and cancellation retain
+  ownership of active work; uncertain writes resolve through the same request/key.
+- **P2-AC-07:** Missing indexes permit bounded canonical fallback. Missing source
+  libraries preserve adopted beliefs while evidence availability is reported honestly.
+- **P2-AC-08:** Shutdown drains work before releasing locks/connections; migrations
+  preserve IDs/history with consistent backups and tested failure recovery.
+  Windows evidence is recorded separately from Linux acceptance.
+
+### Phase 3 acceptance criteria: real importer and LiveKit text slice
+
+Owner: importers/engine for sources and authoring; agent for P0 and text-room lifetime.
+
+- **P3-AC-01:** The production importer handles the observed official conversation
+  scope, graph branches, supported visibility and exact text/parts with truthful
+  unsupported/asset/saved-memory coverage. Originals remain verbatim; hidden
+  reasoning is absent from normalized records, proposals, prompts and diagnostics.
+- **P3-AC-02:** Bounded batches commit pinned keys, revisions, parts, cursors and
+  receipts; interrupted mid-conversation recovery, no-op replay, changed-source
+  revision and lost/corrupt replay metadata tests preserve exact identities.
+- **P3-AC-03:** Import wall time, RSS, checkpoint/database/source bytes and replay
+  costs are measured. Import/hash/parsing work never runs in conversational recall.
+- **P3-AC-04:** A supported actual-source user claim yields a deterministic production
+  candidate, explicit exact-evidence review/adoption, then restarted recall through
+  injected ABI → LiveKit → P0 → pinned Qwen → original provenance. Synthetic claims
+  and a successful archive import do not close this real-source gate.
+- **P3-AC-05:** Explicit native authoring also creates source-backed, idempotent
+  memories independently of export format; source/model output cannot grant authority.
+- **P3-AC-06:** One authenticated P0 gateway verifies the actual model tag/digest,
+  bounded context and request/context/stream identities; unsupported workloads,
+  malformed input, overflow and unavailable upstream fail without direct fallback.
+  Initial real-model TTFT/throughput/context observations identify unmeasured limits.
+- **P3-AC-07:** Managed/attached LiveKit text runtime uses private room credentials,
+  ready dispatch, streamed visible replies and one canonical owner. Participant
+  joining acquires no memory lock. Startup downloads nothing and stops only retained
+  owned processes; missing room/service errors explain the required action.
+- **P3-AC-08:** Cancellation/stream failure, partial startup, duplicate instance,
+  process death and shutdown preserve memory and reported delivery state; runner
+  release is not inferred from HTTP/coroutine cancellation. Full voice/browser
+  delivery remains Phase 8, and live preemption remains Phase 13.
+
+### Phase 4 acceptance criteria: libraries, characters and bundles
+
+Owner: ember-memory; trusted maintenance binds approval and destination identity.
+
+- **P4-AC-01:** Exact-evidence operator approval creates immutable library knowledge;
+  tampered/unsupported/unowned candidates fail and replay preserves approval/audit.
+- **P4-AC-02:** Seeding creates independent destination memory/entity IDs and frozen
+  approved revisions with origins, receipts and evidence-only grants. Two characters
+  evolve/forget independently; later imports do not revise seeds or expand access.
+- **P4-AC-03:** Multi-seed failures roll back destination beliefs/entities/grants/
+  receipt/outbox together. Replays are idempotent, and forgotten origins cannot
+  return through a new seed key.
+- **P4-AC-04:** Separate evidence_read/archive_search scopes, expiry and exact
+  revocation are enforced before selection and delivery; revocation does not
+  silently delete adopted beliefs or grant unrelated archive access.
+- **P4-AC-05:** Linked backups store each source library once and restore consistent
+  characters/configuration/history/suppression with explicit dependencies.
+- **P4-AC-06:** Selective self-contained export retains only permitted exact evidence
+  closure, required entities/specifications and selected history. Unrelated text,
+  even within the same message, stays absent; partial coverage never masquerades
+  as a full library or resumable archive import.
+- **P4-AC-07:** Bundle hashes/schema/coverage/path/dependency checks reject unsafe,
+  incomplete or inconsistent inputs. Restore publishes a new local root without
+  overwriting live state, starting providers or restoring credentials implicitly.
+- **P4-AC-08:** Backed-up migrations, failed publication and dependency mismatch
+  recover safely. Restored synthetic seeds prove original quotes and continued
+  native authoring through the actual room/gateway; portability gates stay explicit.
+
+### Phase 5 acceptance criteria: retrieval and indexes
+
+Owner: ember-memory; agent composition injects the installed CPU encoder.
+
+- **P5-AC-01:** Graph-aware grouping/chunking preserves branch separation, role
+  attribution, exact source spans and short fragments. Actual embedding tokenizer
+  limits are enforced without silent truncation.
+- **P5-AC-02:** Structured/FTS/BGE-small/sqlite-vec/hybrid modes retrieve eligible
+  canonical revisions with rank contributions, coverage and dependency explanations.
+  Predicate/entity/lifecycle/time/grant/suppression filtering precedes top-k.
+- **P5-AC-03:** Fast retrieve_context respects its ordinary six-memory selection,
+  token budget and soft 150 ms deadline, returning truthful partial fallback when
+  semantic work cannot complete. It does not acquire new model inference.
+- **P5-AC-04:** Deep Archive Search supports source/date/role/conversation/branch
+  filters and literal original verification. Supporting evidence grants alone do
+  not authorize browsing the imported archive.
+- **P5-AC-05:** Delete/corrupt/stale/profile-mismatched derived indexes, reopen
+  degraded, resolve provenance and rebuild with the same canonical IDs. Failed
+  replacement preserves the active generation; existing outbox updates are replayable.
+- **P5-AC-06:** Immutable generations record complete chunker/encoder/ranker/profile
+  metadata and exact input hashes; compatible vectors are reused. Active native
+  leases survive timeout, refresh and pruning until actual completion.
+- **P5-AC-07:** Separate bounded foreground/deep native, query-encoding and derived
+  workers keep extension/SQLite work off-loop and drain at close. Copy-based refresh
+  is measured as O(index bytes), not presented as O(changes).
+- **P5-AC-08:** Measure section 30's latency targets, cold/warm query encoding,
+  fallback rates, small mutations and startup at the planned 10,000 conversations /
+  500,000 messages / 250,000 chunks / 100,000 memories, on supported platforms.
+  Reports state scope and unmet gates rather than relaxing targets.
+- **P5-AC-09:** Preserve the recorded 94.30 ms warm hybrid p95 on repeated synthetic
+  beliefs as historical evidence only: it proves neither diverse retrieval quality
+  nor complete capacity acceptance. FTS/vector component misses remain open.
+  Deep Associative Recall is a new Phase 8 gate, not retroactive Phase 5 delivery.
+
+### Phase 6 acceptance criteria: extraction and operator ingestion
+
+Owner: engine for source/candidate policy; agent for conservative P3/P4 admission.
+
+- **P6-AC-01:** Summary text/Markdown and documented JSON preserve exact originals,
+  explicit namespace/text-field mappings and unknown dates. Conversation imports
+  are not assumed to include saved memories; normalization grants no approval.
+- **P6-AC-02:** Jobs pin source watermark/revisions/hashes, model tag/digest,
+  extractor/prompt/schema/policy and window limits; historical supported metadata
+  is readable without repinning incompatible execution.
+- **P6-AC-03:** Complete structured output preserves actor, authority, modality,
+  predicate/value/entity shape and uncertainty. Exact unique/repeated Unicode quotes
+  validate before atomic candidates/entities/decisions/window completion commit.
+- **P6-AC-04:** Invalid/partial output cannot advance completed windows or create
+  accepted beliefs. Restart skips completed work; interruption/rollback/replay is
+  idempotent and source suppression is enforced before and after processing.
+- **P6-AC-05:** Bounded retry/continue-on-error processes eligible later windows
+  without a failure-count cutoff. Every failed attempt remains audited; unresolved
+  gaps prevent complete status. Infrastructure/pin/protocol/storage errors stop;
+  exit/run_outcome distinguishes a finished partial batch from an early stop.
+- **P6-AC-06:** Conservative activation preserves inputs/reasons/policy version and
+  manual overrides. Summary confidence remains capped; unsupported, conflicting,
+  hypothetical and assistant-only personal claims cannot silently activate.
+- **P6-AC-07:** Operator review/apply validates immutable candidates/evidence.
+  Independent seeding copies actual approvals and exact specification closure;
+  seeding/indexing stay explicit and no model output grants access or authority.
+- **P6-AC-08:** The same gateway admits authenticated bounded P3/P4, buffers validated
+  output and blocks background generation throughout connected realtime sessions.
+  Startup reserves/drains safely; no P1/P2, idle-gap admission or preemption claim.
+- **P6-AC-09:** Migration, full source-job restore and selective evidence/specification
+  closure retain identities and pinned resumability. Partial bundles report limits.
+- **P6-AC-10:** Real pinned Qwen with synthetic sources proves extraction → review →
+  seed → CPU indexing → restart → semantic recall → actual LiveKit/P0 reply/evidence.
+  This does not certify extraction completeness or approve private imports.
+- **P6-AC-11:** Interactive ingestion supports existing libraries/jobs and new files,
+  individual/confirmed bulk pending decisions, separate default-no seeding, durable
+  quit/restart and index repair. Prior rejects/seeds/forgotten copies are retained,
+  unsupported writes stay pending, and another root owner is never displaced.
+
 ### Phase 7 acceptance criteria: native activation and consolidation
 
 These are planned requirements, not delivered Phase 6 behavior. Memory policy,
 evidence validation, lifecycle and canonical writes remain owned by ember-memory.
 Ember-agent schedules work and consumes public memory contracts.
 
-- Provide an idempotent, policy-controlled acceptance path for character-owned
+- **P7-AC-01:** Provide an idempotent, policy-controlled acceptance path for character-owned
   native conversation candidates. A model proposes claims; the engine verifies
   original evidence, identified speaker, authority, kind/modality, importance,
   support and conflicts before accepting them. Model confidence alone never
   grants write authority. Imported personal claims retain explicit operator review.
-- Preserve policy/version, decision inputs, reasons, exact evidence and processing
+- **P7-AC-02:** Preserve policy/version, decision inputs, reasons, exact evidence and processing
   provenance for automatic acceptance, deferral and rejection. Ambiguous,
   unsupported, hypothetical and assistant-only personal assertions do not silently
   become accepted facts; uncertain/conflicting proposals remain inspectable.
-- Repeated statements and overlapping windows do not create an accumulating set
+- **P7-AC-03:** Repeated statements and overlapping windows do not create an accumulating set
   of equivalent active memories. Consolidation preserves source relationships,
   original identities or redirects, and independently seeded character state.
-- Explicit user corrections use validated transition evidence and versioned rules.
+- **P7-AC-04:** Explicit user corrections use validated transition evidence and versioned rules.
   Preserve old assertions and observed/valid/recorded time; test current recall,
   historical state and what the character believed before the correction.
   Unresolved conflicts cannot silently overwrite an accepted belief.
-- Re-extraction, consolidation and restart respect manual decisions, disabled
+- **P7-AC-05:** Re-extraction, consolidation and restart respect manual decisions, disabled
   memories, forgetting and source suppression. Previously suppressed knowledge
   cannot return under a new identity, redirect or seed operation.
-- Preserve traceable native/imported origin dependencies through consolidation
+- **P7-AC-06:** Preserve traceable native/imported origin dependencies through consolidation
   and supersession so Phase 8 source selection cannot be bypassed by a derived
   memory. Test independent characters and replay after interruption.
+
+
+- **P7-AC-07:** Expose bounded typed canonical redirects, supersession/conflict and
+  source relationship metadata with evidence and origin dependencies for Phase 8.
+  Same-user/shared-topic/date similarity is not an asserted incident relationship.
+- **P7-AC-08:** Indexed temporal lookup distinguishes valid, observed and recorded
+  axes and unknown precision; a historical-query test must not select today's
+  replacement merely because its embedding is newer.
+- **P7-AC-09:** Any new lookup_related/temporal ABI capability is versioned,
+  negotiated and tested against fake/in-process clients, scope/expiry/suppression,
+  branch separation and bounded joins. Relationship projections remain rebuildable;
+  absence cannot force an unbounded traversal or a backend dependency in agent code.
 
 ### Phase 8 acceptance criteria: automatic capture and memory source controls
 
 These requirements extend application memory integration; browser/audio, prompt
 budgets, composition, health and portability deliverables remain required.
 
-- Normal supported chat automatically records completed conversation sources and
+- **P8-AC-01:** Normal supported chat automatically records completed conversation sources and
   durably queues candidate extraction under a configured per-character native
   capture policy. No /remember, manual extract command, approval or seeding is
   required for qualifying new native memories. /remember remains an optional
   explicit path; uncertain/conflicting proposals can stay pending for review.
-- Prove the end-to-end path with sanitized evidence: ordinary conversation says
+- **P8-AC-02:** Prove the end-to-end path with sanitized evidence: ordinary conversation says
   "Milo is my shark plushie"; extraction, policy acceptance and indexing complete;
   after restart a later question retrieves the accepted memory and its original
   evidence. A second character does not acquire it without an explicit transfer.
-- Keep automatic capture/acceptance settings separate from recall selection.
+- **P8-AC-03:** Keep automatic capture/acceptance settings separate from recall selection.
   Turning capture off stops new automatic acceptance without deleting existing
   memories. Durable unprocessed sources remain inspectable and resume only under
   the configured policy; automatic native capture does not approve an old import.
-- Expose persistent per-character controls in configuration and the supported
+- **P8-AC-04:** Expose persistent per-character controls in configuration and the supported
   application UI to include/exclude local durable memories and each imported
   library independently. Support local-only, selected imports plus local, and
   imports-only recall. The selection follows character identity rather than the
   generation model tag and survives restart and character bundle restoration.
-- Apply source selection to seeded character memories by their recorded origins,
+- **P8-AC-05:** Apply source selection to seeded character memories by their recorded origins,
   not merely archive grants. Enforce it before retrieval limits/ranking and final
   prompt inclusion, including lexical/semantic fallback, pins, summaries,
   consolidated memories and known memory-dependent caches/history. Re-enabling
   restores eligible existing records without reseeding; it never overrides
   forgetting, suppression or current access restrictions.
-- Source switches govern durable memory recall and separately permitted archive
+- **P8-AC-06:** Source switches govern durable memory recall and separately permitted archive
   retrieval, not the current user input or ordinary live conversation history.
   Disabling a source does not delete it or revoke access; enabling it does not
   grant access, approve candidates or seed knowledge. Imported archive search
   continues to require explicit source grants. Model output cannot change these
   controls.
-- Automatic extraction remains P3 through the single gateway with bounded queues
+- **P8-AC-07:** Automatic extraction remains P3 through the single gateway with bounded queues
   and durable checkpoints. Until Phase 13 measured preemption acceptance, process
   after disconnection or explicit realtime suspension; a connected session's
   apparent idle gap is not permission for background inference. Test safe draining
   on conversation restart, no overlapping upstream generation, and truthful
   pending/blocked status instead of delaying each conversational reply.
-- Test interruption/restart without duplicate acceptance, partial commits or lost
+- **P8-AC-08:** Test interruption/restart without duplicate acceptance, partial commits or lost
   queued sources; failed evidence/model output remains pending/failed rather than
   weakening validation. Update compatible indexes after accepted writes and retain
   documented degraded recall if an encoder/index is unavailable.
-- Show acceptance/pending/rejection reasons, source selection, provenance and
+- **P8-AC-09:** Show acceptance/pending/rejection reasons, source selection, provenance and
   processing/index status without exposing private text in default logs. Verify
   selected-source exclusion after restart and against cached prompt context;
   local memory remains usable when the ChatGPT library is excluded.
+
+
+- **P8-AC-10:** A supported browser text/control path and local STT–Qwen–Kokoro audio
+  path use the same personality, memory client and prompt composer; ordinary recall
+  remains the bounded six-memory fast path without deep planning/hydration calls.
+- **P8-AC-11:** Single-command composition starts/attaches installed configured
+  services, serves the production browser and reports feature readiness. Startup,
+  degraded text-only/control states, shutdown/crash and ownership conflicts pass
+  section 32's relevant core tests. Setup, not startup, downloads dependencies.
+- **P8-AC-12:** Prompt category accounting/whole-turn trimming preserves mandatory
+  input, personality and response reserve. Actual serialized cost fits 8K context;
+  excessive input reports overflow rather than silent backend truncation.
+- **P8-AC-13:** Explicit Deep Associative Recall from browser and supported text/
+  spoken controls works through the running engine owner with no harness, MCP,
+  extra LLM planning call or competing maintenance process.
+- **P8-AC-14:** The NAS/networking curated scenario retrieves multiple independently
+  supported memories and authorized passages, exposes inclusion reasons, and
+  reconstructs the relevant project without merging unrelated shared-entity incidents.
+- **P8-AC-15:** "Last year", ambiguous September, event-relative/device-period and
+  before/after questions preserve local reference time, time-axis/unknown precision,
+  corrections and alternative projects; insufficient support produces a clarification
+  or honest partial answer, not fabricated dates or relationships.
+- **P8-AC-16:** Archive-only evidence and exact-evidence follow-ups work only under
+  current explicit grants/source selection. Accepted memories, unapproved/raw
+  observations, inferred associations and contradictory/branch-specific claims
+  stay separately labelled; search writes no canonical belief or grant.
+- **P8-AC-17:** Scope/forgetting/revocation/expiry/source-switch changes during
+  expansion, source resolution, cached inspection and streamed delivery remove
+  dependent output or stop it safely. Cross-character tests and hidden-reasoning
+  fixtures prove zero unauthorized output, including inference from denied edges.
+- **P8-AC-18:** All section 13 budgets, cycles, fan-out, queue saturation, deadlines,
+  cancellation, native draining and generation changes terminate predictably with
+  specific coverage/outcome counters. A completed bounded plan never claims
+  exhaustive archive coverage; deferred work cannot monopolize the event loop.
+- **P8-AC-19:** Deep results are inspected separately from their condensed prompt.
+  Metadata/modality/confidence/time/evidence references and selected exact excerpts
+  fit section 25's unchanged categories; answer streaming uses P0 and tracks current
+  dependencies. Full result JSON/24 memories/12 chunks are not appended wholesale.
+- **P8-AC-20:** Curated source-backed quality gates and paired p50/p95/p99 contention
+  benchmarks in sections 30–31 pass with cold/warm caches, diverse/large archives,
+  simultaneous requests and index refresh. Ordinary fast recall retains 150 ms
+  soft behaviour; concurrent deep semantic mode is unavailable if its gate fails.
+- **P8-AC-21:** UI exposes deep/fast selection, progress, cancel, partial/deferred
+  reasons, clusters/timelines, accepted-versus-observed status and authorized source
+  navigation. Optional automatic deep selection defaults off and explains triggers.
+- **P8-AC-22:** Restart keeps character identity/source controls/native capture
+  checkpoints while ephemeral deep investigations are cancelled, not promoted or
+  silently replayed. Deep capability/budget/ranker diagnostics are private-safe;
+  a fake memory backend proves no SQL/engine internals enter character logic.
+
+### Phase 9 acceptance criteria: generic agent foundations
+
+Owner: ember-agent; memory remains behind the injected ABI.
+
+- **P9-AC-01:** ToolProvider/ToolRouter and AgenticTaskProvider/TaskRouter contracts
+  validate capabilities, schemas, bound character/session/turn, deadlines, scoped
+  authority and receipts. No extra routing model or memory-writing harness is required.
+- **P9-AC-02:** Durable queued submission/outbox returns a handle promptly;
+  idempotent retries and state transitions distinguish waiting for model/tool/user,
+  cancellation requested and actual completion. Unknown states fail explicitly.
+- **P9-AC-03:** Runtime operational storage owns task attempts/results/artifacts/
+  events/confirmation/notification state, never canonical autobiographical beliefs.
+  Findings promote only through normal scoped source/extraction policy.
+- **P9-AC-04:** EventBus provides bounded progress/coalescing and durable deduplicated
+  terminal delivery; AttentionPolicy respects speech, generation, TTS, topic/session
+  and pending confirmation. Crash during uncertain speech cannot replay it blindly.
+- **P9-AC-05:** The existing gateway gains authenticated P1/P2, live reservation,
+  priorities/fairness/accounting and bounded waits. One upstream and distinct
+  contexts remain invariant; conservative P3/P4 restrictions stay until Phase 13.
+- **P9-AC-06:** Timeout/cancel/completion races, artifact/citation validation and
+  restart reconciliation preserve truthful effects; uncertain tool writes are not
+  retried and provider removal preserves character conversation/memory.
+- **P9-AC-07:** Later event-driven Deep Associative Recall reuses the Phase 8 service
+  and memory read scope. Optional model planning uses correct P1/P2 admission; it
+  cannot move memory ownership into tasks or relabel background inference P0.
+
+### Phase 10 acceptance criteria: direct MCP
+
+Owner: ember-agent tool adapters; MCP services retain their natural boundaries.
+
+- **P10-AC-01:** A pinned SDK discovers real configured servers and normalizes tool
+  identities/schemas/annotations/requirements, resolving collisions and malformed
+  metadata without treating discovery as authorization.
+- **P10-AC-02:** Runtime-bound scoped credentials, contexts and effect classifications
+  validate arguments, permissions and deadlines before invocation; receipts distinguish
+  success, failure, confirmation, timeout and unknown effect.
+- **P10-AC-03:** Native/direct MCP works with the harness absent; separate service
+  clients/stdio processes or a tested relay prevent credential/input sharing.
+- **P10-AC-04:** Model sampling is disabled or routed through the same gateway with
+  authenticated supported workload. Unsupported extensions/endpoints fail without
+  direct model fallback or hidden administration.
+- **P10-AC-05:** Unavailable/hung/cancelled servers leave other tools and core usable.
+  Uncertain writes are never automatically repeated; approvals bind exact arguments
+  and changing them invalidates authorization.
+- **P10-AC-06:** UI shows availability, requirements, confirmations, progress and
+  receipts safely. Actual server conformance covers malicious output, cross-character
+  denial and no canonical memory/policy/credential bypass.
+
+### Phase 11 acceptance criteria: Odysseus delegation
+
+Owner: ember-agent provider adapter and isolated bridge; provider never owns memory.
+
+- **P11-AC-01:** Actual pinned-worker reconnaissance identifies discovery, metadata,
+  streaming, native/OpenAI transports, tools/thinking/structured output and auxiliary
+  calls. A versioned tested compatibility profile, not guessed routes, defines support.
+- **P11-AC-02:** Production generation and every auxiliary model call use the same
+  gateway or are disabled. Pin/profile changes and unsupported endpoints fail closed
+  without cloud/teacher/direct-upstream fallback or a second model server.
+- **P11-AC-03:** The bridge implements its advertised submit/status/events/result/
+  cancel/user-input/update/purge capabilities with origin/freshness/citation/artifact
+  validation and functional, bounded personal context.
+- **P11-AC-04:** Enforced isolation excludes canonical databases/credentials,
+  memory-writing MCP, model administration and autonomous skill learning. Host shell
+  remains disabled unless a tested restricted boundary exists; prompts/directories
+  alone are not a sandbox.
+- **P11-AC-05:** Restart/disconnect/cancel/confirmation and partial-result races
+  reconcile safe checkpoints only. Unknown or uncertain effects are never replayed.
+  Forget/revoke invalidates copied context and blocks delivery/promotion.
+- **P11-AC-06:** An actual scoped task proves tool execution through broker authority,
+  structured completion, attention delivery and gateway context isolation; no finding
+  automatically becomes a personal belief.
+- **P11-AC-07:** Disable/remove the provider and verify unchanged character identity,
+  personality, ordinary/deep recall, native/direct MCP and conversational continuity.
+
+### Phase 12 acceptance criteria: portable skills
+
+Owner: ember-agent loader and provider translators; skills confer no authority.
+
+- **P12-AC-01:** Parse portable frontmatter/Markdown with bounded safe resources,
+  identity/source/content hashes, requirements and namespaced extensions; retain
+  original provider fields and translation diagnostics.
+- **P12-AC-02:** Duplicate identity/version/resource/path failures require explicit
+  selection or typed errors; provider metadata round trips without requiring
+  an OpenClaw runtime.
+- **P12-AC-03:** Load metadata first, selected instructions second, resources on
+  demand; only relevant authorized skills enter the measured prompt budget.
+- **P12-AC-04:** Requirements are checked against installed capabilities and current
+  grants. Skill text cannot expose credentials, grant tools, change memory/personality/
+  scheduler policy or execute scripts/installers automatically.
+- **P12-AC-05:** Oversized required procedures defer/delegate where supported or
+  report unavailable; mandatory steps are not silently chopped. Scripts run only
+  through authorized tools with validated arguments/effects.
+- **P12-AC-06:** Loader, UI and actual supported provider translation tests cover
+  offline resources, unknown extensions, malicious instructions and unchanged core
+  operation when a skill/provider is missing.
+
+### Phase 13 acceptance criteria: preemption hardening
+
+Owner: the existing ember-agent gateway and tested runtime profile.
+
+- **P13-AC-01:** Pin model/digest, Ollama/transport/runner/context/cancellation/GPU
+  configuration and measure baseline versus P2/P3/P4 contention, TTFT, KV/VRAM,
+  context-switch/retry costs and actual release observations.
+- **P13-AC-02:** A cancellation request is not release evidence. Interrupt the
+  underlying generation, verify completion/release before admitting P0/P1, and
+  prove no concurrent upstream generation across races, crash and reconnect.
+- **P13-AC-03:** Voice reservation lasts from speech onset through turn/TTS/guard.
+  Measured added warm voice p95 is at most 200 ms versus the matched baseline
+  for any profile advertised as supporting live preemption.
+- **P13-AC-04:** Buffer P2–P4 until validated successful completion; discard partial
+  JSON/tools on interruption, requeue only immutable model steps and never replay
+  completed tools or uncertain external effects. Tasks and non-model I/O survive.
+- **P13-AC-05:** Queue bounds, fairness, expiry/cancel/shutdown, runner errors and
+  uncertain release retain truthful accounting/ownership; no routine unload/restart
+  or authority to kill independently managed Ollama is introduced.
+- **P13-AC-06:** Unsupported/regressed profiles keep preemptive admission disabled
+  and expose the documented conservative mode. Hardening acceptance may establish
+  this honest limitation; claiming preemption requires the measured profile gates.
+- **P13-AC-07:** Rerun fast-recall/deep-recall resource isolation alongside model
+  contention and audio output. GPU preemption does not substitute for CPU/SQLite
+  admission controls or justify loosening the 150 ms recall contract.
+
+### ABI freeze and v1 release acceptance criteria
+
+Owner: both products, independently of optional harness completion.
+
+- **V1-AC-01:** With harnesses disabled, a reviewed real export/claim passes
+  normalization → storage → extraction → seeding → restarted LiveKit/gateway recall →
+  Deep Archive Search/exact evidence → linked/selective backup → new-root restore →
+  repeat. Saved-memory inclusion is claimed only where observed.
+- **V1-AC-02:** Temporal corrections, conflicts, suppression/forgetting, independent
+  characters, derived rebuild and embedding replacement preserve identity/evidence
+  and enforce current policy after restoration.
+- **V1-AC-03:** Phase 8 Deep Associative Recall passes its bounded temporal/project,
+  archive-only evidence, no-access, cancellation, prompt and fast-path regression
+  gates without a harness; associations remain derived and never seed beliefs.
+- **V1-AC-04:** Supported Windows/Linux packaging, locked setup, migrations/backups,
+  schema/ABI compatibility and feature-health/degraded/recovery matrix are verified
+  with no hidden installation or replay of external effects.
+- **V1-AC-05:** Section 30 scale/performance measurements and security/injection/
+  authorization acceptance are attached with remaining unsupported profiles explicit.
+  Synthetic duplicate benchmarks alone cannot certify capacity or recall quality.
+- **V1-AC-06:** Freeze ABI 1.0 only after mapped memory/character gates pass. Full
+  application v1 includes separately accepted tools/delegation/skills; the memory ABI
+  freeze does not wait for Phases 11–13. Preemption remains profile-conditional.
 
 ### Phase architecture review workflow
 
@@ -3050,6 +3979,12 @@ PLAN remains authoritative for design and engineering standards.
 ### V1 includes
 
 All established memory/character capabilities, startup/shutdown, degraded operation, explicit prompt composition, native/direct MCP tools, generic delegation, one Odysseus adapter, shared gateway, structured results, events/attention, portable skills, and security boundaries.
+
+Deep Associative Recall is a planned Phase 8 v1 capability: explicit bounded
+investigation, temporal/evidence-aware context, authorized inspection/cancellation and
+measured ordinary-recall isolation. It is distinct from Deep Archive Search and does
+not require the optional harness or an elaborate graph/planner. Its release gates are
+P8-AC-13 through P8-AC-22 and sections 13, 30–33; existing Phase 5/6 delivery is unchanged.
 
 Live preemption is conditional on measured acceptance; conservative scheduling is a valid documented fallback.
 
