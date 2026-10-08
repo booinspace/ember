@@ -139,3 +139,11 @@ The user authorized Phase 4 implementation. [Root ADR 0007](0007-phase-four-libr
 now owns that review checkpoint, extending the existing seed/grant primitives with
 approved library snapshots, independent adoption and portable bundles. This does
 not close Phase 3's operator-reviewed real-export claim gate or add voice support.
+
+## Participant startup guidance (2026-10-08)
+
+livekit-chat joins the room published by ember start; a gateway-only process does not
+host that room. Missing discovery previously appeared as generic invalid local state.
+Participant discovery now produces actionable, private-safe errors without opening
+memory or starting providers. Agent ADR 0003 owns the diagnostic detail and regression
+coverage. Runtime/service/room ownership remains unchanged.

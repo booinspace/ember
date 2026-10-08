@@ -288,6 +288,27 @@ class LibraryService:
 
         return database.read(read)
 
+    def has_seed(
+        self, character_id: CanonicalId, library_id: CanonicalId, knowledge_id: CanonicalId
+    ) -> bool:
+        """Check historical origin dependencies, including disabled/forgotten seed copies.
+
+        This discovery never restores an old belief or selects a newer revision.
+        Existing independent snapshots require explicit update semantics.
+        """
+        store = self.engine.character(character_id)
+        key = canonical_object_sha256({"store": str(library_id), "memory": str(knowledge_id)})
+        return store.database.read(
+            lambda connection: (
+                connection.execute(
+                    "SELECT 1 FROM memory_dependencies WHERE target_kind='origin' "
+                    "AND target_key=? LIMIT 1",
+                    (key,),
+                ).fetchone()
+                is not None
+            )
+        )
+
     def seed(self, character_id: CanonicalId, request: SeedRequest) -> MutationReceipt:
         """Atomically adopt independent snapshots/entities and supporting evidence grants.
 

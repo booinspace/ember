@@ -54,8 +54,9 @@ conversations or extract them from the official ZIP.
 
 ```powershell
 $summaryPath = "C:\path\to\saved-memories.md"
-$import = & $memory summary import $summaryPath --source-namespace "chatgpt-saved-memories" --root $memoryRoot | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) { throw "Summary import failed." }
+$importJson = & $memory summary import $summaryPath --source-namespace "chatgpt-saved-memories" --root $memoryRoot
+if ($LASTEXITCODE -ne 0) { throw "Summary import failed; inspect the CLI error above." }
+$import = ($importJson -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
 $libraryId = $import.source_store_id
 ```
 
@@ -71,8 +72,9 @@ Prefer one saved memory per JSON entry for explicit source boundaries. If your s
 tool uses `content` instead of `text`, import it explicitly:
 
 ```powershell
-$import = & $memory summary import "C:\path\to\memories.json" --format json --text-field content --source-namespace "chatgpt-saved-memories" --root $memoryRoot | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) { throw "Summary import failed; check the JSON shape and text field." }
+$importJson = & $memory summary import "C:\path\to\memories.json" --format json --text-field content --source-namespace "chatgpt-saved-memories" --root $memoryRoot
+if ($LASTEXITCODE -ne 0) { throw "Summary import failed; inspect ownership, JSON shape and text field." }
+$import = ($importJson -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
 $libraryId = $import.source_store_id
 ```
 
@@ -86,11 +88,26 @@ resumes after interruption. Use a different namespace for another account.
 Canonical data is `<root>/libraries/<libraryId>/memory.db`; the retained original is
 under that library's `rawsource/`. Import does not run Qwen or compute embeddings.
 
+### PowerShell errors and root ownership
+
+The CLI emits diagnostic errors on stderr, leaving JSON stdout for successful results.
+Capture native output, check `$LASTEXITCODE`, then parse JSON; never parse error output
+or continue with unset store/job IDs. Run dependent steps as one script or script
+block so `throw` stops the remaining commands, rather than pasting later commands
+after a failed step.
+
+If the error says `The canonical store already has a writer owner`, another
+archive extraction or character runtime owns this root. Let it finish, or press
+Ctrl+C in its own terminal and wait until the command exits and drains work.
+Gateway-only operation can remain running. Never delete the lock to bypass ownership.
+Resume the same archive job afterward; completed windows and candidates remain intact.
+
 ## Create, run, pause and resume extraction
 
 ```powershell
-$job = & $memory extract create --store $libraryId --key "saved-memories-v1" --source-kind summary --workload P4 --model $settings.model --digest $settings.digest --root $memoryRoot | ConvertFrom-Json
+$jobJson = & $memory extract create --store $libraryId --key "saved-memories-v1" --source-kind summary --workload P4 --model $settings.model --digest $settings.digest --root $memoryRoot
 if ($LASTEXITCODE -ne 0) { throw "Job creation failed." }
+$job = ($jobJson -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
 $jobId = $job.definition.job_id
 & $memory extract run --store $libraryId --job $jobId --gateway $settings.gateway --token-file $backgroundTokenFile --max-windows 5 --root $memoryRoot
 if ($LASTEXITCODE -ne 0) { throw "Extraction failed; inspect status before retrying." }
@@ -105,7 +122,34 @@ checkpoints validated complete windows and pauses after five. Run the same job w
 & $memory extract run --store $libraryId --job $jobId --gateway $settings.gateway --token-file $backgroundTokenFile --root $memoryRoot
 ```
 
-Use `--retry-failed` only when retrying a failed step; completed steps remain intact.
+`--retry-failed` selects previously failed windows at startup; it does not itself
+automatically retry new failures. Completed windows remain intact. Defaults still stop
+at the first failed window. To retry invalid model outputs up to three times per selected
+window and continue after exhaustion:
+
+```powershell
+& $memory extract run --store $libraryId --job $jobId --gateway $settings.gateway --token-file $backgroundTokenFile --retry-failed --window-attempts 3 --continue-on-error --root $memoryRoot
+```
+
+`--window-attempts` accepts 1, 2 or 3 and bounds total attempts per selected window in
+this invocation, including its first attempt. Rejected quote/claim/JSON-schema output
+can retry; `--continue-on-error` then records exhausted windows and processes later
+ones, with no failed-window-count cutoff. Suppressed/unsupported source windows are
+recorded and skipped without retry or model inference. Invalid candidates never commit.
+Global transport/protocol, pin, credentials, integrity/storage and unknown failures
+still stop immediately instead of treating the remaining archive as bad input.
+
+Finishing the requested batch with continuation returns exit 0 even with unresolved
+windows. The final JSON retains `status=failed` and failure counts, with transient
+`run_outcome=finished_with_failures`; this means the execution finished, not that every
+window succeeded. Fatal stops return a nonzero exit and `run_outcome=stopped_on_error`.
+Reading persisted job status does not retain the per-invocation outcome. Every failed
+attempt remains audited and can be retried later with `--retry-failed`.
+`--max-windows` bounds distinct windows attempted, including exhausted failures.
+
+These are execution controls, not changes to the pinned extraction specification;
+existing jobs can use them without a new key. Do not create a fresh job merely to
+retry a quote failure or treat a partial job as complete.
 Ctrl+C pauses an interrupted job at its durable boundary; native gateway work drains
 before its runner slot is reusable. If an earlier native request is still draining,
 wait for gateway health to become ready before resuming. `extract cancel --store ...
@@ -141,7 +185,8 @@ progress while a long run owns the root; inspect status after a pause or complet
 $reviewPath = ".local/saved-memories-review-001.json"
 & $memory extract reevaluate --store $libraryId --job $jobId --root $memoryRoot
 & $memory extract review --store $libraryId --job $jobId --output $reviewPath --root $memoryRoot
-notepad $reviewPath
+if ($LASTEXITCODE -eq 0) { notepad $reviewPath }
+else { throw "Review export failed; do not open/create its output file." }
 ```
 
 Read each candidate's statement, modality, original `quotes` and policy reasons. Change
@@ -157,6 +202,10 @@ Unsupported fact predicates remain proposals and cannot be written until support
 generic durable observations use episode payloads. Conflicts, duplicate proposals,
 uncertain branches, speculation and prior rejections stay visible for review. This
 phase does not merge/supersede accepted memories or resolve temporal contradictions.
+
+An existing output, including an empty file created after a failed export, is never
+overwritten. Choose a fresh --output filename. Open the editor only after successful
+export; do not treat an empty file as a candidate review.
 
 Review files contain private original quotes; keep them under `.local/`. They are new
 files and never overwrite an existing export. Each page holds up to 1,000 candidates.
@@ -239,3 +288,92 @@ See [Root ADR 0009](adr/0009-phase-six-extraction-and-background-inference.md),
 [Agent ADR 0004](../ember-agent/docs/adr/0004-conservative-background-gateway.md).
 Stop for architecture review before Phase 7. Phase 5's open performance/capacity gates
 remain recorded separately and are not closed by these extraction tests.
+
+## Interactive ingestion, review and seeding
+
+Run from the repository root in a normal PowerShell terminal. Stop chat and other
+archive/extraction writers first; the command owns the canonical root throughout.
+Leave a gateway-only process running if extraction is needed. No service or package
+is started/downloaded by this maintenance command.
+
+```powershell
+.\ember-memory\.venv\Scripts\ember-memory.exe ingest `
+  --config .local/config/deployment.non-mtp.toml
+```
+
+The menus choose import a file or an existing library, then an existing extraction
+job or a new snapshot. For the summary already imported, choose its existing library
+and existing job. To select those directly using your current PowerShell variables:
+
+```powershell
+.\ember-memory\.venv\Scripts\ember-memory.exe ingest `
+  --config .local/config/deployment.non-mtp.toml `
+  --store $summaryStore --job $summaryJob
+```
+
+To import a new summary instead, supply its filename:
+
+```powershell
+.\ember-memory\.venv\Scripts\ember-memory.exe ingest `
+  .local/imports/nathalie-chatgpt-summary.json `
+  --config .local/config/deployment.non-mtp.toml `
+  --source-namespace chatgpt-generated-summary
+```
+
+Supported files are summary JSON, text/Markdown and the official ChatGPT ZIP.
+JSON defaults to strings/objects in `memories` using the `text` field; existing
+normalization rules and `--text-field` still apply. `--format` can override detection.
+The deployment supplies the data root, profile's existing character binding, model
+tag/digest, gateway background token path and installed CPU embedding directory.
+Explicit `--character` can select another existing character. With no binding, the
+command lists existing characters; create/bind one with the existing runtime first
+if none exists. Explicit `--root` must match the deployment's root.
+
+1. Confirm extraction if needed. It resumes durable completed windows, retries failed
+   windows up to three attempts, and continues past known window-local failures.
+   `--window-attempts` and `--max-windows` bound this work. Infrastructure/pin/storage
+   failures stop safely. Review of an incomplete job requires another confirmation;
+   the displayed counts identify unresolved source coverage.
+2. Choose `i` to review individually, `a` to accept all pending, or `r` to reject
+   all pending. Bulk decisions require yes. Individual choices are `a` accept,
+   `r` reject, `s` skip, and `all` accept the remaining pending candidates after
+   confirmation. Quotes, statement, effective/model confidence, importance and policy
+   reasons are displayed. Existing approvals/rejections are retained on restart;
+   bulk approval never reverses an earlier rejection. Unsupported semantics remain
+   pending rather than bypassing validation. Use existing explicit review/apply tools
+   if you intentionally need to reconsider an already decided candidate.
+3. Answer yes to the separate **seed ALL approved snapshots** prompt. Enter defaults
+   to no. Approval alone retains library knowledge without adding character beliefs.
+   The seed target is displayed explicitly. Seeds already present by provenance,
+   including historical forgotten/disabled copies, are skipped without resurrection
+   or duplicate snapshots. Updating existing beliefs is outside this command.
+4. The configured CPU index is updated after seeding, including on reruns that skip
+   existing seeds. `--skip-index` skips this step; absent embedding configuration is
+   reported explicitly. An indexing failure retains canonical seeds: repair local
+   assets and rerun to rebuild recall without duplicating memories.
+
+Decisions save after each response; seeding commits one snapshot at a time.
+`q`/EOF exits retaining completed steps, and Ctrl+C interrupts safely. Resume the
+same library/job to continue. Processing snapshot pins and evidence remain immutable;
+choose a new job to include source records imported after an older snapshot.
+Terminal display escapes source control characters, and redirected stdin/stdout are
+rejected; use existing JSON commands for scripts. No review JSON file is required.
+
+After indexing, stop the gateway-only process and start/join the same configured
+Ember character using the start/livekit-chat commands above. This is Phase 6 operator
+maintenance; automatic conversation adoption and source toggles remain Phase 7/8 work.
+
+## No room available when joining chat
+
+If livekit-chat reports no room (older versions reported invalid runtime local state),
+start Ember with the same deployment in another terminal and wait for its room-ready
+message before joining. A gateway-only process supports extraction but does not host
+the character room. Stop maintenance/extraction writers before ember start acquires
+the canonical memory root. Keep the start terminal running while chatting.
+
+## Historical jobs in the interactive menu
+
+The menu can read earlier extractor 0.1.0/0.1.1 jobs without reporting false corruption.
+Select your current 0.1.2 job to resume processing; old job/source/model/prompt/schema
+pins are never rewritten. If an older snapshot needs further extraction, choose new
+to create a current snapshot rather than trying to resume incompatible processing.

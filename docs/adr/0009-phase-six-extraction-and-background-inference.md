@@ -167,3 +167,149 @@ the exact-evidence review file is available locally and all four decisions remai
 No approval or seeding has occurred. Phase 5 performance/capacity/Linux gates remain open.
 No corpus-wide extraction completeness, voice integration, ABI 1.0 or preemption
 acceptance is claimed. Stop for architecture review before Phase 7.
+
+## Initial quote-failure recovery controls (2026-10-08)
+
+A long operator archive run exposed the distinction between selecting old failed
+windows and retrying new failures. Default fail-fast behavior remains unchanged.
+The engine runner now accepts bounded window attempts (1-3) and optional continuation
+for `quote_missing_or_ambiguous` and `quote_not_exact` only. Both errors occur before
+the atomic candidate commit. Infrastructure, pin, source-access and other failures
+still stop; no evidence validation is relaxed and no proposal is automatically adopted.
+
+Every failed attempt is recorded. Exhausted windows remain failed while later windows
+can commit; the final job cannot report complete with unresolved gaps. Window limits
+bound distinct attempted windows. CLI progress includes unresolved failure counts.
+Execution controls do not alter model/prompt/schema/policy pins, so existing jobs can
+resume without a new key. Tests cover transient recovery, exhausted failures, atomic
+rollback, bounded work, retained audit history, restart recovery and nonrecoverable
+failures. Validation of this recovery change: 407 tests passed, eight optional
+service/model tests skipped; formatting, lint and strict Pyright passed. The
+extraction suite passed all 41 tests. No private job was run during these checks.
+Component detail is in
+[Memory ADR 0007](../../ember-memory/docs/adr/0007-extraction-jobs-and-summary-sources.md).
+
+## Expanded window continuation and execution outcome (2026-10-08)
+
+The operator clarified that --continue-on-error must finish the requested extraction
+batch despite bad model outputs, rather than repeatedly requiring manual restarts.
+The initial quote-only policy is extended to rejected claim/JSON-schema outputs and
+suppressed/unsupported window sources. Output retries remain bounded (1-3); source
+skips do not retry or run inference. No failed-window-count threshold stops execution.
+
+Gateway output rejection is separated from transport/protocol failure. Invalid model
+JSON/schema and the gateway's known structured-output rejection codes are window-local;
+unknown generation, identity/protocol, pin, transport and canonical storage failures
+remain explicit stops. Original evidence, atomic commits and approval authority are
+unchanged. Unknown failures are never silently ignored.
+
+The CLI returns 0 after a continued batch finishes, even with unresolved windows.
+Job status remains failed until all gaps are recovered. A transient run_outcome
+distinguishes finished_with_failures from stopped_on_error without rewriting durable
+job state. No extraction identity, ClaimBatch schema, database migration or new job
+key is needed; existing running processes use this behavior on their next invocation.
+Tests cover more than three distinct failures, schema rejection through the gateway,
+source skips without inference, persisted gaps, restart and CLI exit behavior.
+Validation: 424 tests passed, eight optional service/model tests skipped; all 64
+processing/transport tests passed. Formatting, lint, strict Pyright and diff checks
+passed. The existing ClaimBatch schema hash was verified unchanged. No private
+extraction, approval or seeding was run during validation.
+
+## Planned Phase 7/8 acceptance clarification (2026-10-08)
+
+The operator requested automatic memory capture from ordinary conversation without
+/remember and independent recall controls for imported ChatGPT versus local memories.
+[PLAN Phase 7 acceptance](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation)
+assigns native policy acceptance, consolidation and origin preservation to the memory
+engine. [PLAN Phase 8 acceptance](../../PLAN.md#phase-8-acceptance-criteria-automatic-capture-and-memory-source-controls)
+assigns automatic scheduling, application controls and end-to-end recall tests to
+application integration. These are planned requirements, not shipped Phase 6 features.
+
+Imported personal claims keep their operator-review boundary. Automatic native
+acceptance uses evidence/policy checks and does not require library seeding. Recall
+selection must exclude seeded/derived memories by origin, not just revoke archive
+grants, and must respect suppression and invalidate known memory-dependent context.
+Conservative background admission remains unchanged until measured Phase 13 acceptance.
+Component ADRs will record the concrete contracts and implementation in those phases.
+
+## CLI JSON output and PowerShell ownership failure (2026-10-08)
+
+A concurrent summary import correctly failed because the archive extractor owned
+the canonical root. Its diagnostic was previously printed on stdout, so direct
+ConvertFrom-Json parsing obscured the real error and subsequent pasted commands
+received empty store/job IDs. Summary/extraction diagnostics now use stderr.
+Runbook examples check the native exit code before parsing JSON and require dependent
+steps to stop after failure. The root's single-owner lock and gateway admission
+remain unchanged; no running import is interrupted or lock removed by this fix.
+Regression coverage verifies busy-root and invalid-input failures leave stdout empty.
+Validation: 427 tests passed, eight optional service/model tests skipped; all 55
+processing tests passed. Formatting, lint and strict Pyright passed. The running
+private archive extraction was left untouched; no summary import was executed.
+
+Review export also reports an existing output file explicitly instead of masking
+FileExistsError as generic invalid state. The runbook opens the editor only after
+successful export so a failed export cannot leave an empty editor-created review.
+Existing reviewed decisions are never overwritten. The 56 processing tests and
+format/lint/strict-type checks passed, including preservation of edited review files.
+
+## Interactive Phase 6 maintenance (2026-10-08)
+
+The operator requested one command for ingestion, candidate decisions and seeding.
+`ember-memory ingest` composes the existing services in the memory CLI, retaining a
+single exclusive canonical owner. It reads a narrow deployment-v1 configuration view
+to select the same character/data/model/token/CPU assets as Ember. It has no production
+dependency on ember-agent and does not start services or alter runtime configuration.
+
+Desired behavior is import/select source, create/resume a pinned snapshot, individually
+accept/reject/skip or explicitly decide all pending candidates, separately confirm
+seeding, then update the configured index. The memory engine retains ownership of
+evidence, approvals, character snapshots, audits and indexing. Existing importers,
+ProcessingService, ReviewService and LibraryService implement mutations; new terminal
+orchestration is a CLI primitive, not a new memory policy or state machine.
+
+Three read-only helpers provide paged job discovery, opt-in latest review decisions,
+and historical seed-origin discovery. Default JSON review behavior remains unchanged.
+Bulk decisions preserve previous rejects/approvals; unsupported writes remain pending.
+Each confirmed decision commits immediately. Each seed uses a deterministic receipt
+and existing provenance checks; repeated maintenance leaves old independent snapshots,
+including forgotten copies, unchanged. A separate default-no seed confirmation is
+required even after accepting all. Partial extraction coverage requires explicit review
+confirmation. Index failure does not roll back canonical seeds.
+
+Known window-local extraction failures continue with bounded retry. Pin/protocol,
+transport, storage and ownership failures stop; no live writer is displaced.
+Quit/EOF/Ctrl+C retain checkpoints. Untrusted text is escaped on display and interactive
+maintenance rejects redirected terminal streams. No database migration, ABI, extractor
+prompt/schema change, dependency addition or automatic claim adoption is introduced.
+
+Acceptance tests use synthetic temporary stores and a mocked gateway transport with
+the real extraction adapter: full import through restarted indexed recall, failed-window
+coverage, individual/bulk decisions, >100 candidates, prior manual seeds, durable quit,
+default-no seeding, index repair and busy-root/no-terminal behavior. Component detail:
+[Memory ADR 0007](../../ember-memory/docs/adr/0007-extraction-jobs-and-summary-sources.md).
+Operator commands: [Phase 6 runbook](../phase-6-runbook.md#interactive-ingestion-review-and-seeding).
+This extends Phase 6 usability; Phase 7/8 acceptance requirements remain planned.
+
+Validation: 442 tests passed, eight optional real-service/model tests skipped; all 14
+interactive acceptance tests passed. Ruff format/lint, strict Pyright, installed
+ingest help and git diff checks passed. Tests used synthetic sources only.
+
+## Historical job discovery compatibility (2026-10-08)
+
+Interactive library selection initially attempted to parse all historical extraction
+jobs using an extractor literal restricted to 0.1.2. Valid hash-protected 0.1.0/0.1.1
+definitions therefore raised a misleading canonical-integrity error and blocked
+selection of a current job. Read-only inspection found intact SQLite and payload
+hashes; no private database repair or mutation was required.
+
+The persisted specification contract now reads the known historical identities and
+references their actual versions. New job creation and resuming incomplete processing
+require the current 0.1.2 extractor; the gateway also verifies this identity before
+generation. Historical source/job pins, bytes, receipts and progress stay unchanged.
+Unknown identities and corrupt payloads still fail validation. There is no database
+migration, ABI change or ClaimBatch output-schema/prompt change.
+
+Synthetic regressions cover mixed historical/current discovery, exact stored bytes,
+actual version references and refusal to create/resume outdated processing. The
+selected private library's four job definitions were verified through read-only SQLite
+access; no extraction, candidate review, approval or seed was executed.

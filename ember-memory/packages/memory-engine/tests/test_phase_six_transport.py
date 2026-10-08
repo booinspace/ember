@@ -17,7 +17,23 @@ from ember_memory_engine.processing_contracts import (
 from ember_memory_engine.processing_gateway import GatewayExtractionModel
 
 
-@pytest.mark.parametrize("fault", [None, "incomplete", "identity", "schema", "pin", "journal"])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        None,
+        "incomplete",
+        "identity",
+        "schema",
+        "pin",
+        "journal",
+        "gateway_schema",
+        "gateway_json",
+        "gateway_limit",
+        "generation",
+        "transport",
+        "event_schema",
+    ],
+)
 def test_extraction_transport_never_accepts_invalid_or_incomplete_output(fault: str | None) -> None:
     async def run() -> None:
         spec = ExtractionSpec(model="synthetic", model_digest="a" * 64)
@@ -36,6 +52,8 @@ def test_extraction_transport_never_accepts_invalid_or_incomplete_output(fault: 
                         "journal_status": "failed" if fault == "journal" else "available",
                     },
                 )
+            if fault == "transport":
+                raise httpx.ConnectError("Synthetic connection failure", request=request)
             body = json.loads(request.content)
             observed.append(body)
             identity = {"request_id": body["request_id"], "context_id": body["context_id"]}
@@ -50,6 +68,19 @@ def test_extraction_transport_never_accepts_invalid_or_incomplete_output(fault: 
                     text=('{"wrong":[]}' if fault == "schema" else '{"claims":[]}'),
                 ),
             ]
+            gateway_errors = {
+                "gateway_schema": "structured_schema_mismatch",
+                "gateway_json": "invalid_structured_output",
+                "gateway_limit": "structured_output_too_large",
+                "generation": "upstream_generation_failed",
+            }
+            if fault in gateway_errors:
+                events = [
+                    dict(identity, sequence=0, kind="start"),
+                    dict(identity, sequence=1, kind="error", code=gateway_errors[fault]),
+                ]
+            if fault == "event_schema":
+                events[1]["kind"] = "synthetic_unknown_kind"
             if fault != "incomplete":
                 events.append(dict(identity, sequence=2, kind="end"))
             return httpx.Response(
@@ -82,7 +113,16 @@ def test_extraction_transport_never_accepts_invalid_or_incomplete_output(fault: 
         )
         try:
             if fault is not None:
-                with pytest.raises(ProcessingError):
+                expected = {
+                    "schema": "gateway_structured_output_invalid",
+                    "gateway_schema": "gateway_structured_output_invalid",
+                    "gateway_json": "gateway_structured_output_invalid",
+                    "gateway_limit": "gateway_structured_output_invalid",
+                    "generation": "gateway_generation_failed",
+                    "transport": "gateway_transport_failed",
+                    "event_schema": "gateway_protocol_invalid",
+                }
+                with pytest.raises(ProcessingError, match=expected.get(fault)):
                     await model.extract(window)
             else:
                 assert (await model.extract(window)).claims == ()

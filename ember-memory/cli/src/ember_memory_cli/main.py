@@ -32,7 +32,7 @@ def _arguments(argv: list[str] | None) -> _InspectionArguments:
     parser = argparse.ArgumentParser(
         prog="ember-memory",
         epilog="Maintenance: import, character, remember, recall, sources, propose, confirm. "
-        "Phase 6: summary, extract. Phase 5: index. Phase 4: "
+        "Phase 6: ingest (interactive), summary, extract. Phase 5: index. Phase 4: "
         "library-entity, library-propose, library-approve, library-show, "
         "seed, grant, revoke, forget-preview, forget, bundle. "
         "Use ember-memory COMMAND --help for their arguments.",
@@ -103,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
     an existing file or the source, and default diagnostics omit private source values.
     """
     actual = sys.argv[1:] if argv is None else argv
+    if actual and actual[0] == "ingest":
+        from .ingestion import main as ingest
+
+        return ingest(actual[1:])
     if actual and actual[0] in {"summary", "extract"}:
         from .processing import main as process
 

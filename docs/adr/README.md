@@ -24,8 +24,15 @@ Phase 0b's supported export inspection and import are verified; saved-memory
 inclusion remains unestablished. Phase 3 implementation and private import passed
 the recorded checks; exact-claim operator review/adoption remains open. Phase 4 library/character/bundle
 implementation is recorded separately in Root ADR 0007. Phase 5 implementation and open acceptance gates are recorded in Root ADR 0008.
-Phase 6 implementation is recorded in Root ADR 0009; stop for architecture review before Phase 7.
-Phase 7 and later remain planned.
+Phase 6 implementation and opt-in audited window retry/continuation are recorded in
+Root ADR 0009; stop for architecture review before Phase 7.
+Phase 6 now also includes interactive ingestion/review/seeding with durable human
+decisions and restart-safe indexing; see Root ADR 0009 and Memory ADR 0007.
+
+Phase 7 and later remain planned. [PLAN's Phase 7/8 acceptance criteria](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation)
+now require policy-controlled automatic native capture and independent native/imported
+recall controls; [Root ADR 0009](0009-phase-six-extraction-and-background-inference.md#planned-phase-78-acceptance-clarification-2026-10-08)
+records the planned scope without claiming runtime delivery.
 Early grant/suppression/temporal primitives in phase 2 do not close the later
 seeding, bundle, indexing, extraction or consolidation acceptance gates.
 

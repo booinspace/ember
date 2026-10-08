@@ -21,6 +21,9 @@ Phase 0a preparation is recorded in
 linked research/source-model/runbook. It does not imply real-export or production
 normalizer acceptance.
 
+Phase 6 now also includes interactive ingestion/review/seeding with durable human
+decisions and restart-safe indexing; see Root ADR 0009 and Memory ADR 0007.
+
 Numbering is local: Memory ADR 0003 differs from Root ADR 0003. Use a component
 label and link. Keep memory decisions with this component if repositories are
 separated, and update root phase status when a local decision changes application

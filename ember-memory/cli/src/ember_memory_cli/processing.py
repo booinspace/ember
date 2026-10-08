@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import sys
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID
@@ -71,6 +72,8 @@ class _Run(_Job):
     token_file: Path
     max_windows: int | None
     retry_failed: bool
+    window_attempts: Annotated[int, Field(ge=1, le=3)]
+    continue_on_error: bool
 
 
 class _Review(_Job):
@@ -143,7 +146,23 @@ def _parser(summary: bool) -> argparse.ArgumentParser:
             sub.add_argument("--gateway", default="http://127.0.0.1:11435")
             sub.add_argument("--token-file", type=Path, required=True)
             sub.add_argument("--max-windows", type=int)
-            sub.add_argument("--retry-failed", action="store_true")
+            sub.add_argument(
+                "--retry-failed",
+                action="store_true",
+                help="Retry previously failed windows at startup; completed windows are retained.",
+            )
+            sub.add_argument(
+                "--window-attempts",
+                type=int,
+                choices=(1, 2, 3),
+                default=1,
+                help="Maximum attempts per selected window for invalid model outputs.",
+            )
+            sub.add_argument(
+                "--continue-on-error",
+                action="store_true",
+                help="Continue past bad windows; exit 0 with gaps reported.",
+            )
         if name == "review":
             sub.add_argument("--output", type=Path, required=True)
             sub.add_argument("--offset", type=int, default=0)
@@ -180,12 +199,20 @@ async def _run(service: ProcessingService, args: _Run) -> JobStatus:
             model,
             max_windows=args.max_windows,
             retry_failed=args.retry_failed,
+            window_attempts=args.window_attempts,
+            continue_on_error=args.continue_on_error,
             on_progress=lambda progress: print(
                 f"Completed windows: {progress.completed_windows}/{progress.total_windows}; "
-                f"candidates: {progress.candidates}",
+                f"candidates: {progress.candidates}; failed windows: {progress.failed_windows}",
                 flush=True,
             ),
         )
+        if status.run_outcome == "finished_with_failures":
+            print(
+                f"Extraction finished with {status.failed_windows} unresolved windows; "
+                "valid candidates are saved. Retry unresolved windows separately.",
+                flush=True,
+            )
         print(status.model_dump_json())
         return status
     finally:
@@ -243,7 +270,9 @@ def main(argv: list[str]) -> int:
                 print(service.create(request).model_dump_json())
             elif isinstance(args, _Run):
                 status = asyncio.run(_run(service, args))
-                if status.status in {"failed", "cancelled"}:
+                if status.status in {"failed", "cancelled"} and not (
+                    args.continue_on_error and status.run_outcome == "finished_with_failures"
+                ):
                     return 2
             elif isinstance(args, _Status):
                 if args.operation == "reevaluate":
@@ -297,8 +326,17 @@ def main(argv: list[str]) -> int:
                 print(receipt.model_dump_json())
         return 0
     except (ProcessingError, MemoryError, SourceImportError) as error:
-        print(str(error))
+        print(str(error), file=sys.stderr)
+        return 2
+    except FileExistsError:
+        print(
+            "Output already exists. Open the existing file or choose a new --output filename.",
+            file=sys.stderr,
+        )
         return 2
     except (OSError, ValueError, ValidationError):
-        print("Processing input or local state is invalid; private values are not logged.")
+        print(
+            "Processing input or local state is invalid; private values are not logged.",
+            file=sys.stderr,
+        )
         return 2

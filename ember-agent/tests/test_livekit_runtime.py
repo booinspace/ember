@@ -684,3 +684,22 @@ def test_test_port_allocator_retries_occupied_tcp_port(monkeypatch: pytest.Monke
         values = iter((blocked - 10000, candidate - 10000))
         monkeypatch.setattr(secrets, "randbelow", lambda limit: next(values))
         assert free_port() == candidate
+
+
+@pytest.mark.parametrize("discovery", [None, b"not-json", b"{}"])
+def test_participant_discovery_failure_has_actionable_private_safe_diagnostic(
+    tmp_path: Path,
+    discovery: bytes | None,
+) -> None:
+    from ember_agent.runtime.livekit_runtime import run_participant
+
+    config = load_config(EXAMPLE).model_copy(update={"runtime_root": tmp_path})
+    if discovery is not None:
+        (tmp_path / "livekit-room.json").write_bytes(discovery)
+    with pytest.raises(ConfigurationError) as captured:
+        asyncio.run(run_participant(config))
+    message = str(captured.value)
+    assert "ember start" in message and "same --config" in message
+    assert str(tmp_path) not in message
+    assert "not-json" not in message
+    assert not (tmp_path / "gateway.token").exists()

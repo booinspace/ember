@@ -66,3 +66,10 @@ approved library knowledge. `index update` builds/replays the character's embedd
 Use [the complete commands](../docs/phase-6-runbook.md) with the runtime stopped and a
 model-pinned gateway alone. Schema upgrades retain backups and full source bundles can
 resume processing jobs. No personal import was run during Phase 6 implementation.
+
+`ember-memory ingest --config <deployment.toml>` provides the same maintenance steps
+interactively: import a file or select a library/job, review candidates individually or
+accept/reject all pending, separately confirm seeding and update configured embeddings.
+Review decisions save immediately; retries preserve prior rejects and existing seed
+copies. Stop other memory writers first. See the
+[interactive runbook](../docs/phase-6-runbook.md#interactive-ingestion-review-and-seeding).

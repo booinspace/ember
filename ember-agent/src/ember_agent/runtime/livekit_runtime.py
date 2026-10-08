@@ -283,7 +283,23 @@ async def run_runtime(
 async def run_participant(config: DeploymentConfig, *, prompt: str | None = None) -> None:
     """Join the current runtime without constructing or opening canonical memory."""
     path = config.runtime_root / "livekit-room.json"
-    binding = RoomBinding.model_validate_json(await asyncio.to_thread(path.read_bytes))
+    try:
+        payload = await asyncio.to_thread(path.read_bytes)
+    except FileNotFoundError as error:
+        raise ConfigurationError(
+            "No Ember room is available. Run ember start with the same --config in another "
+            "terminal and wait for the room-ready message, then retry livekit-chat."
+        ) from error
+    except OSError as error:
+        raise ConfigurationError(
+            "Cannot read Ember room discovery; check runtime access."
+        ) from error
+    try:
+        binding = RoomBinding.model_validate_json(payload)
+    except ValueError as error:
+        raise ConfigurationError(
+            "Ember room discovery is invalid. Restart ember start with the same --config."
+        ) from error
     if binding.endpoint != config.services.livekit.endpoint:
         raise ConfigurationError("LiveKit discovery endpoint does not match configuration.")
     assert config.services.livekit.credentials_file is not None

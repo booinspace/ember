@@ -104,3 +104,14 @@ inclusion remains unknown. Current recall is the bounded canonical fallback; FTS
 embeddings/vector recall is Phase 5, general extraction Phase 6, and browser/audio/
 full deployment composition Phase 8. Sustained MTP/GPU load and live preemption are
 not established by this text-room test. Stop for architecture review before Phase 4.
+
+## Missing room discovery diagnostic (2026-10-08)
+
+A participant invoked while only the gateway was running received a generic invalid
+local-state error: no runtime room discovery had been published. The participant now
+reports that the operator must run ember start with the same configuration and wait
+for room readiness. Unreadable/malformed discovery receives distinct safe diagnostics.
+The participant still opens no canonical memory, starts no service and never logs
+discovery contents or credentials. Missing/malformed discovery regression tests pass:
+nine local runtime tests passed, six optional real-service tests skipped; lint,
+formatting and strict Pyright passed.

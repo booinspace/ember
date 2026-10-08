@@ -2584,8 +2584,8 @@ Each phase leaves working, tested behavior.
 | **4 — Libraries/characters/bundles** | Grants, suppression, independent seeds, linked backup, selective materialization |
 | **5 — Retrieval/indexes** | Grouping, FTS, BGE-small, sqlite-vec, hybrid, diagnostics, rebuild |
 | **6 — Full extraction** | Structured model extraction, resumable jobs, policies/summary import; **same gateway gains P3/P4 queues and conservative admission** |
-| **7 — Consolidation/time** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction |
-| **8 — Stable application integration** | Browser/audio/memory, explicit prompt budgets, **single-command composition/startup/shutdown**, health and portability |
+| **7 — Consolidation/time** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance and preserved origin dependencies |
+| **8 — Stable application integration** | Browser/audio/memory, automatic conversational memory capture, per-character native/imported recall controls, explicit prompt budgets, **single-command composition/startup/shutdown**, health and portability |
 | **9 — Generic agent foundations** | Events/attention, ToolProvider/TaskRouter foundations, operational store; **same gateway gains P1/P2, reservation, fairness/accounting** |
 | **10 — Direct MCP** | Discovery, normalization, credentials, scoped authority, UI |
 | **11 — Odysseus delegation** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
@@ -2611,6 +2611,85 @@ verified; saved-memory inclusion remains unknown. Phase 3 implementation and the
 private ZIP import have passed the recorded checks. The operator-reviewed real
 source claim/adoption path remains open; see section 11 and Root ADR 0006. Do not
 activate imported claims without reviewing their exact evidence.
+
+### Phase 7 acceptance criteria: native activation and consolidation
+
+These are planned requirements, not delivered Phase 6 behavior. Memory policy,
+evidence validation, lifecycle and canonical writes remain owned by ember-memory.
+Ember-agent schedules work and consumes public memory contracts.
+
+- Provide an idempotent, policy-controlled acceptance path for character-owned
+  native conversation candidates. A model proposes claims; the engine verifies
+  original evidence, identified speaker, authority, kind/modality, importance,
+  support and conflicts before accepting them. Model confidence alone never
+  grants write authority. Imported personal claims retain explicit operator review.
+- Preserve policy/version, decision inputs, reasons, exact evidence and processing
+  provenance for automatic acceptance, deferral and rejection. Ambiguous,
+  unsupported, hypothetical and assistant-only personal assertions do not silently
+  become accepted facts; uncertain/conflicting proposals remain inspectable.
+- Repeated statements and overlapping windows do not create an accumulating set
+  of equivalent active memories. Consolidation preserves source relationships,
+  original identities or redirects, and independently seeded character state.
+- Explicit user corrections use validated transition evidence and versioned rules.
+  Preserve old assertions and observed/valid/recorded time; test current recall,
+  historical state and what the character believed before the correction.
+  Unresolved conflicts cannot silently overwrite an accepted belief.
+- Re-extraction, consolidation and restart respect manual decisions, disabled
+  memories, forgetting and source suppression. Previously suppressed knowledge
+  cannot return under a new identity, redirect or seed operation.
+- Preserve traceable native/imported origin dependencies through consolidation
+  and supersession so Phase 8 source selection cannot be bypassed by a derived
+  memory. Test independent characters and replay after interruption.
+
+### Phase 8 acceptance criteria: automatic capture and memory source controls
+
+These requirements extend application memory integration; browser/audio, prompt
+budgets, composition, health and portability deliverables remain required.
+
+- Normal supported chat automatically records completed conversation sources and
+  durably queues candidate extraction under a configured per-character native
+  capture policy. No /remember, manual extract command, approval or seeding is
+  required for qualifying new native memories. /remember remains an optional
+  explicit path; uncertain/conflicting proposals can stay pending for review.
+- Prove the end-to-end path with sanitized evidence: ordinary conversation says
+  "Milo is my shark plushie"; extraction, policy acceptance and indexing complete;
+  after restart a later question retrieves the accepted memory and its original
+  evidence. A second character does not acquire it without an explicit transfer.
+- Keep automatic capture/acceptance settings separate from recall selection.
+  Turning capture off stops new automatic acceptance without deleting existing
+  memories. Durable unprocessed sources remain inspectable and resume only under
+  the configured policy; automatic native capture does not approve an old import.
+- Expose persistent per-character controls in configuration and the supported
+  application UI to include/exclude local durable memories and each imported
+  library independently. Support local-only, selected imports plus local, and
+  imports-only recall. The selection follows character identity rather than the
+  generation model tag and survives restart and character bundle restoration.
+- Apply source selection to seeded character memories by their recorded origins,
+  not merely archive grants. Enforce it before retrieval limits/ranking and final
+  prompt inclusion, including lexical/semantic fallback, pins, summaries,
+  consolidated memories and known memory-dependent caches/history. Re-enabling
+  restores eligible existing records without reseeding; it never overrides
+  forgetting, suppression or current access restrictions.
+- Source switches govern durable memory recall and separately permitted archive
+  retrieval, not the current user input or ordinary live conversation history.
+  Disabling a source does not delete it or revoke access; enabling it does not
+  grant access, approve candidates or seed knowledge. Imported archive search
+  continues to require explicit source grants. Model output cannot change these
+  controls.
+- Automatic extraction remains P3 through the single gateway with bounded queues
+  and durable checkpoints. Until Phase 13 measured preemption acceptance, process
+  after disconnection or explicit realtime suspension; a connected session's
+  apparent idle gap is not permission for background inference. Test safe draining
+  on conversation restart, no overlapping upstream generation, and truthful
+  pending/blocked status instead of delaying each conversational reply.
+- Test interruption/restart without duplicate acceptance, partial commits or lost
+  queued sources; failed evidence/model output remains pending/failed rather than
+  weakening validation. Update compatible indexes after accepted writes and retain
+  documented degraded recall if an encoder/index is unavailable.
+- Show acceptance/pending/rejection reasons, source selection, provenance and
+  processing/index status without exposing private text in default logs. Verify
+  selected-source exclusion after restart and against cached prompt context;
+  local memory remains usable when the ChatGPT library is excluded.
 
 ### Phase architecture review workflow
 
@@ -2803,7 +2882,17 @@ discriminated schema requires complete fact fields and null fact-only fields for
 claim types. These revisions correct prompt/schema mismatches found in initial operator
 archive samples; their prompt/schema hashes require a new job key. Malformed/incomplete/ambiguous output fails
 with safe codes. Completed windows are
-skipped on resume; failed steps require explicit retry. Status reports aggregate counts
+skipped on resume; failed steps require explicit retry. Runtime controls
+`--window-attempts` (1-3, default 1) retries rejected window outputs, including
+quote/claim/JSON-schema validation. `--continue-on-error` continues past exhausted
+output failures and skips suppressed/unsupported window sources without inference.
+There is no failed-window-count cutoff. Every failed attempt is audited; unresolved
+windows remain failed and prevent complete job status. Finishing the requested batch
+with continuation returns exit 0 and transient `run_outcome=finished_with_failures`;
+global pin/protocol/transport/storage failures still stop with a nonzero exit and
+`run_outcome=stopped_on_error`. `--max-windows` counts distinct attempted windows.
+These execution controls do not change pinned specifications or require a new job.
+Status reports aggregate counts
 and up to sixteen failed-step ordinals/attempts/codes. One engine root owns one bounded
 processing runner; cancellation retains ownership until worker/native draining.
 
@@ -2854,6 +2943,47 @@ failure and full/selective bundle specification closure. Four proposals from the
 private sample remain pending exact-evidence operator review; successful windows do not certify
 perfect corpus-wide claim completeness. Phase 5 performance/capacity/Linux and full
 voice/browser/ABI 1.0 gates remain open. Stop before Phase 7.
+
+### Phase 6 interactive CLI extension (2026-10-08)
+
+1. Desired behavior: one `ember-memory ingest` command imports/selects source history,
+   resumes/selects a pinned job, reviews each candidate or explicitly accepts/rejects
+   all pending, separately confirms seeding, and updates configured CPU embeddings.
+2. Ownership: memory CLI owns human interaction; engine owns durable evidence,
+   approval/audit, independent character beliefs, receipts and derived indexes.
+3. Existing abstractions: reuse import_summary/import_zip, ProcessingService,
+   GatewayExtractionModel, ReviewService, LibraryService and index updater.
+4. New primitive: typed terminal orchestration plus read-only job/decision/origin
+   discovery. No new memory policy, database schema, ABI or model prompt is needed.
+5. Contracts/invariants: one exclusive root; exact candidate/evidence validation;
+   all decisions persist immediately; bulk affects pending candidates only and
+   preserves previous rejects; seed is separately default-no; deterministic receipts
+   and historical origin checks prevent duplicate/resurrected copies. Existing
+   snapshots are not automatically updated. Runtime coupling is a readonly typed
+   deployment-v1 subset/profile binding, without a production agent dependency.
+6. Failure behavior: bounded retry/continuation for known bad windows, explicit stop
+   for infrastructure/pin/storage/ownership failures; incomplete coverage confirmed
+   before review. Quit/EOF/Ctrl+C retain checkpoints. Index failure retains seeds,
+   allowing repair on rerun. Unsupported semantics stay pending without force-write.
+7. Acceptance tests: synthetic full import → real gateway adapter → review → seed →
+   index → restart recall/provenance; failed-window gaps, individual/bulk decisions,
+   >100 candidates, previous manual seeds, durable quit, default-no, index recovery,
+   config path/binding validation and no-terminal/busy-root behavior.
+8. Implementation: `ember_memory_cli.ingestion`, `interactive_review` and
+   `ingestion_settings` compose existing services. No dependencies are added.
+   Existing JSON commands remain available for scripts; interactive display escapes
+   untrusted terminal controls. Use the Phase 6 runbook's interactive section.
+
+Validation: 442 tests passed, eight optional service/model tests skipped; 14 interactive
+acceptance tests and format/lint/strict-type checks passed using synthetic sources.
+
+Historical extractor 0.1.0/0.1.1 jobs remain readable beside current 0.1.2 jobs.
+Creation/resume uses only the current extractor; original metadata, pins and progress
+are retained without canonical rewrites. Mixed-history regressions guard discovery
+and prevent outdated generation. Root ADR 0009 and Memory ADR 0007 explain this fix.
+
+This is operator-approved Phase 6 usability, not automatic Phase 7/8 capture.
+Root ADR 0009 and Memory ADR 0007 record decisions. Stop before the next phase.
 
 ### Freeze and final hardening
 

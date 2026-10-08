@@ -53,6 +53,20 @@ from .processing_contracts import (
 from .processing_windows import resolve_window, windows
 from .source_access import source_keys
 
+_WINDOW_OUTPUT_FAILURES = frozenset(
+    {
+        "quote_missing_or_ambiguous",
+        "quote_not_exact",
+        "fact_value_missing",
+        "entity_mention_unverified",
+        "model_step_invalid",
+        "gateway_structured_output_invalid",
+        "extraction_output_too_large",
+        "unexpected_extraction_tool_output",
+    }
+)
+_WINDOW_SOURCE_FAILURES = frozenset({"source_suppressed", "unsupported_source_window"})
+
 
 def _subject(engine: CanonicalEngine, owner: CanonicalId) -> EntityRef:
     info, _ = engine.maintenance_store(owner)
@@ -93,6 +107,8 @@ class ProcessingService:
     def create(self, request: JobRequest) -> JobStatus:
         """Persist/replay a pinned source snapshot, then plan bounded metadata batches."""
         request = JobRequest.model_validate_json(request.model_dump_json())
+        if request.specification.extractor != "ember.atomic-claims@0.1.2":
+            raise ProcessingError("processing_extractor_changed")
         if request.owner_store_id != self.owner:
             raise ProcessingError("job_owner_mismatch")
         if request.specification.policy_sha256 != POLICY.reference().specification_sha256:
@@ -213,6 +229,20 @@ class ProcessingService:
             return load_model(row, JobDefinition)
 
         return self.database.read(read)
+
+    def definitions(self, *, offset: int = 0, limit: int = 20) -> tuple[JobDefinition, ...]:
+        """List a bounded newest-first page of verified jobs owned by this store."""
+        if offset < 0 or not 1 <= limit <= 100:
+            raise ProcessingError("processing_job_page_invalid")
+        return self.database.read(
+            lambda connection: tuple(
+                load_model(row, JobDefinition)
+                for row in connection.execute(
+                    "SELECT * FROM processing_jobs ORDER BY rowid DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                ).fetchall()
+            )
+        )
 
     def status(self, job_id: CanonicalId) -> JobStatus:
         """Return aggregate progress, never model/source text or exception payloads."""
@@ -586,12 +616,17 @@ class ProcessingService:
         *,
         max_windows: int | None = None,
         retry_failed: bool = False,
+        window_attempts: int = 1,
+        continue_on_error: bool = False,
         on_progress: Callable[[JobStatus], None] | None = None,
     ) -> JobStatus:
         """Resume pure immutable steps; commit only validated complete window outputs.
 
         Filesystem/SQLite work stays on one owned bounded executor. Cancellation
         pauses at a durable boundary; native work keeps ownership through draining.
+        Invalid model outputs can retry; continuation also skips unavailable
+        window scopes. Unresolved gaps remain failed, while run_outcome separates
+        a finished batch from an early stop for global failures.
         """
         from pydantic import ValidationError
 
@@ -599,6 +634,8 @@ class ProcessingService:
 
         if max_windows is not None and max_windows < 1:
             raise ProcessingError("invalid_window_limit")
+        if not 1 <= window_attempts <= 3:
+            raise ProcessingError("invalid_window_attempts")
         release = self.engine.acquire_processing(job_id)
         workers = OwnedWorkers(1, max_pending=2, name="ember-processing-owner")
 
@@ -617,6 +654,8 @@ class ProcessingService:
             status = await offload(partial(self.status, job_id))
             if status.status in {"complete", "cancelled", "planning"}:
                 return status
+            if definition.request.specification.extractor != "ember.atomic-claims@0.1.2":
+                raise ProcessingError("processing_extractor_changed")
             await offload(partial(self._resume, job_id, retry_failed))
             processed = 0
             while max_windows is None or processed < max_windows:
@@ -625,33 +664,52 @@ class ProcessingService:
                     break
                 reference = load_model(row, WindowRef)
                 ordinal = row_int(row, "ordinal")
-                await offload(partial(self._mark_running, job_id, ordinal))
-                try:
-                    window = await offload(partial(self._input, definition, reference))
+                for attempt in range(window_attempts):
+                    await offload(partial(self._mark_running, job_id, ordinal))
                     try:
-                        result = await model.extract(window)
-                        result = ClaimBatch.model_validate_json(result.model_dump_json())
-                    except ProcessingError:
-                        raise
-                    except (ValidationError, ValueError, RuntimeError) as error:
-                        raise ProcessingError("model_step_invalid") from error
-                    await offload(partial(self._finish, definition, ordinal, window, result))
-                except (ProcessingError, MemoryError) as error:
-                    failure_code = (
-                        error.code
-                        if isinstance(error, ProcessingError)
-                        else "canonical_processing_failed"
-                    )
-                    await offload(
-                        partial(
-                            self._failure,
-                            job_id,
-                            ordinal,
-                            row_int(row, "attempts") + 1,
-                            failure_code,
+                        window = await offload(partial(self._input, definition, reference))
+                        try:
+                            result = await model.extract(window)
+                            result = ClaimBatch.model_validate_json(result.model_dump_json())
+                        except ProcessingError:
+                            raise
+                        except (ValidationError, ValueError) as error:
+                            raise ProcessingError("model_step_invalid") from error
+                        except RuntimeError as error:
+                            raise ProcessingError("model_step_failed") from error
+                        await offload(partial(self._finish, definition, ordinal, window, result))
+                    except (ProcessingError, MemoryError) as error:
+                        failure_code = (
+                            error.code
+                            if isinstance(error, ProcessingError)
+                            else "canonical_processing_failed"
                         )
-                    )
-                    return await offload(partial(self.status, job_id))
+                        await offload(
+                            partial(
+                                self._failure,
+                                job_id,
+                                ordinal,
+                                row_int(row, "attempts") + attempt + 1,
+                                failure_code,
+                            )
+                        )
+                        # Output rejection is safe to retry before commit. A
+                        # suppressed/unsupported source is skipped without inference;
+                        # global transport, integrity and authority failures stop.
+                        retryable = failure_code in _WINDOW_OUTPUT_FAILURES
+                        continuable = retryable or failure_code in _WINDOW_SOURCE_FAILURES
+                        if retryable and attempt + 1 < window_attempts:
+                            await offload(partial(self._set_status, job_id, "running"))
+                            continue
+                        if not (continuable and continue_on_error):
+                            stopped = await offload(partial(self.status, job_id))
+                            return (
+                                stopped.model_copy(update={"run_outcome": "stopped_on_error"})
+                                if continue_on_error
+                                else stopped
+                            )
+                        await offload(partial(self._set_status, job_id, "running"))
+                    break
                 processed += 1
                 if on_progress is not None:
                     on_progress(await offload(partial(self.status, job_id)))
@@ -664,7 +722,12 @@ class ProcessingService:
                 else "paused"
             )
             await offload(partial(self._set_status, job_id, target))
-            return await offload(partial(self.status, job_id))
+            finished = await offload(partial(self.status, job_id))
+            return (
+                finished.model_copy(update={"run_outcome": "finished_with_failures"})
+                if continue_on_error and target == "failed"
+                else finished
+            )
         except asyncio.CancelledError:
             await asyncio.shield(
                 asyncio.wrap_future(workers.submit(partial(self._set_status, job_id, "paused")))

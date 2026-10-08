@@ -1,6 +1,7 @@
 """Explicit operator review; immutable candidate payloads and original quotes cannot be edited."""
 
 import sqlite3
+from typing import Literal
 from uuid import UUID, uuid4
 
 from ember_memory_abi.common import CanonicalId, canonical_object_sha256, timestamp_from_datetime
@@ -179,8 +180,30 @@ class ReviewService:
             if suppressed:
                 raise ProcessingError("source_suppressed")
 
-    def export(self, job_id: CanonicalId, *, offset: int = 0, limit: int = 1000) -> ReviewFile:
-        """Export a bounded page with exact quotes; initial operator decisions are pending."""
+    def _last_decision(self, candidate: CandidateMemory) -> Literal["pending", "approve", "reject"]:
+        row = self.database.read(
+            lambda connection: connection.execute(
+                "SELECT decision FROM review_decisions WHERE candidate_id=? AND revision=? "
+                "ORDER BY rowid DESC LIMIT 1",
+                (str(candidate.candidate_id), candidate.revision),
+            ).fetchone()
+        )
+        if row is None:
+            return "pending"
+        decision = row_text(row, "decision")
+        if decision not in {"approve", "reject"}:
+            raise ProcessingError("review_decision_invalid")
+        return "approve" if decision == "approve" else "reject"
+
+    def export(
+        self,
+        job_id: CanonicalId,
+        *,
+        offset: int = 0,
+        limit: int = 1000,
+        include_decisions: bool = False,
+    ) -> ReviewFile:
+        """Export exact evidence; optionally restore recorded operator decisions for a UI."""
         self.processing.definition(job_id)
         if offset < 0 or not 1 <= limit <= 1000:
             raise ProcessingError("review_page_invalid")
@@ -204,6 +227,7 @@ class ReviewService:
                     candidate_sha256=canonical_object_sha256(candidate),
                     quotes=quotes,
                     policy_decision=self.decision(candidate),
+                    decision=self._last_decision(candidate) if include_decisions else "pending",
                 )
             )
         return ReviewFile(

@@ -29,7 +29,9 @@ class ExtractionSpec(ContractModel):
 
     model: str
     model_digest: Sha256
-    extractor: Literal["ember.atomic-claims@0.1.2"] = "ember.atomic-claims@0.1.2"
+    extractor: Literal[
+        "ember.atomic-claims@0.1.0", "ember.atomic-claims@0.1.1", "ember.atomic-claims@0.1.2"
+    ] = "ember.atomic-claims@0.1.2"
     policy: Literal["activation.conservative@0.1.0"] = "activation.conservative@0.1.0"
     policy_sha256: Sha256 = POLICY.reference().specification_sha256
     prompt_sha256: Sha256 = sha256(INSTRUCTIONS.encode()).hexdigest()
@@ -45,7 +47,7 @@ class ExtractionSpec(ContractModel):
 
         return ProcessingSpecRef(
             name=self.extractor.split("@")[0],
-            version="0.1.2",
+            version=self.extractor.partition("@")[2],
             specification_sha256=canonical_object_sha256(self),
         )
 
@@ -179,6 +181,8 @@ class JobStatus(ContractModel):
     failed_windows: int
     candidates: int
     failures: Annotated[tuple[FailedStep, ...], Field(max_length=16)] = ()
+    # Per-invocation outcome, not persisted job state or extraction identity.
+    run_outcome: Literal["finished_with_failures", "stopped_on_error"] | None = None
 
 
 class PolicyInputs(ContractModel):

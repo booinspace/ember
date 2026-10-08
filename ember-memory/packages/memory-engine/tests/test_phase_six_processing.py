@@ -18,11 +18,13 @@ from ember_memory_engine.processing_contracts import (
     ClaimBatch,
     ExtractionSpec,
     FactClaim,
+    JobDefinition,
     JobRequest,
     JobStatus,
     ModelWindow,
     OtherClaim,
     ProcessingError,
+    WindowRef,
 )
 from ember_memory_engine.processing_review import ReviewService
 from ember_memory_importers.normalization.memory_summary import import_summary
@@ -912,3 +914,408 @@ def test_job_source_and_specification_headers_cannot_be_rewritten(
             )
     assert service.status(job.definition.job_id).definition == job.definition
     assert asyncio.run(service.run(job.definition.job_id, FakeModel())).status == "complete"
+
+
+class QuoteFailureModel(FakeModel):
+    """Exercise pre-commit quote failures, independently for each source window."""
+
+    def __init__(
+        self,
+        bad_text: str,
+        *,
+        failures: int | None = None,
+        missing_quote: bool = True,
+    ) -> None:
+        super().__init__()
+        self.bad_text = bad_text
+        self.failures = failures
+        self.missing_quote = missing_quote
+        self.bad_calls = 0
+
+    async def extract(self, window: ModelWindow) -> ClaimBatch:
+        batch = await super().extract(window)
+        if window.text != self.bad_text:
+            return batch
+        self.bad_calls += 1
+        if self.failures is not None and self.bad_calls > self.failures:
+            return batch
+        claim = batch.claims[0].model_copy(
+            update={
+                "quote": "invented evidence",
+                "quote_start": None if self.missing_quote else 0,
+            }
+        )
+        return ClaimBatch(claims=(claim,))
+
+
+@pytest.mark.parametrize("missing_quote", [True, False])
+def test_bounded_quote_retry_commits_only_valid_output(
+    engine: CanonicalEngine, tmp_path: Path, missing_quote: bool
+) -> None:
+    first = "I like synthetic jazz."
+    service, _ = summary(engine, tmp_path, (first, "I like synthetic folk."))
+    job = create(service)
+    model = QuoteFailureModel(first, failures=1, missing_quote=missing_quote)
+    done = asyncio.run(service.run(job.definition.job_id, model, window_attempts=2))
+    assert done.status == "complete"
+    assert done.completed_windows == 2 and done.failed_windows == 0
+    assert done.candidates == 2 and model.calls == 3
+    assert (
+        service.database.read(
+            lambda connection: connection.execute(
+                "SELECT COUNT(*) FROM processing_failures"
+            ).fetchone()[0]
+        )
+        == 1
+    )
+    assert (
+        service.database.read(
+            lambda connection: connection.execute(
+                "SELECT attempts FROM processing_windows WHERE job_id=? AND ordinal=0",
+                (str(job.definition.job_id),),
+            ).fetchone()[0]
+        )
+        == 2
+    )
+    quotes = {
+        entry.quotes for entry in ReviewService(service).export(job.definition.job_id).entries
+    }
+    assert quotes == {(first,), ("I like synthetic folk.",)}
+
+
+def test_exhausted_quote_failure_continues_and_remains_recoverable_after_restart(
+    engine: CanonicalEngine, tmp_path: Path
+) -> None:
+    first = "I like synthetic jazz."
+    service, _ = summary(engine, tmp_path, (first, "I like synthetic folk."))
+    job = create(service)
+    model = QuoteFailureModel(first)
+    done = asyncio.run(
+        service.run(job.definition.job_id, model, window_attempts=3, continue_on_error=True)
+    )
+    assert done.status == "failed"
+    assert done.completed_windows == 1 and done.failed_windows == 1
+    assert done.candidates == 1 and model.calls == 4
+    assert done.failures[0].ordinal == 0 and done.failures[0].attempts == 3
+    root, owner = engine.root, service.owner
+    engine.close()
+    with CanonicalEngine(root) as reopened:
+        resumed = ProcessingService(reopened, owner)
+        recovered_model = FakeModel()
+        recovered = asyncio.run(
+            resumed.run(job.definition.job_id, recovered_model, retry_failed=True)
+        )
+        assert recovered.status == "complete" and recovered.failed_windows == 0
+        assert recovered.completed_windows == 2 and recovered.candidates == 2
+        assert recovered_model.calls == 1
+        assert (
+            resumed.database.read(
+                lambda connection: connection.execute(
+                    "SELECT COUNT(*) FROM processing_failures"
+                ).fetchone()[0]
+            )
+            == 3
+        )
+        assert (
+            resumed.database.read(
+                lambda connection: connection.execute(
+                    "SELECT attempts FROM processing_windows WHERE job_id=? AND ordinal=0",
+                    (str(job.definition.job_id),),
+                ).fetchone()[0]
+            )
+            == 4
+        )
+
+
+def test_window_limit_bounds_failed_windows_and_resume_skips_unresolved_failure(
+    engine: CanonicalEngine, tmp_path: Path
+) -> None:
+    first = "I like synthetic jazz."
+    service, _ = summary(engine, tmp_path, (first, "I like synthetic folk."))
+    job = create(service)
+    model = QuoteFailureModel(first)
+    limited = asyncio.run(
+        service.run(
+            job.definition.job_id,
+            model,
+            max_windows=1,
+            window_attempts=2,
+            continue_on_error=True,
+        )
+    )
+    assert limited.status == "failed" and limited.completed_windows == 0
+    assert limited.failed_windows == 1 and limited.candidates == 0 and model.calls == 2
+    later_model = FakeModel()
+    later = asyncio.run(service.run(job.definition.job_id, later_model))
+    assert later.completed_windows == 1 and later.failed_windows == 1
+    assert later.status == "failed" and later.candidates == 1 and later_model.calls == 1
+
+
+def test_retry_controls_do_not_continue_infrastructure_failures(
+    engine: CanonicalEngine, tmp_path: Path
+) -> None:
+    service, _ = summary(engine, tmp_path, ("I like synthetic jazz.", "I like synthetic folk."))
+    job = create(service)
+    model = FakeModel(fail_at=1)
+    failed = asyncio.run(
+        service.run(job.definition.job_id, model, window_attempts=3, continue_on_error=True)
+    )
+    assert failed.status == "failed"
+    assert failed.completed_windows == 0 and failed.failed_windows == 1
+    assert failed.candidates == 0 and model.calls == 1
+    assert failed.failures[0].code == "synthetic_model_failure"
+
+
+@pytest.mark.parametrize("window_attempts", [0, 4])
+def test_invalid_window_attempt_limit_leaves_job_unchanged(
+    engine: CanonicalEngine, tmp_path: Path, window_attempts: int
+) -> None:
+    service, _ = summary(engine, tmp_path, ("I like synthetic jazz.",))
+    job = create(service)
+    model = FakeModel()
+    with pytest.raises(ProcessingError, match="invalid_window_attempts"):
+        asyncio.run(service.run(job.definition.job_id, model, window_attempts=window_attempts))
+    assert service.status(job.definition.job_id) == job and model.calls == 0
+
+
+class WindowErrorModel(FakeModel):
+    def __init__(self, bad_texts: set[str], code: str) -> None:
+        super().__init__()
+        self.bad_texts = bad_texts
+        self.code = code
+
+    async def extract(self, window: ModelWindow) -> ClaimBatch:
+        batch = await super().extract(window)
+        if window.text in self.bad_texts:
+            raise ProcessingError(self.code)
+        return batch
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "model_step_invalid",
+        "gateway_structured_output_invalid",
+        "fact_value_missing",
+        "entity_mention_unverified",
+        "extraction_output_too_large",
+        "unexpected_extraction_tool_output",
+    ],
+)
+def test_continuation_has_no_failed_window_count_limit(
+    engine: CanonicalEngine, tmp_path: Path, code: str
+) -> None:
+    bad_texts = tuple(f"Bad synthetic note {number}." for number in range(5))
+    service, _ = summary(engine, tmp_path, (*bad_texts, "I like synthetic jazz."))
+    job = create(service)
+    model = WindowErrorModel(set(bad_texts), code)
+    result = asyncio.run(
+        service.run(job.definition.job_id, model, window_attempts=3, continue_on_error=True)
+    )
+    assert result.status == "failed" and result.run_outcome == "finished_with_failures"
+    assert result.completed_windows == 1 and result.failed_windows == 5
+    assert result.candidates == 1 and model.calls == 16
+    assert all(failure.attempts == 3 and failure.code == code for failure in result.failures)
+    assert (
+        service.database.read(
+            lambda connection: connection.execute(
+                "SELECT COUNT(*) FROM processing_windows WHERE job_id=? AND status='pending'",
+                (str(job.definition.job_id),),
+            ).fetchone()[0]
+        )
+        == 0
+    )
+
+
+@pytest.mark.parametrize("code", ["source_suppressed", "unsupported_source_window"])
+def test_continuation_skips_unusable_source_without_retry_or_inference(
+    engine: CanonicalEngine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    first = "A synthetic unavailable source."
+    service, _ = summary(engine, tmp_path, (first, "I like synthetic jazz."))
+    job = create(service)
+    original = service._input
+
+    def source_input(definition: JobDefinition, reference: WindowRef) -> ModelWindow:
+        window = original(definition, reference)
+        if window.text == first:
+            raise ProcessingError(code)
+        return window
+
+    monkeypatch.setattr(service, "_input", source_input)
+    model = FakeModel()
+    result = asyncio.run(
+        service.run(job.definition.job_id, model, window_attempts=3, continue_on_error=True)
+    )
+    assert result.run_outcome == "finished_with_failures" and result.status == "failed"
+    assert result.completed_windows == 1 and result.failed_windows == 1
+    assert result.failures[0].attempts == 1 and result.failures[0].code == code
+    assert result.candidates == 1 and model.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("continue_on_error", "code", "expected_exit", "expected_calls"),
+    [
+        (False, "model_step_invalid", 2, 3),
+        (True, "model_step_invalid", 0, 7),
+        (True, "gateway_model_pin_mismatch", 2, 1),
+    ],
+)
+def test_cli_continuation_exit_reports_gaps_without_hiding_fatal_errors(
+    engine: CanonicalEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    continue_on_error: bool,
+    code: str,
+    expected_exit: int,
+    expected_calls: int,
+) -> None:
+    from ember_memory_cli.processing import main
+    from ember_memory_engine.processing_gateway import GatewayExtractionModel
+
+    bad_texts = {"Bad synthetic jazz.", "Bad synthetic folk."}
+    service, _ = summary(
+        engine, tmp_path, ("Bad synthetic jazz.", "Bad synthetic folk.", "I like synthetic music.")
+    )
+    job = create(service)
+    root, owner = engine.root, service.owner
+    engine.close()
+    token = tmp_path / "synthetic.token"
+    token.write_text("a" * 40, encoding="utf-8")
+    model = WindowErrorModel(bad_texts, code)
+
+    async def extract(self: GatewayExtractionModel, window: ModelWindow) -> ClaimBatch:
+        return await model.extract(window)
+
+    monkeypatch.setattr(GatewayExtractionModel, "extract", extract)
+    arguments = [
+        "extract",
+        "run",
+        "--store",
+        str(owner),
+        "--job",
+        str(job.definition.job_id),
+        "--root",
+        str(root),
+        "--token-file",
+        str(token),
+        "--window-attempts",
+        "3",
+    ]
+    if continue_on_error:
+        arguments.append("--continue-on-error")
+    assert main(arguments) == expected_exit
+    assert model.calls == expected_calls
+    result = JobStatus.model_validate_json(capsys.readouterr().out.splitlines()[-1])
+    with CanonicalEngine(root) as reopened:
+        persisted = ProcessingService(reopened, owner).status(job.definition.job_id)
+        assert persisted.run_outcome is None and persisted.status == "failed"
+        assert result.completed_windows == persisted.completed_windows
+        assert result.failed_windows == persisted.failed_windows
+        assert result.candidates == persisted.candidates
+    if expected_exit == 0:
+        assert result.run_outcome == "finished_with_failures"
+        assert result.completed_windows == 1 and result.failed_windows == 2
+        assert result.candidates == 1
+    elif continue_on_error:
+        assert result.run_outcome == "stopped_on_error" and result.completed_windows == 0
+
+
+def test_summary_cli_busy_root_keeps_stdout_free_of_error_text(
+    engine: CanonicalEngine, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ember_memory_cli.processing import main
+
+    source = tmp_path / "synthetic-summary.json"
+    source.write_text('{"memories":["A synthetic personal preference."]}', encoding="utf-8")
+    before = engine.stores()
+    assert (
+        main(
+            [
+                "summary",
+                "import",
+                str(source),
+                "--format",
+                "json",
+                "--source-namespace",
+                "synthetic-summary",
+                "--root",
+                str(engine.root),
+            ]
+        )
+        == 2
+    )
+    output = capsys.readouterr()
+    assert output.out == "" and "owner" in output.err
+    assert "personal preference" not in output.err
+    assert engine.stores() == before
+
+
+@pytest.mark.parametrize("format", ["text", "json"])
+def test_summary_cli_invalid_input_reports_safe_error_on_stderr(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], format: str
+) -> None:
+    from ember_memory_cli.processing import main
+
+    source = tmp_path / "synthetic-invalid-summary"
+    source.write_bytes(b"\xff")
+    assert (
+        main(
+            [
+                "summary",
+                "import",
+                str(source),
+                "--format",
+                format,
+                "--source-namespace",
+                "synthetic-invalid-summary",
+                "--root",
+                str(tmp_path / "root"),
+            ]
+        )
+        == 2
+    )
+    output = capsys.readouterr()
+    assert output.out == "" and output.err
+    assert str(source) not in output.err
+
+
+def test_existing_review_file_reports_clear_error_and_preserves_operator_decisions(
+    engine: CanonicalEngine, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ember_memory_cli.processing import main
+
+    service, _ = summary(engine, tmp_path, ("I like synthetic jazz.",))
+    job = create(service)
+    asyncio.run(service.run(job.definition.job_id, FakeModel()))
+    exported = ReviewService(service).export(job.definition.job_id)
+    reviewed = exported.model_copy(
+        update={"entries": (exported.entries[0].model_copy(update={"decision": "approve"}),)}
+    )
+    path = tmp_path / "existing-review.json"
+    original = reviewed.model_dump_json(indent=2).encode("utf-8")
+    path.write_bytes(original)
+    root, owner = engine.root, service.owner
+    engine.close()
+    assert (
+        main(
+            [
+                "extract",
+                "review",
+                "--store",
+                str(owner),
+                "--job",
+                str(job.definition.job_id),
+                "--output",
+                str(path),
+                "--root",
+                str(root),
+            ]
+        )
+        == 2
+    )
+    output = capsys.readouterr()
+    assert output.out == "" and "Output already exists" in output.err
+    assert "--output" in output.err
+    assert path.read_bytes() == original

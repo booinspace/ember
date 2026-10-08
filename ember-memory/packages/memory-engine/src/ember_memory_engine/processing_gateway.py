@@ -98,6 +98,8 @@ class GatewayExtractionModel:
 
             from ember_memory_abi.common import canonical_object_sha256
 
+            if spec.extractor != "ember.atomic-claims@0.1.2":
+                raise ProcessingError("processing_extractor_changed")
             if spec.prompt_sha256 != sha256(
                 INSTRUCTIONS.encode()
             ).hexdigest() or spec.output_schema_sha256 != canonical_object_sha256(
@@ -162,6 +164,12 @@ class GatewayExtractionModel:
                     ):
                         raise ProcessingError("gateway_stream_identity_or_order")
                     if event.kind == "error":
+                        if event.code in {
+                            "invalid_structured_output",
+                            "structured_schema_mismatch",
+                            "structured_output_too_large",
+                        }:
+                            raise ProcessingError("gateway_structured_output_invalid")
                         raise ProcessingError("gateway_generation_failed")
                     if (not started and event.kind != "start") or (
                         started and event.kind == "start"
@@ -177,10 +185,15 @@ class GatewayExtractionModel:
                         if size > 128 * 1024:
                             raise ProcessingError("extraction_output_too_large")
                     if event.kind == "end":
-                        return ClaimBatch.model_validate_json("".join(output))
+                        try:
+                            return ClaimBatch.model_validate_json("".join(output))
+                        except ValidationError as error:
+                            raise ProcessingError("gateway_structured_output_invalid") from error
             raise ProcessingError("gateway_stream_incomplete")
-        except (httpx.HTTPError, ValidationError) as error:
-            raise ProcessingError("gateway_transport_or_structured_output_invalid") from error
+        except httpx.HTTPError as error:
+            raise ProcessingError("gateway_transport_failed") from error
+        except ValidationError as error:
+            raise ProcessingError("gateway_protocol_invalid") from error
 
     async def aclose(self) -> None:
         """Close only this transport; it cannot stop/unload the model or gateway."""

@@ -82,3 +82,103 @@ suppression before/after extraction, policy pinning/reevaluation, schema 3 recov
 full source-job restore and selective specification closure. Real Qwen extraction from
 synthetic saved text is approved, seeded, indexed, restarted and recalled semantically
 through the actual LiveKit agent hook and P0 gateway. Personal imports are not test data.
+
+## Initial bounded quote retry and continuation (2026-10-08)
+
+The processing runner owns optional retry/continuation, and the CLI supplies runtime
+controls through the existing service call. `window_attempts` is bounded to 1-3;
+`continue_on_error` defaults to false. Only `quote_missing_or_ambiguous` and
+`quote_not_exact` are eligible because validation raises them before entering the
+candidate/checkpoint transaction. Other failures stop even when continuation is enabled.
+
+Failed attempts append audit records. Transient recovery clears the current window
+error while retaining prior attempts. Exhausted windows remain unresolved and do not
+advance completed counts; continuation processes later pending windows. Overall status
+and CLI exit remain failed while any unresolved window exists. Window limits count
+distinct attempted windows, and restarting can explicitly select failed windows without
+replaying completed candidates. Cancellation still drains owned work as before.
+
+These controls change neither ClaimBatch nor ExtractionSpec and require no migration,
+extractor version change or new job key. Imported candidate approval/seed authority is
+unchanged. Root integration and planned Phase 7/8 scope remain in
+[Root ADR 0009](../../../../docs/adr/0009-phase-six-extraction-and-background-inference.md).
+
+## Window-local failures and successful continued execution (2026-10-08)
+
+The initial quote-only rule now includes rejected claim/JSON-schema output. The
+gateway adapter distinguishes structured-output rejection from HTTP/protocol/identity
+failures so infrastructure errors cannot silently consume an entire archive.
+Suppressed/unsupported source windows are skipped without inference or retry.
+Known window-output failures retry at most window_attempts times, then continuation
+retains an unresolved failure and selects the next pending window without a failure
+count threshold. All candidate writes remain atomic and fully validated.
+
+JobStatus adds optional transient run_outcome metadata for a single execution:
+finished_with_failures permits CLI exit 0 after all requested work was attempted;
+stopped_on_error preserves nonzero exit for global failures. Durable job status/counts
+remain truthful, and failed windows remain explicitly recoverable. Status-only reads
+do not reconstruct a prior invocation outcome. Default fail-fast behavior is retained.
+
+This extends only runner/transport diagnostics and CLI behavior. ClaimBatch and the
+pinned extraction specification are unchanged; no migration or new job is needed.
+The full approval/review/seeding path remains explicit.
+
+## CLI JSON output and PowerShell ownership failure (2026-10-08)
+
+A concurrent summary import correctly failed because the archive extractor owned
+the canonical root. Its diagnostic was previously printed on stdout, so direct
+ConvertFrom-Json parsing obscured the real error and subsequent pasted commands
+received empty store/job IDs. Summary/extraction diagnostics now use stderr.
+Runbook examples check the native exit code before parsing JSON and require dependent
+steps to stop after failure. The root's single-owner lock and gateway admission
+remain unchanged; no running import is interrupted or lock removed by this fix.
+Regression coverage verifies busy-root and invalid-input failures leave stdout empty.
+
+Review export also reports an existing output file explicitly instead of masking
+FileExistsError as generic invalid state. The runbook opens the editor only after
+successful export so a failed export cannot leave an empty editor-created review.
+Existing reviewed decisions are never overwritten. The 56 processing tests and
+format/lint/strict-type checks passed, including preservation of edited review files.
+
+## Interactive operator composition (2026-10-08)
+
+The memory CLI owns `ingest` orchestration and injectable terminal I/O. It reuses
+normalizers and the canonical root, extraction gateway adapter, review authority,
+library seeding and CPU index updater. Configuration coupling is limited to a typed,
+read-only deployment-v1 subset and the established profile-character binding filename;
+relative paths match runtime composition. No agent package is imported in production.
+
+ProcessingService.definitions lists bounded verified job pages. ReviewService.export
+adds opt-in latest decision discovery while preserving the previous pending-only
+default. LibraryService.has_seed queries existing origin dependencies before seeding;
+any historical copy is retained without automatic refresh or resurrection. These
+helpers are read-only and require no schema/version change.
+
+Interactive approval passes the exact hash-verified candidate and original quotes to
+the existing confirmed-user ReviewService.apply. No terminal text mutates claims,
+confidence, policy verdicts or evidence. Accept-all acts only on pending supported
+candidates with explicit confirmation; prior decisions remain immutable audit history.
+Seeding requires its own affirmative response and commits one selected approved
+snapshot per deterministic receipt. Interrupted review/seeding can resume. Source and
+model pins remain immutable; source changes require an explicitly new snapshot.
+
+Synthetic acceptance covers real import/extraction/review/seed/index composition,
+reopened recall/evidence, default-no and reject behavior, paged bulk approval, old
+manual seeds, interrupted review and index repair. No private data is processed.
+[Root ADR 0009](../../../docs/adr/0009-phase-six-extraction-and-background-inference.md)
+owns application coupling and phase delivery; the root runbook owns operator commands.
+
+Validation: 442 tests passed, eight optional real-service/model tests skipped; all 14
+interactive acceptance tests passed. Ruff format/lint, strict Pyright, installed
+ingest help and git diff checks passed. Tests used synthetic sources only.
+
+## Read historical extractor specifications, execute current code (2026-10-08)
+
+ExtractionSpec accepts known persisted extractor identities 0.1.0, 0.1.1 and 0.1.2,
+with references retaining each actual version. Previously the 0.1.2-only literal
+misclassified intact historical job payloads as corrupt during paged discovery.
+ProcessingService creation/resume and GatewayExtractionModel execution reject outdated
+identities explicitly. Historical metadata remains readable for discovery/review,
+without silently repinning source, schema, prompt, policy or model. The current
+ClaimBatch schema hash is unchanged; no migration or canonical rewrite is needed.
+Root ADR 0009 records delivery and synthetic historical/current regression coverage.
