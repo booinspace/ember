@@ -19,11 +19,14 @@ from ember_memory_abi.related import (
     ReadManifest,
     RelatedRequest,
     RelatedResponse,
+    TemporalSelection,
 )
+from ember_memory_abi.temporal import TemporalQuery
 
 from ._state import CharacterState
 from .archive import SourceHeaderResolver
 from .database import check_deadline, load_model, row_int, row_text
+from .selection import origin_scope, permitted
 from .source_access import evidence_grant_window
 
 
@@ -33,6 +36,8 @@ def certificate(
     memories: tuple[Memory, ...],
     *,
     profile_epoch: int | None = None,
+    temporal: TemporalQuery | None = None,
+    current_ids: frozenset[CanonicalId] = frozenset(),
 ) -> ContextDependencies:
     """Collect only selected memory/evidence and known time boundaries; no relationship joins."""
     sources = {
@@ -58,7 +63,19 @@ def certificate(
                 part_id=UUID(row_text(row, "part_id")) if row["part_id"] else None,
             )
             sources[ref.identity_key()] = ref
-    boundaries = [memory.temporal.valid_until for memory in memories if memory.temporal.valid_until]
+    historical = temporal is not None and any(temporal.model_dump(exclude={"extensions"}).values())
+    selected = tuple(
+        MemoryReference(memory_id=m.memory_id, revision=m.revision)
+        for m in memories
+        if historical and m.memory_id not in current_ids
+    )
+    boundaries = [
+        m.temporal.valid_until
+        for m in memories
+        if m.temporal.valid_until
+        and m.content.kind != "episode"
+        and (not historical or m.memory_id in current_ids)
+    ]
     now = timestamp_from_datetime(state.database.clock.now())
     allowed, grant_until = evidence_grant_window(
         connection, state.character_id, tuple(sources.values()), now
@@ -71,6 +88,9 @@ def certificate(
         memories=tuple(
             MemoryReference(memory_id=m.memory_id, revision=m.revision) for m in memories
         ),
+        selections=(TemporalSelection(temporal=temporal, memories=selected),)
+        if selected and temporal is not None
+        else (),
         sources=tuple(sources.values()),
         policy_epoch=state.policy_epoch(connection),
         selection_epoch=profile_epoch,
@@ -104,29 +124,70 @@ def validate(
         parameters = tuple(
             x for ref in dependencies.memories for x in (str(ref.memory_id), ref.revision)
         )
+        historical_refs = {
+            (str(ref.memory_id), ref.revision)
+            for group in dependencies.selections
+            for ref in group.memories
+        }
+        current_refs = tuple(
+            ref
+            for ref in dependencies.memories
+            if (str(ref.memory_id), ref.revision) not in historical_refs
+        )
+        current_placeholders = ",".join("(?,?)" for _ in current_refs) or "(NULL,NULL)"
+        current_parameters = tuple(
+            value for ref in current_refs for value in (str(ref.memory_id), ref.revision)
+        )
+        selection_sql, selection_values = origin_scope(state.character_id, "p.origin_key")
         rows = connection.execute(
-            "SELECT r.memory_id,r.revision,r.lifecycle,r.valid_from_us,r.valid_until_us"
+            "SELECT r.memory_id,r.revision,r.lifecycle,r.kind,r.valid_from_us,r.valid_until_us"
             " FROM memory_revisions r "
             "JOIN memories m ON m.memory_id=r.memory_id AND m.current_revision=r.revision "
-            "WHERE (r.memory_id,r.revision) IN (" + placeholders + ") AND r.lifecycle='active' "
+            "JOIN claim_projection p ON p.memory_id=r.memory_id AND p.revision=r.revision "
+            "WHERE (r.memory_id,r.revision) IN ("
+            + current_placeholders
+            + ") AND r.lifecycle='active' "
+            "AND " + selection_sql + " "
             "AND NOT EXISTS(SELECT 1 FROM suppression_targets WHERE "
             "target_kind='memory' AND target_key=r.memory_id) "
             "AND NOT EXISTS(SELECT 1 FROM memory_dependencies d JOIN suppression_targets s "
             "ON s.target_kind=d.target_kind AND s.target_key=d.target_key WHERE "
             "d.memory_id=r.memory_id AND d.revision=r.revision)",
-            parameters,
+            (*current_parameters, *selection_values),
         ).fetchall()
         rows_count += len(rows)
-        if len(rows) != len(set((r.memory_id, r.revision) for r in dependencies.memories)):
+        if len(rows) != len(set((r.memory_id, r.revision) for r in current_refs)):
             reasons.append("memory_changed_or_suppressed")
         from ember_memory_abi.common import timestamp_to_unix_microseconds
 
         at = timestamp_to_unix_microseconds(now)
         for row in rows:
+            if row["kind"] == "episode":
+                continue
             if (row["valid_from_us"] is not None and row_int(row, "valid_from_us") > at) or (
                 row["valid_until_us"] is not None and at >= row_int(row, "valid_until_us")
             ):
                 reasons.append("memory_outside_validity")
+        # Reuse the actual eligibility compiler. Historical selectors never grant
+        # permission or bypass current forgetting, revocation or source controls.
+        from ember_memory_abi.interfaces import MemoryQuery
+
+        from .retrieval import memory_scope
+
+        for group in dependencies.selections:
+            requested = tuple(
+                value for ref in group.memories for value in (str(ref.memory_id), ref.revision)
+            )
+            wanted = ",".join("(?,?)" for _ in group.memories)
+            sql, values = memory_scope(
+                state, MemoryQuery(temporal=group.temporal, limit=100), metadata_only=True
+            )
+            marker = sql.index(" ORDER BY ")
+            sql = sql[:marker] + " AND (r.memory_id,r.revision) IN (" + wanted + ")" + sql[marker:]
+            found = connection.execute(sql, (*values[:-1], *requested, values[-1])).fetchall()
+            rows_count += len(found)
+            if len(found) != len(group.memories):
+                reasons.append("historical_selection_changed_or_suppressed")
         for row in connection.execute(
             "SELECT e.* FROM memory_evidence e WHERE (e.memory_id,e.revision) IN ("
             + placeholders
@@ -213,6 +274,8 @@ def lookup(
         if latest.lifecycle in {"disabled", "forgotten"}:
             raise AccessDeniedError()
         memory = state.read_memory(connection, reference.memory_id, reference.revision)
+        if not permitted(state, connection, str(memory.memory_id), memory.revision):
+            raise AccessDeniedError()
         if any(
             not state.source_permitted(connection, a.evidence.source, "evidence_read")
             for a in memory.content.evidence

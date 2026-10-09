@@ -393,7 +393,7 @@ def test_schema_four_upgrade_backup_and_projection(
             "profile_exclusions",
         ):
             connection.execute(f"DROP TABLE {table}")
-        connection.execute("DELETE FROM schema_versions WHERE version=5")
+        connection.execute("DELETE FROM schema_versions WHERE version>=5")
         connection.execute("PRAGMA user_version=4")
     original = database_module.PHASE_SEVEN_SQL
     monkeypatch.setattr(database_module, "PHASE_SEVEN_SQL", original + " INVALID DDL;")
@@ -633,7 +633,7 @@ def test_schema_four_supersessions_are_backfilled_as_typed_relationships(tmp_pat
             "profile_exclusions",
         ):
             connection.execute(f"DROP TABLE {table}")
-        connection.execute("DELETE FROM schema_versions WHERE version=5")
+        connection.execute("DELETE FROM schema_versions WHERE version>=5")
         connection.execute("PRAGMA user_version=4")
     with CanonicalEngine(root) as engine:
         resolved = engine.character(character).lookup_related(

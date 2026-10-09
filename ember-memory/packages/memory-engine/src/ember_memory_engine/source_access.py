@@ -37,7 +37,10 @@ def source_keys(reference: SourceRef) -> tuple[str, str]:
 
 
 def source_rows(
-    connection: sqlite3.Connection, watermark: int, selection: str = ""
+    connection: sqlite3.Connection,
+    watermark: int,
+    selection: str = "",
+    parameters: tuple[str | int, ...] = (),
 ) -> Iterator[SourceRecord]:
     """Fetch bounded pages and close cursors before tokenization/inference."""
     last = 0
@@ -45,7 +48,7 @@ def source_rows(
         rows = connection.execute(
             "SELECT rowid AS source_rowid,* FROM source_records WHERE rowid>? AND "
             "recorded_at_us<=? " + selection + " ORDER BY rowid LIMIT 256",
-            (last, watermark),
+            (last, watermark, *parameters),
         ).fetchall()
         if not rows:
             return

@@ -1,6 +1,6 @@
 """Canonical SQLite schema 0.4.0: immutable baseline plus backed-up additive migration."""
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 SCHEMA_SQL = """
 CREATE TABLE store_metadata (
     store_id TEXT PRIMARY KEY, kind TEXT NOT NULL, namespace TEXT NOT NULL,
@@ -322,3 +322,41 @@ CREATE INDEX IF NOT EXISTS relationship_source ON memory_relationships(source_id
 CREATE INDEX IF NOT EXISTS relationship_target ON memory_relationships(target_id,relationship_id);
 """
 PHASE_SEVEN_IMMUTABLE = ("native_acceptance", "memory_supports", "memory_relationships")
+
+PHASE_EIGHT_SQL = """
+CREATE TABLE IF NOT EXISTS recall_policy (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1), local_enabled INTEGER NOT NULL DEFAULT 1,
+    import_mode TEXT NOT NULL DEFAULT 'all' CHECK(import_mode IN ('all','selected','none')),
+    revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO recall_policy(singleton) VALUES(1);
+CREATE TABLE IF NOT EXISTS recall_libraries (
+    library_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL CHECK(enabled IN (0,1))
+);
+CREATE TABLE IF NOT EXISTS capture_policy (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+    revision INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO capture_policy(singleton) VALUES(1);
+CREATE TABLE IF NOT EXISTS native_capture (
+    delivery_key TEXT PRIMARY KEY, source_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued','paused','processing','complete','failed')),
+    job_id TEXT, error_code TEXT
+);
+CREATE INDEX IF NOT EXISTS native_capture_pending ON native_capture(status,delivery_key);
+CREATE TABLE IF NOT EXISTS temporal_enrichments (
+    proposal_id TEXT PRIMARY KEY, memory_id TEXT NOT NULL, revision INTEGER NOT NULL,
+    payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS temporal_enrichment_reviews (
+    decision_id TEXT PRIMARY KEY, proposal_id TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('approve','reject')),
+    operation_id TEXT, recorded_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS temporal_review_latest ON temporal_enrichment_reviews(proposal_id);
+CREATE TRIGGER IF NOT EXISTS temporal_enrichments_no_update BEFORE UPDATE ON temporal_enrichments
+BEGIN SELECT RAISE(ABORT,'immutable temporal proposal'); END;
+CREATE TRIGGER IF NOT EXISTS temporal_enrichments_no_delete BEFORE DELETE ON temporal_enrichments
+BEGIN SELECT RAISE(ABORT,'immutable temporal proposal'); END;
+"""

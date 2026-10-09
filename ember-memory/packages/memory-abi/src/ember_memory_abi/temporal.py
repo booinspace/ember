@@ -41,3 +41,25 @@ class TemporalMetadata(TemporalBounds):
     """A stored interpretation's recorded clock, independent of historical validity."""
 
     recorded_at: UtcTimestamp
+
+
+class TemporalQuery(ContractModel):
+    """Filter world time and recorded interpretation history independently."""
+
+    valid_at: UtcTimestamp | None = None
+    recorded_before: UtcTimestamp | None = None
+    observed_from: UtcTimestamp | None = None
+    observed_until: UtcTimestamp | None = None
+    valid_from: UtcTimestamp | None = None
+    valid_until: UtcTimestamp | None = None
+
+    @model_validator(mode="after")
+    def intervals(self) -> Self:
+        """Reject empty or reversed intervals instead of returning misleading results."""
+        for lower, upper in (
+            (self.observed_from, self.observed_until),
+            (self.valid_from, self.valid_until),
+        ):
+            if lower is not None and upper is not None and lower >= upper:
+                raise ValueError("Temporal ranges must be nonempty half-open intervals.")
+        return self

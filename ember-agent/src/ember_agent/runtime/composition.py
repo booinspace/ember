@@ -12,8 +12,11 @@ from ember_memory_abi.errors import MemoryError
 from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 from ember_memory_engine.authoring import MemoryAuthoringService, NewMemoryInput, ensure_subject
+from ember_memory_engine.capture import CaptureService
 from ember_memory_engine.embedding import BgeEncoder
 from ember_memory_engine.errors import EmbeddingError
+from ember_memory_engine.processing_contracts import ProcessingError, native_specification
+from ember_memory_engine.processing_gateway import GatewayExtractionModel
 
 from ..character.core import CharacterCore, Personality
 from ..inference.client import HttpGatewayClient
@@ -33,6 +36,7 @@ class LocalRuntime:
     """Construct off-loop; drain clients and close their engine off-loop."""
 
     def __init__(self, config: DeploymentConfig) -> None:
+        self.config = config
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ember-runtime-owner")
         encoder = None
         self.semantic_status = "not_configured"
@@ -64,6 +68,7 @@ class LocalRuntime:
             token = (config.runtime_root / "gateway.token").read_text(encoding="utf-8").strip()
             self.memory = InProcessAsyncMemoryClient(store)
             self.model = HttpGatewayClient(config.services.gateway.endpoint, token)
+            self.capture = CaptureService(self.engine, binding.character_id)
             self.sink = ArchiveDialogueSink(self.engine.archive(binding.character_id), self.subject)
             ceiling = min(
                 config.max_input_tokens,
@@ -76,6 +81,7 @@ class LocalRuntime:
                 input_ceiling=ceiling,
                 personality=self.personality,
                 sink=self.sink,
+                timezone=config.recall_timezone,
             )
         except Exception:
             self.engine.close()
@@ -96,6 +102,30 @@ class LocalRuntime:
         request = NewMemoryInput(idempotency_key=key, text=text)
         receipt = await asyncio.wrap_future(self.pool.submit(self.author.create, request))
         return receipt.outcome
+
+    async def consolidate(self) -> int:
+        """Process a bounded idle batch; gateway P3 admission owns GPU isolation."""
+        pending = await asyncio.wrap_future(self.pool.submit(self.capture.pending))
+        if not pending:
+            return 0
+        token_path = self.config.runtime_root / "gateway-background.token"
+        try:
+            token = await asyncio.wrap_future(
+                self.pool.submit(token_path.read_text, encoding="utf-8")
+            )
+        except FileNotFoundError:
+            return len(pending)
+        model = GatewayExtractionModel(
+            self.config.services.gateway.endpoint,
+            token.strip(),
+            native_specification(self.config.model_tag, self.config.model_digest, workload="P3"),
+        )
+        try:
+            async with asyncio.timeout(90):
+                remaining = await self.capture.drain(model, self.pool)
+            return len(remaining)
+        finally:
+            await model.aclose()
 
     async def aclose(self) -> None:
         """Drain native writes before closing their engine owner; never stop external services."""
@@ -122,6 +152,16 @@ class LocalRuntime:
         finally:
             try:
                 await self.model.session(identity, connected=False)
+                try:
+                    remaining = await self.consolidate()
+                    if remaining:
+                        print(
+                            "Native capture has pending work; resume during the next idle window."
+                        )
+                except TimeoutError:
+                    print("Native consolidation paused at its durable checkpoint.")
+                except ProcessingError as error:
+                    print("Native consolidation deferred: " + error.code)
             finally:
                 await self.aclose()
 

@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from collections.abc import Callable
 from uuid import uuid4
 
 from ember_memory_abi.common import (
@@ -46,7 +47,12 @@ from .errors import IdempotencyConflictError
 
 
 def mutate(
-    state: CharacterState, connection: sqlite3.Connection, operation: str, request: MutationRequest
+    state: CharacterState,
+    connection: sqlite3.Connection,
+    operation: str,
+    request: MutationRequest,
+    *,
+    on_commit: Callable[[sqlite3.Connection, MutationReceipt], None] | None = None,
 ) -> MutationReceipt:
     """Commit validated effects, receipt and audit together, or replay the exact prior request."""
     if state.authority.mode != "confirmed_user":
@@ -71,9 +77,12 @@ def mutate(
                 or row_text(old_receipt, "request_sha256") != request_hash
             ):
                 raise IdempotencyConflictError()
-            return MutationReceipt.model_validate_json(
+            replay = MutationReceipt.model_validate_json(
                 row_text(old_receipt, "receipt_json")
             ).model_copy(update={"outcome": "already_applied"})
+            if on_commit is not None:
+                on_commit(connection, replay)
+            return replay
         old: Memory | None = None
         if isinstance(request, RevisionMutation):
             old = state.read_memory(
@@ -120,6 +129,8 @@ def mutate(
                 "confirmed_user",
             ),
         )
+        if on_commit is not None:
+            on_commit(connection, receipt)
     return receipt
 
 

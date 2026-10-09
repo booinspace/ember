@@ -30,6 +30,7 @@ from .library import KnowledgeSelection, LibraryService, entity_references
 from .models import StoreInfo
 from .ownership import validate_local_root
 from .schema import (
+    PHASE_EIGHT_SQL,
     PHASE_FIVE_SQL,
     PHASE_SEVEN_IMMUTABLE,
     PHASE_SEVEN_SQL,
@@ -511,7 +512,12 @@ class BundleService:
                 entities.add(row_text(policy, "subject_id"))
             with closing(sqlite3.connect(path)) as target:
                 target.executescript(
-                    SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL + PHASE_SIX_SQL + PHASE_SEVEN_SQL
+                    SCHEMA_SQL
+                    + PHASE_FOUR_SQL
+                    + PHASE_FIVE_SQL
+                    + PHASE_SIX_SQL
+                    + PHASE_SEVEN_SQL
+                    + PHASE_EIGHT_SQL
                 )
 
                 def transfer(
@@ -527,6 +533,11 @@ class BundleService:
                 target.execute("DELETE FROM profile_policy")
                 transfer("profile_policy")
                 transfer("profile_exclusions")
+                target.execute("DELETE FROM recall_policy")
+                transfer("recall_policy")
+                transfer("recall_libraries")
+                target.execute("DELETE FROM capture_policy")
+                transfer("capture_policy")
                 for table in (
                     "store_metadata",
                     "schema_versions",

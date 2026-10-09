@@ -35,8 +35,9 @@ from ember_memory_abi.memory import (
 )
 from ember_memory_abi.predicates import KNOWN_MODALITIES
 from ember_memory_abi.related import RelatedRequest, RelatedResponse
+from ember_memory_abi.selection import RecallSelection
 
-from . import mutations, profile, related, retrieval
+from . import mutations, profile, related, retrieval, selection
 from ._state import CharacterState
 from .archive import SourceResolver
 from .database import (
@@ -65,6 +66,16 @@ class SqliteMemoryStore:
     def character_id(self) -> CanonicalId:
         """Trusted composition-supplied identity, never chosen by query/model arguments."""
         return self.database.store_id
+
+    def recall_selection(self) -> RecallSelection:
+        """Read the existing character's persistent source-selection policy."""
+        return self.database.read(selection.settings)
+
+    def configure_recall(self, value: RecallSelection) -> RecallSelection:
+        """Apply an operator-authorized compare-and-swap selection change."""
+        return self.database.write(
+            lambda connection: selection.configure(self.state, connection, value)
+        )
 
     def capabilities(self) -> MemoryCapabilities:
         """Report implemented modes and current character index availability."""
@@ -98,6 +109,7 @@ class SqliteMemoryStore:
                 "related_lookup_v1",
                 "batch_context_validation_v1",
                 "temporal_ranges_v1",
+                "source_selection_v1",
             ),
             mutations=mutations,
             index_status="available"

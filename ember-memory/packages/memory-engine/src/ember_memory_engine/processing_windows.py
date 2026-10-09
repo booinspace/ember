@@ -40,8 +40,20 @@ def windows(source: sqlite3.Connection, job: JobDefinition) -> Iterator[WindowRe
             "FROM source_keys WHERE adapter='chatgpt_memory_summary')"
         )
     selection += " AND record_kind IN ('message','document')"
+    parameters: tuple[str | int, ...] = ()
+    if request.source_references:
+        selection += (
+            " AND (record_kind,record_id,revision) IN ("
+            + ",".join("(?,?,?)" for _ in request.source_references)
+            + ")"
+        )
+        parameters = tuple(
+            value
+            for ref in request.source_references
+            for value in (ref.record_kind, str(ref.record_id), ref.record_revision)
+        )
     graph_cache: dict[tuple[str, int], tuple[dict[tuple[str, int], int], bool]] = {}
-    for record in source_rows(source, job.canonical_clock_us, selection):
+    for record in source_rows(source, job.canonical_clock_us, selection, parameters):
         if not isinstance(record, (Message, Document)):
             continue
         if isinstance(record, Message) and record.channel in {

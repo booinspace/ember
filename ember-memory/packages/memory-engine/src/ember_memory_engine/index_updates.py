@@ -188,7 +188,7 @@ def update(engine: CanonicalEngine, encoder: Encoder, store_id: UUID) -> IndexGe
     except IndexError:
         return builder.rebuild(store_id)
     if (
-        previous.layout != "ember.search-layout@0.5.0"
+        previous.layout != "ember.search-layout@0.6.0"
         or previous.embedding != encoder.specification
     ):
         return builder.rebuild(store_id, reuse=True)

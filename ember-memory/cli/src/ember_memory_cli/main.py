@@ -104,6 +104,10 @@ def main(argv: list[str] | None = None) -> int:
     an existing file or the source, and default diagnostics omit private source values.
     """
     actual = sys.argv[1:] if argv is None else argv
+    if actual and actual[0] in {"recall-policy", "capture", "enrich"}:
+        from .phase_eight import main as phase_eight
+
+        return phase_eight(actual)
     if actual and actual[0] in {"profile", "native", "related", "consolidate"}:
         from .phase_seven import main as phase_seven
 

@@ -62,6 +62,7 @@ from .related import (
     RelatedRequest,
     RelatedResponse,
 )
+from .selection import RecallSelection
 
 CONTRACT_TYPES: tuple[type[ContractModel], ...] = (
     SourceRef,
@@ -109,6 +110,7 @@ CONTRACT_TYPES: tuple[type[ContractModel], ...] = (
     ImportCursor,
     ProcessingSpecRef,
     PredicateDefinition,
+    RecallSelection,
     ContextDependencies,
     ProfileSelection,
     ProfileOmission,

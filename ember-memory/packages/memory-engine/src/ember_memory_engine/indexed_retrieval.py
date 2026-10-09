@@ -36,6 +36,7 @@ from .errors import EmbeddingError, EngineBusyError, IndexError
 from .index_storage import IndexStore, connect
 from .retrieval import memory_scope
 from .search_contracts import IndexGeneration
+from .selection import source_scope, unrestricted
 from .vector_search import VectorPool, VectorRequest
 
 
@@ -65,6 +66,8 @@ def _canonical_scope(
         "claim_projection",
         "memory_evidence",
         "source_grants",
+        "recall_policy",
+        "recall_libraries",
     ):
         sql = re.sub(r"\b" + table + r"\b", "canonical." + table, sql)
     return sql, values[:-1]
@@ -129,8 +132,8 @@ def projected_memory_scope(
         )
     else:
         clauses.append(
-            "(d.valid_from_us IS NULL OR d.valid_from_us<=?) "
-            "AND (d.valid_until_us IS NULL OR ?<d.valid_until_us)"
+            "(d.memory_kind='episode' OR ((d.valid_from_us IS NULL OR d.valid_from_us<=?) "
+            "AND (d.valid_until_us IS NULL OR ?<d.valid_until_us)))"
         )
     values.extend((at, at))
     if query.entity_ids:
@@ -161,7 +164,11 @@ def _archive_eligibility(
             WHERE sibling.kind='message' AND sibling.source_store_id=p.source_store_id
             AND sibling.record_kind=p.record_kind AND sibling.record_id=p.record_id)
     """
-    filters: list[str] = []
+    selection_sql, selection_values = source_scope(state.character_id, "p.source_store_id")
+    for table in ("recall_policy", "recall_libraries"):
+        selection_sql = re.sub(r"\b" + table + r"\b", "canonical." + table, selection_sql)
+    filters: list[str] = ["NOT " + selection_sql]
+    values.extend(selection_values)
     for column, items in (("p.role", query.roles), ("p.record_kind", query.record_kinds)):
         if items:
             filters.append(column + " NOT IN (" + ",".join("?" for _ in items) + ")")
@@ -316,11 +323,7 @@ class IndexedRetriever:
                         "ON d.id=e.document_id WHERE " + scope
                     )
                     parameters = values
-                    if plain_current and generation.layout in {
-                        "ember.search-layout@0.3.0",
-                        "ember.search-layout@0.4.0",
-                        "ember.search-layout@0.5.0",
-                    }:
+                    if plain_current and generation.layout == "ember.search-layout@0.6.0":
                         now = timestamp_to_unix_microseconds(
                             timestamp_from_datetime(state.database.clock.now())
                         )
@@ -447,6 +450,7 @@ class IndexedRetriever:
             certified = (
                 previous.header_projection == "ember.canonical-headers@0.2.0"
                 and not restrictive_pending
+                and unrestricted(canonical)
                 and query.temporal.recorded_before is None
                 and not any(
                     (
@@ -501,6 +505,7 @@ class IndexedRetriever:
                 if certified and generation.layout in {
                     "ember.search-layout@0.4.0",
                     "ember.search-layout@0.5.0",
+                    "ember.search-layout@0.6.0",
                 }:
                     if row_text(row, "payload_key") in seen:
                         continue
@@ -527,7 +532,11 @@ class IndexedRetriever:
                 if (
                     certified
                     and generation.layout
-                    in {"ember.search-layout@0.4.0", "ember.search-layout@0.5.0"}
+                    in {
+                        "ember.search-layout@0.4.0",
+                        "ember.search-layout@0.5.0",
+                        "ember.search-layout@0.6.0",
+                    }
                     and (fingerprint != row_text(row, "payload_key"))
                 ):
                     raise IndexError()

@@ -52,8 +52,22 @@ def instructions_for(extractor: str) -> str:
     """Immutable dispatch; legacy resumptions retain their exact 0.1.2 prompt bytes."""
     if extractor == "ember.atomic-claims@0.1.2":
         return INSTRUCTIONS
+    if extractor == "ember.atomic-claims@0.3.0":
+        return TEMPORAL_INSTRUCTIONS
     if extractor == "ember.atomic-claims@0.2.0":
         return NATIVE_INSTRUCTIONS
     from .processing_contracts import ProcessingError
 
     raise ProcessingError("processing_extractor_changed")
+
+
+TEMPORAL_INSTRUCTIONS = (
+    INSTRUCTIONS + "\nFor each claim optionally include date, otherwise null. "
+    "date contains expression (the exact calendar phrase), quote (an exact supporting "
+    "passage containing that expression), quote_start (codepoint offset or null), "
+    "and status: completed, current_state, planned, or hypothetical. "
+    "Never invent event dates from observation or import time. Preserve relative phrases "
+    "such as last December; the host resolves them against the original source clock. "
+    "Plans and hypothetical narratives must not be represented as completed episodes. "
+    "Use an episode only for a clearly stated completed event. Unknown dates remain null."
+)

@@ -19,6 +19,7 @@ from ember_memory_abi.related import ProfileOmission, ProfileSelection
 
 from ._state import CharacterState
 from .database import row_int, row_text
+from .selection import origin_scope, permitted
 from .source_access import memory_source_scope
 
 FIELDS = tuple(item.name for item in profile_predicates())
@@ -93,6 +94,7 @@ def eligible(state: CharacterState, connection: sqlite3.Connection, memory: Memo
     now = timestamp_from_datetime(state.database.clock.now())
     return (
         memory.lifecycle == "active"
+        and permitted(state, connection, str(memory.memory_id), memory.revision)
         and not state.memory_suppressed(connection, memory.memory_id, memory.revision)
         and (memory.temporal.valid_from is None or memory.temporal.valid_from <= now)
         and (memory.temporal.valid_until is None or now < memory.temporal.valid_until)
@@ -131,6 +133,7 @@ def select(
             access_sql, access_values = memory_source_scope(
                 state.character_id, now, "r.memory_id", "r.revision"
             )
+            selection_sql, selection_values = origin_scope(state.character_id, "p.origin_key")
             rows = connection.execute(
                 "SELECT p.memory_id,p.revision,p.value_key FROM claim_projection p "
                 "JOIN memories m ON m.memory_id=p.memory_id AND m.current_revision=p.revision "
@@ -139,12 +142,15 @@ def select(
                 "AND r.modality IN ('FACTUAL_ASSERTION','PREFERENCE') "
                 "AND (r.valid_until_us IS NULL OR r.valid_until_us>?) AND "
                 + access_sql
+                + " AND "
+                + selection_sql
                 + " ORDER BY r.recorded_at_us DESC,p.memory_id LIMIT 32",
                 (
                     str(policy.subject_id),
                     field,
                     timestamp_to_unix_microseconds(now),
                     *access_values,
+                    *selection_values,
                 ),
             ).fetchall()
             values: dict[str, Memory] = {}

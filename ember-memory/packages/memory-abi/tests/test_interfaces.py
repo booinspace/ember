@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
+from ember_memory_abi.common import ABI_VERSION
 from ember_memory_abi.errors import (
     AccessDeniedError,
     DeadlineExceededError,
@@ -205,5 +206,5 @@ def test_public_schema_artifacts_match_typed_contracts_and_contain_no_sample_sou
         assert json.loads(path.read_text(encoding="utf-8")) == schema
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         assert "SENTINEL" not in json.dumps(schema)
-    catalog = contract_schemas()["memory-abi-0.4.0.schema.json"]
+    catalog = contract_schemas()[f"memory-abi-{ABI_VERSION}.schema.json"]
     assert {"SourceRef", "EvidenceSpan", "RememberRequest", "Memory"} <= set(catalog["$defs"])

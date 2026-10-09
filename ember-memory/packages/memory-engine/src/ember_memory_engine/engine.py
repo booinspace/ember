@@ -570,7 +570,7 @@ class CanonicalEngine:
             try:
                 generation, _ = self.indexes[store_id].active()
                 if (
-                    generation.layout != "ember.search-layout@0.5.0"
+                    generation.layout != "ember.search-layout@0.6.0"
                     or generation.embedding != encoder.specification
                 ):
                     return

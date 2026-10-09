@@ -4559,6 +4559,18 @@ Qdrant/experimental ANN, multimodal archive understanding, distributed/multiple 
   interpretation; retained P8-AC-01 through P8-AC-22 and added P8-AC-23 through
   P8-AC-30 without changing historical implementation/performance evidence.
 
+## Phase 8 implementation status (2026-10-09)
+
+Implementation is in progress in the independent ember-phase-eight clone, based on
+origin/master 640888d. Source selection, historical selector certificates, ordinary
+calendar parsing, incremental native capture, a separate dated extraction profile
+and reviewed temporal enrichment have initial implementations and synthetic tests.
+This does not satisfy the complete Phase 8 acceptance criteria yet. Browser/voice,
+deep recall, optional interpretation, full quality/performance measurements and
+requested code-review remain open. The primary checkout, ingest and runtime have
+not been changed. [Root ADR 0015](docs/adr/0015-phase-eight-implementation.md) and
+[the AC matrix](docs/phase-8-validation.md) record current evidence and remaining gates.
+
 ## Engineering language and code-quality standards
 
 ### Languages

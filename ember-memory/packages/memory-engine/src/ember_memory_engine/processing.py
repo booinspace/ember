@@ -1,6 +1,7 @@
 """Durable resumable extraction; completed window/candidates/checkpoint commit atomically."""
 
 import asyncio
+import re
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
@@ -43,7 +44,9 @@ from .database import load_model, model_bytes, payload_hash, row_int, row_text
 from .engine import CanonicalEngine
 from .processing_contracts import (
     AtomicClaim,
-    ClaimBatch,
+    ClaimOutput,
+    DatedFactClaim,
+    DatedOtherClaim,
     ExtractionModel,
     FailedStep,
     JobDefinition,
@@ -53,6 +56,7 @@ from .processing_contracts import (
     PolicyInputs,
     ProcessingError,
     WindowRef,
+    batch_type_for,
 )
 from .processing_windows import resolve_window, windows
 from .source_access import source_keys
@@ -61,6 +65,9 @@ _WINDOW_OUTPUT_FAILURES = frozenset(
     {
         "quote_missing_or_ambiguous",
         "quote_not_exact",
+        "date_quote_missing_or_ambiguous",
+        "date_expression_not_in_quote",
+        "unsupported_completed_event",
         "fact_value_missing",
         "entity_mention_unverified",
         "model_step_invalid",
@@ -114,25 +121,34 @@ class ProcessingService:
         if request.specification.extractor not in {
             "ember.atomic-claims@0.1.2",
             "ember.atomic-claims@0.2.0",
+            "ember.atomic-claims@0.3.0",
         }:
             raise ProcessingError("processing_extractor_changed")
         if request.specification.extractor == "ember.atomic-claims@0.2.0" and (
             self.info.kind != "character" and request.source_kind == "native"
         ):
             raise ProcessingError("native_profile_requires_character_sources")
-        from .processing_contracts import ClaimBatch
         from .processing_prompt import instructions_for
 
         if request.specification.prompt_sha256 != sha256(
             instructions_for(request.specification.extractor).encode()
         ).hexdigest() or request.specification.output_schema_sha256 != canonical_object_sha256(
-            ClaimBatch.model_json_schema()
+            batch_type_for(request.specification.extractor).model_json_schema()
         ):
             raise ProcessingError("processing_prompt_or_schema_changed")
         if request.owner_store_id != self.owner:
             raise ProcessingError("job_owner_mismatch")
         if request.specification.policy_sha256 != POLICY.reference().specification_sha256:
             raise ProcessingError("processing_policy_changed")
+        if request.specification.extractor == "ember.atomic-claims@0.3.0":
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+            try:
+                if request.specification.temporal_timezone is None:
+                    raise ValueError("Missing temporal timezone.")
+                ZoneInfo(request.specification.temporal_timezone)
+            except (ZoneInfoNotFoundError, ValueError) as error:
+                raise ProcessingError("temporal_timezone_unavailable") from error
         digest = canonical_object_sha256(request)
         existing = self.database.read(
             lambda connection: connection.execute(
@@ -357,6 +373,53 @@ class ProcessingService:
         )
         evidence = Evidence(evidence_id=uuid4(), source=reference.source, span=span)
         self.engine.validate(evidence)
+        assertions = [
+            EvidenceAssertion(
+                evidence=evidence,
+                relation="contradicts" if claim.verdict == "contradicted" else "supports",
+                modality=claim.modality,
+                authority="source_" + reference.authority,
+                verdict="model_" + claim.verdict,
+            )
+        ]
+        temporal = TemporalBounds(
+            observed_at=reference.observed_at, basis="source_observation_not_validity"
+        )
+        if isinstance(claim, (DatedFactClaim, DatedOtherClaim)) and claim.date is not None:
+            from .event_dates import resolve_date, supported_position
+
+            support = claim.date
+            position = supported_position(window.text, support.quote, support.quote_start)
+            if claim.kind == "episode" and (
+                support.status != "completed"
+                or reference.authority != "direct_user"
+                or claim.modality in {"PLAN", "GOAL", "INTENTION", "HYPOTHETICAL", "UNCERTAINTY"}
+                or re.search(r"\b(will|would|planning|hope|if)\b", support.quote.casefold())
+            ):
+                raise ProcessingError("unsupported_completed_event")
+            date_evidence = Evidence(
+                evidence_id=uuid4(),
+                source=reference.source,
+                span=make_evidence_span(
+                    original,
+                    reference.start + position,
+                    reference.start + position + len(support.quote),
+                ),
+            )
+            self.engine.validate(date_evidence)
+            assertions.append(
+                EvidenceAssertion(
+                    evidence=date_evidence,
+                    relation="supports",
+                    modality=claim.modality,
+                    authority="source_" + reference.authority,
+                    verdict="exact_date_passage",
+                )
+            )
+            timezone = definition.request.specification.temporal_timezone
+            if timezone is None:
+                raise ProcessingError("temporal_timezone_missing")
+            temporal = resolve_date(support, reference.observed_at, timezone)
         entity = None
         value: FactValue
         payload: MemoryPayload
@@ -398,15 +461,7 @@ class ProcessingService:
                 modality=claim.modality,
                 confidence=confidence,
                 importance=claim.importance,
-                evidence=(
-                    EvidenceAssertion(
-                        evidence=evidence,
-                        relation="contradicts" if claim.verdict == "contradicted" else "supports",
-                        modality=claim.modality,
-                        authority="source_" + reference.authority,
-                        verdict="model_" + claim.verdict,
-                    ),
-                ),
+                evidence=tuple(assertions),
                 provenance=(
                     ProcessingProvenance(
                         run_id=definition.job_id,
@@ -416,14 +471,12 @@ class ProcessingService:
                     ),
                 ),
             ),
-            temporal=TemporalBounds(
-                observed_at=reference.observed_at, basis="source_observation_not_validity"
-            ),
+            temporal=temporal,
         )
         return draft, entity
 
     def _finish(
-        self, definition: JobDefinition, ordinal: int, window: ModelWindow, batch: ClaimBatch
+        self, definition: JobDefinition, ordinal: int, window: ModelWindow, batch: ClaimOutput
     ) -> None:
         # Resolve/validate exact originals before entering the short commit transaction.
         prepared = tuple((claim, *self._draft(definition, window, claim)) for claim in batch.claims)
@@ -468,6 +521,13 @@ class ProcessingService:
                     except (UnsupportedWriteError, InvalidPredicateError):
                         supported = False
                     key = fingerprint(claim, definition.subject)
+                    if isinstance(claim, (DatedFactClaim, DatedOtherClaim)):
+                        key = canonical_object_sha256(
+                            {
+                                "claim": key,
+                                "temporal": draft.temporal.model_dump(mode="json"),
+                            }
+                        )
                     duplicate = (
                         connection.execute(
                             "SELECT 1 FROM processing_candidates WHERE fingerprint=? LIMIT 1",
@@ -688,6 +748,7 @@ class ProcessingService:
             if definition.request.specification.extractor not in {
                 "ember.atomic-claims@0.1.2",
                 "ember.atomic-claims@0.2.0",
+                "ember.atomic-claims@0.3.0",
             }:
                 raise ProcessingError("processing_extractor_changed")
             await offload(partial(self._resume, job_id, retry_failed))
@@ -704,7 +765,9 @@ class ProcessingService:
                         window = await offload(partial(self._input, definition, reference))
                         try:
                             result = await model.extract(window)
-                            result = ClaimBatch.model_validate_json(result.model_dump_json())
+                            result = batch_type_for(
+                                definition.request.specification.extractor
+                            ).model_validate_json(result.model_dump_json())
                         except ProcessingError:
                             raise
                         except (ValidationError, ValueError) as error:

@@ -40,6 +40,7 @@ from .database import (
     row_text,
 )
 from .errors import CorruptStoreError, UnsupportedQueryError
+from .selection import origin_scope, source_scope
 from .source_access import memory_source_scope
 
 
@@ -82,7 +83,9 @@ def memory_scope(
         "r.revision",
     )
     conditions.append("(p.foreign_evidence=0 OR " + source_condition + ")")
-    parameters: list[str | int] = list(source_values)
+    selection_sql, selection_values = origin_scope(state.character_id, "p.origin_key")
+    conditions.append(selection_sql)
+    parameters: list[str | int] = [*source_values, *selection_values]
     before = query.temporal.recorded_before
     if before is not None:
         conditions.append(
@@ -118,11 +121,18 @@ def memory_scope(
             "json_extract(r.payload_json,'$.temporal.basis')='explicit_open_end'))"
         )
         parameters.extend((at, at))
-    elif before is None and not any((query.temporal.valid_from, query.temporal.valid_until)):
+    elif before is None and not any(
+        (
+            query.temporal.valid_from,
+            query.temporal.valid_until,
+            query.temporal.observed_from,
+            query.temporal.observed_until,
+        )
+    ):
         now = timestamp_to_unix_microseconds(timestamp_from_datetime(state.database.clock.now()))
         conditions.append(
-            "(r.valid_from_us IS NULL OR r.valid_from_us<=?) AND (r.valid_until_us IS"
-            " NULL OR ?<r.valid_until_us)"
+            "(r.kind='episode' OR ((r.valid_from_us IS NULL OR r.valid_from_us<=?) "
+            "AND (r.valid_until_us IS NULL OR ?<r.valid_until_us)))"
         )
         parameters.extend((now, now))
     if include_text and query.text:
@@ -266,11 +276,14 @@ def get_pinned(
     epoch = state.policy_epoch(connection)
     result: list[PinnedMemory] = []
     now = timestamp_to_unix_microseconds(timestamp_from_datetime(state.database.clock.now()))
+    selection_sql, selection_values = origin_scope(state.character_id, "c.origin_key")
     rows = connection.execute(
         (
             "SELECT p.* FROM pins p CROSS JOIN memories m ON m.memory_id=p.memory_id AND "
             "m.current_revision=p.memory_revision CROSS JOIN memory_revisions r ON "
-            "r.memory_id=p.memory_id AND r.revision=p.memory_revision WHERE "
+            "r.memory_id=p.memory_id AND r.revision=p.memory_revision "
+            "CROSS JOIN claim_projection c ON c.memory_id=r.memory_id AND c.revision=r.revision "
+            "WHERE " + selection_sql + " AND "
             "r.lifecycle='active' AND (r.valid_from_us IS NULL OR r.valid_from_us<=?) "
             "AND (r.valid_until_us IS NULL OR ?<r.valid_until_us) "
             "AND NOT EXISTS(SELECT 1 FROM memory_dependencies d JOIN"
@@ -279,7 +292,7 @@ def get_pinned(
             "d.revision=p.memory_revision) ORDER BY p.priority DESC,p.pinned_at DESC "
             "LIMIT ?"
         ),
-        (now, now, request.limit),
+        (*selection_values, now, now, request.limit),
     ).fetchall()
     for row in rows:
         identity = UUID(row_text(row, "memory_id"))
@@ -357,11 +370,13 @@ def search_archive(
     # A bounded metadata scan never materializes an entire native archive or seen-set.
     scan_limit = 4096
     limited = False
-    predicates: list[str] = []
+    selection_sql, selection_values = source_scope(state.character_id, "source_store_id")
+    predicates: list[str] = [selection_sql]
     parameters: list[str | int] = [
         str(state.character_id),
         timestamp_from_datetime(state.database.clock.now()),
     ]
+    parameters.extend(selection_values)
     for column, values in (
         ("source_store_id", tuple(str(item) for item in query.source_store_ids)),
         ("record_kind", query.record_kinds),
@@ -531,9 +546,11 @@ def retrieve_context(
     kept_pins: list[PinnedMemory] = []
     remaining = request.memory_token_budget
     for result in candidates:
-        if not profile.eligible(state, connection, result.memory):
-            continue
         matching = next((pin for pin in pinned if pin.memory_id == result.memory.memory_id), None)
+        # Search already checked the historical selector and current authorization.
+        # Pins are deliberately selected under today's state instead.
+        if matching and not profile.eligible(state, connection, result.memory):
+            continue
         cost = state.tokens.count(result.model_dump_json()) + (
             state.tokens.count(matching.model_dump_json()) if matching else 0
         )
@@ -557,10 +574,12 @@ def retrieve_context(
         from ember_memory_abi.archive import Document, Message
 
         native_rows = connection.execute(
-            "SELECT s.* FROM source_records s WHERE record_kind IN ('message','document') "
+            "SELECT s.* FROM source_records s WHERE "
+            "(SELECT local_enabled FROM recall_policy)=1 "
+            "AND record_kind IN ('message','document') "
             "AND revision=(SELECT MAX(n.revision) FROM source_records n WHERE "
             "n.record_kind=s.record_kind AND n.record_id=s.record_id) "
-            "ORDER BY recorded_at_us DESC LIMIT 8"
+            "ORDER BY recorded_at_us DESC LIMIT 8",
         ).fetchall()
         remaining_native = request.archive_token_budget
         for row in native_rows:
@@ -640,6 +659,8 @@ def retrieve_context(
                 connection,
                 tuple(r.memory for r in memories),
                 profile_epoch=selection.selection_epoch if selection else None,
+                temporal=request.memory_query.temporal,
+                current_ids=frozenset(p.memory_id for p in kept_pins),
             )
             break
         except ValidationError:
@@ -721,6 +742,8 @@ def retrieve_context(
                 connection,
                 tuple(r.memory for r in memories),
                 profile_epoch=selection.selection_epoch if selection else None,
+                temporal=request.memory_query.temporal,
+                current_ids=frozenset(p.memory_id for p in kept_pins),
             )
     if selection and selection.valid_until:
         boundary = min(b for b in (selection.valid_until, context_certificate.valid_until) if b)

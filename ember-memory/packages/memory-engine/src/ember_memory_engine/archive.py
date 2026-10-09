@@ -240,6 +240,10 @@ class SqliteArchiveStore:
                         (key.adapter, key.record_kind, key.external_id, str(assignment.record_id)),
                     )
             written = sum(self._persist_record(connection, record) for record in batch.records)
+            if batch.resume_cursor.adapter == "native_delivery" and keys:
+                from .capture import enqueue_delivery
+
+                enqueue_delivery(connection, batch, keys)
             cursor = batch.resume_cursor
             old_cursor = connection.execute(
                 (

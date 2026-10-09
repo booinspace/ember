@@ -81,6 +81,7 @@ class DeploymentConfig(RuntimeModel):
     output_reserve_tokens: PositiveInteger
     services: DeployedServices
     embedding_directory: Path | None = None
+    recall_timezone: str = "Europe/London"
 
     @property
     def model_pin_configured(self) -> bool:
@@ -128,6 +129,7 @@ class _AudioSettings(RuntimeModel):
 
 class _SearchSettings(RuntimeModel):
     embedding_directory: str = ""
+    timezone: str = "Europe/London"
 
 
 class _DeploymentSettings(RuntimeModel):
@@ -265,6 +267,12 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     settings = _read_settings(path)
     data_root, runtime_root = _resolve_roots(settings.paths, path.resolve().parent)
     tag, digest = _validate_model(settings.model, require_model_pin)
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        ZoneInfo(settings.search.timezone)
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ConfigurationError("Configured recall timezone is unavailable; run setup.") from error
     return DeploymentConfig(
         active_profile=settings.active_profile,
         data_root=data_root,
@@ -275,6 +283,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         max_input_tokens=settings.model.max_input_tokens,
         output_reserve_tokens=settings.model.output_reserve_tokens,
         services=_validate_services(settings, path.resolve().parent, runtime_root),
+        recall_timezone=settings.search.timezone,
         embedding_directory=(
             (path.resolve().parent / settings.search.embedding_directory).resolve()
             if settings.search.embedding_directory

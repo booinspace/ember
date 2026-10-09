@@ -1,8 +1,8 @@
 """Storage-independent requests/results and character-bound sync/async client protocols."""
 
-from typing import Annotated, Literal, Protocol, Self, runtime_checkable
+from typing import Annotated, Literal, Protocol, runtime_checkable
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from .archive import ArchiveWriteReceipt, NormalizedArchiveBatch, SourceRecord
 from .common import (
@@ -27,6 +27,7 @@ from .memory import (
     SessionSummary,
 )
 from .related import ContextDependencies, ProfileSelection
+from .temporal import TemporalQuery as TemporalQuery
 
 type ResultLimit = Annotated[int, Field(gt=0, le=100)]
 type IdempotencyKey = Annotated[str, Field(min_length=1, max_length=256)]
@@ -50,28 +51,6 @@ class MemoryCapabilities(ContractModel):
     retrieval_modes: tuple[WireString, ...] = ()
     mutations: tuple[WireString, ...] = ()
     index_status: Literal["available", "degraded", "unavailable"] = "unavailable"
-
-
-class TemporalQuery(ContractModel):
-    """Filter world time and recorded interpretation history independently."""
-
-    valid_at: UtcTimestamp | None = None
-    recorded_before: UtcTimestamp | None = None
-    observed_from: UtcTimestamp | None = None
-    observed_until: UtcTimestamp | None = None
-    valid_from: UtcTimestamp | None = None
-    valid_until: UtcTimestamp | None = None
-
-    @model_validator(mode="after")
-    def intervals(self) -> Self:
-        """Reject empty or reversed intervals instead of returning misleading results."""
-        for lower, upper in (
-            (self.observed_from, self.observed_until),
-            (self.valid_from, self.valid_until),
-        ):
-            if lower is not None and upper is not None and lower >= upper:
-                raise ValueError("Temporal ranges must be nonempty half-open intervals.")
-        return self
 
 
 class MemoryQuery(ContractModel):

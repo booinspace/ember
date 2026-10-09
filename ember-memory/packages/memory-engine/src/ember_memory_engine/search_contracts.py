@@ -54,6 +54,7 @@ class IndexGeneration(ContractModel):
             "ember.search-layout@0.3.0",
             "ember.search-layout@0.4.0",
             "ember.search-layout@0.5.0",
+            "ember.search-layout@0.6.0",
         ]
         | None
     ) = None

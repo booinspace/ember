@@ -35,3 +35,4 @@ and [Agent ADR 0005](0005-bounded-profile-and-delivery-validation.md#planned-pha
 covers shared ordinary query resolution, small follow-up scope, default-off one-call
 interpretation and historical delivery. This accepted Phase 8 design does not make
 voice, DeepRecallService or temporal interpretation currently operational.
+\n[Agent ADR 0006](0006-phase-eight-calendar-and-capture.md) records in-progress ordinary temporal recall and idle capture integration.\n

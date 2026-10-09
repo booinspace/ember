@@ -64,8 +64,13 @@ approval of any proposal. Phase 7 is implemented experimentally in the isolated
 `ember-agent/docs/adr/0005-bounded-profile-and-delivery-validation.md` before changing
 it. ABI 0.4.0, engine 0.5.0/schema 5 and disposable index layout 0.5.0 are experimental;
 the primary checkout and data have not been migrated. Native candidate acceptance is
-policy-controlled; imports remain explicitly reviewed. Keep Phase 8 out of scope until
-the user reviews the Phase 7 architecture and evidence.
+policy-controlled; imports remain explicitly reviewed. The user has reviewed the architecture and authorized Phase 8 in an isolated
+clone from origin/master. Read docs/phase-8-implementation-proposal.md,
+docs/adr/0015-phase-eight-implementation.md and docs/phase-8-validation.md.
+Phase 8 is in progress, not complete. Do not modify the primary checkout/data,
+restart its gateway or compete with its ongoing ingest for GPU inference.
+Experimental ABI 0.5.0, engine 0.6.0/schema 6 and index layout 0.6.0 belong only
+to this isolated implementation until deployment is explicitly authorized.
 
 ## Boundaries
 

@@ -2,7 +2,7 @@
 
 import json
 import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -13,13 +13,14 @@ from pydantic import Field, ValidationError
 
 from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.errors import MemoryError
-from ember_memory_abi.interfaces import AsyncMemoryClient, ContextRequest, MemoryQuery
+from ember_memory_abi.interfaces import AsyncMemoryClient, ContextRequest
 from ember_memory_abi.memory import FactPayload, Memory
 from ember_memory_abi.related import (
     AsyncRelatedLookupClient,
     ContextDependencies,
     MemoryReference,
     RelatedRequest,
+    TemporalSelection,
 )
 
 from ..inference.contracts import (
@@ -30,6 +31,7 @@ from ..inference.contracts import (
     PromptMessage,
 )
 from ..runtime.config import RuntimeModel
+from .temporal import CalendarResolver, CalendarScope
 
 
 class Personality(RuntimeModel):
@@ -109,6 +111,8 @@ class CharacterCore:
         input_ceiling: int = 7000,
         personality: Personality | None = None,
         sink: DialogueSink | None = None,
+        timezone: str = "Europe/London",
+        reference_clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.memory = memory
         self.model = model
@@ -116,6 +120,9 @@ class CharacterCore:
         self.input_ceiling = input_ceiling
         self.personality = personality or Personality()
         self.sink = sink
+        self.calendar = CalendarResolver(timezone)
+        self.reference_clock = reference_clock or (lambda: datetime.now(UTC))
+        self.last_scope: CalendarScope | None = None
         self.context_id = uuid4()
         self.history: list[CompletedTurn] = []
         self.busy = False
@@ -156,6 +163,12 @@ class CharacterCore:
         """Preserve personality/current input, trimming whole history pairs then memory rows."""
         if not text.strip() or len(text) > 16000:
             raise GatewayError("invalid_user_turn")
+        resolved = self.calendar.resolve(text, self.reference_clock(), self.last_scope)
+        if resolved.status == "clarification":
+            raise GatewayError("temporal_clarification:" + ",".join(resolved.reasons))
+        query = resolved.query
+        if resolved.scope is not None:
+            self.last_scope = resolved.scope
         capabilities = await self.memory.capabilities()
         self.batch_validation = (
             "batch_context_validation_v1" in capabilities.retrieval_modes
@@ -166,7 +179,9 @@ class CharacterCore:
         fallback = capabilities.index_status != "available"
         context = await self.memory.retrieve_context(
             ContextRequest(
-                memory_query=MemoryQuery(text="" if fallback else text, limit=20),
+                memory_query=query.model_copy(
+                    update={"text": "" if fallback and query.text else query.text, "limit": 20}
+                ),
                 memory_token_budget=4096,
                 include_pinned=True,
                 include_profile=profile_supported,
@@ -174,6 +189,8 @@ class CharacterCore:
             )
         )
         base = context.fast_dependencies if self.batch_validation else None
+        if resolved.scope is not None and base is None:
+            raise GatewayError("temporal_delivery_validation_unavailable")
         omissions = (
             ["profile:" + item.field + ":" + item.reason for item in context.profile.omitted]
             if context.profile
@@ -238,13 +255,13 @@ class CharacterCore:
             "of",
             "to",
         }
-        terms = set(re.findall(r"[\w]+", text.casefold().replace("_", " "))) - stopwords
+        terms = set(re.findall(r"[\w]+", query.text.casefold().replace("_", " "))) - stopwords
 
         def relevance(item: Memory) -> int:
             body = json.dumps(item.content.payload.model_dump(mode="json"), ensure_ascii=False)
             return len(terms & set(re.findall(r"[\w]+", body.casefold().replace("_", " "))))
 
-        if fallback:
+        if fallback and query.text:
             memories = sorted(
                 (item for item in memories if relevance(item) > 0), key=relevance, reverse=True
             )[:6]
@@ -277,7 +294,23 @@ class CharacterCore:
                     sources.update((r.identity_key(), r) for r in old.certificate.sources)
                     if old.certificate.valid_until:
                         boundaries.append(old.certificate.valid_until)
+            selected_refs = set(refs)
+            qualified: set[tuple[UUID, int]] = set()
+            selections: list[TemporalSelection] = []
+            current_pins = {(m.memory_id, m.revision) for m in pins}
+            for parent in (base, *(old.certificate for old in history if old.certificate)):
+                for group in parent.selections:
+                    members = tuple(
+                        ref
+                        for ref in group.memories
+                        if (ref.memory_id, ref.revision) in selected_refs
+                        and (ref.memory_id, ref.revision) not in qualified | current_pins
+                    )
+                    if members:
+                        selections.append(group.model_copy(update={"memories": members}))
+                        qualified.update((ref.memory_id, ref.revision) for ref in members)
             certificate = ContextDependencies(
+                selections=tuple(selections),
                 memories=tuple(MemoryReference(memory_id=i, revision=r) for i, r in refs),
                 sources=tuple(sources.values()),
                 policy_epoch=base.policy_epoch,
@@ -314,6 +347,21 @@ class CharacterCore:
 
         def compose() -> tuple[PromptMessage, ...]:
             messages = [PromptMessage(role="system", content=self.personality.instructions)]
+            if resolved.scope is not None:
+                messages.append(
+                    PromptMessage(
+                        role="system",
+                        content="Recall scope: "
+                        + resolved.scope.model_dump_json()
+                        + ". Historical observations are not current facts. "
+                        + (
+                            "Strict event-time recall excludes undated memories; no matches do not "
+                            "prove an event never happened."
+                            if resolved.scope.axis == "event"
+                            else ""
+                        ),
+                    )
+                )
             if pins:
                 messages.append(pins_message(pins))
             if memories:

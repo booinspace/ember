@@ -11,7 +11,13 @@ from pydantic import Field, JsonValue, ValidationError
 
 from ember_memory_abi.common import CanonicalId, ContractModel
 
-from .processing_contracts import ClaimBatch, ExtractionSpec, ModelWindow, ProcessingError
+from .processing_contracts import (
+    ClaimOutput,
+    ExtractionSpec,
+    ModelWindow,
+    ProcessingError,
+    batch_type_for,
+)
 from .processing_prompt import instructions_for
 
 
@@ -85,7 +91,7 @@ class GatewayExtractionModel:
         if buffer:
             yield bytes(buffer)
 
-    async def extract(self, window: ModelWindow) -> ClaimBatch:
+    async def extract(self, window: ModelWindow) -> ClaimOutput:
         """Verify model/workload health; commit nothing before an explicit validated end."""
         import json
 
@@ -102,7 +108,7 @@ class GatewayExtractionModel:
             if spec.prompt_sha256 != sha256(
                 instructions.encode()
             ).hexdigest() or spec.output_schema_sha256 != canonical_object_sha256(
-                ClaimBatch.model_json_schema()
+                batch_type_for(spec.extractor).model_json_schema()
             ):
                 raise ProcessingError("processing_prompt_or_schema_changed")
             if (
@@ -124,7 +130,7 @@ class GatewayExtractionModel:
                 "workload": spec.workload,
                 "model": spec.model,
                 "output": "json",
-                "output_schema": ClaimBatch.model_json_schema(),
+                "output_schema": batch_type_for(spec.extractor).model_json_schema(),
                 "max_output_tokens": spec.output_tokens,
                 "deadline_at": (datetime.now(UTC) + timedelta(seconds=180))
                 .isoformat()
@@ -185,7 +191,9 @@ class GatewayExtractionModel:
                             raise ProcessingError("extraction_output_too_large")
                     if event.kind == "end":
                         try:
-                            return ClaimBatch.model_validate_json("".join(output))
+                            return batch_type_for(spec.extractor).model_validate_json(
+                                "".join(output)
+                            )
                         except ValidationError as error:
                             raise ProcessingError("gateway_structured_output_invalid") from error
             raise ProcessingError("gateway_stream_incomplete")

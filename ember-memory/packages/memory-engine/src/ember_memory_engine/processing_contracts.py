@@ -34,11 +34,13 @@ class ExtractionSpec(ContractModel):
         "ember.atomic-claims@0.1.1",
         "ember.atomic-claims@0.1.2",
         "ember.atomic-claims@0.2.0",
+        "ember.atomic-claims@0.3.0",
     ] = "ember.atomic-claims@0.1.2"
     policy: Literal["activation.conservative@0.1.0"] = "activation.conservative@0.1.0"
     policy_sha256: Sha256 = POLICY.reference().specification_sha256
     prompt_sha256: Sha256 = sha256(INSTRUCTIONS.encode()).hexdigest()
     output_schema_sha256: Sha256 = Field(default_factory=lambda: _schema_digest())
+    temporal_timezone: str | None = Field(default=None, exclude_if=lambda value: value is None)
     window_bytes: Annotated[int, Field(ge=256, le=2400)] = 1800
     overlap_codepoints: Annotated[int, Field(ge=0, le=128)] = 64
     workload: Literal["P3", "P4"] = "P4"
@@ -139,12 +141,50 @@ class ClaimBatch(ContractModel):
     claims: Annotated[tuple[AtomicClaim, ...], Field(max_length=4)]
 
 
+class DateSupport(ContractModel):
+    """Model supplies an exact date expression and quote, never authoritative timestamps."""
+
+    expression: Annotated[str, Field(min_length=1, max_length=100)]
+    quote: Annotated[str, Field(min_length=1, max_length=500)] = Field(repr=False)
+    quote_start: Annotated[int, Field(ge=0)] | None = None
+    status: Literal["completed", "current_state", "planned", "hypothetical"]
+
+
+class DatedFactClaim(FactClaim):
+    """New extraction profile adds optional exact date support without changing old schemas."""
+
+    date: DateSupport | None = None
+
+
+class DatedOtherClaim(OtherClaim):
+    """An event occurrence remains different from a proposed future action."""
+
+    date: DateSupport | None = None
+
+
+class DatedClaimBatch(ContractModel):
+    """Versioned temporal output; old jobs retain their original ClaimBatch contract."""
+
+    claims: Annotated[
+        tuple[Annotated[DatedFactClaim | DatedOtherClaim, Field(discriminator="kind")], ...],
+        Field(max_length=4),
+    ]
+
+
+type ClaimOutput = ClaimBatch | DatedClaimBatch
+
+
+def batch_type_for(extractor: str) -> type[ClaimBatch] | type[DatedClaimBatch]:
+    """Select the immutable schema bound to each extraction version."""
+    return DatedClaimBatch if extractor == "ember.atomic-claims@0.3.0" else ClaimBatch
+
+
 class ExtractionModel(Protocol):
     """Injected model transport, with one immutable request context per source window."""
 
     @property
     def specification(self) -> ExtractionSpec: ...
-    async def extract(self, window: ModelWindow) -> ClaimBatch: ...
+    async def extract(self, window: ModelWindow) -> ClaimOutput: ...
 
 
 class JobRequest(ContractModel):
@@ -154,6 +194,27 @@ class JobRequest(ContractModel):
     owner_store_id: CanonicalId
     specification: ExtractionSpec
     source_kind: Literal["summary", "archive", "native", "all"] = "summary"
+    source_references: Annotated[
+        tuple[SourceRef, ...],
+        Field(max_length=64, exclude_if=lambda value: not value),
+    ] = ()
+
+    @model_validator(mode="after")
+    def source_selection(self) -> JobRequest:
+        """Exact incremental snapshots stay within the trusted owner and native profile."""
+        if self.source_references and (
+            self.source_kind != "native"
+            or any(
+                ref.source_store_id != self.owner_store_id
+                or ref.record_kind != "message"
+                or ref.part_id is not None
+                for ref in self.source_references
+            )
+        ):
+            raise ValueError(
+                "Incremental native extraction requires owned whole-message references."
+            )
+        return self
 
 
 class JobDefinition(ContractModel):
@@ -254,4 +315,27 @@ def native_specification(
         extractor="ember.atomic-claims@0.2.0",
         prompt_sha256=sha256(NATIVE_INSTRUCTIONS.encode()).hexdigest(),
         workload=workload,
+    )
+
+
+def temporal_specification(
+    model: str,
+    digest: str,
+    *,
+    timezone: str = "Europe/London",
+    workload: Literal["P3", "P4"] = "P4",
+) -> ExtractionSpec:
+    """Opt-in new job identity; legacy archive jobs and schemas remain unchanged."""
+    from ember_memory_abi.common import canonical_object_sha256
+
+    from .processing_prompt import TEMPORAL_INSTRUCTIONS
+
+    return ExtractionSpec(
+        model=model,
+        model_digest=digest,
+        extractor="ember.atomic-claims@0.3.0",
+        temporal_timezone=timezone,
+        workload=workload,
+        prompt_sha256=sha256(TEMPORAL_INSTRUCTIONS.encode()).hexdigest(),
+        output_schema_sha256=canonical_object_sha256(DatedClaimBatch.model_json_schema()),
     )

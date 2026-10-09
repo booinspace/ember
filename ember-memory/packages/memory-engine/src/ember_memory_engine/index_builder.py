@@ -148,7 +148,7 @@ class IndexBuilder:
             embedding=self.encoder.specification,
             distance_metric="l2",
             header_projection="ember.canonical-headers@0.2.0",
-            layout="ember.search-layout@0.5.0",
+            layout="ember.search-layout@0.6.0",
             documents=documents,
             vectors=vectors,
             created_at=timestamp_from_datetime(self.engine.clock.now()),
@@ -516,10 +516,12 @@ class IndexBuilder:
                                 active,
                                 header["valid_from_us"]
                                 if header["valid_from_us"] is not None
+                                and header["memory_kind"] != "episode"
                                 else -(2**63),
                                 min(
                                     header["valid_until_us"]
                                     if header["valid_until_us"] is not None
+                                    and header["memory_kind"] != "episode"
                                     else 2**63 - 1,
                                     header["scope_until_us"]
                                     if header["scope_until_us"] is not None

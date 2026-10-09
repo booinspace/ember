@@ -7,6 +7,7 @@ from pydantic import Field, model_validator
 from .common import CanonicalId, ContractModel, NonnegativeInteger, Revision, UtcTimestamp
 from .evidence import EvidenceAssertion, SourceRef
 from .memory import Memory, OriginMapping, PinnedMemory, ProcessingProvenance
+from .temporal import TemporalQuery
 
 MAX_CONTEXT_REFERENCES = 256
 MAX_CONTEXT_METADATA_BYTES = 65536
@@ -19,11 +20,28 @@ class MemoryReference(ContractModel):
     revision: Revision
 
 
+class TemporalSelection(ContractModel):
+    """Exact references selected under a fixed historical selector, not new authority."""
+
+    temporal: TemporalQuery
+    memories: Annotated[tuple[MemoryReference, ...], Field(min_length=1, max_length=100)]
+
+    @model_validator(mode="after")
+    def historical(self) -> Self:
+        """An empty temporal selector must use ordinary current dependencies."""
+        if not any(self.temporal.model_dump(exclude={"extensions"}).values()):
+            raise ValueError("Historical selection requires an explicit temporal scope.")
+        return self
+
+
 class ContextDependencies(ContractModel):
     """Small fast-path certificate; policy changes invalidate rather than widen access."""
 
     memories: Annotated[tuple[MemoryReference, ...], Field(max_length=256)] = ()
     sources: Annotated[tuple[SourceRef, ...], Field(max_length=256)] = ()
+    selections: Annotated[
+        tuple[TemporalSelection, ...], Field(max_length=32, exclude_if=lambda value: not value)
+    ] = ()
     policy_epoch: NonnegativeInteger
     selection_epoch: NonnegativeInteger | None = None
     valid_until: UtcTimestamp | None = None
@@ -31,6 +49,12 @@ class ContextDependencies(ContractModel):
     @model_validator(mode="after")
     def bounded(self) -> Self:
         """Reject oversized unions, including transitive retained-history metadata."""
+        selected = [
+            (ref.memory_id, ref.revision) for group in self.selections for ref in group.memories
+        ]
+        references = {(ref.memory_id, ref.revision) for ref in self.memories}
+        if len(selected) != len(set(selected)) or not set(selected) <= references:
+            raise ValueError("Temporal groups must uniquely select existing dependencies.")
         if len(self.memories) + len(self.sources) > MAX_CONTEXT_REFERENCES:
             raise ValueError("Context dependency reference budget exceeded.")
         if len(self.model_dump_json().encode()) > MAX_CONTEXT_METADATA_BYTES:

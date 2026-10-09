@@ -36,8 +36,9 @@ from ember_memory_abi.interfaces import (
 )
 from ember_memory_abi.memory import Memory, MemorySource, PinnedMemory
 from ember_memory_abi.related import RelatedRequest, RelatedResponse
+from ember_memory_abi.selection import RecallSelection
 
-from . import mutations, related, retrieval
+from . import mutations, related, retrieval, selection
 from .character import SqliteMemoryStore
 from .database import check_deadline
 from .errors import EngineClosedError, WriteOutcomeUnknownError
@@ -129,6 +130,17 @@ class InProcessAsyncMemoryClient:
             lambda connection: related.lookup(self._store.state, connection, request),
             deadline=request.deadline_at,
             deep=request.intent != "validate",
+        )
+
+    async def recall_selection(self) -> RecallSelection:
+        """Read persisted selection through the owned bounded worker."""
+        return await self._invoke(selection.settings)
+
+    async def configure_recall(self, value: RecallSelection) -> RecallSelection:
+        """Change selection using confirmed-user authority and revision checks."""
+        return await self._invoke(
+            lambda connection: selection.configure(self._store.state, connection, value),
+            write=True,
         )
 
     async def capabilities(self) -> MemoryCapabilities:
