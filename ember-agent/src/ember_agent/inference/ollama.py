@@ -39,6 +39,7 @@ class NativeFrame(BackendModel):
     done: bool = False
     error: str | None = Field(default=None, repr=False)
     prompt_eval_count: int = 0
+    prompt_eval_duration: int | None = None
     eval_count: int = 0
     eval_duration: int = 0
     load_duration: int = 0

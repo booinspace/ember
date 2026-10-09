@@ -280,10 +280,8 @@ class CanonicalEngine:
                 connection.row_factory = sqlite3.Row
                 connection.execute("PRAGMA query_only=ON")
                 row = connection.execute(
-                    (
-                        "SELECT payload_json,payload_sha256 FROM source_records WHERE "
-                        "record_kind=? AND record_id=? AND revision=?"
-                    ),
+                    "SELECT payload_json,payload_sha256 FROM source_records WHERE "
+                    "record_kind=? AND record_id=? AND revision=?",
                     (reference.record_kind, str(reference.record_id), reference.record_revision),
                 ).fetchone()
                 if row is None:
@@ -297,6 +295,93 @@ class CanonicalEngine:
         if record.source.identity_key()[:4] != reference.identity_key()[:4]:
             raise CorruptStoreError()
         return record
+
+    def unavailable_sources(
+        self,
+        references: tuple[SourceRef, ...],
+        *,
+        local_connection: sqlite3.Connection,
+        local_store_id: CanonicalId,
+        call_budget: int,
+    ) -> tuple[tuple[SourceRef, ...], int]:
+        "Batch exact/current source headers by store; return missing refs without"
+        " source bodies."
+        if len(references) > 256:
+            raise ValueError("Source header bound exceeded.")
+        grouped: dict[CanonicalId, list[SourceRef]] = {}
+        for reference in references:
+            grouped.setdefault(reference.source_store_id, []).append(reference)
+        calls = 0
+        missing: list[SourceRef] = []
+
+        def unavailable(
+            connection: sqlite3.Connection, refs: list[SourceRef]
+        ) -> tuple[SourceRef, ...]:
+            values = ",".join("(?,?,?,?)" for _ in refs)
+            parameters = tuple(
+                x
+                for ref in refs
+                for x in (
+                    ref.record_kind,
+                    str(ref.record_id),
+                    ref.record_revision,
+                    str(ref.part_id) if ref.part_id else "",
+                )
+            )
+            rows = connection.execute(
+                "WITH requested(kind,id,rev,part) AS (VALUES "
+                + values
+                + ") SELECT q.* FROM requested q WHERE NOT ("
+                "EXISTS(SELECT 1 FROM source_records s WHERE s.record_kind=q.kind"
+                " AND s.record_id=q.id AND s.revision=q.rev "
+                "AND NOT EXISTS(SELECT 1 FROM source_records n WHERE "
+                "n.record_kind=q.kind AND n.record_id=q.id AND n.revision>q.rev) "
+                "AND (q.part='' OR EXISTS(SELECT 1 FROM message_parts p WHERE "
+                "p.record_kind=q.kind AND p.record_id=q.id "
+                "AND p.revision=q.rev AND p.part_id=q.part AND p.status='available'))) "
+                "OR (NOT EXISTS(SELECT 1 FROM source_records r WHERE "
+                "r.record_kind=q.kind AND r.record_id=q.id) AND "
+                "EXISTS(SELECT 1 FROM materialized_evidence e WHERE "
+                "json_extract(e.payload_json,'$.evidence.source.record_kind')=q.kind AND "
+                "json_extract(e.payload_json,'$.evidence.source.record_id')=q.id AND "
+                "json_extract(e.payload_json,'$.evidence.source.record_revision')=q.rev AND "
+                "json_extract(e.payload_json,'$.evidence.source.part_id')=q.part AND "
+                "json_extract(e.payload_json,'$.availability')='available')))",
+                parameters,
+            ).fetchall()
+            absent = {(row[0], row[1], row[2], row[3]) for row in rows}
+            return tuple(
+                ref
+                for ref in refs
+                if (
+                    ref.record_kind,
+                    str(ref.record_id),
+                    ref.record_revision,
+                    str(ref.part_id) if ref.part_id else "",
+                )
+                in absent
+            )
+
+        for store_id, refs in grouped.items():
+            if store_id == local_store_id:
+                missing.extend(unavailable(local_connection, refs))
+                continue
+            if calls >= call_budget:
+                missing.extend(refs)
+                continue
+            calls += 1
+            try:
+                info, database = self._store(store_id)
+                if info.availability != "available":
+                    missing.extend(refs)
+                    continue
+                with closing(
+                    sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True, timeout=2)
+                ) as connection:
+                    missing.extend(unavailable(connection, refs))
+            except (sqlite3.Error, SourceUnavailableError):
+                missing.extend(refs)
+        return tuple(missing), calls
 
     def validate(self, evidence: Evidence) -> str:
         """Verify exact evidence against original normalized source/part, never a summary or
@@ -485,7 +570,7 @@ class CanonicalEngine:
             try:
                 generation, _ = self.indexes[store_id].active()
                 if (
-                    generation.layout != "ember.search-layout@0.4.0"
+                    generation.layout != "ember.search-layout@0.5.0"
                     or generation.embedding != encoder.specification
                 ):
                     return
@@ -555,11 +640,9 @@ class CanonicalEngine:
                 connection.execute("UPDATE store_metadata SET policy_epoch=policy_epoch+1")
                 _, stamp = database.recorded_stamp(connection)
                 connection.execute(
-                    (
-                        "INSERT INTO "
-                        "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
-                        "SELECT 'grant_changed',NULL,NULL,policy_epoch,? FROM store_metadata"
-                    ),
+                    "INSERT INTO "
+                    "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
+                    "SELECT 'grant_changed',NULL,NULL,policy_epoch,? FROM store_metadata",
                     (stamp,),
                 )
 
@@ -625,11 +708,9 @@ class CanonicalEngine:
                 connection.execute("UPDATE store_metadata SET policy_epoch=policy_epoch+1")
                 _, stamp = database.recorded_stamp(connection)
                 connection.execute(
-                    (
-                        "INSERT INTO "
-                        "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
-                        "SELECT 'grant_revoked',NULL,NULL,policy_epoch,? FROM store_metadata"
-                    ),
+                    "INSERT INTO "
+                    "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) "
+                    "SELECT 'grant_revoked',NULL,NULL,policy_epoch,? FROM store_metadata",
                     (stamp,),
                 )
 

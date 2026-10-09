@@ -750,7 +750,7 @@ def test_schema_three_upgrade_is_backed_up_and_failed_ddl_rolls_back(
     with sqlite3.connect(path) as connection:
         for table in tables:
             connection.execute(f"DROP TABLE {table}")
-        connection.execute("DELETE FROM schema_versions WHERE version=4")
+        connection.execute("DELETE FROM schema_versions WHERE version>=4")
         connection.execute("PRAGMA user_version=3")
     original = database_module.PHASE_SIX_SQL
     monkeypatch.setattr(database_module, "PHASE_SIX_SQL", original + "INVALID DDL;")
@@ -770,7 +770,7 @@ def test_schema_three_upgrade_is_backed_up_and_failed_ddl_rolls_back(
             engine.maintenance_store(library.store_id)[1].read(
                 lambda c: c.execute("PRAGMA user_version").fetchone()[0]
             )
-            == 4
+            == 5
         )
 
 

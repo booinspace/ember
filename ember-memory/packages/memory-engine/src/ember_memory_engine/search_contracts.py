@@ -50,11 +50,16 @@ class IndexGeneration(ContractModel):
     embedding: EmbeddingSpec
     layout: (
         Literal[
-            "ember.search-layout@0.2.0", "ember.search-layout@0.3.0", "ember.search-layout@0.4.0"
+            "ember.search-layout@0.2.0",
+            "ember.search-layout@0.3.0",
+            "ember.search-layout@0.4.0",
+            "ember.search-layout@0.5.0",
         ]
         | None
     ) = None
-    header_projection: Literal["ember.canonical-headers@0.1.0"] | None = None
+    header_projection: (
+        Literal["ember.canonical-headers@0.1.0", "ember.canonical-headers@0.2.0"] | None
+    ) = None
     distance_metric: Literal["cosine", "l2"] = "cosine"
     chunker: str = "ember.graph-attributed-chunks@0.1.0"
     ranker: str = "ember.rrf-policy@0.1.0"

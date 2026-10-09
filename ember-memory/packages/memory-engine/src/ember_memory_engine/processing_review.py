@@ -7,7 +7,11 @@ from uuid import UUID, uuid4
 from ember_memory_abi.common import CanonicalId, canonical_object_sha256, timestamp_from_datetime
 from ember_memory_abi.interfaces import RememberRequest
 from ember_memory_abi.memory import CandidateMemory
-from ember_memory_abi.predicates import initial_predicates, validate_memory_write
+from ember_memory_abi.predicates import (
+    initial_predicates,
+    phase_seven_predicates,
+    validate_memory_write,
+)
 
 from .activation import evaluate
 from .activation_spec import POLICY
@@ -237,6 +241,14 @@ class ReviewService:
         )
 
     def _record(self, candidate: CandidateMemory, decision: str) -> None:
+        # Construct the client before entering its writer. Initialization itself
+        # uses that writer and cannot be re-entered from the same owner thread.
+        state = (
+            self.engine.character(self.processing.owner).state
+            if self.processing.info.kind == "character"
+            else None
+        )
+
         def write(connection: sqlite3.Connection) -> None:
             with self.database.transaction(connection):
                 latest = connection.execute(
@@ -268,6 +280,21 @@ class ReviewService:
                         payload_hash(payload),
                     ),
                 )
+                if decision == "reject" and state is not None:
+                    for claim_key in state.claim_keys(connection, candidate.draft):
+                        connection.execute(
+                            "INSERT OR IGNORE INTO suppression_targets VALUES('claim',?)",
+                            (claim_key,),
+                        )
+                    connection.execute("UPDATE store_metadata SET policy_epoch=policy_epoch+1")
+                    connection.execute(
+                        "UPDATE profile_policy SET selection_epoch=selection_epoch+1"
+                    )
+                    connection.execute(
+                        "INSERT INTO index_outbox(kind,policy_epoch,recorded_at_us) "
+                        "SELECT 'suppression_changed',policy_epoch,recorded_clock_us FROM "
+                        "store_metadata"
+                    )
                 _, recorded = self.database.recorded_stamp(connection)
                 connection.execute(
                     "INSERT INTO audit_events VALUES(?,?,?,?,?)",
@@ -318,7 +345,9 @@ class ReviewService:
             if quotes != entry.quotes:
                 raise ProcessingError("review_quotes_changed")
             if entry.decision == "approve":
-                validate_memory_write(candidate.draft, predicates=initial_predicates())
+                validate_memory_write(
+                    candidate.draft, predicates=(*initial_predicates(), *phase_seven_predicates())
+                )
             checked.append((entry, candidate))
         approved: list[CanonicalId] = []
         rejected: list[CanonicalId] = []

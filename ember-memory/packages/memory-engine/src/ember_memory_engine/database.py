@@ -26,6 +26,8 @@ from .schema import (
     PHASE_FIVE_SQL,
     PHASE_FOUR_IMMUTABLE,
     PHASE_FOUR_SQL,
+    PHASE_SEVEN_IMMUTABLE,
+    PHASE_SEVEN_SQL,
     PHASE_SIX_IMMUTABLE,
     PHASE_SIX_SQL,
     SCHEMA_SQL,
@@ -135,7 +137,7 @@ class SqliteDatabase:
         version_value: object = connection.execute("PRAGMA user_version").fetchone()[0]
         if not isinstance(version_value, int):
             raise CorruptStoreError()
-        if version_value not in {0, 1, 2, 3, SCHEMA_VERSION}:
+        if version_value not in {0, 1, 2, 3, 4, SCHEMA_VERSION}:
             raise UnsupportedVersionError()
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -151,13 +153,22 @@ class SqliteDatabase:
                     + (
                         SCHEMA_SQL.split("CREATE TABLE source_records")[0]
                         if kind == "registry"
-                        else SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL + PHASE_SIX_SQL
+                        else SCHEMA_SQL
+                        + PHASE_FOUR_SQL
+                        + PHASE_FIVE_SQL
+                        + PHASE_SIX_SQL
+                        + PHASE_SEVEN_SQL
                     )
                 )
                 for table in (
                     ()
                     if kind == "registry"
-                    else (*IMMUTABLE_TABLES, *PHASE_FOUR_IMMUTABLE, *PHASE_SIX_IMMUTABLE)
+                    else (
+                        *IMMUTABLE_TABLES,
+                        *PHASE_FOUR_IMMUTABLE,
+                        *PHASE_SIX_IMMUTABLE,
+                        *PHASE_SEVEN_IMMUTABLE,
+                    )
                 ):
                     for action in ("UPDATE", "DELETE"):
                         connection.execute(
@@ -179,7 +190,7 @@ class SqliteDatabase:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
-        if version_value in {1, 2, 3}:
+        if version_value in {1, 2, 3, 4}:
             row = connection.execute(
                 "SELECT store_id,kind,namespace FROM store_metadata"
             ).fetchone()
@@ -206,7 +217,8 @@ class SqliteDatabase:
                         (
                             (PHASE_FOUR_SQL if version_value == 1 else "")
                             + PHASE_FIVE_SQL
-                            + PHASE_SIX_SQL
+                            + (PHASE_SIX_SQL if version_value < 4 else "")
+                            + PHASE_SEVEN_SQL
                         )
                         if kind != "registry"
                         else ""
@@ -216,9 +228,9 @@ class SqliteDatabase:
                     ()
                     if kind == "registry"
                     else (
-                        (*PHASE_FOUR_IMMUTABLE, *PHASE_SIX_IMMUTABLE)
+                        (*PHASE_FOUR_IMMUTABLE, *PHASE_SIX_IMMUTABLE, *PHASE_SEVEN_IMMUTABLE)
                         if version_value == 1
-                        else PHASE_SIX_IMMUTABLE
+                        else (*PHASE_SIX_IMMUTABLE, *PHASE_SEVEN_IMMUTABLE)
                     )
                 ):
                     for action in ("UPDATE", "DELETE"):
@@ -227,6 +239,16 @@ class SqliteDatabase:
                             f"BEFORE {action} ON {table} BEGIN "
                             "SELECT RAISE(ABORT, 'immutable canonical revision'); END"
                         )
+                if kind != "registry":
+                    from ember_memory_abi.memory import Memory
+
+                    from .claim_projection import backfill_supersessions, project
+
+                    cursor = connection.execute("SELECT * FROM memory_revisions")
+                    while rows := cursor.fetchmany(256):
+                        for historical in rows:
+                            project(connection, load_model(historical, Memory))
+                    backfill_supersessions(connection)
                 connection.execute(
                     "INSERT INTO schema_versions VALUES(?,?)",
                     (SCHEMA_VERSION, timestamp_from_datetime(self.clock.now())),

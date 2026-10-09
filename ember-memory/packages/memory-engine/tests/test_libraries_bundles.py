@@ -782,7 +782,20 @@ def test_failed_multi_seed_rolls_back_every_destination_effect(
     from ember_memory_engine.errors import StorageError
 
     service, request, selection = _approved(engine, source_fixture, draft)
-    second_candidate = request.candidate.model_copy(update={"candidate_id": uuid4()})
+    second_draft = request.candidate.draft.model_copy(
+        update={
+            "content": request.candidate.draft.content.model_copy(
+                update={
+                    "payload": request.candidate.draft.content.payload.model_copy(
+                        update={"value": StringValue(value="SYNTHETIC_B")}
+                    )
+                }
+            )
+        }
+    )
+    second_candidate = request.candidate.model_copy(
+        update={"candidate_id": uuid4(), "draft": second_draft}
+    )
     second = service.approve(
         request.candidate.owner_store_id,
         ApprovalRequest(idempotency_key="approval-2", candidate=second_candidate),

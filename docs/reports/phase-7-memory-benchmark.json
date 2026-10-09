@@ -1,0 +1,197 @@
+{
+  "version": "ember.phase-seven-benchmark@0.1.0",
+  "corpus": "diverse synthetic accepted episodes; four explicit profile facts",
+  "accepted_memories": 100008,
+  "embedding": {
+    "extensions": {},
+    "model": "BAAI/bge-small-en-v1.5",
+    "model_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "tokenizer_revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "model_sha256": "828e1496d7fabb79cfa4dcd84fa38625c0d3d21da474a00f08db0f559940cf35",
+    "tokenizer_sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+    "dimensions": 384,
+    "model_limit": 512,
+    "pooling": "cls",
+    "dtype": "float32",
+    "normalization": "l2",
+    "query_prefix": "Represent this sentence for searching relevant passages: ",
+    "document_prefix": "",
+    "preprocessing": "original_unicode_with_role_attribution",
+    "truncation_policy": "reject_or_explicit_chunks",
+    "template_version": "ember.attribution@0.1.0",
+    "encoder_version": "ember.onnx-cpu-cls@0.1.0"
+  },
+  "index_build_ms": 1.6947999829426408,
+  "cold_retrieve_ms": [
+    210.53300006315112,
+    158.11679989565164,
+    119.43200009409338,
+    108.38460002560169
+  ],
+  "profile_disabled_initial_pass_ms": [
+    105.27140006888658,
+    100.87330010719597,
+    101.90080001484603,
+    103.04850002285093
+  ],
+  "cold_protocol": "First process pass with enabled then disabled; first encoder load is not symmetric",
+  "measurements": {
+    "profile_selection_validation_format": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 0.7524999673478305,
+      "p95_ms": 1.0288000339642167
+    },
+    "retrieve_profile_enabled": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 104.39935006434098,
+      "p95_ms": 109.22820004634559
+    },
+    "retrieve_profile_disabled": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 103.75335003482178,
+      "p95_ms": 109.29759999271482
+    }
+  },
+  "matched_validation": {
+    "6": {
+      "serial": {
+        "extensions": {},
+        "samples": 40,
+        "median_ms": 0.950350018683821,
+        "p95_ms": 1.3343000318855047
+      },
+      "batch": {
+        "extensions": {},
+        "samples": 40,
+        "median_ms": 0.33950002398341894,
+        "p95_ms": 0.4200000548735261
+      },
+      "serial_calls": 6,
+      "batch_calls": 1,
+      "references": 12,
+      "metadata_bytes": 1913
+    },
+    "24": {
+      "serial": {
+        "extensions": {},
+        "samples": 40,
+        "median_ms": 3.290849970653653,
+        "p95_ms": 4.130600020289421
+      },
+      "batch": {
+        "extensions": {},
+        "samples": 40,
+        "median_ms": 0.983449921477586,
+        "p95_ms": 1.1090999469161034
+      },
+      "serial_calls": 24,
+      "batch_calls": 1,
+      "references": 48,
+      "metadata_bytes": 7349
+    },
+    "128": {
+      "serial": {
+        "extensions": {},
+        "samples": 40,
+        "median_ms": 17.384500009939075,
+        "p95_ms": 18.63860001321882
+      },
+      "batch": {
+        "extensions": {},
+        "samples": 40,
+        "median_ms": 4.807300050742924,
+        "p95_ms": 5.524400039575994
+      },
+      "serial_calls": 128,
+      "batch_calls": 1,
+      "references": 253,
+      "metadata_bytes": 38097
+    }
+  },
+  "streamed_turn": {
+    "prepare_ms": 111.30200000479817,
+    "stream_delivery_validation_ms": 33.480599988251925,
+    "events": 121,
+    "progress_events": 100,
+    "text_events": 20,
+    "retrieve_context_calls": 1,
+    "validate_calls": 23,
+    "resolve_expand_calls": 0,
+    "canonical_rows_examined": 667,
+    "external_source_calls": 23,
+    "maximum_references": 19,
+    "maximum_metadata_bytes": 2903,
+    "serialized_prompt_guard": 5228,
+    "retained_pins": 4,
+    "ordinary_memories": 6
+  },
+  "complete_prepared_streamed_turn": {
+    "extensions": {},
+    "samples": 20,
+    "median_ms": 141.46685000741854,
+    "p95_ms": 150.32520005479455
+  },
+  "index_refresh": {
+    "duration_ms": 3249.7919000452384,
+    "foreground_samples_ms": [
+      126.42450002022088,
+      115.8204999519512,
+      117.74150002747774,
+      114.41350006498396,
+      114.18609996326268,
+      107.12649999186397,
+      104.8470000969246,
+      107.68470005132258,
+      116.72269995324314,
+      125.63509994652122,
+      117.22090002149343,
+      115.41600001510233,
+      114.97389990836382,
+      144.25430004484951,
+      150.04959993530065,
+      154.58349999971688,
+      153.40549999382347,
+      135.8957999618724,
+      145.95679997000843,
+      145.63539996743202,
+      139.1967999516055,
+      150.8643999695778,
+      145.25080006569624,
+      148.40190007817,
+      137.72279990371317
+    ],
+    "scope": "one reviewed imported belief added during immutable index copy",
+    "published_generation": "e8a735d3-d431-4cac-8b0b-a6c1f15627f9"
+  },
+  "foreign_grant_scope_retrieve": {
+    "extensions": {},
+    "samples": 40,
+    "median_ms": 122.93294997652993,
+    "p95_ms": 137.075399979949
+  },
+  "refresh_measurements": {
+    "False": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 103.7258500000462,
+      "p95_ms": 108.63409994635731
+    },
+    "True": {
+      "extensions": {},
+      "samples": 40,
+      "median_ms": 104.3193000368774,
+      "p95_ms": 112.82279994338751
+    }
+  },
+  "serial_baseline": "Identical exact-revision/policy/time/source/grant validation, one memory per public request",
+  "ordinary_related_expansion_calls": 0,
+  "counting_mode": "conservative_utf8_guard",
+  "gates": {
+    "profile_warm_p95_le_10ms": true,
+    "overall_warm_p95_le_150ms": true
+  },
+  "limits": "Single Windows CPU/SSD run; not a multi-platform, million-memory or real-user capacity certification."
+}

@@ -35,8 +35,9 @@ from ember_memory_abi.interfaces import (
     UpdateRequest,
 )
 from ember_memory_abi.memory import Memory, MemorySource, PinnedMemory
+from ember_memory_abi.related import RelatedRequest, RelatedResponse
 
-from . import mutations, retrieval
+from . import mutations, related, retrieval
 from .character import SqliteMemoryStore
 from .database import check_deadline
 from .errors import EngineClosedError, WriteOutcomeUnknownError
@@ -121,6 +122,14 @@ class InProcessAsyncMemoryClient:
         except asyncio.CancelledError:
             future.cancel()
             raise
+
+    async def lookup_related(self, request: RelatedRequest) -> RelatedResponse:
+        """Optional canonical lookup/validation; running work keeps worker ownership."""
+        return await self._invoke(
+            lambda connection: related.lookup(self._store.state, connection, request),
+            deadline=request.deadline_at,
+            deep=request.intent != "validate",
+        )
 
     async def capabilities(self) -> MemoryCapabilities:
         """Return truthful support from an owned read worker."""

@@ -12,7 +12,7 @@ from pydantic import Field, JsonValue, ValidationError
 from ember_memory_abi.common import CanonicalId, ContractModel
 
 from .processing_contracts import ClaimBatch, ExtractionSpec, ModelWindow, ProcessingError
-from .processing_prompt import INSTRUCTIONS
+from .processing_prompt import instructions_for
 
 
 class _Health(ContractModel):
@@ -98,10 +98,9 @@ class GatewayExtractionModel:
 
             from ember_memory_abi.common import canonical_object_sha256
 
-            if spec.extractor != "ember.atomic-claims@0.1.2":
-                raise ProcessingError("processing_extractor_changed")
+            instructions = instructions_for(spec.extractor)
             if spec.prompt_sha256 != sha256(
-                INSTRUCTIONS.encode()
+                instructions.encode()
             ).hexdigest() or spec.output_schema_sha256 != canonical_object_sha256(
                 ClaimBatch.model_json_schema()
             ):
@@ -131,7 +130,7 @@ class GatewayExtractionModel:
                 .isoformat()
                 .replace("+00:00", "Z"),
                 "messages": [
-                    {"role": "system", "content": INSTRUCTIONS},
+                    {"role": "system", "content": instructions},
                     {
                         "role": "user",
                         "content": json.dumps(

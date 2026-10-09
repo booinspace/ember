@@ -9,7 +9,7 @@ from typing import Annotated, cast
 
 from pydantic import UUID4, AfterValidator, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-ABI_VERSION = "0.3.0"
+ABI_VERSION = "0.4.0"
 ARCHIVE_VERSION = "0.1.0"
 CANONICAL_JSON_SPEC = "ember.canonical-json@0.1.0"
 
@@ -42,6 +42,12 @@ type UtcTimestamp = Annotated[
 ]
 
 
+# Stateless schema compilation belongs to module initialization, not every source
+# dependency/hash check. Validation/serialization bytes remain unchanged.
+_TIMESTAMP_ADAPTER: TypeAdapter[str] = TypeAdapter(UtcTimestamp)
+_JSON_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue, config=ConfigDict(strict=True))
+
+
 class ContractModel(BaseModel):
     """Strict typed contracts; unknown data belongs in namespaced extensions.
 
@@ -70,8 +76,7 @@ def timestamp_from_datetime(value: datetime) -> str:
 
 def timestamp_to_unix_microseconds(value: str) -> int:
     """Convert a canonical instant to integer microseconds without float rounding."""
-    adapter: TypeAdapter[str] = TypeAdapter(UtcTimestamp)
-    validated = adapter.validate_python(value)
+    validated = _TIMESTAMP_ADAPTER.validate_python(value)
     instant = datetime.strptime(validated, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
     delta = instant - datetime(1970, 1, 1, tzinfo=UTC)
     return (delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds
@@ -104,8 +109,7 @@ def canonical_json_bytes(value: JsonValue | ContractModel) -> bytes:
     raw source text, whose hash must use its exact UTF-8 bytes without normalization.
     """
     raw = value.model_dump(mode="json") if isinstance(value, ContractModel) else value
-    adapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue, config=ConfigDict(strict=True))
-    narrowed = adapter.validate_python(raw)
+    narrowed = _JSON_ADAPTER.validate_python(raw)
     _finite_json(narrowed)
     try:
         return json.dumps(

@@ -297,3 +297,4 @@ class PinnedMemory(ContractModel):
     memory_revision: Revision
     priority: NonnegativeInteger
     pinned_at: UtcTimestamp
+    purpose: Literal["manual", "profile"] = "manual"

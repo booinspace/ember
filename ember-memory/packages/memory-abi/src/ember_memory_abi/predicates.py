@@ -126,3 +126,42 @@ def validate_memory_write(
         raise InvalidPredicateError()
     if (payload.polarity == "negative") != (content.modality == "NEGATED_ASSERTION"):
         raise InvalidPredicateError()
+
+
+def profile_predicates() -> tuple[PredicateDefinition, ...]:
+    """Explicit profile meanings; never reinterpret legacy episodes or inferred identity."""
+    return tuple(
+        PredicateDefinition(
+            name=name,
+            definition_version="0.1.0",
+            value_type="string",
+            cardinality="one",
+            temporal=True,
+            replacement_meaningful=True,
+            normalization_rules={"text": "preserve_original", "replacement": "explicit_change_v1"},
+            allowed_modalities=("PREFERENCE",)
+            if name == "user.communication_style"
+            else ("FACTUAL_ASSERTION", "PAST_STATE"),
+        )
+        for name in (
+            "user.preferred_name",
+            "user.pronouns",
+            "user.timezone",
+            "user.communication_style",
+        )
+    )
+
+
+def phase_seven_predicates() -> tuple[PredicateDefinition, ...]:
+    """Profile fields plus literal ownership clauses, without turning observations into events."""
+    ownership = PredicateDefinition(
+        name="personal.owns_object",
+        definition_version="0.1.0",
+        value_type="string",
+        cardinality="many",
+        temporal=True,
+        replacement_meaningful=False,
+        normalization_rules={"text": "exact_ownership_clause", "replacement": "not_meaningful"},
+        allowed_modalities=("FACTUAL_ASSERTION", "PAST_STATE", "NEGATED_ASSERTION"),
+    )
+    return (*profile_predicates(), ownership)

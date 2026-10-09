@@ -27,3 +27,33 @@ offset of the intended occurrence within DATA. Count from the first character of
 JSON wrapper. If you cannot provide an exact quote and occurrence, omit the claim. An empty
 claims list is valid. Confidence is a support score, not a probability.
 """
+
+
+NATIVE_INSTRUCTIONS = (
+    INSTRUCTIONS
+    + """
+For native character dialogue, these additional predicates are supported:
+user.preferred_name (the user's explicitly requested form of address),
+user.pronouns (explicit first-person pronouns), user.timezone (explicit timezone),
+user.communication_style (explicit preference for how replies are written).
+personal.owns_object (value is the complete exact ownership clause, e.g.
+"Milo is my shark plushie"; not an inferred object/entity). Use FACTUAL_ASSERTION for
+preferred_name, pronouns and timezone; communication_style uses PREFERENCE.
+For summaries retain explicit attribution as proposals for operator review.
+For native dialogue use first-person direct assertions only; never derive a user profile
+from another speaker,
+quoted text, inference, plans or assistant replies. Preserve the exact scalar value from
+its supporting quote. Explicit corrections must cite the correction wording in full.
+"""
+)
+
+
+def instructions_for(extractor: str) -> str:
+    """Immutable dispatch; legacy resumptions retain their exact 0.1.2 prompt bytes."""
+    if extractor == "ember.atomic-claims@0.1.2":
+        return INSTRUCTIONS
+    if extractor == "ember.atomic-claims@0.2.0":
+        return NATIVE_INSTRUCTIONS
+    from .processing_contracts import ProcessingError
+
+    raise ProcessingError("processing_extractor_changed")

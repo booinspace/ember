@@ -19,15 +19,18 @@ from ember_memory_abi.archive import (
 )
 from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.evidence import SourceRef, source_text_sha256
+from ember_memory_abi.memory import EntityRef
 from ember_memory_abi.temporal import SourceTimestamp
 from ember_memory_engine.archive import SqliteArchiveStore
+from ember_memory_engine.models import SourceKey, SourceKeyAssignment
 
 
 class ArchiveDialogueSink:
     """Persist original input and delivered visible output; no automatic memory extraction."""
 
-    def __init__(self, archive: SqliteArchiveStore) -> None:
+    def __init__(self, archive: SqliteArchiveStore, subject: EntityRef | None = None) -> None:
         self.archive = archive
+        self.subject = subject
         self.pending: set[Future[ArchiveWriteReceipt]] = set()
 
     async def commit(self, context_id: UUID, user: str, delivered: str, complete: bool) -> None:
@@ -36,16 +39,19 @@ class ArchiveDialogueSink:
         observed = SourceTimestamp(
             value=stamp, basis="runtime_delivery_observed", units="UTC", precision="microsecond"
         )
+        delivery_id = uuid4()
         conversation_ref = SourceRef(
             source_store_id=self.archive.source_store_id,
             record_kind="conversation",
-            record_id=uuid4(),
+            record_id=context_id,
             record_revision=1,
         )
         conversation = Conversation(
             source=conversation_ref,
             recorded_at=stamp,
-            selection=BranchSelection(status="unavailable", reason_codes=("native_turn_snapshot",)),
+            selection=BranchSelection(
+                status="unavailable", reason_codes=("native_session_ordered_delivery",)
+            ),
         )
         messages: list[Message] = []
         for role, text in (("user", user), ("assistant", delivered)):
@@ -61,7 +67,12 @@ class ArchiveDialogueSink:
                     ),
                     recorded_at=stamp,
                     conversation=conversation_ref,
-                    actor=ActorAttribution(role=role),
+                    actor=ActorAttribution(
+                        role=role,
+                        actor_id=self.subject.entity_id
+                        if role == "user" and self.subject
+                        else None,
+                    ),
                     channel="final",
                     created_time=observed,
                     recipient="complete" if complete else "partial_delivery",
@@ -79,13 +90,13 @@ class ArchiveDialogueSink:
         digest = sha256(str(context_id).encode()).hexdigest()
         specification = ProcessingSpecRef(
             name="ember.native_delivery",
-            version="0.1.0",
-            specification_sha256=sha256(b"native-delivery-v1").hexdigest(),
+            version="0.2.0",
+            specification_sha256=sha256(b"native-delivery-v2-bound-speaker").hexdigest(),
         )
         batch = NormalizedArchiveBatch(
             source_store_id=self.archive.source_store_id,
             source_namespace=self.archive.namespace,
-            idempotency_key="delivery:" + str(conversation_ref.record_id),
+            idempotency_key="delivery:" + str(delivery_id),
             processing_spec=specification,
             records=(conversation, *messages),
             resume_cursor=ImportCursor(
@@ -93,10 +104,28 @@ class ArchiveDialogueSink:
                 component_sha256=digest,
                 next_record_index=len(messages) + 1,
                 adapter="native_delivery",
-                adapter_version="0.1.0",
+                adapter_version="0.2.0",
             ),
         )
-        future = self.archive.submit_batch(batch)
+        keys = (
+            tuple(
+                SourceKeyAssignment(
+                    key=SourceKey(
+                        adapter="native_delivery",
+                        record_kind="message",
+                        external_id="v2:"
+                        + message.actor.role
+                        + ":"
+                        + str(message.source.record_id),
+                    ),
+                    record_id=message.source.record_id,
+                )
+                for message in messages
+            )
+            if self.subject
+            else ()
+        )
+        future = self.archive.submit_batch(batch, keys=keys)
         # The engine owns execution; this adapter owns observation/draining of the returned future.
         self.pending.add(future)
         try:

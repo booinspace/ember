@@ -122,7 +122,7 @@ flowchart TD
     DeepRecall --> MemoryClient
     MemoryClient --> Memory["Canonical memory platform"]
     Memory --> Private["Independent character state"]
-    Private --> Profile["Bounded revision-bound user profile pins — planned Phase 7"]
+    Private --> Profile["Bounded revision-bound user profile pins — Phase 7"]
     Memory --> Library["Shared import library and source vault"]
 
     Core --> Tools["ToolRouter"]
@@ -1424,9 +1424,12 @@ Replacement builds a separate generation, validates it, switches the pointer, an
 
 ## 13. Retrieval, diagnostics, and degraded operation
 
-### Bounded user profile: planned Phase 7
+### Bounded user profile: Phase 7 implementation
 
-Status: planned, not implemented. Phase 7 adds a small per-character profile of the
+Status: implemented experimentally in the isolated Phase 7 worktree; see
+[Root ADR 0013](docs/adr/0013-phase-seven-native-consolidation-and-profile.md) and the
+[validation record](docs/phase-7-validation.md). This section defines the shipped
+worktree behavior; deployment against the primary database awaits review. Phase 7 adds a small per-character profile of the
 identified conversation user's stable accepted facts and explicit communication
 preferences. It accompanies unrelated questions without relying on a lexical/vector
 match. A NAS question can therefore include the user's preferred name, pronouns and
@@ -1512,13 +1515,13 @@ Budget, validity and failure behavior:
   preference may inform style within trusted personality/security rules; it cannot
   replace those rules, change authority, run a tool or rewrite configuration.
 
-Root ADR 0011 records this planned decision. P7-AC-10 through P7-AC-17 and sections
-25, 30 and 31 own acceptance; this update changes no runtime/schema/ABI version.
+Root ADR 0011 records the original design; implementation is in Root ADR 0013.
+P7-AC-10 through P7-AC-17 and sections 25, 30 and 31 own acceptance.
 
 ### Fast recall
 
 Search character-owned accepted beliefs, pins, entities, and recent native context.
-The planned Phase 7 profile adds bounded query-independent pins to this same context
+The Phase 7 profile adds bounded query-independent pins to this same context
 operation, while retaining one hybrid query and six distinct ordinary recall slots.
 
 Phase 7 ordinary-chat complexity limits: one retrieve_context request including the
@@ -1626,9 +1629,7 @@ Use one capability-gated, storage-independent optional RelatedLookupClient opera
 
 ```python
 class RelatedLookupClient(Protocol):
-    async def lookup_related(
-        self, request: RelatedLookupRequest
-    ) -> RelatedLookupResponse: ...
+    async def lookup_related(self, request: RelatedLookupRequest) -> RelatedLookupResponse: ...
 ```
 
 Its request has an intent (resolve/expand/validate), bounded memory ID/revision anchors,
@@ -2871,7 +2872,17 @@ Retain warm p95 targets:
 
 Targets require measurement.
 
-### Bounded user profile performance gate (Phase 7, not yet measured)
+### Bounded user profile performance evidence (Phase 7)
+
+The isolated Phase 7 implementation was measured on a synthetic 100008-memory corpus.
+Warm profile selection/validation/formatting p95 was 1.03 ms; warm enabled recall p95
+was 109.23 ms and grant-scoped recall p95 was 137.08 ms. Both meet the 150 ms soft
+recall deadline and exceed the 50–100 ms warm-recall aim. Complete prepared-and-streamed-turn p95 was 150.33 ms and is reported
+separately as end-to-end delivery cost. During concurrent immutable index copy, the
+foreground sample maximum was 154.58 ms; the soft deadline is not a hard wall-clock bound.
+These results are one Windows CPU/SSD run; they do not certify the Phase 5 million-memory,
+multi-platform, or all-load targets. See the [full sanitized report](reports/phase-7-memory-benchmark.json)
+and [Phase 7 validation](phase-7-validation.md).
 
 Compare the same ordinary queries, character, encoder/index and model configuration
 with the profile disabled and enabled. Include unrelated queries, up to eight eligible
@@ -3503,7 +3514,8 @@ Owner: engine for source/candidate policy; agent for conservative P3/P4 admissio
 
 ### Phase 7 acceptance criteria: native activation and consolidation
 
-These are planned requirements, not delivered Phase 6 behavior. Memory policy,
+These 17 criteria define Phase 7 and are implemented experimentally in the isolated
+worktree. They are not delivered Phase 6 behavior. Memory policy,
 evidence validation, lifecycle and canonical writes remain owned by ember-memory.
 Ember-agent schedules work, formats the bounded user profile in the existing text
 paths, and consumes public memory contracts. Section 13 defines profile selection,
@@ -3511,9 +3523,10 @@ ownership and invalidation; this is a Phase 7 runtime deliverable, not deferred
 until browser/audio integration.
 
 The [Phase 7 implementation proposal](docs/phase-7-implementation-proposal.md) and
-[Root ADR 0012](docs/adr/0012-planned-phase-seven-implementation.md) record the
-pre-code architecture review. They map all 17 criteria to changes and evidence;
-neither is an implementation/completion claim.
+[Root ADR 0012](docs/adr/0012-planned-phase-seven-implementation.md) preserve the
+pre-code architecture review. [Root ADR 0013](docs/adr/0013-phase-seven-native-consolidation-and-profile.md)
+records the implementation; the [AC evidence matrix](docs/phase-7-validation.md)
+states which requirements passed and which performance/capacity limits remain open.
 
 - **P7-AC-01:** Provide an idempotent, policy-controlled acceptance path for character-owned
   native conversation candidates. A model proposes claims; the engine verifies
@@ -4211,10 +4224,11 @@ P8-AC-13 through P8-AC-22 and sections 13, 30–33; existing Phase 5/6 delivery 
 
 Live preemption is conditional on measured acceptance; conservative scheduling is a valid documented fallback.
 
-The bounded source-backed user profile is a planned Phase 7 v1 requirement under
+The bounded source-backed user profile is implemented experimentally under
 P7-AC-10 through P7-AC-17. It uses existing pin/retrieval contracts and survives model
-replacement; Phase 8 browser/audio/source controls reuse it. Root ADR 0011 records
-the design, without changing historical Phase 5/6 delivery status.
+replacement; Phase 8 browser/audio/source controls reuse it. Root ADR 0011 preserves
+the original design; Root ADR 0013 records the implementation without changing
+historical Phase 5/6 delivery status.
 
 ### Deferred
 
