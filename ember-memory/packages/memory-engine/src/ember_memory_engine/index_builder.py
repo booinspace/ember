@@ -30,7 +30,7 @@ from .engine import CanonicalEngine
 from .errors import IndexError
 from .index_storage import INDEX_SQL, connect
 from .search_contracts import Encoder, IndexGeneration
-from .source_access import source_keys, source_rows
+from .source_access import evidence_grant_window, source_keys, source_rows
 from .source_graph import selected_path
 
 
@@ -147,8 +147,8 @@ class IndexBuilder:
             outbox_sequence=sequence,
             embedding=self.encoder.specification,
             distance_metric="l2",
-            header_projection="ember.canonical-headers@0.1.0",
-            layout="ember.search-layout@0.4.0",
+            header_projection="ember.canonical-headers@0.2.0",
+            layout="ember.search-layout@0.5.0",
             documents=documents,
             vectors=vectors,
             created_at=timestamp_from_datetime(self.engine.clock.now()),
@@ -188,6 +188,12 @@ class IndexBuilder:
             for row in rows:
                 last = row_int(row, "source_rowid")
                 memory = load_model(row, Memory)
+                grant_allowed, scope_until = evidence_grant_window(
+                    source,
+                    memory.character_id,
+                    tuple(a.evidence.source for a in memory.content.evidence),
+                    timestamp_from_datetime(self.engine.clock.now()),
+                )
                 text = memory_text(memory, names)
                 payload = memory.content.payload
                 entities: list[str] = []
@@ -203,8 +209,9 @@ class IndexBuilder:
                     "INSERT INTO "
                     "documents(kind,target_id,revision,text,source_store_id,recorded_at_us,"
                     "recall_eligible,is_current,memory_kind,lifecycle,modality,valid_from_us,"
-                    "valid_until_us,open_end_known,predicate,entity_keys,payload_key) "
-                    "VALUES('memory',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "valid_until_us,open_end_known,predicate,entity_keys,payload_key,"
+                    "scope_until_us) "
+                    "VALUES('memory',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         str(memory.memory_id),
                         memory.revision,
@@ -214,6 +221,7 @@ class IndexBuilder:
                         int(
                             row_text(row, "current_lifecycle") not in {"disabled", "forgotten"}
                             and not row_int(row, "suppressed")
+                            and grant_allowed
                         ),
                         int(memory.revision == row_int(row, "current_revision")),
                         memory.content.kind,
@@ -229,6 +237,7 @@ class IndexBuilder:
                         predicate,
                         json.dumps(entities),
                         canonical_object_sha256(memory.content.payload),
+                        scope_until,
                     ),
                 )
 
@@ -508,9 +517,14 @@ class IndexBuilder:
                                 header["valid_from_us"]
                                 if header["valid_from_us"] is not None
                                 else -(2**63),
-                                header["valid_until_us"]
-                                if header["valid_until_us"] is not None
-                                else 2**63 - 1,
+                                min(
+                                    header["valid_until_us"]
+                                    if header["valid_until_us"] is not None
+                                    else 2**63 - 1,
+                                    header["scope_until_us"]
+                                    if header["scope_until_us"] is not None
+                                    else 2**63 - 1,
+                                ),
                                 document_id,
                             ),
                         )

@@ -31,6 +31,7 @@ from ember_memory_abi.memory import (
     PinnedMemory,
 )
 
+from . import profile, related
 from ._state import CharacterState
 from .database import (
     check_deadline,
@@ -39,6 +40,7 @@ from .database import (
     row_text,
 )
 from .errors import CorruptStoreError, UnsupportedQueryError
+from .source_access import memory_source_scope
 
 
 def coverage(state: CharacterState, *reasons: str) -> RetrievalCoverage:
@@ -73,7 +75,14 @@ def memory_scope(
             "WHERE d.memory_id=r.memory_id AND d.revision=r.revision)))"
         ),
     ]
-    parameters: list[str | int] = []
+    source_condition, source_values = memory_source_scope(
+        state.character_id,
+        timestamp_from_datetime(state.database.clock.now()),
+        "r.memory_id",
+        "r.revision",
+    )
+    conditions.append("(p.foreign_evidence=0 OR " + source_condition + ")")
+    parameters: list[str | int] = list(source_values)
     before = query.temporal.recorded_before
     if before is not None:
         conditions.append(
@@ -88,7 +97,10 @@ def memory_scope(
             conditions.append(column + " IN (" + ",".join("?" for _ in values) + ")")
             parameters.extend(values)
     if query.lifecycles:
-        if query.temporal.valid_at is not None and "active" in query.lifecycles:
+        if (
+            any((query.temporal.valid_at, query.temporal.valid_from, query.temporal.valid_until))
+            and "active" in query.lifecycles
+        ):
             conditions.append(
                 "r.lifecycle IN (" + ",".join("?" for _ in (*query.lifecycles, "superseded")) + ")"
             )
@@ -106,7 +118,7 @@ def memory_scope(
             "json_extract(r.payload_json,'$.temporal.basis')='explicit_open_end'))"
         )
         parameters.extend((at, at))
-    elif before is None:
+    elif before is None and not any((query.temporal.valid_from, query.temporal.valid_until)):
         now = timestamp_to_unix_microseconds(timestamp_from_datetime(state.database.clock.now()))
         conditions.append(
             "(r.valid_from_us IS NULL OR r.valid_from_us<=?) AND (r.valid_until_us IS"
@@ -118,26 +130,37 @@ def memory_scope(
             "instr(lower(json_extract(r.payload_json,'$.content.payload')),lower(?))>0"
         )
         parameters.append(query.text)
+    for column, lower, upper in (
+        ("p.observed_at", query.temporal.observed_from, query.temporal.observed_until),
+    ):
+        if lower is not None:
+            conditions.append(column + " IS NOT NULL AND " + column + ">=?")
+            parameters.append(lower)
+        if upper is not None:
+            conditions.append(column + " IS NOT NULL AND " + column + "<?")
+            parameters.append(upper)
+    if query.temporal.valid_from is not None or query.temporal.valid_until is not None:
+        conditions.append("r.valid_from_us IS NOT NULL")
+        conditions.append("(r.valid_until_us IS NOT NULL OR p.temporal_basis='explicit_open_end')")
+        if query.temporal.valid_from is not None:
+            conditions.append("(r.valid_until_us IS NULL OR r.valid_until_us>?)")
+            parameters.append(timestamp_to_unix_microseconds(query.temporal.valid_from))
+        if query.temporal.valid_until is not None:
+            conditions.append("r.valid_from_us<?")
+            parameters.append(timestamp_to_unix_microseconds(query.temporal.valid_until))
     if query.predicates:
-        conditions.append(
-            "json_extract(r.payload_json,'$.content.payload.predicate') IN ("
-            + ",".join("?" for _ in query.predicates)
-            + ")"
-        )
+        conditions.append("p.predicate IN (" + ",".join("?" for _ in query.predicates) + ")")
         parameters.extend(query.predicates)
     if query.entity_ids:
         values = tuple(str(item) for item in query.entity_ids)
         placeholders = ",".join("?" for _ in values)
         conditions.append(
-            "(json_extract(r.payload_json,'$.content.payload.subject.entity_id') IN ("
+            "EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=r.memory_id "
+            "AND d.revision=r.revision AND d.target_kind='entity' AND d.target_key IN ("
             + placeholders
-            + ") OR json_extract(r.payload_json,'$.content.payload.value.value.entity_id') IN ("
-            + placeholders
-            + ") OR EXISTS(SELECT 1 FROM "
-            "json_each(r.payload_json,'$.content.payload.participants') p WHERE "
-            "json_extract(p.value,'$.entity_id') IN (" + placeholders + ")))"
+            + "))"
         )
-        parameters.extend((*values, *values, *values))
+        parameters.extend(values)
     parameters.append(query.limit)
     order = (
         "r.recorded_at_us DESC,r.memory_id"
@@ -145,7 +168,15 @@ def memory_scope(
         else ("r.importance DESC,r.recorded_at_us DESC,r.memory_id")
     )
     projection = "r.memory_id,r.revision" if metadata_only else "r.*"
-    lookup = " INDEXED BY memory_retrieval_identity" if index_lookup else ""
+    ordered_recent = recent_first and before is None and query.lifecycles == ("active",)
+    lookup = (
+        " INDEXED BY memory_recent_order"
+        if ordered_recent
+        else " INDEXED BY memory_retrieval_identity"
+        if index_lookup
+        else ""
+    )
+    join = " CROSS JOIN " if ordered_recent else " JOIN "
     current = (
         " JOIN memory_revisions current ON current.memory_id=m.memory_id "
         "AND current.revision=m.current_revision"
@@ -157,7 +188,10 @@ def memory_scope(
         + projection
         + " FROM memory_revisions r"
         + lookup
-        + " JOIN memories m INDEXED BY memory_pointer ON m.memory_id=r.memory_id"
+        + join
+        + "memories m INDEXED BY memory_pointer ON m.memory_id=r.memory_id"
+        + join
+        + "claim_projection p ON p.memory_id=r.memory_id AND p.revision=r.revision"
         + current
         + " WHERE "
         + " AND ".join(conditions)
@@ -234,8 +268,8 @@ def get_pinned(
     now = timestamp_to_unix_microseconds(timestamp_from_datetime(state.database.clock.now()))
     rows = connection.execute(
         (
-            "SELECT p.* FROM pins p JOIN memories m ON m.memory_id=p.memory_id AND "
-            "m.current_revision=p.memory_revision JOIN memory_revisions r ON "
+            "SELECT p.* FROM pins p CROSS JOIN memories m ON m.memory_id=p.memory_id AND "
+            "m.current_revision=p.memory_revision CROSS JOIN memory_revisions r ON "
             "r.memory_id=p.memory_id AND r.revision=p.memory_revision WHERE "
             "r.lifecycle='active' AND (r.valid_from_us IS NULL OR r.valid_from_us<=?) "
             "AND (r.valid_until_us IS NULL OR ?<r.valid_until_us) "
@@ -461,10 +495,14 @@ def retrieve_context(
     check_deadline(state.database.clock, request.options.deadline_at)
     epoch = state.policy_epoch(connection)
     pinned = (
-        get_pinned(state, connection, PageRequest(limit=100, options=request.options))
+        get_pinned(state, connection, PageRequest(limit=32, options=request.options))
         if request.include_pinned
         else ()
     )
+    selection, _ = profile.select(state, connection) if request.include_profile else (None, ())
+    manual_ids = {pin.memory_id for pin in pinned}
+    if selection:
+        pinned = (*pinned, *(pin for pin in selection.automatic if pin.memory_id not in manual_ids))
     response = search(state, connection, request.memory_query)
     context_coverage = response.coverage
     candidates: list[MemoryResult] = []
@@ -493,13 +531,19 @@ def retrieve_context(
     kept_pins: list[PinnedMemory] = []
     remaining = request.memory_token_budget
     for result in candidates:
+        if not profile.eligible(state, connection, result.memory):
+            continue
         matching = next((pin for pin in pinned if pin.memory_id == result.memory.memory_id), None)
         cost = state.tokens.count(result.model_dump_json()) + (
             state.tokens.count(matching.model_dump_json()) if matching else 0
         )
-        if cost <= remaining:
+        # Pins have their own composer budget. Compact ordinary rows preserve six
+        # slots instead of charging immutable evidence JSON to the model prompt.
+        cost = state.tokens.count(result.memory.content.payload.model_dump_json()) + 96
+        if matching or cost <= remaining:
             memories.append(result)
-            remaining -= cost
+            if not matching:
+                remaining -= cost
             if matching:
                 kept_pins.append(matching)
     archive: list[ArchiveResult] = []
@@ -586,6 +630,101 @@ def retrieve_context(
             else state.source_permitted(connection, item.record.source, "archive_search")
         )
     ]
+    from pydantic import ValidationError
+
+    context_certificate = None
+    while memories:
+        try:
+            context_certificate = related.certificate(
+                state,
+                connection,
+                tuple(r.memory for r in memories),
+                profile_epoch=selection.selection_epoch if selection else None,
+            )
+            break
+        except ValidationError:
+            removed = memories.pop()
+            kept_pins = [p for p in kept_pins if p.memory_id != removed.memory.memory_id]
+    if context_certificate is None:
+        context_certificate = related.certificate(
+            state, connection, (), profile_epoch=selection.selection_epoch if selection else None
+        )
+    from .archive import SourceHeaderResolver
+
+    if isinstance(state.resolver, SourceHeaderResolver) and context_certificate.sources:
+        missing, _ = state.resolver.unavailable_sources(
+            context_certificate.sources,
+            local_connection=connection,
+            local_store_id=state.character_id,
+            call_budget=8,
+        )
+        if missing:
+            context_coverage = context_coverage.model_copy(
+                update={
+                    "status": "partial",
+                    "reason_codes": (
+                        *context_coverage.reason_codes,
+                        "source_unavailable_or_changed",
+                    ),
+                }
+            )
+            placeholders = ",".join("(?,?,?,?,?)" for _ in missing)
+            parameters = tuple(
+                x
+                for ref in missing
+                for x in (
+                    str(ref.source_store_id),
+                    ref.record_kind,
+                    str(ref.record_id),
+                    ref.record_revision,
+                    str(ref.part_id) if ref.part_id else "",
+                )
+            )
+            denied = {
+                row_text(row, "memory_id")
+                for row in connection.execute(
+                    "SELECT DISTINCT memory_id FROM memory_evidence WHERE "
+                    "(source_store_id,record_kind,record_id,record_revision,part_id)"
+                    " IN (" + placeholders + ") LIMIT 100",
+                    parameters,
+                )
+            }
+            memories = [r for r in memories if str(r.memory.memory_id) not in denied]
+            kept_pins = [p for p in kept_pins if str(p.memory_id) not in denied]
+            if selection:
+                from ember_memory_abi.related import ProfileOmission
+
+                fields = {
+                    r.memory.memory_id: getattr(r.memory.content.payload, "predicate", "unknown")
+                    for r in candidates
+                }
+                excluded = [p for p in selection.automatic if str(p.memory_id) in denied]
+                selection = selection.model_copy(
+                    update={
+                        "automatic": tuple(
+                            p for p in selection.automatic if str(p.memory_id) not in denied
+                        ),
+                        "omitted": (
+                            *selection.omitted,
+                            *(
+                                ProfileOmission(
+                                    field=fields[p.memory_id],
+                                    reason="source_unavailable_or_changed",
+                                )
+                                for p in excluded
+                            ),
+                        ),
+                    }
+                )
+            context_certificate = related.certificate(
+                state,
+                connection,
+                tuple(r.memory for r in memories),
+                profile_epoch=selection.selection_epoch if selection else None,
+            )
+    if selection and selection.valid_until:
+        boundary = min(b for b in (selection.valid_until, context_certificate.valid_until) if b)
+        context_certificate = context_certificate.model_copy(update={"valid_until": boundary})
     dependency_map = {
         item.evidence.source.identity_key(): item.evidence.source
         for result in memories
@@ -607,6 +746,8 @@ def retrieve_context(
         pinned=tuple(kept_pins),
         dependencies=dependencies,
         coverage=context_coverage,
+        profile=selection,
+        fast_dependencies=context_certificate,
     )
 
 

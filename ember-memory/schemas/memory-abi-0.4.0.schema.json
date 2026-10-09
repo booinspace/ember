@@ -1,0 +1,4400 @@
+{
+  "$comment": "Select an endpoint contract from $defs. Unknown extensions remain readable; unsupported writes fail.",
+  "$defs": {
+    "ActorAttribution": {
+      "additionalProperties": false,
+      "description": "Source actor claims, without silently resolving role/name into personal identity.",
+      "properties": {
+        "actor_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "role": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "ActorAttribution",
+      "type": "object"
+    },
+    "ApprovedKnowledge": {
+      "additionalProperties": false,
+      "description": "Accepted library snapshot eligible for explicit seeding; future imports cannot rewrite it.",
+      "properties": {
+        "approval": {
+          "$ref": "#/$defs/ValidationVerdict"
+        },
+        "draft": {
+          "$ref": "#/$defs/MemoryDraft"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "knowledge_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "library_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "knowledge_id",
+        "library_id",
+        "revision",
+        "draft",
+        "approval",
+        "recorded_at"
+      ],
+      "title": "ApprovedKnowledge",
+      "type": "object"
+    },
+    "ArchiveChunk": {
+      "additionalProperties": false,
+      "description": "Disposable derived text, identified by UUID5 over immutable inputs/specification.",
+      "properties": {
+        "chunk_id": {
+          "format": "uuid5",
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "source_spans": {
+          "items": {
+            "$ref": "#/$defs/ChunkSpan"
+          },
+          "title": "Source Spans",
+          "type": "array"
+        },
+        "specification": {
+          "$ref": "#/$defs/ProcessingSpecRef"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "specification",
+        "text",
+        "source_spans"
+      ],
+      "title": "ArchiveChunk",
+      "type": "object"
+    },
+    "ArchiveQuery": {
+      "additionalProperties": false,
+      "description": "Deep archive query; filters can only narrow current grants and suppression.",
+      "properties": {
+        "conversation_ids": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonicalId"
+          },
+          "maxItems": 128,
+          "title": "Conversation Ids",
+          "type": "array"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "include_alternative_branches": {
+          "default": true,
+          "title": "Include Alternative Branches",
+          "type": "boolean"
+        },
+        "limit": {
+          "$ref": "#/$defs/ResultLimit",
+          "default": 20
+        },
+        "mode": {
+          "default": "hybrid",
+          "enum": [
+            "hybrid",
+            "lexical",
+            "semantic",
+            "literal"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "record_kinds": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "maxItems": 128,
+          "title": "Record Kinds",
+          "type": "array"
+        },
+        "roles": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "maxItems": 128,
+          "title": "Roles",
+          "type": "array"
+        },
+        "source_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_store_ids": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonicalId"
+          },
+          "maxItems": 128,
+          "title": "Source Store Ids",
+          "type": "array"
+        },
+        "source_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "temporal": {
+          "$ref": "#/$defs/TemporalQuery"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 8192,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "title": "ArchiveQuery",
+      "type": "object"
+    },
+    "ArchiveResult": {
+      "additionalProperties": false,
+      "description": "A permitted source revision or rebuildable chunk with branch/source labels.",
+      "properties": {
+        "branch_status": {
+          "$ref": "#/$defs/WireString",
+          "default": "not_evaluated"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "ranking": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RankingExplanation"
+          },
+          "title": "Ranking",
+          "type": "array"
+        },
+        "record": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRecord"
+            },
+            {
+              "$ref": "#/$defs/ArchiveChunk"
+            }
+          ],
+          "title": "Record"
+        },
+        "score": {
+          "$ref": "#/$defs/FiniteScore"
+        }
+      },
+      "required": [
+        "record",
+        "score"
+      ],
+      "title": "ArchiveResult",
+      "type": "object"
+    },
+    "ArchiveSearchResponse": {
+      "additionalProperties": false,
+      "description": "Bounded deep archive results with current authorization rechecked by the client.",
+      "properties": {
+        "coverage": {
+          "$ref": "#/$defs/RetrievalCoverage"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Cursor"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/ArchiveResult"
+          },
+          "maxItems": 100,
+          "title": "Results",
+          "type": "array"
+        }
+      },
+      "required": [
+        "results",
+        "coverage"
+      ],
+      "title": "ArchiveSearchResponse",
+      "type": "object"
+    },
+    "ArchiveWriteReceipt": {
+      "additionalProperties": false,
+      "description": "A committed batch result; uncertain writes are never assumed safe to replay.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/WireString"
+        },
+        "outcome": {
+          "enum": [
+            "applied",
+            "already_applied"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "records_written": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "resume_cursor": {
+          "$ref": "#/$defs/ImportCursor"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "outcome",
+        "records_written",
+        "resume_cursor"
+      ],
+      "title": "ArchiveWriteReceipt",
+      "type": "object"
+    },
+    "Asset": {
+      "additionalProperties": false,
+      "description": "Portable asset identity/availability; local paths live in backend locators.",
+      "properties": {
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unresolved"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_type": {
+          "const": "asset",
+          "default": "asset",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInteger"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "availability"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "BooleanValue": {
+      "additionalProperties": false,
+      "description": "A strict boolean fact value, distinct from numeric zero/one.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "type": {
+          "const": "boolean",
+          "default": "boolean",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "BooleanValue",
+      "type": "object"
+    },
+    "BranchSelection": {
+      "additionalProperties": false,
+      "description": "A derived selection observation; ambiguous paths cannot authorize activation.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "path": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Path",
+          "type": "array"
+        },
+        "reason_codes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "selected_node": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "ambiguous",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "BranchSelection",
+      "type": "object"
+    },
+    "CandidateMemory": {
+      "additionalProperties": false,
+      "description": "Library/store-owned proposed interpretation with versioned verdicts and evidence.",
+      "properties": {
+        "candidate_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "draft": {
+          "$ref": "#/$defs/MemoryDraft"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "owner_store_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "verdicts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ValidationVerdict"
+          },
+          "title": "Verdicts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "owner_store_id",
+        "revision",
+        "draft",
+        "recorded_at"
+      ],
+      "title": "CandidateMemory",
+      "type": "object"
+    },
+    "CanonicalId": {
+      "format": "uuid4",
+      "type": "string"
+    },
+    "ChunkSpan": {
+      "additionalProperties": false,
+      "description": "Map a nonempty derived-text interval to exact original evidence.",
+      "properties": {
+        "end_codepoint": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "start_codepoint": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        }
+      },
+      "required": [
+        "start_codepoint",
+        "end_codepoint",
+        "evidence"
+      ],
+      "title": "ChunkSpan",
+      "type": "object"
+    },
+    "Confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "ContentPart": {
+      "additionalProperties": false,
+      "description": "Ordered visible text or a typed absence, unsupported part, or reasoning exclusion.",
+      "properties": {
+        "asset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exclusion_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "kind": {
+          "$ref": "#/$defs/WireString"
+        },
+        "part_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "status": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unsupported",
+            "excluded"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "part_id",
+        "kind",
+        "status"
+      ],
+      "title": "ContentPart",
+      "type": "object"
+    },
+    "ContextDependencies": {
+      "additionalProperties": false,
+      "description": "Small fast-path certificate; policy changes invalidate rather than widen access.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "memories": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MemoryReference"
+          },
+          "maxItems": 256,
+          "title": "Memories",
+          "type": "array"
+        },
+        "policy_epoch": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "selection_epoch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonnegativeInteger"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sources": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 256,
+          "title": "Sources",
+          "type": "array"
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "policy_epoch"
+      ],
+      "title": "ContextDependencies",
+      "type": "object"
+    },
+    "ContextRequest": {
+      "additionalProperties": false,
+      "description": "Explicit working-context budgets; indexes and runtime prompt composition remain separate.",
+      "properties": {
+        "archive_query": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArchiveQuery"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "archive_token_budget": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "include_pinned": {
+          "default": true,
+          "title": "Include Pinned",
+          "type": "boolean"
+        },
+        "include_profile": {
+          "default": false,
+          "title": "Include Profile",
+          "type": "boolean"
+        },
+        "include_recent_native": {
+          "default": true,
+          "title": "Include Recent Native",
+          "type": "boolean"
+        },
+        "include_summaries": {
+          "default": true,
+          "title": "Include Summaries",
+          "type": "boolean"
+        },
+        "memory_query": {
+          "$ref": "#/$defs/MemoryQuery"
+        },
+        "memory_token_budget": {
+          "exclusiveMinimum": 0,
+          "title": "Memory Token Budget",
+          "type": "integer"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "summary_token_budget": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        }
+      },
+      "required": [
+        "memory_query",
+        "memory_token_budget"
+      ],
+      "title": "ContextRequest",
+      "type": "object"
+    },
+    "Conversation": {
+      "additionalProperties": false,
+      "description": "Normalized conversation identity and source metadata, independent of graph messages.",
+      "properties": {
+        "archived": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archived"
+        },
+        "created_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        },
+        "deleted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deleted"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "record_type": {
+          "const": "conversation",
+          "default": "conversation",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BranchSelection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "updated_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at"
+      ],
+      "title": "Conversation",
+      "type": "object"
+    },
+    "DisableRequest": {
+      "additionalProperties": false,
+      "description": "Remove from recall without implying dependency-wide forgetting or source deletion.",
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "reason": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "memory_id",
+        "expected_revision",
+        "reason"
+      ],
+      "title": "DisableRequest",
+      "type": "object"
+    },
+    "Document": {
+      "additionalProperties": false,
+      "description": "Generic preserved document/observation, using the same exact visible part semantics.",
+      "properties": {
+        "created_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "parts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ContentPart"
+          },
+          "title": "Parts",
+          "type": "array"
+        },
+        "record_type": {
+          "const": "document",
+          "default": "document",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at"
+      ],
+      "title": "Document",
+      "type": "object"
+    },
+    "Entity": {
+      "additionalProperties": false,
+      "description": "Revisioned entity context with explicit origin mapping for independent seeds.",
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reference": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "reference",
+        "revision",
+        "name"
+      ],
+      "title": "Entity",
+      "type": "object"
+    },
+    "EntityRef": {
+      "additionalProperties": false,
+      "description": "Store-owned entity identity; similarity never merges entities across stores.",
+      "properties": {
+        "entity_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "store_id": {
+          "$ref": "#/$defs/CanonicalId"
+        }
+      },
+      "required": [
+        "store_id",
+        "entity_id"
+      ],
+      "title": "EntityRef",
+      "type": "object"
+    },
+    "EntityValue": {
+      "additionalProperties": false,
+      "description": "A relation to a specific store-owned entity.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "type": {
+          "const": "entity",
+          "default": "entity",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/EntityRef"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "EntityValue",
+      "type": "object"
+    },
+    "EpisodePayload": {
+      "additionalProperties": false,
+      "description": "One attributed event; similar text alone never merges episodes.",
+      "properties": {
+        "event": {
+          "minLength": 1,
+          "title": "Event",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "participants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EntityRef"
+          },
+          "title": "Participants",
+          "type": "array"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "const": "episode",
+          "default": "episode",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event"
+      ],
+      "title": "EpisodePayload",
+      "type": "object"
+    },
+    "ErrorDetails": {
+      "additionalProperties": false,
+      "description": "Portable identifiers/revisions only; never prompts, source text, or machine paths.",
+      "properties": {
+        "actual_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "expected_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "record_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "requested_version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ErrorDetails",
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "additionalProperties": false,
+      "description": "Serializable failure envelope whose code has no implied retry/authorization policy.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/WireString"
+        },
+        "details": {
+          "$ref": "#/$defs/ErrorDetails"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "details"
+      ],
+      "title": "ErrorInfo",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "Immutable evidence identity bound to an exact source revision and content part.",
+      "properties": {
+        "evidence_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "span": {
+          "$ref": "#/$defs/EvidenceSpan"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "source",
+        "span"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "EvidenceAssertion": {
+      "additionalProperties": false,
+      "description": "Interpretation of exact evidence; summaries never create independent corroboration.",
+      "properties": {
+        "actor_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "authority": {
+          "$ref": "#/$defs/WireString"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "modality": {
+          "$ref": "#/$defs/WireString"
+        },
+        "relation": {
+          "$ref": "#/$defs/WireString"
+        },
+        "verdict": {
+          "$ref": "#/$defs/WireString",
+          "default": "unvalidated"
+        }
+      },
+      "required": [
+        "evidence",
+        "relation",
+        "modality",
+        "authority"
+      ],
+      "title": "EvidenceAssertion",
+      "type": "object"
+    },
+    "EvidenceSpan": {
+      "additionalProperties": false,
+      "description": "Nonempty half-open coordinates into exact, unnormalized UTF-8 source text.",
+      "properties": {
+        "end_byte": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "end_codepoint": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "quoted_span_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "source_content_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "start_byte": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "start_codepoint": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        }
+      },
+      "required": [
+        "start_codepoint",
+        "end_codepoint",
+        "start_byte",
+        "end_byte",
+        "source_content_sha256",
+        "quoted_span_sha256"
+      ],
+      "title": "EvidenceSpan",
+      "type": "object"
+    },
+    "ExtensionKey": {
+      "pattern": "^[a-z][a-z0-9_-]*[.:][a-z0-9_.:-]+$",
+      "type": "string"
+    },
+    "FactPayload": {
+      "additionalProperties": false,
+      "description": "Subject/predicate/value with polarity; validity lives on the interpretation.",
+      "properties": {
+        "definition_version": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "original_predicate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "polarity": {
+          "$ref": "#/$defs/WireString",
+          "default": "positive"
+        },
+        "predicate": {
+          "$ref": "#/$defs/WireString"
+        },
+        "subject": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "type": {
+          "const": "fact",
+          "default": "fact",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/FactValue"
+        }
+      },
+      "required": [
+        "subject",
+        "predicate",
+        "value"
+      ],
+      "title": "FactPayload",
+      "type": "object"
+    },
+    "FactValue": {
+      "discriminator": {
+        "mapping": {
+          "boolean": "#/$defs/BooleanValue",
+          "entity": "#/$defs/EntityValue",
+          "number": "#/$defs/NumberValue",
+          "string": "#/$defs/StringValue"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StringValue"
+        },
+        {
+          "$ref": "#/$defs/NumberValue"
+        },
+        {
+          "$ref": "#/$defs/BooleanValue"
+        },
+        {
+          "$ref": "#/$defs/EntityValue"
+        }
+      ]
+    },
+    "FiniteScore": {
+      "type": "number"
+    },
+    "ForgetRequest": {
+      "additionalProperties": false,
+      "description": "Create durable dependency suppression; never expand grants or delete shared sources.",
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "reason": {
+          "$ref": "#/$defs/WireString"
+        },
+        "scope": {
+          "const": "memory_and_dependencies",
+          "default": "memory_and_dependencies",
+          "title": "Scope",
+          "type": "string"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "memory_id",
+        "expected_revision",
+        "reason"
+      ],
+      "title": "ForgetRequest",
+      "type": "object"
+    },
+    "GoalPayload": {
+      "additionalProperties": false,
+      "description": "An intent/state, without converting aspiration into an observed fact.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "state": {
+          "$ref": "#/$defs/WireString",
+          "default": "proposed"
+        },
+        "type": {
+          "const": "goal",
+          "default": "goal",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "title": "GoalPayload",
+      "type": "object"
+    },
+    "GraphNode": {
+      "additionalProperties": false,
+      "description": "Retain null-message roots and original parent/child observations, including disagreements.",
+      "properties": {
+        "children": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceLink"
+          },
+          "title": "Children",
+          "type": "array"
+        },
+        "conversation": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceLink"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_type": {
+          "const": "graph_node",
+          "default": "graph_node",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "conversation"
+      ],
+      "title": "GraphNode",
+      "type": "object"
+    },
+    "IdempotencyKey": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "ImportCursor": {
+      "additionalProperties": false,
+      "description": "Portable resumability against an immutable fingerprint, without physical file paths.",
+      "properties": {
+        "adapter": {
+          "$ref": "#/$defs/WireString"
+        },
+        "adapter_version": {
+          "$ref": "#/$defs/WireString"
+        },
+        "component_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "logical_inventory_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "next_record_index": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        }
+      },
+      "required": [
+        "logical_inventory_sha256",
+        "component_sha256",
+        "next_record_index",
+        "adapter",
+        "adapter_version"
+      ],
+      "title": "ImportCursor",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "Memory": {
+      "additionalProperties": false,
+      "description": "An immutable revision of a character-owned belief, never a shared mutable library row.",
+      "properties": {
+        "character_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "content": {
+          "$ref": "#/$defs/MemoryContent"
+        },
+        "created_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/WireString"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OriginMapping"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "temporal": {
+          "$ref": "#/$defs/TemporalMetadata"
+        }
+      },
+      "required": [
+        "memory_id",
+        "character_id",
+        "revision",
+        "lifecycle",
+        "content",
+        "temporal",
+        "created_at"
+      ],
+      "title": "Memory",
+      "type": "object"
+    },
+    "MemoryAccess": {
+      "additionalProperties": false,
+      "description": "Access observation for an exact permitted revision, independent of source time.",
+      "properties": {
+        "accessed_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "memory_revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "memory_id",
+        "memory_revision",
+        "accessed_at"
+      ],
+      "title": "MemoryAccess",
+      "type": "object"
+    },
+    "MemoryCapabilities": {
+      "additionalProperties": false,
+      "description": "Actual implementation support; schema presence never implies a working backend/index.",
+      "properties": {
+        "abi_version": {
+          "default": "0.4.0",
+          "title": "Abi Version",
+          "type": "string"
+        },
+        "archive_version": {
+          "default": "0.1.0",
+          "title": "Archive Version",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "index_status": {
+          "default": "unavailable",
+          "enum": [
+            "available",
+            "degraded",
+            "unavailable"
+          ],
+          "title": "Index Status",
+          "type": "string"
+        },
+        "mutations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Mutations",
+          "type": "array"
+        },
+        "retrieval_modes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Retrieval Modes",
+          "type": "array"
+        },
+        "supported_extensions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Supported Extensions",
+          "type": "array"
+        },
+        "supported_kinds": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Supported Kinds",
+          "type": "array"
+        },
+        "supported_modalities": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Supported Modalities",
+          "type": "array"
+        },
+        "supported_predicates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Supported Predicates",
+          "type": "array"
+        }
+      },
+      "title": "MemoryCapabilities",
+      "type": "object"
+    },
+    "MemoryContent": {
+      "additionalProperties": false,
+      "description": "Proposed or accepted semantic content; validation is not automatic activation.",
+      "properties": {
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EvidenceAssertion"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "importance": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "kind": {
+          "$ref": "#/$defs/WireString"
+        },
+        "modality": {
+          "$ref": "#/$defs/WireString"
+        },
+        "payload": {
+          "$ref": "#/$defs/MemoryPayload"
+        },
+        "provenance": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProcessingProvenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "payload",
+        "modality",
+        "confidence",
+        "importance"
+      ],
+      "title": "MemoryContent",
+      "type": "object"
+    },
+    "MemoryDraft": {
+      "additionalProperties": false,
+      "description": "Mutation/candidate input, without character ownership or a forged recorded clock.",
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/MemoryContent"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "temporal": {
+          "$ref": "#/$defs/TemporalBounds"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "MemoryDraft",
+      "type": "object"
+    },
+    "MemoryPayload": {
+      "discriminator": {
+        "mapping": {
+          "episode": "#/$defs/EpisodePayload",
+          "fact": "#/$defs/FactPayload",
+          "goal": "#/$defs/GoalPayload",
+          "opaque": "#/$defs/OpaquePayload",
+          "plan": "#/$defs/PlanPayload"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FactPayload"
+        },
+        {
+          "$ref": "#/$defs/EpisodePayload"
+        },
+        {
+          "$ref": "#/$defs/GoalPayload"
+        },
+        {
+          "$ref": "#/$defs/PlanPayload"
+        },
+        {
+          "$ref": "#/$defs/OpaquePayload"
+        }
+      ]
+    },
+    "MemoryQuery": {
+      "additionalProperties": false,
+      "description": "Bounded belief query scoped by trusted client identity, not a model-supplied character ID.",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "entity_ids": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonicalId"
+          },
+          "maxItems": 128,
+          "title": "Entity Ids",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "kinds": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "maxItems": 128,
+          "title": "Kinds",
+          "type": "array"
+        },
+        "lifecycles": {
+          "default": [
+            "active"
+          ],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "maxItems": 128,
+          "title": "Lifecycles",
+          "type": "array"
+        },
+        "limit": {
+          "$ref": "#/$defs/ResultLimit",
+          "default": 20
+        },
+        "modalities": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "maxItems": 128,
+          "title": "Modalities",
+          "type": "array"
+        },
+        "mode": {
+          "default": "hybrid",
+          "enum": [
+            "hybrid",
+            "lexical",
+            "semantic",
+            "structured"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "predicates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "maxItems": 128,
+          "title": "Predicates",
+          "type": "array"
+        },
+        "temporal": {
+          "$ref": "#/$defs/TemporalQuery"
+        },
+        "text": {
+          "default": "",
+          "maxLength": 8192,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "title": "MemoryQuery",
+      "type": "object"
+    },
+    "MemoryReference": {
+      "additionalProperties": false,
+      "description": "An exact revision whose current lifecycle and authorization must remain eligible.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "memory_id",
+        "revision"
+      ],
+      "title": "MemoryReference",
+      "type": "object"
+    },
+    "MemoryRelationship": {
+      "additionalProperties": false,
+      "description": "Engine-validated edge; shared dates, topics or users never imply an incident.",
+      "properties": {
+        "candidate_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EvidenceAssertion"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "kind": {
+          "enum": [
+            "supersedes",
+            "redirects",
+            "conflicts",
+            "supports"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "origins": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/OriginMapping"
+          },
+          "title": "Origins",
+          "type": "array"
+        },
+        "provenance": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProcessingProvenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "relationship_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "source": {
+          "$ref": "#/$defs/MemoryReference"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "relationship_id",
+        "kind",
+        "source"
+      ],
+      "title": "MemoryRelationship",
+      "type": "object"
+    },
+    "MemoryResult": {
+      "additionalProperties": false,
+      "description": "A permitted memory revision with its independent retrieval score/explanation.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "memory": {
+          "$ref": "#/$defs/Memory"
+        },
+        "ranking": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RankingExplanation"
+          },
+          "title": "Ranking",
+          "type": "array"
+        },
+        "score": {
+          "$ref": "#/$defs/FiniteScore"
+        }
+      },
+      "required": [
+        "memory",
+        "score"
+      ],
+      "title": "MemoryResult",
+      "type": "object"
+    },
+    "MemorySource": {
+      "additionalProperties": false,
+      "description": "A grant-checked original quote or explicit unavailable source, with no machine locator.",
+      "properties": {
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        }
+      },
+      "required": [
+        "evidence",
+        "availability"
+      ],
+      "title": "MemorySource",
+      "type": "object"
+    },
+    "Message": {
+      "additionalProperties": false,
+      "description": "Normalized visible parts and explicit exclusions; graph membership is stored separately.",
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/ActorAttribution"
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "conversation": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "created_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "parts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ContentPart"
+          },
+          "title": "Parts",
+          "type": "array"
+        },
+        "recipient": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_type": {
+          "const": "message",
+          "default": "message",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "updated_time": {
+          "$ref": "#/$defs/SourceTimestamp"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "conversation",
+        "actor"
+      ],
+      "title": "Message",
+      "type": "object"
+    },
+    "MutationReceipt": {
+      "additionalProperties": false,
+      "description": "Confirmed commit/idempotent replay result; ownership remains the bound character.",
+      "properties": {
+        "affected": {
+          "items": {
+            "$ref": "#/$defs/RecordRevision"
+          },
+          "title": "Affected",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "outcome": {
+          "enum": [
+            "applied",
+            "already_applied"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        }
+      },
+      "required": [
+        "operation_id",
+        "idempotency_key",
+        "outcome",
+        "affected",
+        "recorded_at"
+      ],
+      "title": "MutationReceipt",
+      "type": "object"
+    },
+    "NonnegativeInteger": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "NormalizedArchiveBatch": {
+      "additionalProperties": false,
+      "description": "Maintenance write boundary: records and resume cursor must commit atomically.\n\nNamespace/store binding is established by trusted maintenance configuration;\nthe writer verifies fingerprints, crosswalks, versions, and current ownership.",
+      "properties": {
+        "archive_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Archive Version",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Idempotency Key",
+          "type": "string"
+        },
+        "processing_spec": {
+          "$ref": "#/$defs/ProcessingSpecRef"
+        },
+        "records": {
+          "items": {
+            "$ref": "#/$defs/SourceRecord"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Records",
+          "type": "array"
+        },
+        "resume_cursor": {
+          "$ref": "#/$defs/ImportCursor"
+        },
+        "source_namespace": {
+          "$ref": "#/$defs/WireString"
+        },
+        "source_store_id": {
+          "$ref": "#/$defs/CanonicalId"
+        }
+      },
+      "required": [
+        "source_store_id",
+        "source_namespace",
+        "idempotency_key",
+        "processing_spec",
+        "records",
+        "resume_cursor"
+      ],
+      "title": "NormalizedArchiveBatch",
+      "type": "object"
+    },
+    "NumberValue": {
+      "additionalProperties": false,
+      "description": "A finite scalar fact value; units remain explicit.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "type": {
+          "const": "number",
+          "default": "number",
+          "title": "Type",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "$ref": "#/$defs/FiniteScore"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "NumberValue",
+      "type": "object"
+    },
+    "OpaqueArchiveRecord": {
+      "additionalProperties": false,
+      "description": "Read-preserved unsupported source kind; original bytes stay in the raw vault.\n\nThis carries identity/coverage and namespaced metadata, never an unfiltered\nunknown content body. Normalization must separately exclude hidden reasoning.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "reason_codes": {
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "record_type": {
+          "const": "opaque",
+          "default": "opaque",
+          "title": "Record Type",
+          "type": "string"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "status": {
+          "const": "unsupported",
+          "default": "unsupported",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "recorded_at",
+        "reason_codes"
+      ],
+      "title": "OpaqueArchiveRecord",
+      "type": "object"
+    },
+    "OpaquePayload": {
+      "additionalProperties": false,
+      "description": "Read-preserved unfamiliar payload; it never acquires supported write semantics.",
+      "properties": {
+        "data": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Data",
+          "type": "object"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "original_kind": {
+          "$ref": "#/$defs/WireString"
+        },
+        "type": {
+          "const": "opaque",
+          "default": "opaque",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "original_kind",
+        "data"
+      ],
+      "title": "OpaquePayload",
+      "type": "object"
+    },
+    "OriginMapping": {
+      "additionalProperties": false,
+      "description": "Independent seed identity; source evidence can remain shared without message duplication.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "origin_memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "origin_memory_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "origin_source_store_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "seed_operation_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "seeded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        }
+      },
+      "required": [
+        "origin_memory_id",
+        "origin_memory_revision",
+        "origin_source_store_id",
+        "seed_operation_id",
+        "seeded_at"
+      ],
+      "title": "OriginMapping",
+      "type": "object"
+    },
+    "PageRequest": {
+      "additionalProperties": false,
+      "description": "Bounded recent/pinned retrieval scoped by the trusted client binding.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "limit": {
+          "$ref": "#/$defs/ResultLimit",
+          "default": 20
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        }
+      },
+      "title": "PageRequest",
+      "type": "object"
+    },
+    "PinRequest": {
+      "additionalProperties": false,
+      "description": "Pin the exact permitted revision; a pin cannot bypass lifecycle or suppression.",
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "priority": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "memory_id",
+        "expected_revision"
+      ],
+      "title": "PinRequest",
+      "type": "object"
+    },
+    "PinnedMemory": {
+      "additionalProperties": false,
+      "description": "A character-owned pin bound to a particular memory revision.",
+      "properties": {
+        "character_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "memory_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "pinned_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "priority": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "purpose": {
+          "default": "manual",
+          "enum": [
+            "manual",
+            "profile"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "character_id",
+        "memory_id",
+        "memory_revision",
+        "priority",
+        "pinned_at"
+      ],
+      "title": "PinnedMemory",
+      "type": "object"
+    },
+    "PlanPayload": {
+      "additionalProperties": false,
+      "description": "An uncertain proposed procedure, not evidence of completed action.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "goal_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "$ref": "#/$defs/WireString",
+          "default": "proposed"
+        },
+        "steps": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "type": {
+          "const": "plan",
+          "default": "plan",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "title": "PlanPayload",
+      "type": "object"
+    },
+    "PositiveInteger": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "PredicateDefinition": {
+      "additionalProperties": false,
+      "description": "Independent predicate semantics, including historical/replacement behavior.",
+      "properties": {
+        "aliases": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "allowed_modalities": {
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Allowed Modalities",
+          "type": "array"
+        },
+        "cardinality": {
+          "$ref": "#/$defs/WireString"
+        },
+        "definition_version": {
+          "$ref": "#/$defs/WireString"
+        },
+        "deprecated_aliases": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Deprecated Aliases",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "name": {
+          "$ref": "#/$defs/WireString"
+        },
+        "normalization_rules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Normalization Rules",
+          "type": "object"
+        },
+        "replacement_meaningful": {
+          "title": "Replacement Meaningful",
+          "type": "boolean"
+        },
+        "temporal": {
+          "title": "Temporal",
+          "type": "boolean"
+        },
+        "value_type": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "name",
+        "definition_version",
+        "value_type",
+        "cardinality",
+        "temporal",
+        "replacement_meaningful",
+        "normalization_rules",
+        "allowed_modalities"
+      ],
+      "title": "PredicateDefinition",
+      "type": "object"
+    },
+    "ProcessingProvenance": {
+      "additionalProperties": false,
+      "description": "Interpretation run/specification identity, separate from original source evidence.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "input_sources": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Input Sources",
+          "type": "array"
+        },
+        "processed_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "run_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "specification": {
+          "$ref": "#/$defs/ProcessingSpecRef"
+        }
+      },
+      "required": [
+        "run_id",
+        "specification",
+        "processed_at"
+      ],
+      "title": "ProcessingProvenance",
+      "type": "object"
+    },
+    "ProcessingSpecRef": {
+      "additionalProperties": false,
+      "description": "An independently versioned processing specification, without runtime dependencies.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "name": {
+          "$ref": "#/$defs/WireString"
+        },
+        "specification_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "version": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "specification_sha256"
+      ],
+      "title": "ProcessingSpecRef",
+      "type": "object"
+    },
+    "ProfileOmission": {
+      "additionalProperties": false,
+      "description": "Content-free field omission diagnosis; source text never belongs in logs.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "reason"
+      ],
+      "title": "ProfileOmission",
+      "type": "object"
+    },
+    "ProfileSelection": {
+      "additionalProperties": false,
+      "description": "Deterministic allowlisted selection, separate from explicit manual pin ownership.",
+      "properties": {
+        "automatic": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PinnedMemory"
+          },
+          "maxItems": 8,
+          "title": "Automatic",
+          "type": "array"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "omitted": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProfileOmission"
+          },
+          "title": "Omitted",
+          "type": "array"
+        },
+        "policy": {
+          "const": "ember.profile@0.1.0",
+          "default": "ember.profile@0.1.0",
+          "title": "Policy",
+          "type": "string"
+        },
+        "selection_epoch": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "subject_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "enabled",
+        "selection_epoch"
+      ],
+      "title": "ProfileSelection",
+      "type": "object"
+    },
+    "RankingExplanation": {
+      "additionalProperties": false,
+      "description": "Finite ranking inputs and reason codes, without inventing a confidence probability.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "method": {
+          "$ref": "#/$defs/WireString"
+        },
+        "reasons": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "score": {
+          "$ref": "#/$defs/FiniteScore"
+        }
+      },
+      "required": [
+        "method",
+        "score"
+      ],
+      "title": "RankingExplanation",
+      "type": "object"
+    },
+    "ReadManifest": {
+      "additionalProperties": false,
+      "description": "Bounded logical snapshot metadata; never a path, credential or access grant.",
+      "properties": {
+        "character_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "policy_epoch": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "recorded_clock_us": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        },
+        "selection_epoch": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        }
+      },
+      "required": [
+        "character_id",
+        "policy_epoch",
+        "selection_epoch",
+        "recorded_clock_us"
+      ],
+      "title": "ReadManifest",
+      "type": "object"
+    },
+    "RecordAccessRequest": {
+      "additionalProperties": false,
+      "description": "Bounded idempotent access statistics; no implicit claim/importance mutation.",
+      "properties": {
+        "accesses": {
+          "items": {
+            "$ref": "#/$defs/MemoryAccess"
+          },
+          "maxItems": 100,
+          "minItems": 1,
+          "title": "Accesses",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "accesses"
+      ],
+      "title": "RecordAccessRequest",
+      "type": "object"
+    },
+    "RecordRevision": {
+      "additionalProperties": false,
+      "description": "A canonical mutation result reference, never a backend row/vector key.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "memory_id",
+        "revision"
+      ],
+      "title": "RecordRevision",
+      "type": "object"
+    },
+    "RelatedRequest": {
+      "additionalProperties": false,
+      "description": "Resolve redirects, inspect explicit edges, or validate a compact context certificate.",
+      "properties": {
+        "anchors": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MemoryReference"
+          },
+          "maxItems": 32,
+          "title": "Anchors",
+          "type": "array"
+        },
+        "call_budget": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Call Budget",
+          "type": "integer"
+        },
+        "deadline_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dependencies": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContextDependencies"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "intent": {
+          "enum": [
+            "resolve",
+            "expand",
+            "validate"
+          ],
+          "title": "Intent",
+          "type": "string"
+        },
+        "limit": {
+          "default": 32,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "row_budget": {
+          "default": 256,
+          "maximum": 512,
+          "minimum": 1,
+          "title": "Row Budget",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "intent"
+      ],
+      "title": "RelatedRequest",
+      "type": "object"
+    },
+    "RelatedResponse": {
+      "additionalProperties": false,
+      "description": "Validation performs no hydration; relationship reads disclose partial coverage.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadManifest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memories": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Memory"
+          },
+          "maxItems": 100,
+          "title": "Memories",
+          "type": "array"
+        },
+        "reasons": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "relationships": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MemoryRelationship"
+          },
+          "maxItems": 100,
+          "title": "Relationships",
+          "type": "array"
+        },
+        "rows_examined": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        },
+        "source_calls": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "invalid",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "valid": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "RelatedResponse",
+      "type": "object"
+    },
+    "RememberRequest": {
+      "additionalProperties": false,
+      "description": "Propose content to the bound character; engine policy supplies ownership/recorded time.",
+      "properties": {
+        "draft": {
+          "$ref": "#/$defs/MemoryDraft"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "draft"
+      ],
+      "title": "RememberRequest",
+      "type": "object"
+    },
+    "RequestOptions": {
+      "additionalProperties": false,
+      "description": "Caller deadline metadata; transport cancellation does not resolve uncertain writes.",
+      "properties": {
+        "deadline_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        }
+      },
+      "title": "RequestOptions",
+      "type": "object"
+    },
+    "ResultLimit": {
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "type": "integer"
+    },
+    "RetrievalContext": {
+      "additionalProperties": false,
+      "description": "Structured prompt inputs/dependencies; no prebuilt prompt or generated belief.",
+      "properties": {
+        "archive": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ArchiveResult"
+          },
+          "maxItems": 100,
+          "title": "Archive",
+          "type": "array"
+        },
+        "coverage": {
+          "$ref": "#/$defs/RetrievalCoverage"
+        },
+        "dependencies": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Dependencies",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "fast_dependencies": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContextDependencies"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memories": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MemoryResult"
+          },
+          "maxItems": 100,
+          "title": "Memories",
+          "type": "array"
+        },
+        "pinned": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PinnedMemory"
+          },
+          "maxItems": 100,
+          "title": "Pinned",
+          "type": "array"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileSelection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "summaries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SessionSummary"
+          },
+          "maxItems": 100,
+          "title": "Summaries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "coverage"
+      ],
+      "title": "RetrievalContext",
+      "type": "object"
+    },
+    "RetrievalCoverage": {
+      "additionalProperties": false,
+      "description": "Explicit search/context coverage; an empty result is not an index/source failure.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "index_status": {
+          "enum": [
+            "available",
+            "degraded",
+            "unavailable"
+          ],
+          "title": "Index Status",
+          "type": "string"
+        },
+        "reason_codes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "warnings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ErrorInfo"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "index_status"
+      ],
+      "title": "RetrievalCoverage",
+      "type": "object"
+    },
+    "Revision": {
+      "exclusiveMinimum": 0,
+      "type": "integer"
+    },
+    "SearchResponse": {
+      "additionalProperties": false,
+      "description": "Bounded ranked beliefs, pagination, and truthful derived-index coverage.",
+      "properties": {
+        "coverage": {
+          "$ref": "#/$defs/RetrievalCoverage"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Cursor"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/MemoryResult"
+          },
+          "maxItems": 100,
+          "title": "Results",
+          "type": "array"
+        }
+      },
+      "required": [
+        "results",
+        "coverage"
+      ],
+      "title": "SearchResponse",
+      "type": "object"
+    },
+    "SessionSummary": {
+      "additionalProperties": false,
+      "description": "Bounded derived working context; it does not replace source history or corroboration.",
+      "properties": {
+        "character_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "title": "Dependencies",
+          "type": "array"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "generated_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "session_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "summary_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "token_budget": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "token_count": {
+          "$ref": "#/$defs/NonnegativeInteger"
+        }
+      },
+      "required": [
+        "summary_id",
+        "character_id",
+        "session_id",
+        "revision",
+        "text",
+        "token_count",
+        "token_budget",
+        "dependencies",
+        "generated_at"
+      ],
+      "title": "SessionSummary",
+      "type": "object"
+    },
+    "Sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "SourceLink": {
+      "additionalProperties": false,
+      "description": "Preserve missing/invalid graph links rather than flattening or repairing them.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "raw_reference_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "missing",
+            "invalid"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "SourceLink",
+      "type": "object"
+    },
+    "SourceRecord": {
+      "discriminator": {
+        "mapping": {
+          "asset": "#/$defs/Asset",
+          "conversation": "#/$defs/Conversation",
+          "document": "#/$defs/Document",
+          "graph_node": "#/$defs/GraphNode",
+          "message": "#/$defs/Message",
+          "opaque": "#/$defs/OpaqueArchiveRecord"
+        },
+        "propertyName": "record_type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Conversation"
+        },
+        {
+          "$ref": "#/$defs/GraphNode"
+        },
+        {
+          "$ref": "#/$defs/Message"
+        },
+        {
+          "$ref": "#/$defs/Document"
+        },
+        {
+          "$ref": "#/$defs/Asset"
+        },
+        {
+          "$ref": "#/$defs/OpaqueArchiveRecord"
+        }
+      ]
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "description": "Reference an immutable canonical source revision without exposing physical locators.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "part_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "record_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "record_kind": {
+          "$ref": "#/$defs/WireString"
+        },
+        "record_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "source_store_id": {
+          "$ref": "#/$defs/CanonicalId"
+        }
+      },
+      "required": [
+        "source_store_id",
+        "record_kind",
+        "record_id",
+        "record_revision"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    },
+    "SourceTimestamp": {
+      "additionalProperties": false,
+      "description": "Unresolved source clock; recorded/import time never fills a missing value.",
+      "properties": {
+        "ambiguity_reasons": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Ambiguity Reasons",
+          "type": "array"
+        },
+        "basis": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "precision": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "raw_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Value"
+        },
+        "timezone_assumption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone Assumption"
+        },
+        "units": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireString"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "SourceTimestamp",
+      "type": "object"
+    },
+    "StringValue": {
+      "additionalProperties": false,
+      "description": "An exact string fact value, normalized only through a referenced predicate policy.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "type": {
+          "const": "string",
+          "default": "string",
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "StringValue",
+      "type": "object"
+    },
+    "SupersedeRequest": {
+      "additionalProperties": false,
+      "description": "Explicit transition evidence, preserving the old belief and temporal interpretation.",
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "previous_valid_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "$ref": "#/$defs/WireString"
+        },
+        "replacement": {
+          "$ref": "#/$defs/MemoryDraft"
+        },
+        "transition_evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceAssertion"
+          },
+          "title": "Transition Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "memory_id",
+        "expected_revision",
+        "replacement",
+        "transition_evidence",
+        "reason"
+      ],
+      "title": "SupersedeRequest",
+      "type": "object"
+    },
+    "TemporalBounds": {
+      "additionalProperties": false,
+      "description": "Optional half-open validity with explicit observation/confirmation metadata.",
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "last_confirmed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "precision": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "TemporalBounds",
+      "type": "object"
+    },
+    "TemporalMetadata": {
+      "additionalProperties": false,
+      "description": "A stored interpretation's recorded clock, independent of historical validity.",
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "last_confirmed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "precision": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "recorded_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "recorded_at"
+      ],
+      "title": "TemporalMetadata",
+      "type": "object"
+    },
+    "TemporalQuery": {
+      "additionalProperties": false,
+      "description": "Filter world time and recorded interpretation history independently.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "observed_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observed_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recorded_before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "valid_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "TemporalQuery",
+      "type": "object"
+    },
+    "UnpinRequest": {
+      "additionalProperties": false,
+      "description": "Remove a pin using current expected memory revision and idempotent mutation identity.",
+      "properties": {
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "memory_id",
+        "expected_revision"
+      ],
+      "title": "UnpinRequest",
+      "type": "object"
+    },
+    "UpdateRequest": {
+      "additionalProperties": false,
+      "description": "Append a replacement interpretation revision without mutating historical evidence.",
+      "properties": {
+        "draft": {
+          "$ref": "#/$defs/MemoryDraft"
+        },
+        "expected_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/IdempotencyKey"
+        },
+        "memory_id": {
+          "$ref": "#/$defs/CanonicalId"
+        },
+        "options": {
+          "$ref": "#/$defs/RequestOptions"
+        },
+        "reason": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "memory_id",
+        "expected_revision",
+        "draft",
+        "reason"
+      ],
+      "title": "UpdateRequest",
+      "type": "object"
+    },
+    "UtcTimestamp": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+      "type": "string"
+    },
+    "ValidationVerdict": {
+      "additionalProperties": false,
+      "description": "Persist validation/activation decision inputs; confidence is not a probability.",
+      "properties": {
+        "evaluated_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "manual_override": {
+          "default": false,
+          "title": "Manual Override",
+          "type": "boolean"
+        },
+        "policy": {
+          "$ref": "#/$defs/ProcessingSpecRef"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "verdict": {
+          "$ref": "#/$defs/WireString"
+        }
+      },
+      "required": [
+        "policy",
+        "verdict",
+        "reasons",
+        "evaluated_at"
+      ],
+      "title": "ValidationVerdict",
+      "type": "object"
+    },
+    "WireString": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Experimental backend-independent contract definitions; no engine implementation is implied.",
+  "title": "Ember Memory ABI 0.4.0"
+}

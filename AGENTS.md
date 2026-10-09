@@ -56,8 +56,16 @@ import/review and conservative P3/P4 admission are implemented. Read
 Jobs pin source/model/prompt/schema/policy hashes; completed windows commit atomically
 and only explicit operator review/approval/seed enters character recall. The user has
 authorized a bounded sample from the existing private archive; do not interpret that as
-approval of any proposal. Stop for architecture review before Phase 7; no automatic
-personal claim adoption, consolidation or preemption is implied.
+approval of any proposal. Phase 7 is implemented experimentally in the isolated
+`ember-phase-seven` worktree and awaits architecture review. Read
+`docs/adr/0013-phase-seven-native-consolidation-and-profile.md`,
+`docs/phase-7-validation.md`, `docs/phase-7-runbook.md`,
+`ember-memory/docs/adr/0008-native-consolidation-and-profile.md` and
+`ember-agent/docs/adr/0005-bounded-profile-and-delivery-validation.md` before changing
+it. ABI 0.4.0, engine 0.5.0/schema 5 and disposable index layout 0.5.0 are experimental;
+the primary checkout and data have not been migrated. Native candidate acceptance is
+policy-controlled; imports remain explicitly reviewed. Keep Phase 8 out of scope until
+the user reviews the Phase 7 architecture and evidence.
 
 ## Boundaries
 

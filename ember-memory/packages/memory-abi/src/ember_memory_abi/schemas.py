@@ -52,6 +52,16 @@ from .memory import (
     SessionSummary,
 )
 from .predicates import PredicateDefinition
+from .related import (
+    ContextDependencies,
+    MemoryReference,
+    MemoryRelationship,
+    ProfileOmission,
+    ProfileSelection,
+    ReadManifest,
+    RelatedRequest,
+    RelatedResponse,
+)
 
 CONTRACT_TYPES: tuple[type[ContractModel], ...] = (
     SourceRef,
@@ -99,6 +109,14 @@ CONTRACT_TYPES: tuple[type[ContractModel], ...] = (
     ImportCursor,
     ProcessingSpecRef,
     PredicateDefinition,
+    ContextDependencies,
+    ProfileSelection,
+    ProfileOmission,
+    MemoryReference,
+    RelatedRequest,
+    RelatedResponse,
+    MemoryRelationship,
+    ReadManifest,
 )
 
 

@@ -13,20 +13,30 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from ember_memory_abi.archive import ProcessingSpecRef
 from ember_memory_abi.common import CanonicalId, timestamp_from_datetime
 from ember_memory_abi.errors import AccessDeniedError, NotFoundError, SourceUnavailableError
 from ember_memory_abi.interfaces import MutationReceipt
 from ember_memory_abi.memory import Memory, MemoryDraft, MemorySource
+from ember_memory_abi.related import MemoryRelationship
 
 from ._state import CharacterState
 from .bundle_contracts import BundleFile, BundleManifest, StoreSnapshot
+from .consolidation import NativeAcceptanceReceipt
 from .database import SqliteDatabase, load_model, model_bytes, payload_hash, row_text
 from .engine import CanonicalEngine
 from .errors import BundleError, CorruptStoreError
 from .library import KnowledgeSelection, LibraryService, entity_references
 from .models import StoreInfo
 from .ownership import validate_local_root
-from .schema import PHASE_FIVE_SQL, PHASE_SIX_IMMUTABLE, PHASE_SIX_SQL, SCHEMA_VERSION
+from .schema import (
+    PHASE_FIVE_SQL,
+    PHASE_SEVEN_IMMUTABLE,
+    PHASE_SEVEN_SQL,
+    PHASE_SIX_IMMUTABLE,
+    PHASE_SIX_SQL,
+    SCHEMA_VERSION,
+)
 from .specifications import specification_rows
 
 
@@ -386,7 +396,27 @@ class BundleService:
             result: dict[CanonicalId, MemorySource] = {}
             size = 0
             for memory in memories:
-                for assertion in memory.content.evidence:
+                assertions = list(memory.content.evidence)
+                for support_row in connection.execute(
+                    "SELECT * FROM memory_supports WHERE memory_id=? LIMIT 100001",
+                    (str(memory.memory_id),),
+                ):
+                    support = load_model(support_row, MemoryRelationship)
+                    assertions.extend(support.evidence)
+                    if len(assertions) > 100000:
+                        raise BundleError()
+                for edge_row in connection.execute(
+                    (
+                        "SELECT * FROM memory_relationships WHERE source_id=? OR "
+                        "target_id=? LIMIT 100001"
+                    ),
+                    (str(memory.memory_id), str(memory.memory_id)),
+                ):
+                    edge = load_model(edge_row, MemoryRelationship)
+                    assertions.extend(edge.evidence)
+                    if len(assertions) > 100000:
+                        raise BundleError()
+                for assertion in assertions:
                     evidence = assertion.evidence
                     if not state.source_permitted(connection, evidence.source, "evidence_read"):
                         # Do not export revoked/forgotten source bytes. The belief
@@ -476,8 +506,13 @@ class BundleService:
             entities.add(str(binding.subject.entity_id))
 
         def copy(connection: sqlite3.Connection) -> None:
+            policy = connection.execute("SELECT subject_id FROM profile_policy").fetchone()
+            if policy and policy["subject_id"]:
+                entities.add(row_text(policy, "subject_id"))
             with closing(sqlite3.connect(path)) as target:
-                target.executescript(SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL + PHASE_SIX_SQL)
+                target.executescript(
+                    SCHEMA_SQL + PHASE_FOUR_SQL + PHASE_FIVE_SQL + PHASE_SIX_SQL + PHASE_SEVEN_SQL
+                )
 
                 def transfer(
                     table: str, permitted: Callable[[sqlite3.Row], bool] | None = None
@@ -489,6 +524,9 @@ class BundleService:
                                 tuple(row),
                             )
 
+                target.execute("DELETE FROM profile_policy")
+                transfer("profile_policy")
+                transfer("profile_exclusions")
                 for table in (
                     "store_metadata",
                     "schema_versions",
@@ -501,6 +539,22 @@ class BundleService:
                     for memory in memories
                     for provenance in memory.content.provenance
                 )
+                extra_specs: list[ProcessingSpecRef] = []
+                for support_row in connection.execute("SELECT * FROM memory_supports"):
+                    if row_text(support_row, "memory_id") in selected:
+                        support = load_model(support_row, MemoryRelationship)
+                        extra_specs.extend(p.specification for p in support.provenance)
+                references = (*references, *extra_specs)
+                native_rows: list[sqlite3.Row] = []
+                for decision_row in connection.execute("SELECT * FROM native_acceptance"):
+                    receipt = load_model(decision_row, NativeAcceptanceReceipt)
+                    if receipt.memory and str(receipt.memory.memory_id) in selected:
+                        native_rows.append(decision_row)
+                        references = (*references, receipt.policy)
+                for native_row in native_rows:
+                    target.execute(
+                        "INSERT INTO native_acceptance VALUES(?,?,?,?,?,?,?,?)", tuple(native_row)
+                    )
                 for definition in specification_rows(connection, references):
                     target.execute("INSERT INTO processing_specs VALUES(?,?,?)", tuple(definition))
                 for table in (
@@ -510,8 +564,17 @@ class BundleService:
                     "memory_dependencies",
                     "pins",
                     "access_stats",
+                    "claim_projection",
+                    "memory_supports",
                 ):
                     transfer(table, lambda row: row_text(row, "memory_id") in selected)
+                transfer(
+                    "memory_relationships",
+                    lambda row: (
+                        row_text(row, "source_id") in selected
+                        and (row["target_id"] is None or row_text(row, "target_id") in selected)
+                    ),
+                )
                 transfer(
                     "memory_supersessions",
                     lambda row: (
@@ -574,7 +637,12 @@ class BundleService:
                             "INSERT INTO materialized_evidence VALUES(?,?,?)",
                             (str(item.evidence.evidence_id), payload, payload_hash(payload)),
                         )
-                for table in (*IMMUTABLE_TABLES, *PHASE_FOUR_IMMUTABLE, *PHASE_SIX_IMMUTABLE):
+                for table in (
+                    *IMMUTABLE_TABLES,
+                    *PHASE_FOUR_IMMUTABLE,
+                    *PHASE_SIX_IMMUTABLE,
+                    *PHASE_SEVEN_IMMUTABLE,
+                ):
                     for action in ("UPDATE", "DELETE"):
                         target.execute(
                             f"CREATE TRIGGER immutable_{table}_{action.lower()} "

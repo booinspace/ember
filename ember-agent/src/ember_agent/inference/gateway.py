@@ -469,6 +469,9 @@ class P0Gateway:
                     if frame.eval_duration > 0
                     else None,
                     load_seconds=frame.load_duration / 1e9,
+                    prefill_seconds=frame.prompt_eval_duration / 1e9
+                    if request.version == "0.3.0" and frame.prompt_eval_duration is not None
+                    else None,
                 )
                 if self.record:
                     await self.record("complete", request)

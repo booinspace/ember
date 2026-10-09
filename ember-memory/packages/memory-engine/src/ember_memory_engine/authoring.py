@@ -1,5 +1,6 @@
 """Provider-independent human memory authoring on existing archive and mutation contracts."""
 
+import sqlite3
 from hashlib import sha256
 from typing import Annotated
 from uuid import uuid4
@@ -215,6 +216,20 @@ def ensure_subject(engine: CanonicalEngine, character_id: CanonicalId) -> Entity
             with path.open("x", encoding="utf-8", newline="\n") as output:
                 output.write(binding.model_dump_json())
         engine.put_entity(identity, Entity(reference=binding.subject, revision=1, name="User"))
-        return binding.subject
+        store = engine.character(identity)
+
+        def bind(connection: sqlite3.Connection) -> None:
+            with store.database.transaction(connection):
+                connection.execute(
+                    "UPDATE profile_policy SET subject_id=?,selection_epoch=selection_epoch+1 "
+                    "WHERE subject_id IS NULL",
+                    (str(binding.subject.entity_id),),
+                )
+
+        store.database.write(bind)
+        policy = store.profile_settings()
+        return EntityRef(
+            store_id=identity, entity_id=policy.subject_id or binding.subject.entity_id
+        )
     except (OSError, ValidationError) as error:
         raise CorruptStoreError() from error

@@ -26,6 +26,14 @@ def windows(source: sqlite3.Connection, job: JobDefinition) -> Iterator[WindowRe
         )
     elif request.source_kind == "archive":
         selection += " AND record_kind='message'"
+    elif (
+        request.source_kind == "native"
+        and request.specification.extractor == "ember.atomic-claims@0.2.0"
+    ):
+        selection += (
+            " AND record_kind='message' AND record_id IN (SELECT record_id FROM source_keys"
+            " WHERE adapter='native_delivery')"
+        )
     elif request.source_kind == "native":
         selection += (
             " AND record_kind='document' AND record_id NOT IN (SELECT record_id "
@@ -68,6 +76,19 @@ def windows(source: sqlite3.Connection, job: JobDefinition) -> Iterator[WindowRe
                 if resolved
                 else "ambiguous"
             )
+        if request.specification.extractor == "ember.atomic-claims@0.2.0":
+            trusted = (
+                isinstance(record, Message)
+                and record.actor.role == "user"
+                and record.actor.actor_id == job.subject.entity_id
+                and source.execute(
+                    "SELECT 1 FROM source_keys WHERE adapter='native_delivery' "
+                    "AND record_id=? AND external_id LIKE 'v2:user:%'",
+                    (str(record.source.record_id),),
+                ).fetchone()
+                is not None
+            )
+            branch = "not_applicable" if trusted else "ambiguous"
         authority = (
             "summary"
             if summary

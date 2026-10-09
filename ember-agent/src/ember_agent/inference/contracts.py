@@ -44,7 +44,7 @@ class ToolDefinition(RuntimeModel):
 class GatewayRequest(RuntimeModel):
     """Bounded immutable generation request; authenticated P0 scope is server-owned."""
 
-    version: Literal["0.1.0", "0.2.0"] = "0.2.0"
+    version: Literal["0.1.0", "0.2.0", "0.3.0"] = "0.3.0"
     request_id: UUID4
     context_id: UUID4
     workload: Literal["P0", "P1", "P2", "P3", "P4"] = "P0"
@@ -65,6 +65,11 @@ class ToolCall(RuntimeModel):
     arguments: dict[str, JsonValue] = Field(repr=False)
 
 
+def missing_prefill(value: float | None) -> bool:
+    """Legacy completion JSON omits new counters rather than sending unknown fields."""
+    return value is None
+
+
 class GenerationUsage(RuntimeModel):
     """Content-free measured counters and timings, separate from model context text."""
 
@@ -74,6 +79,9 @@ class GenerationUsage(RuntimeModel):
     first_visible_seconds: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None
     tokens_per_second: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None
     load_seconds: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0.0
+    prefill_seconds: Annotated[float | None, Field(ge=0, allow_inf_nan=False)] = Field(
+        default=None, exclude_if=missing_prefill
+    )
 
 
 class GatewayEvent(RuntimeModel):

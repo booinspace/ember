@@ -57,7 +57,15 @@ def _canonical_scope(
 ) -> tuple[str, tuple[str | int, ...]]:
     sql, values = memory_scope(state, query, metadata_only=True, index_lookup=lookup)
     sql = sql.rsplit(" ORDER BY ", 1)[0]
-    for table in ("memory_revisions", "memories", "suppression_targets", "memory_dependencies"):
+    for table in (
+        "memory_revisions",
+        "memories",
+        "suppression_targets",
+        "memory_dependencies",
+        "claim_projection",
+        "memory_evidence",
+        "source_grants",
+    ):
         sql = re.sub(r"\b" + table + r"\b", "canonical." + table, sql)
     return sql, values[:-1]
 
@@ -90,6 +98,10 @@ def projected_memory_scope(
     """Use certified immutable headers only while their canonical outbox remains current."""
     clauses = ["d.kind='memory'", "d.recall_eligible=1", "d.is_current=1"]
     values: list[str | int] = []
+    clauses.append("(d.scope_until_us IS NULL OR d.scope_until_us>?)")
+    values.append(
+        timestamp_to_unix_microseconds(timestamp_from_datetime(state.database.clock.now()))
+    )
     for column, items in (
         ("d.memory_kind", query.kinds),
         ("d.modality", query.modalities),
@@ -307,6 +319,7 @@ class IndexedRetriever:
                     if plain_current and generation.layout in {
                         "ember.search-layout@0.3.0",
                         "ember.search-layout@0.4.0",
+                        "ember.search-layout@0.5.0",
                     }:
                         now = timestamp_to_unix_microseconds(
                             timestamp_from_datetime(state.database.clock.now())
@@ -421,10 +434,28 @@ class IndexedRetriever:
                 ).fetchone()
                 is not None
             )
+            restrictive_pending = (
+                canonical.execute(
+                    "SELECT 1 FROM index_outbox WHERE sequence>? "
+                    "AND kind NOT IN ('source_changed','pin','unpin','record_access',"
+                    "'seed_grants','remember') "
+                    "AND NOT(kind='memory_revision' AND revision=1) LIMIT 1",
+                    (previous.outbox_sequence,),
+                ).fetchone()
+                is not None
+            )
             certified = (
-                previous.header_projection is not None
-                and not pending
+                previous.header_projection == "ember.canonical-headers@0.2.0"
+                and not restrictive_pending
                 and query.temporal.recorded_before is None
+                and not any(
+                    (
+                        query.temporal.observed_from,
+                        query.temporal.observed_until,
+                        query.temporal.valid_from,
+                        query.temporal.valid_until,
+                    )
+                )
                 and index.certified(previous, path)
             )
             scope, values = (
@@ -467,7 +498,10 @@ class IndexedRetriever:
             result: list[MemoryResult] = []
             seen: set[str] = set()
             for row, score, ranking in candidates:
-                if certified and generation.layout == "ember.search-layout@0.4.0":
+                if certified and generation.layout in {
+                    "ember.search-layout@0.4.0",
+                    "ember.search-layout@0.5.0",
+                }:
                     if row_text(row, "payload_key") in seen:
                         continue
                 if result and monotonic() > deadline:
@@ -492,7 +526,8 @@ class IndexedRetriever:
                 fingerprint = canonical_object_sha256(memory.content.payload)
                 if (
                     certified
-                    and generation.layout == "ember.search-layout@0.4.0"
+                    and generation.layout
+                    in {"ember.search-layout@0.4.0", "ember.search-layout@0.5.0"}
                     and (fingerprint != row_text(row, "payload_key"))
                 ):
                     raise IndexError()

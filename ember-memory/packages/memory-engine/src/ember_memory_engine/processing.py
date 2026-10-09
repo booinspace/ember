@@ -28,7 +28,11 @@ from ember_memory_abi.memory import (
     ProcessingProvenance,
     StringValue,
 )
-from ember_memory_abi.predicates import initial_predicates, validate_memory_write
+from ember_memory_abi.predicates import (
+    initial_predicates,
+    phase_seven_predicates,
+    validate_memory_write,
+)
 from ember_memory_abi.temporal import TemporalBounds
 
 from .activation import evaluate
@@ -107,8 +111,24 @@ class ProcessingService:
     def create(self, request: JobRequest) -> JobStatus:
         """Persist/replay a pinned source snapshot, then plan bounded metadata batches."""
         request = JobRequest.model_validate_json(request.model_dump_json())
-        if request.specification.extractor != "ember.atomic-claims@0.1.2":
+        if request.specification.extractor not in {
+            "ember.atomic-claims@0.1.2",
+            "ember.atomic-claims@0.2.0",
+        }:
             raise ProcessingError("processing_extractor_changed")
+        if request.specification.extractor == "ember.atomic-claims@0.2.0" and (
+            self.info.kind != "character" and request.source_kind == "native"
+        ):
+            raise ProcessingError("native_profile_requires_character_sources")
+        from .processing_contracts import ClaimBatch
+        from .processing_prompt import instructions_for
+
+        if request.specification.prompt_sha256 != sha256(
+            instructions_for(request.specification.extractor).encode()
+        ).hexdigest() or request.specification.output_schema_sha256 != canonical_object_sha256(
+            ClaimBatch.model_json_schema()
+        ):
+            raise ProcessingError("processing_prompt_or_schema_changed")
         if request.owner_store_id != self.owner:
             raise ProcessingError("job_owner_mismatch")
         if request.specification.policy_sha256 != POLICY.reference().specification_sha256:
@@ -433,7 +453,18 @@ class ProcessingService:
                         )
                     supported = True
                     try:
-                        validate_memory_write(draft, predicates=initial_predicates())
+                        validate_memory_write(
+                            draft,
+                            predicates=(
+                                *initial_predicates(),
+                                *(
+                                    phase_seven_predicates()
+                                    if definition.request.specification.extractor
+                                    == "ember.atomic-claims@0.2.0"
+                                    else ()
+                                ),
+                            ),
+                        )
                     except (UnsupportedWriteError, InvalidPredicateError):
                         supported = False
                     key = fingerprint(claim, definition.subject)
@@ -654,7 +685,10 @@ class ProcessingService:
             status = await offload(partial(self.status, job_id))
             if status.status in {"complete", "cancelled", "planning"}:
                 return status
-            if definition.request.specification.extractor != "ember.atomic-claims@0.1.2":
+            if definition.request.specification.extractor not in {
+                "ember.atomic-claims@0.1.2",
+                "ember.atomic-claims@0.2.0",
+            }:
                 raise ProcessingError("processing_extractor_changed")
             await offload(partial(self._resume, job_id, retry_failed))
             processed = 0

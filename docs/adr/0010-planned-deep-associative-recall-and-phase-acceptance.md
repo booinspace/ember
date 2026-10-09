@@ -1,10 +1,12 @@
 # Root ADR 0010: planned Deep Associative Recall and explicit phase acceptance
 
-Date: 2026-10-08. Status: proposed architecture; documentation only, not implemented.
+Date: 2026-10-08. Status: historical planned architecture and stable AC record.
 [PLAN section 13](../../PLAN.md#deep-associative-recall-planned-phase-8-architecture)
 is authoritative for the algorithm/contracts/budgets, and
 [section 34](../../PLAN.md#acceptance-evidence-and-phase-completion) owns stable phase AC IDs.
-This record extends planned Phase 7/8 scope without superseding historical delivery.
+Phase 8 remains planned. Phase 7 behavior from this record's acceptance scope is now
+implemented experimentally in [Root ADR 0013](0013-phase-seven-native-consolidation-and-profile.md);
+this record preserves the stable AC IDs and Phase 8 design without rewriting historical delivery.
 
 ## 1. Desired behavior
 

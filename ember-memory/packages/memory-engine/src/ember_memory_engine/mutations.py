@@ -39,6 +39,7 @@ from ._state import CharacterState
 from .database import (
     check_deadline,
     model_bytes,
+    payload_hash,
     row_text,
 )
 from .errors import IdempotencyConflictError
@@ -89,9 +90,9 @@ def mutate(
         if isinstance(request, (RememberRequest, UpdateRequest)):
             state.validate_draft(connection, request.draft)
         if isinstance(request, SupersedeRequest):
-            _validate_transition(state, connection, request, old)
+            validate_transition(state, connection, request, old)
         stamp, recorded = state.database.recorded_stamp(connection)
-        affected = _apply_mutation(state, connection, request, old, stamp, recorded)
+        affected = apply_validated_mutation(state, connection, request, old, stamp, recorded)
         check_deadline(state.database.clock, request.options.deadline_at)
         receipt = MutationReceipt(
             operation_id=uuid4(),
@@ -122,12 +123,13 @@ def mutate(
     return receipt
 
 
-def _validate_transition(
+def validate_transition(
     state: CharacterState,
     connection: sqlite3.Connection,
     request: SupersedeRequest,
     old: Memory | None,
 ) -> None:
+    """Validate compatible predicate/evidence for trusted human or policy transactions."""
     state.validate_draft(connection, request.replacement)
     if old is None or not request.transition_evidence:
         raise InvalidEvidenceError()
@@ -220,7 +222,7 @@ def _record_access(
     return affected
 
 
-def _apply_mutation(
+def apply_validated_mutation(
     state: CharacterState,
     connection: sqlite3.Connection,
     request: MutationRequest,
@@ -228,6 +230,7 @@ def _apply_mutation(
     stamp: str,
     recorded: int,
 ) -> list[RecordRevision]:
+    """Apply previously authorized, validated effects inside the caller-owned transaction."""
     affected: list[RecordRevision] = []
     if isinstance(request, RememberRequest):
         memory = state.create_memory(connection, request.draft, stamp)
@@ -256,7 +259,14 @@ def _apply_mutation(
                 },
             }
         )
-        memory = state.create_memory(connection, replacement, stamp)
+        memory = state.create_memory(connection, replacement, stamp, origin=old.origin)
+        # The transition changes the assertion, not its derivation/seed lineage.
+        # Corroborating source history stays in the ledger instead of growing JSON.
+        connection.execute(
+            "INSERT OR IGNORE INTO memory_dependencies SELECT ?,?,target_kind,target_key "
+            "FROM memory_dependencies WHERE memory_id=? AND revision=? AND target_kind='origin'",
+            (str(memory.memory_id), memory.revision, str(old.memory_id), old.revision),
+        )
         connection.execute(
             "INSERT INTO memory_supersessions VALUES(?,?,?,?,?,?)",
             (
@@ -266,6 +276,30 @@ def _apply_mutation(
                 memory.revision,
                 json.dumps([item.model_dump(mode="json") for item in request.transition_evidence]),
                 recorded,
+            ),
+        )
+        from ember_memory_abi.related import MemoryReference, MemoryRelationship
+
+        edge = MemoryRelationship(
+            relationship_id=uuid4(),
+            kind="supersedes",
+            source=MemoryReference(memory_id=old.memory_id, revision=old.revision),
+            target=MemoryReference(memory_id=memory.memory_id, revision=memory.revision),
+            evidence=request.transition_evidence,
+            origins=tuple(m.origin for m in (old, memory) if m.origin),
+        )
+        edge_payload = model_bytes(edge)
+        connection.execute(
+            "INSERT INTO memory_relationships VALUES(?,?,?,?,?,?,?,?)",
+            (
+                str(edge.relationship_id),
+                edge.kind,
+                str(old.memory_id),
+                old.revision,
+                str(memory.memory_id),
+                memory.revision,
+                edge_payload,
+                payload_hash(edge_payload),
             ),
         )
         affected.extend(

@@ -1,6 +1,7 @@
-# Root ADR 0012: proposed Phase 7 implementation
+# Root ADR 0012: pre-code Phase 7 implementation proposal
 
-Date: 2026-10-08. Status: proposed; awaiting the user's pre-code architecture review.
+Date: 2026-10-08. Status: historical approved proposal; implementation is recorded in
+[Root ADR 0013](0013-phase-seven-native-consolidation-and-profile.md).
 [PLAN Phase 7](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation)
 is authoritative. The [implementation proposal](../phase-7-implementation-proposal.md)
 records inspected code, ownership, contracts, scalability and the AC evidence matrix.

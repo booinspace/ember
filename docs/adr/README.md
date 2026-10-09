@@ -18,9 +18,10 @@ acceptance evidence and remaining limits. They do not make a planned feature liv
 | Phase 4: libraries/characters/bundles | [Root ADR 0007](0007-phase-four-libraries-characters-bundles.md) | Implemented; 332 tests passed including actual LiveKit/Qwen; architecture review checkpoint | [Memory ADR 0005](../../ember-memory/docs/adr/0005-libraries-seeds-and-bundles.md); [Windows runbook](../phase-4-runbook.md) |
 | Phase 5: retrieval/indexes | [Root ADR 0008](0008-phase-five-retrieval-and-indexes.md) | 360 tests passed including real BGE/LiveKit/Qwen; architecture review and full performance/capacity acceptance open | [Memory ADR 0006](../../ember-memory/docs/adr/0006-derived-retrieval-and-generations.md); [runbook](../phase-5-runbook.md) |
 | Phase 6: full extraction | [Root ADR 0009](0009-phase-six-extraction-and-background-inference.md) | Extractor 0.1.2 exact-evidence/schema fix; 408-test full gate passed; five-window private archive sample produced four pending proposals; architecture review pending | [Memory ADR 0007](../../ember-memory/docs/adr/0007-extraction-jobs-and-summary-sources.md); [Agent ADR 0004](../../ember-agent/docs/adr/0004-conservative-background-gateway.md); [operator runbook](../phase-6-runbook.md) |
-| Planned Phase 7/8: Deep Associative Recall and phase AC | [Root ADR 0010](0010-planned-deep-associative-recall-and-phase-acceptance.md) | Proposed documentation only; full phase criteria and deep-recall architecture, no runtime delivery | [PLAN retrieval design](../../PLAN.md#deep-associative-recall-planned-phase-8-architecture); [phase criteria](../../PLAN.md#acceptance-evidence-and-phase-completion); component implementation ADRs remain prospective |
-| Planned Phase 7: bounded user profile | [Root ADR 0011](0011-planned-phase-seven-user-profile.md) | Planned documentation only; revision-bound profile pins, text integration, invalidation and measured budgets | [PLAN profile design](../../PLAN.md#bounded-user-profile-planned-phase-7); [Phase 7 criteria](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation); component implementation records remain prospective |
-| Proposed Phase 7 implementation | [Root ADR 0012](0012-planned-phase-seven-implementation.md) | Pre-code architecture review; no implementation or AC completion claim | [Implementation proposal and AC matrix](../phase-7-implementation-proposal.md); native authority, consolidation/time, profile integration and performance gates |
+| Phase 7/8 criteria and deep-recall design | [Root ADR 0010](0010-planned-deep-associative-recall-and-phase-acceptance.md) | Acceptance IDs and Phase 8 deep-recall architecture remain authoritative; Phase 7 implementation is recorded in Root ADR 0013 | [PLAN retrieval design](../../PLAN.md#deep-associative-recall-planned-phase-8-architecture); [phase criteria](../../PLAN.md#acceptance-evidence-and-phase-completion) |
+| Phase 7 bounded user profile design | [Root ADR 0011](0011-planned-phase-seven-user-profile.md) | Historical design, now implemented experimentally and extended by Root ADR 0013 | [PLAN profile design](../../PLAN.md#bounded-user-profile-phase-7-implementation); [Phase 7 criteria](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation) |
+| Phase 7 implementation proposal | [Root ADR 0012](0012-planned-phase-seven-implementation.md) | Historical approved pre-code proposal; delivered implementation/evidence in Root ADR 0013 | [Implementation proposal and AC matrix](../phase-7-implementation-proposal.md); native authority, consolidation/time, profile integration and performance gates |
+| Phase 7: native policy, consolidation/time and bounded profile | [Root ADR 0013](0013-phase-seven-native-consolidation-and-profile.md) | Implemented experimentally in isolated worktree; full AC matrix and performance limits recorded; awaiting architecture review | [Phase 7 validation](../phase-7-validation.md); [runbook](../phase-7-runbook.md); [Memory ADR 0008](../../ember-memory/docs/adr/0008-native-consolidation-and-profile.md); [Agent ADR 0005](../../ember-agent/docs/adr/0005-bounded-profile-and-delivery-validation.md) |
 
 
 Phase 0b's supported export inspection and import are verified; saved-memory
@@ -28,18 +29,19 @@ inclusion remains unestablished. Phase 3 implementation and private import passe
 the recorded checks; exact-claim operator review/adoption remains open. Phase 4 library/character/bundle
 implementation is recorded separately in Root ADR 0007. Phase 5 implementation and open acceptance gates are recorded in Root ADR 0008.
 Phase 6 implementation and opt-in audited window retry/continuation are recorded in
-Root ADR 0009; stop for architecture review before Phase 7.
+Root ADR 0009. Phase 7 implementation and its current architecture-review checkpoint
+are recorded in Root ADR 0013.
 Phase 6 now also includes interactive ingestion/review/seeding with durable human
 decisions and restart-safe indexing; see Root ADR 0009 and Memory ADR 0007.
 
-Phase 7 and later remain planned. [PLAN's Phase 7/8 acceptance criteria](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation)
-now require policy-controlled automatic native capture and independent native/imported
-recall controls; [Root ADR 0009](0009-phase-six-extraction-and-background-inference.md#planned-phase-78-acceptance-clarification-2026-10-08)
-records the planned scope without claiming runtime delivery.
-[Root ADR 0011](0011-planned-phase-seven-user-profile.md) adds the bounded source-backed
-user profile to Phase 7 terminal/LiveKit text deliverables. Phase 8 reuses its pin
-budgets, dependency invalidation and source controls; neither phase is implemented
-by this documentation update.
+Phase 7 native policy, consolidation/time and profile integration are implemented
+experimentally in the isolated worktree. [Root ADR 0013](0013-phase-seven-native-consolidation-and-profile.md)
+and its linked component ADRs record owners, coupling and behavior; the
+[acceptance matrix](../phase-7-validation.md) distinguishes checked requirements from
+open global capacity/platform gates. The worktree has not been applied to the primary
+checkout or its production data. Stop at architecture review before Phase 8.
+[Root ADR 0011](0011-planned-phase-seven-user-profile.md) and [ADR 0012](0012-planned-phase-seven-implementation.md)
+remain historical design records; their current links point to the implemented PLAN section.
 Early grant/suppression/temporal primitives in phase 2 do not close the later
 seeding, bundle, indexing, extraction or consolidation acceptance gates.
 

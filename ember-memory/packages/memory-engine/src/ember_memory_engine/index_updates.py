@@ -9,7 +9,7 @@ from pydantic import TypeAdapter
 
 from ember_memory_abi.archive import Conversation, GraphNode, Message, SourceRecord
 from ember_memory_abi.common import timestamp_from_datetime
-from ember_memory_abi.memory import Entity
+from ember_memory_abi.memory import Entity, Memory
 
 from .database import load_model, payload_hash, row_int, row_text
 from .embedding import file_sha256
@@ -18,6 +18,7 @@ from .errors import IndexError
 from .index_builder import IndexBuilder
 from .index_storage import connect
 from .search_contracts import Encoder, IndexGeneration
+from .source_access import evidence_grant_window
 
 _ADAPTER: TypeAdapter[SourceRecord] = TypeAdapter(SourceRecord)
 _KNOWN = frozenset(
@@ -89,11 +90,12 @@ def _delete_documents(output: sqlite3.Connection, predicate: str) -> None:
         raise
 
 
-def _refresh_headers(output: sqlite3.Connection) -> None:
+def _refresh_headers(output: sqlite3.Connection, now: str, *, all_memories: bool) -> None:
     """Recompute descendant suppression flags without re-encoding."""
     output.execute("BEGIN IMMEDIATE")
     try:
-        output.execute("""
+        output.execute(
+            """
             UPDATE documents AS d SET
               is_current=EXISTS(SELECT 1 FROM canonical.memories m
                 WHERE m.memory_id=d.target_id AND m.current_revision=d.revision),
@@ -107,13 +109,50 @@ def _refresh_headers(output: sqlite3.Connection) -> None:
                     JOIN canonical.suppression_targets s ON s.target_kind=dep.target_kind
                       AND s.target_key=dep.target_key
                     WHERE dep.memory_id=d.target_id AND dep.revision=d.revision))
-            WHERE d.kind='memory'
-        """)
+            WHERE d.kind='memory' AND (? OR EXISTS(
+                SELECT 1 FROM canonical.claim_projection p WHERE p.memory_id=d.target_id
+                  AND p.revision=d.revision AND p.foreign_evidence=1))
+        """,
+            (int(all_memories),),
+        )
+        # Only foreign evidence needs grant projection. Native-only corpora avoid
+        # source/body reads; selected-result authorization is always checked again.
+        cursor = output.execute(
+            "SELECT d.id,d.target_id,d.revision FROM documents d "
+            "JOIN canonical.claim_projection p ON p.memory_id=d.target_id AND "
+            "p.revision=d.revision "
+            "WHERE d.kind='memory' AND p.foreign_evidence=1"
+        )
+        while foreign_rows := cursor.fetchmany(256):
+            for foreign in foreign_rows:
+                memory = load_model(
+                    output.execute(
+                        "SELECT * FROM memory_revisions WHERE memory_id=? AND revision=?",
+                        (row_text(foreign, "target_id"), row_int(foreign, "revision")),
+                    ).fetchone(),
+                    Memory,
+                )
+                allowed, until = evidence_grant_window(
+                    output,
+                    memory.character_id,
+                    tuple(a.evidence.source for a in memory.content.evidence),
+                    now,
+                )
+                output.execute(
+                    "UPDATE documents SET recall_eligible=recall_eligible AND "
+                    "?,scope_until_us=? WHERE id=?",
+                    (int(allowed), until, row_int(foreign, "id")),
+                )
         # vec0 metadata is part of the same disposable transaction. Old revisions
         # remain present for historical queries through the canonical scope path.
         rows = output.execute(
-            "SELECT e.id,d.recall_eligible,d.is_current,d.lifecycle FROM embedding_records e "
-            "JOIN documents d ON d.id=e.document_id WHERE d.kind='memory'"
+            "SELECT "
+            "e.id,d.recall_eligible,d.is_current,d.lifecycle,d.valid_until_us,d.scope_until_us "
+            "FROM embedding_records e "
+            "JOIN documents d ON d.id=e.document_id WHERE d.kind='memory' "
+            "AND (? OR EXISTS(SELECT 1 FROM canonical.claim_projection p "
+            "WHERE p.memory_id=d.target_id AND p.revision=d.revision AND p.foreign_evidence=1))",
+            (int(all_memories),),
         ).fetchall()
         for row in rows:
             active = int(
@@ -122,7 +161,15 @@ def _refresh_headers(output: sqlite3.Connection) -> None:
                 and row["lifecycle"] == "active"
             )
             output.execute(
-                "UPDATE vec_documents SET active=? WHERE rowid=?", (active, row_int(row, "id"))
+                "UPDATE vec_documents SET active=?,valid_until=? WHERE rowid=?",
+                (
+                    active,
+                    min(
+                        row["valid_until_us"] if row["valid_until_us"] is not None else 2**63 - 1,
+                        row["scope_until_us"] if row["scope_until_us"] is not None else 2**63 - 1,
+                    ),
+                    row_int(row, "id"),
+                ),
             )
         output.commit()
     except BaseException:
@@ -141,7 +188,7 @@ def update(engine: CanonicalEngine, encoder: Encoder, store_id: UUID) -> IndexGe
     except IndexError:
         return builder.rebuild(store_id)
     if (
-        previous.layout != "ember.search-layout@0.4.0"
+        previous.layout != "ember.search-layout@0.5.0"
         or previous.embedding != encoder.specification
     ):
         return builder.rebuild(store_id, reuse=True)
@@ -217,8 +264,16 @@ def update(engine: CanonicalEngine, encoder: Encoder, store_id: UUID) -> IndexGe
         builder.project_sources(source, output, watermark, "AND record_id IN affected_sources")
         builder.project_chunks(output, "AND record_id IN affected_sources")
         output.execute("ATTACH DATABASE ? AS canonical", (database.path.as_uri() + "?mode=ro",))
-        if any(row_text(row, "kind") == "suppression_changed" for row in events):
-            _refresh_headers(output)
+        if any(
+            row_text(row, "kind")
+            in {"suppression_changed", "grant_changed", "grant_revoked", "seed_grants"}
+            for row in events
+        ):
+            _refresh_headers(
+                output,
+                timestamp_from_datetime(engine.clock.now()),
+                all_memories=any(row_text(row, "kind") == "suppression_changed" for row in events),
+            )
         output.execute("DETACH DATABASE canonical")
         builder.project_vectors(output, old)
         if output.execute("PRAGMA quick_check").fetchone()[0] != "ok":

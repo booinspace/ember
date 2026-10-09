@@ -1,8 +1,8 @@
 """Storage-independent requests/results and character-bound sync/async client protocols."""
 
-from typing import Annotated, Literal, Protocol, runtime_checkable
+from typing import Annotated, Literal, Protocol, Self, runtime_checkable
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .archive import ArchiveWriteReceipt, NormalizedArchiveBatch, SourceRecord
 from .common import (
@@ -26,6 +26,7 @@ from .memory import (
     PinnedMemory,
     SessionSummary,
 )
+from .related import ContextDependencies, ProfileSelection
 
 type ResultLimit = Annotated[int, Field(gt=0, le=100)]
 type IdempotencyKey = Annotated[str, Field(min_length=1, max_length=256)]
@@ -56,6 +57,21 @@ class TemporalQuery(ContractModel):
 
     valid_at: UtcTimestamp | None = None
     recorded_before: UtcTimestamp | None = None
+    observed_from: UtcTimestamp | None = None
+    observed_until: UtcTimestamp | None = None
+    valid_from: UtcTimestamp | None = None
+    valid_until: UtcTimestamp | None = None
+
+    @model_validator(mode="after")
+    def intervals(self) -> Self:
+        """Reject empty or reversed intervals instead of returning misleading results."""
+        for lower, upper in (
+            (self.observed_from, self.observed_until),
+            (self.valid_from, self.valid_until),
+        ):
+            if lower is not None and upper is not None and lower >= upper:
+                raise ValueError("Temporal ranges must be nonempty half-open intervals.")
+        return self
 
 
 class MemoryQuery(ContractModel):
@@ -152,6 +168,7 @@ class ContextRequest(ContractModel):
     summary_token_budget: NonnegativeInteger = 0
     include_recent_native: bool = True
     include_pinned: bool = True
+    include_profile: bool = False
     include_summaries: bool = True
     options: RequestOptions = Field(default_factory=RequestOptions)
 
@@ -165,6 +182,8 @@ class RetrievalContext(ContractModel):
     summaries: Annotated[tuple[SessionSummary, ...], Field(max_length=100)] = ()
     dependencies: tuple[SourceRef, ...] = ()
     coverage: RetrievalCoverage
+    profile: ProfileSelection | None = None
+    fast_dependencies: ContextDependencies | None = None
 
 
 class PageRequest(ContractModel):

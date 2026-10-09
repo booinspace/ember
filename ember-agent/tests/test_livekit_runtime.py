@@ -334,7 +334,7 @@ def portable_seed(root: Path) -> tuple[Path, StoreInfo, EntityRef, CanonicalId]:
 
 
 async def exercise_room(
-    path: Path, *, real: bool, portable: bool = False, indexed: bool = False
+    path: Path, *, real: bool, portable: bool = False, indexed: bool = False, profile: bool = False
 ) -> None:
     config = load_config(path, require_model_pin=True)
     config.runtime_root.mkdir(exist_ok=True)
@@ -355,6 +355,29 @@ async def exercise_room(
                 NewMemoryInput(idempotency_key="favorite", text="My favorite color is cobalt blue.")
             )
             identity = receipt.affected[0].memory_id
+            if profile:
+                from ember_memory_abi.memory import FactPayload, StringValue
+
+                for predicate, value in (
+                    ("user.preferred_name", "Rowan"),
+                    ("user.pronouns", "they/them"),
+                    ("user.communication_style", "concise replies"),
+                ):
+                    author.create(
+                        NewMemoryInput(
+                            idempotency_key=predicate,
+                            text="Synthetic explicit observation: " + value,
+                            payload=FactPayload(
+                                subject=subject,
+                                predicate=predicate,
+                                definition_version="0.1.0",
+                                value=StringValue(value=value),
+                            ),
+                            modality="PREFERENCE"
+                            if predicate.endswith("style")
+                            else "FACTUAL_ASSERTION",
+                        )
+                    )
     encoder = None
     if indexed:
         from ember_memory_engine.embedding import BgeEncoder
@@ -433,8 +456,10 @@ async def exercise_room(
         await host.start(secret.token(binding.room, AGENT_IDENTITY, agent=True))
         participant = RoomClient(binding)
         await participant.connect(secret.token(binding.room, USER_IDENTITY))
-        output, result = await participant.ask("What is my favorite color? Answer briefly.")
-        assert result.retained_memories == 1
+        output, result = await participant.ask(
+            "Explain NAS DNS briefly." if profile else "What is my favorite color? Answer briefly."
+        )
+        assert result.retained_memories == (0 if profile else 1)
         assert "cobalt" in output.lower()
         assert (await memory.get_sources(identity))[0].quote == "My favorite color is cobalt blue."
         assert (
@@ -466,7 +491,13 @@ async def exercise_room(
                     )
                 )
             assert len(fake.requests) == 1
-            assert "cobalt blue" in fake.requests[0].messages[1].content
+            if profile:
+                pins = fake.requests[0].messages[1]
+                assert pins.role == "user"
+                assert "Rowan" in pins.content and "they/them" in pins.content
+                assert "concise replies" in pins.content
+            else:
+                assert "cobalt blue" in fake.requests[0].messages[1].content
         owned = services.children[0]
     finally:
         if participant:
@@ -703,3 +734,12 @@ def test_participant_discovery_failure_has_actionable_private_safe_diagnostic(
     assert str(tmp_path) not in message
     assert "not-json" not in message
     assert not (tmp_path / "gateway.token").exists()
+
+
+@pytest.mark.integration
+def test_actual_room_includes_query_independent_profile_after_restart(
+    tmp_path: Path, livekit_executable: str
+) -> None:
+    """Actual LiveKit room transport exercises the same composer without GPU reservation."""
+    path = room_config(tmp_path, livekit_executable, real=False)
+    asyncio.run(exercise_room(path, real=False, profile=True))

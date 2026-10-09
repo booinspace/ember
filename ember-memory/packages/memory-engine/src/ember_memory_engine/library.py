@@ -35,7 +35,11 @@ from ember_memory_abi.memory import (
     PlanPayload,
     ValidationVerdict,
 )
-from ember_memory_abi.predicates import initial_predicates, validate_memory_write
+from ember_memory_abi.predicates import (
+    initial_predicates,
+    phase_seven_predicates,
+    validate_memory_write,
+)
 from ember_memory_abi.temporal import TemporalMetadata
 
 from .database import load_model, model_bytes, payload_hash, row_int, row_text
@@ -148,7 +152,9 @@ class LibraryService:
                 replay = _receipt(connection, request.idempotency_key, "approve", digest)
                 if replay is not None:
                     return ApprovedKnowledge.model_validate_json(replay)
-                validate_memory_write(candidate.draft, predicates=initial_predicates())
+                validate_memory_write(
+                    candidate.draft, predicates=(*initial_predicates(), *phase_seven_predicates())
+                )
                 entities: dict[CanonicalId, int] = {}
                 for reference in entity_references(candidate.draft):
                     if (
@@ -355,10 +361,25 @@ class LibraryService:
                 stamp, recorded = database.recorded_stamp(connection)
                 operation = uuid4()
                 affected: list[RecordRevision] = []
+                searchable_changed = False
+                grants_changed = False
                 for knowledge in snapshots:
                     draft = self._remap(knowledge.draft, mapping, memory_ids)
                     for assertion in draft.content.evidence:
                         ref = assertion.evidence.source
+                        previous_grant = connection.execute(
+                            "SELECT expires_at FROM source_grants WHERE source_store_id=? "
+                            "AND record_kind=? AND record_id=? AND record_revision=? "
+                            "AND part_id=? AND capability='evidence_read'",
+                            (
+                                str(ref.source_store_id),
+                                ref.record_kind,
+                                str(ref.record_id),
+                                ref.record_revision,
+                                str(ref.part_id) if ref.part_id else "",
+                            ),
+                        ).fetchone()
+                        grants_changed |= previous_grant is None or previous_grant[0] is not None
                         connection.execute(
                             "INSERT INTO source_grants VALUES(?,?,?,?,?,'evidence_read',NULL) "
                             "ON CONFLICT DO UPDATE SET expires_at=NULL",
@@ -394,15 +415,44 @@ class LibraryService:
                             (kind, key),
                         ).fetchone():
                             raise AccessDeniedError()
-                    connection.execute("INSERT INTO memories VALUES(?,1)", (str(memory.memory_id),))
-                    store.state.append_revision(connection, memory)
-                    affected.append(RecordRevision(memory_id=memory.memory_id, revision=1))
+                    from .claim_projection import identity
+                    from .consolidation import attach_support
+
+                    key = identity(memory)[-1]
+                    existing = connection.execute(
+                        "SELECT p.memory_id FROM claim_projection p JOIN memories m "
+                        "ON m.memory_id=p.memory_id AND m.current_revision=p.revision "
+                        "JOIN memory_revisions r ON r.memory_id=p.memory_id AND "
+                        "r.revision=p.revision "
+                        "WHERE p.claim_key=? AND r.lifecycle<>'consolidated' LIMIT 2",
+                        (key,),
+                    ).fetchall()
+                    if len(existing) > 1:
+                        raise RevisionConflictError()
+                    if existing:
+                        target = store.state.read_memory(
+                            connection, UUID(row_text(existing[0], "memory_id"))
+                        )
+                        if target.lifecycle != "active":
+                            raise AccessDeniedError()
+                        attach_support(store.state, connection, target, draft, origin=memory.origin)
+                        affected.append(
+                            RecordRevision(memory_id=target.memory_id, revision=target.revision)
+                        )
+                    else:
+                        searchable_changed = True
+                        connection.execute(
+                            "INSERT INTO memories VALUES(?,1)", (str(memory.memory_id),)
+                        )
+                        store.state.append_revision(connection, memory)
+                        affected.append(RecordRevision(memory_id=memory.memory_id, revision=1))
                 connection.execute("UPDATE store_metadata SET policy_epoch=policy_epoch+1")
-                connection.execute(
-                    "INSERT INTO index_outbox(kind,policy_epoch,recorded_at_us) "
-                    "SELECT 'seed_grants',policy_epoch,? FROM store_metadata",
-                    (recorded,),
-                )
+                if searchable_changed or grants_changed:
+                    connection.execute(
+                        "INSERT INTO index_outbox(kind,policy_epoch,recorded_at_us) "
+                        "SELECT 'seed_grants',policy_epoch,? FROM store_metadata",
+                        (recorded,),
+                    )
                 receipt = MutationReceipt(
                     operation_id=operation,
                     idempotency_key=request.idempotency_key,

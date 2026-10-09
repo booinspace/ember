@@ -64,7 +64,7 @@ class LocalRuntime:
             token = (config.runtime_root / "gateway.token").read_text(encoding="utf-8").strip()
             self.memory = InProcessAsyncMemoryClient(store)
             self.model = HttpGatewayClient(config.services.gateway.endpoint, token)
-            self.sink = ArchiveDialogueSink(self.engine.archive(binding.character_id))
+            self.sink = ArchiveDialogueSink(self.engine.archive(binding.character_id), self.subject)
             ceiling = min(
                 config.max_input_tokens,
                 config.context_tokens - max(1192, config.output_reserve_tokens),

@@ -1,6 +1,6 @@
 """Canonical SQLite schema 0.4.0: immutable baseline plus backed-up additive migration."""
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 SCHEMA_SQL = """
 CREATE TABLE store_metadata (
     store_id TEXT PRIMARY KEY, kind TEXT NOT NULL, namespace TEXT NOT NULL,
@@ -266,3 +266,59 @@ PHASE_SIX_IMMUTABLE = (
     "activation_decisions",
     "review_decisions",
 )
+
+
+# Canonical supports/choices are append-only. Claim headers are disposable projections.
+PHASE_SEVEN_SQL = """
+CREATE INDEX IF NOT EXISTS pins_priority ON pins(priority DESC,pinned_at DESC,memory_id);
+CREATE INDEX IF NOT EXISTS memory_recent_order ON memory_revisions(
+    lifecycle,recorded_at_us DESC,memory_id,revision,kind,modality,importance,
+    valid_from_us,valid_until_us
+);
+CREATE TABLE IF NOT EXISTS claim_projection (
+    memory_id TEXT NOT NULL, revision INTEGER NOT NULL, subject_id TEXT NOT NULL,
+    predicate TEXT NOT NULL, value_key TEXT NOT NULL, origin_key TEXT NOT NULL,
+    claim_key TEXT NOT NULL, observed_at TEXT, temporal_basis TEXT NOT NULL,
+    foreign_evidence INTEGER NOT NULL,
+    PRIMARY KEY(memory_id,revision)
+);
+CREATE INDEX IF NOT EXISTS claim_equivalence ON claim_projection(claim_key,memory_id,revision);
+CREATE INDEX IF NOT EXISTS claim_profile ON
+    claim_projection(subject_id,predicate,memory_id,revision);
+CREATE INDEX IF NOT EXISTS claim_conflict ON claim_projection(subject_id,predicate,value_key);
+CREATE INDEX IF NOT EXISTS claim_foreign ON claim_projection(foreign_evidence);
+CREATE INDEX IF NOT EXISTS claim_observed ON claim_projection(observed_at,memory_id,revision);
+CREATE INDEX IF NOT EXISTS materialized_source_header ON materialized_evidence(
+    json_extract(payload_json,'$.evidence.source.record_kind'),
+    json_extract(payload_json,'$.evidence.source.record_id'),
+    json_extract(payload_json,'$.evidence.source.record_revision'),
+    json_extract(payload_json,'$.evidence.source.part_id'),
+    json_extract(payload_json,'$.availability')
+);
+CREATE TABLE IF NOT EXISTS profile_policy (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1), subject_id TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1, selection_epoch INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO profile_policy(singleton) VALUES(1);
+CREATE TABLE IF NOT EXISTS profile_exclusions (predicate TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS native_acceptance (
+    idempotency_key TEXT PRIMARY KEY, request_sha256 TEXT NOT NULL,
+    candidate_id TEXT NOT NULL, revision INTEGER NOT NULL, claim_key TEXT NOT NULL,
+    outcome TEXT NOT NULL, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS native_acceptance_claim ON native_acceptance(claim_key,outcome);
+CREATE TABLE IF NOT EXISTS memory_supports (
+    support_id TEXT PRIMARY KEY, memory_id TEXT NOT NULL, memory_revision INTEGER NOT NULL,
+    support_key TEXT NOT NULL UNIQUE, payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS support_memory ON memory_supports(memory_id,memory_revision,support_id);
+CREATE TABLE IF NOT EXISTS memory_relationships (
+    relationship_id TEXT PRIMARY KEY, kind TEXT NOT NULL,
+    source_id TEXT NOT NULL, source_revision INTEGER NOT NULL,
+    target_id TEXT, target_revision INTEGER,
+    payload_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS relationship_source ON memory_relationships(source_id,relationship_id);
+CREATE INDEX IF NOT EXISTS relationship_target ON memory_relationships(target_id,relationship_id);
+"""
+PHASE_SEVEN_IMMUTABLE = ("native_acceptance", "memory_supports", "memory_relationships")

@@ -25,9 +25,14 @@ from ember_memory_abi.memory import (
     Memory,
     MemoryDraft,
     MemorySource,
+    OriginMapping,
     StringValue,
 )
-from ember_memory_abi.predicates import initial_predicates, validate_memory_write
+from ember_memory_abi.predicates import (
+    initial_predicates,
+    phase_seven_predicates,
+    validate_memory_write,
+)
 from ember_memory_abi.temporal import TemporalMetadata
 
 from .archive import SourceResolver
@@ -61,7 +66,7 @@ class CharacterState:
         self.authority = authority
         self.tokens = token_counter
         self.retriever = retriever
-        self.predicates = initial_predicates()
+        self.predicates = (*initial_predicates(), *phase_seven_predicates())
 
         def register(connection: sqlite3.Connection) -> None:
             with database.transaction(connection):
@@ -112,10 +117,8 @@ class CharacterState:
         )
         return (
             connection.execute(
-                (
-                    "SELECT 1 FROM suppression_targets WHERE target_kind='source' AND "
-                    "target_key IN (?,?)"
-                ),
+                "SELECT 1 FROM suppression_targets WHERE target_kind='source' AND "
+                "target_key IN (?,?)",
                 keys,
             ).fetchone()
             is not None
@@ -130,11 +133,9 @@ class CharacterState:
             return True
         return (
             connection.execute(
-                (
-                    "SELECT 1 FROM source_grants WHERE source_store_id=? AND record_kind=? "
-                    "AND record_id=? AND record_revision=? AND part_id IN (?, '') AND "
-                    "capability=? AND (expires_at IS NULL OR expires_at>?)"
-                ),
+                "SELECT 1 FROM source_grants WHERE source_store_id=? AND record_kind=? "
+                "AND record_id=? AND record_revision=? AND part_id IN (?, '') AND "
+                "capability=? AND (expires_at IS NULL OR expires_at>?)",
                 (
                     str(reference.source_store_id),
                     reference.record_kind,
@@ -158,11 +159,9 @@ class CharacterState:
             return True
         return (
             connection.execute(
-                (
-                    "SELECT 1 FROM memory_dependencies d JOIN suppression_targets s ON "
-                    "d.target_kind=s.target_kind AND d.target_key=s.target_key WHERE "
-                    "d.memory_id=? AND d.revision=?"
-                ),
+                "SELECT 1 FROM memory_dependencies d JOIN suppression_targets s ON "
+                "d.target_kind=s.target_kind AND d.target_key=s.target_key WHERE "
+                "d.memory_id=? AND d.revision=?",
                 (str(memory_id), revision),
             ).fetchone()
             is not None
@@ -180,11 +179,9 @@ class CharacterState:
         check_deadline(self.database.clock, options.deadline_at if options else None)
         if revision is None:
             row = connection.execute(
-                (
-                    "SELECT r.* FROM memory_revisions r JOIN memories m ON "
-                    "r.memory_id=m.memory_id AND r.revision=m.current_revision WHERE "
-                    "m.memory_id=?"
-                ),
+                "SELECT r.* FROM memory_revisions r JOIN memories m ON "
+                "r.memory_id=m.memory_id AND r.revision=m.current_revision WHERE "
+                "m.memory_id=?",
                 (str(memory_id),),
             ).fetchone()
         else:
@@ -246,13 +243,16 @@ class CharacterState:
                 ),
             )
         variants = [payload.value.model_dump(mode="json")]
-        if isinstance(payload.value, StringValue):
+        if isinstance(payload.value, StringValue) and payload.predicate in {
+            "hardware.primary_gpu",
+            "hardware.owns_gpu",
+        }:
             entities = connection.execute(
-                "SELECT entity_id FROM entity_aliases WHERE alias=?", (payload.value.value,)
+                "SELECT entity_id FROM entity_aliases WHERE alias=? LIMIT 2", (payload.value.value,)
             ).fetchall()
-            for entity in entities:
+            for entity in entities if len(entities) == 1 else ():
                 for row in connection.execute(
-                    "SELECT alias FROM entity_aliases WHERE entity_id=?",
+                    "SELECT alias FROM entity_aliases WHERE entity_id=? LIMIT 128",
                     (row_text(entity, "entity_id"),),
                 ):
                     variants.append(
@@ -323,6 +323,14 @@ class CharacterState:
             raise InvalidEvidenceError()
         for key in self.claim_keys(connection, draft):
             if connection.execute(
+                "SELECT 1 FROM memory_dependencies d JOIN memories m ON m.memory_id=d.memory_id "
+                "JOIN memory_revisions r ON r.memory_id=m.memory_id AND "
+                "r.revision=m.current_revision "
+                "WHERE d.target_kind='claim' AND d.target_key=? AND r.lifecycle='disabled' LIMIT 1",
+                (key,),
+            ).fetchone():
+                raise AccessDeniedError()
+            if connection.execute(
                 "SELECT 1 FROM suppression_targets WHERE target_kind='claim' AND target_key=?",
                 (key,),
             ).fetchone():
@@ -384,13 +392,15 @@ class CharacterState:
                 "INSERT INTO memory_dependencies VALUES(?,?,?,?)",
                 (str(memory.memory_id), memory.revision, kind, key),
             )
+        from .claim_projection import project
+
+        project(connection, memory)
+        connection.execute("UPDATE profile_policy SET selection_epoch=selection_epoch+1")
         connection.execute("DELETE FROM pins WHERE memory_id=?", (str(memory.memory_id),))
         connection.execute(
-            (
-                "INSERT INTO "
-                "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) SELECT "
-                "'memory_revision',?,?,policy_epoch,? FROM store_metadata"
-            ),
+            "INSERT INTO "
+            "index_outbox(kind,record_id,revision,policy_epoch,recorded_at_us) SELECT "
+            "'memory_revision',?,?,policy_epoch,? FROM store_metadata",
             (
                 str(memory.memory_id),
                 memory.revision,
@@ -399,7 +409,12 @@ class CharacterState:
         )
 
     def create_memory(
-        self, connection: sqlite3.Connection, draft: MemoryDraft, stamp: str
+        self,
+        connection: sqlite3.Connection,
+        draft: MemoryDraft,
+        stamp: str,
+        *,
+        origin: OriginMapping | None = None,
     ) -> Memory:
         memory = Memory(
             memory_id=uuid4(),
@@ -409,6 +424,7 @@ class CharacterState:
             content=draft.content,
             temporal=TemporalMetadata(**draft.temporal.model_dump(), recorded_at=stamp),
             created_at=stamp,
+            origin=origin,
         )
         connection.execute("INSERT INTO memories VALUES(?,1)", (str(memory.memory_id),))
         self.append_revision(connection, memory)
@@ -458,15 +474,36 @@ class CharacterState:
             for assertion in historical.content.evidence:
                 source_map[assertion.evidence.source.identity_key()] = assertion.evidence.source
             target_keys.update(self.dependencies(connection, historical))
+        for row in connection.execute(
+            "SELECT DISTINCT source_store_id,record_kind,record_id,record_revision,part_id "
+            "FROM memory_evidence WHERE memory_id=?",
+            (str(memory_id),),
+        ):
+            reference = SourceRef(
+                source_store_id=UUID(row_text(row, "source_store_id")),
+                record_kind=row_text(row, "record_kind"),
+                record_id=UUID(row_text(row, "record_id")),
+                record_revision=row_int(row, "record_revision"),
+                part_id=UUID(row_text(row, "part_id")) if row["part_id"] else None,
+            )
+            source_map[reference.identity_key()] = reference
+            target_keys.add(("source", self.source_dependency_key(reference)))
+            target_keys.add(("source", self.source_dependency_key(reference, whole=True)))
+        target_keys.update(
+            (row_text(row, "target_kind"), row_text(row, "target_key"))
+            for row in connection.execute(
+                "SELECT DISTINCT target_kind,target_key FROM memory_dependencies WHERE memory_id=? "
+                "AND target_kind IN ('claim','source','origin')",
+                (str(memory_id),),
+            )
+        )
         sources = tuple(source_map.values())
         # A part-level suppression also affects every revision that used that original part.
         affected = {memory_id}
         for kind, key in target_keys:
             for row in connection.execute(
-                (
-                    "SELECT DISTINCT memory_id FROM memory_dependencies WHERE target_kind=? "
-                    "AND target_key=?"
-                ),
+                "SELECT DISTINCT memory_id FROM memory_dependencies WHERE target_kind=? "
+                "AND target_key=?",
                 (kind, key),
             ):
                 affected.add(UUID(row_text(row, "memory_id")))

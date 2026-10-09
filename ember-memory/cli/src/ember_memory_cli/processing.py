@@ -20,6 +20,7 @@ from ember_memory_engine.processing_contracts import (
     JobStatus,
     ProcessingError,
     ReviewFile,
+    native_specification,
 )
 from ember_memory_engine.processing_review import ReviewService
 from ember_memory_importers.normalization.contracts import SourceImportError
@@ -56,6 +57,7 @@ class _Create(_Bound):
     source_kind: Literal["summary", "archive", "native", "all"]
     workload: Literal["P3", "P4"]
     window_bytes: int
+    extractor: Literal["ember.atomic-claims@0.1.2", "ember.atomic-claims@0.2.0"]
 
 
 class _Job(_Bound):
@@ -134,6 +136,11 @@ def _parser(summary: bool) -> argparse.ArgumentParser:
         if name in {"run", "status", "cancel", "reevaluate", "review"}:
             sub.add_argument("--job", type=UUID, required=True)
         if name == "create":
+            sub.add_argument(
+                "--extractor",
+                choices=("ember.atomic-claims@0.1.2", "ember.atomic-claims@0.2.0"),
+                default="ember.atomic-claims@0.1.2",
+            )
             sub.add_argument("--key", required=True)
             sub.add_argument("--model", required=True)
             sub.add_argument("--digest", required=True)
@@ -259,11 +266,17 @@ def main(argv: list[str]) -> int:
                 request = JobRequest(
                     idempotency_key=args.key,
                     owner_store_id=args.store,
-                    specification=ExtractionSpec(
-                        model=args.model,
-                        model_digest=args.digest.removeprefix("sha256:"),
-                        workload=args.workload,
-                        window_bytes=args.window_bytes,
+                    specification=(
+                        native_specification(
+                            args.model, args.digest.removeprefix("sha256:"), workload=args.workload
+                        ).model_copy(update={"window_bytes": args.window_bytes})
+                        if args.extractor == "ember.atomic-claims@0.2.0"
+                        else ExtractionSpec(
+                            model=args.model,
+                            model_digest=args.digest.removeprefix("sha256:"),
+                            workload=args.workload,
+                            window_bytes=args.window_bytes,
+                        )
                     ),
                     source_kind=args.source_kind,
                 )

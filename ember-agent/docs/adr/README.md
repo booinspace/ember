@@ -11,6 +11,7 @@ These records own character/runtime, composition, prompts, gateway and providers
 | [Agent ADR 0002](0002-phase-three-p0-turn-slice.md) | P0/turn slice implemented and covered by the current full test gate; real-source memory adoption and full voice-room acceptance remain open | [Root phase 3](../../../docs/adr/0006-phase-three-source-and-runtime.md) |
 | [Agent ADR 0003](0003-managed-livekit-text-runtime.md) | Managed server/gateway startup, single SDK text room, participant, credentials and ownership; real-room acceptance | [Root phase 3](../../../docs/adr/0006-phase-three-source-and-runtime.md) |
 | [Agent ADR 0004](0004-conservative-background-gateway.md) | Same gateway gains scoped P3/P4 queues, schema output and durable realtime ownership; 406-test full gate passed; architecture review pending | [Root phase 6](../../../docs/adr/0009-phase-six-extraction-and-background-inference.md) |
+| [Agent ADR 0005](0005-bounded-profile-and-delivery-validation.md) | Shared terminal/LiveKit text core includes bounded profile pins and validates exact dependencies before visible delivery; implemented experimentally, review checkpoint | [Root phase 7](../../../docs/adr/0013-phase-seven-native-consolidation-and-profile.md) |
 
 
 The offline doctor, composition, gateway/text commands and LiveKit adapter exist.
@@ -24,3 +25,7 @@ file link. Keep agent decisions with this component if repositories are separate
 When delivering an agent-owned phase, update its local ADR and the root phase
 record/index with actual behavior and acceptance. A memory delivery does not imply
 that corresponding agent integration has shipped.
+
+Phase 7 profile integration reuses the same CharacterCore for terminal and LiveKit
+text and uses public ABI validation contracts; see Agent ADR 0005 and Root ADR 0013.
+It does not add continuous native extraction or deep recall orchestration.

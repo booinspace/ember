@@ -29,6 +29,7 @@ CREATE TABLE documents (
     recall_eligible INTEGER NOT NULL DEFAULT 0, is_current INTEGER NOT NULL DEFAULT 0,
     memory_kind TEXT, lifecycle TEXT, modality TEXT, valid_from_us INTEGER, valid_until_us INTEGER,
     open_end_known INTEGER, predicate TEXT, entity_keys TEXT, payload_key TEXT,
+    scope_until_us INTEGER,
     UNIQUE(kind,target_id,revision,part_id)
 );
 CREATE INDEX doc_target ON documents(kind,target_id,revision);

@@ -1,10 +1,11 @@
 # Root ADR 0011: planned Phase 7 bounded user profile
 
-Date: 2026-10-08. Status: planned architecture; documentation only, not implemented.
-[PLAN section 13](../../PLAN.md#bounded-user-profile-planned-phase-7) defines behavior;
+Date: 2026-10-08. Status: historical pre-implementation design, superseded by the
+experimental delivery in [Root ADR 0013](0013-phase-seven-native-consolidation-and-profile.md).
+[PLAN section 13](../../PLAN.md#bounded-user-profile-phase-7-implementation) defines behavior;
 [P7-AC-10 through P7-AC-17](../../PLAN.md#phase-7-acceptance-criteria-native-activation-and-consolidation)
-define delivery. This extends planned Phase 7 and integrates with planned Phase 8;
-no existing phase is declared complete and no schema/ABI version changes here.
+define the original delivery scope. This design extended Phase 7 and integrates with
+Phase 8; implementation, version changes and current evidence are in Root ADR 0013.
 
 ## 1. Desired behavior
 
@@ -97,9 +98,8 @@ Phase 5 historical measurements and open capacity/platform gates remain unchange
 
 ## 8. Delivery and architecture handoff
 
-This task changes PLAN/ADRs only. Phase 7 implementation must record AC evidence and
-own backend/runtime detail in the respective component ADR trees, using the next
-available numbers; root ADR 0010's prospective numbering is not reserved. Phase 8
+This record documents the design task that preceded implementation. Phase 7 evidence
+and current versions are maintained in Root ADR 0013. Phase 8
 reuses profile controls/dependencies for browser/audio, source selection and deep
 answers. Stop for architecture review after each implemented phase.
 
@@ -108,5 +108,5 @@ answers. Stop for architecture review after each implemented phase.
 [Root ADR 0012](0012-planned-phase-seven-implementation.md) and the
 [implementation proposal](../phase-7-implementation-proposal.md) integrate this profile
 with native acceptance, consolidation/time and bounded public reads. The proposal
-identifies source-attribution, pin ownership, immutable processing-profile and
-bundle/validation changes before code. Status remains planned pending review.
+identified source-attribution, pin ownership, processing-profile and bundle/validation
+changes before code. Current implementation evidence is recorded in Root ADR 0013.

@@ -34,14 +34,16 @@ from ember_memory_abi.memory import (
     PinnedMemory,
 )
 from ember_memory_abi.predicates import KNOWN_MODALITIES
+from ember_memory_abi.related import RelatedRequest, RelatedResponse
 
-from . import mutations, retrieval
+from . import mutations, profile, related, retrieval
 from ._state import CharacterState
 from .archive import SourceResolver
 from .database import (
     SqliteDatabase,
 )
 from .models import ForgetImpact, MutationAuthority, TokenCounter
+from .profile import ProfileSettings
 from .retrieval_port import RetrievalBackend
 
 
@@ -92,6 +94,10 @@ class SqliteMemoryStore:
                 "recent",
                 "pins",
                 "provenance",
+                "profile_pins_v1",
+                "related_lookup_v1",
+                "batch_context_validation_v1",
+                "temporal_ranges_v1",
             ),
             mutations=mutations,
             index_status="available"
@@ -209,3 +215,18 @@ class SqliteMemoryStore:
         return self.database.read(
             lambda connection: retrieval.retrieve_context(self.state, connection, request)
         )
+
+    def lookup_related(self, request: RelatedRequest) -> RelatedResponse:
+        """Optional bounded relationships/validation through existing owned readers."""
+        return self.database.submit(
+            lambda connection: related.lookup(self.state, connection, request),
+            deep=request.intent != "validate",
+        ).result()
+
+    def profile_settings(self) -> ProfileSettings:
+        """Inspect durable profile binding/exclusions without changing them."""
+        return self.database.read(lambda connection: profile.settings(self.state, connection))
+
+    def configure_profile(self, value: ProfileSettings) -> None:
+        """Persist trusted human choices independently from model, pins and source grants."""
+        self.database.write(lambda connection: profile.configure(self.state, connection, value))

@@ -30,7 +30,10 @@ class ExtractionSpec(ContractModel):
     model: str
     model_digest: Sha256
     extractor: Literal[
-        "ember.atomic-claims@0.1.0", "ember.atomic-claims@0.1.1", "ember.atomic-claims@0.1.2"
+        "ember.atomic-claims@0.1.0",
+        "ember.atomic-claims@0.1.1",
+        "ember.atomic-claims@0.1.2",
+        "ember.atomic-claims@0.2.0",
     ] = "ember.atomic-claims@0.1.2"
     policy: Literal["activation.conservative@0.1.0"] = "activation.conservative@0.1.0"
     policy_sha256: Sha256 = POLICY.reference().specification_sha256
@@ -237,3 +240,18 @@ def _schema_digest() -> str:
     from ember_memory_abi.common import canonical_object_sha256
 
     return canonical_object_sha256(ClaimBatch.model_json_schema())
+
+
+def native_specification(
+    model: str, digest: str, *, workload: Literal["P3", "P4"] = "P4"
+) -> ExtractionSpec:
+    """Create a distinct immutable native profile without changing legacy defaults/hashes."""
+    from .processing_prompt import NATIVE_INSTRUCTIONS
+
+    return ExtractionSpec(
+        model=model,
+        model_digest=digest,
+        extractor="ember.atomic-claims@0.2.0",
+        prompt_sha256=sha256(NATIVE_INSTRUCTIONS.encode()).hexdigest(),
+        workload=workload,
+    )

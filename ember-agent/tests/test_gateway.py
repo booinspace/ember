@@ -346,3 +346,31 @@ def test_visible_filter(chunks: tuple[str, ...]) -> None:
     output = "".join(filtered.feed(chunk) for chunk in chunks)
     filtered.finish()
     assert "hidden" not in output
+
+
+@pytest.mark.parametrize("version", ("0.1.0", "0.2.0", "0.3.0"))
+def test_prefill_counter_is_opt_in_and_legacy_completion_json_is_unchanged(
+    tmp_path: Path,
+    version: str,
+) -> None:
+    config = configuration(tmp_path)
+    upstream = FakeUpstream(
+        (
+            NativeFrame(message=NativeMessage(content="Visible")),
+            NativeFrame(
+                done=True, prompt_eval_count=12, eval_count=2, prompt_eval_duration=250000000
+            ),
+        )
+    )
+    gateway = P0Gateway(config, upstream)
+
+    async def run() -> None:
+        generation = await gateway.admit(request(config, version=version))
+        events = [event async for event in generation.events()]
+        usage = events[-1].usage
+        assert usage is not None
+        assert usage.prefill_seconds == (0.25 if version == "0.3.0" else None)
+        assert ("prefill_seconds" in usage.model_dump()) == (version == "0.3.0")
+        await gateway.aclose()
+
+    asyncio.run(run())

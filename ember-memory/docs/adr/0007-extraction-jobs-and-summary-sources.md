@@ -100,8 +100,10 @@ replaying completed candidates. Cancellation still drains owned work as before.
 
 These controls change neither ClaimBatch nor ExtractionSpec and require no migration,
 extractor version change or new job key. Imported candidate approval/seed authority is
-unchanged. Root integration and planned Phase 7/8 scope remain in
-[Root ADR 0009](../../../../docs/adr/0009-phase-six-extraction-and-background-inference.md).
+unchanged. Root Phase 6 integration is in
+[Root ADR 0009](../../../docs/adr/0009-phase-six-extraction-and-background-inference.md);
+the original Phase 7/8 scope is in Root ADR 0010 and Phase 7 implementation evidence
+is in [Root ADR 0013](../../../docs/adr/0013-phase-seven-native-consolidation-and-profile.md).
 
 ## Window-local failures and successful continued execution (2026-10-08)
 

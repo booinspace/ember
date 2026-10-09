@@ -1,0 +1,95 @@
+{
+  "model": "qwen3.8-heretic-ara:27b-q4_k_m",
+  "digest": "c7612209c4ffbc7e80c96abbfd9d2bcc2dcc82ee12b4fa39e8c4937ef6e0c1b9",
+  "extractor": "ember.atomic-claims@0.2.0",
+  "prompt_sha256": "22db8d3df114211f4751543737417e3071eedaa6b52a69404dc01ba3d6148941",
+  "native_candidates": 4,
+  "outcomes": [
+    "accepted",
+    "accepted",
+    "accepted",
+    "accepted"
+  ],
+  "fixed_suite": [
+    "Explain how a NAS resolves DNS, briefly.",
+    "Describe what VLAN tagging does.",
+    "Explain how a headphone amplifier works."
+  ],
+  "paired_text": [
+    {
+      "query": 0,
+      "profile_enabled": false,
+      "profile_pins": 0,
+      "serialized_prompt_guard": 1035,
+      "prompt_tokens": 73,
+      "first_visible_seconds": 0.2029999999795109,
+      "prefill_seconds": 0.135559,
+      "output_tokens": 128,
+      "visible_word_count": 95,
+      "uses_preferred_name": false
+    },
+    {
+      "query": 0,
+      "profile_enabled": true,
+      "profile_pins": 4,
+      "serialized_prompt_guard": 1347,
+      "prompt_tokens": 130,
+      "first_visible_seconds": 0.2809999999590218,
+      "prefill_seconds": 0.168531,
+      "output_tokens": 97,
+      "visible_word_count": 71,
+      "uses_preferred_name": false
+    },
+    {
+      "query": 1,
+      "profile_enabled": false,
+      "profile_pins": 0,
+      "serialized_prompt_guard": 1027,
+      "prompt_tokens": 69,
+      "first_visible_seconds": 0.2190000000409782,
+      "prefill_seconds": 0.134905,
+      "output_tokens": 160,
+      "visible_word_count": 114,
+      "uses_preferred_name": false
+    },
+    {
+      "query": 1,
+      "profile_enabled": true,
+      "profile_pins": 4,
+      "serialized_prompt_guard": 1339,
+      "prompt_tokens": 126,
+      "first_visible_seconds": 0.2809999999590218,
+      "prefill_seconds": 0.180862,
+      "output_tokens": 128,
+      "visible_word_count": 85,
+      "uses_preferred_name": false
+    },
+    {
+      "query": 2,
+      "profile_enabled": false,
+      "profile_pins": 0,
+      "serialized_prompt_guard": 1035,
+      "prompt_tokens": 71,
+      "first_visible_seconds": 0.23400000005494803,
+      "prefill_seconds": 0.153667,
+      "output_tokens": 160,
+      "visible_word_count": 99,
+      "uses_preferred_name": false
+    },
+    {
+      "query": 2,
+      "profile_enabled": true,
+      "profile_pins": 4,
+      "serialized_prompt_guard": 1347,
+      "prompt_tokens": 128,
+      "first_visible_seconds": 0.2970000000204891,
+      "prefill_seconds": 0.171088,
+      "output_tokens": 160,
+      "visible_word_count": 101,
+      "uses_preferred_name": false
+    }
+  ],
+  "field_inclusion": "All four fields in every enabled prompt; zero profile pins when disabled",
+  "prefill_measurement": "Prompt tokens, upstream prefill duration and gateway TTFT measured using opt-in request version 0.3.0",
+  "admission": "P4 native extraction; idle P0 text; no realtime reservation"
+}

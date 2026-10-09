@@ -2,7 +2,7 @@
 
 import sqlite3
 from concurrent.futures import Future
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from uuid import uuid4
 
 from pydantic import TypeAdapter, ValidationError
@@ -54,6 +54,22 @@ class SourceResolver(Protocol):
         local_store_id: CanonicalId | None = None,
     ) -> None:
         """Persist an immutable span with its source, reusing a native writer transaction."""
+        ...
+
+
+@runtime_checkable
+class SourceHeaderResolver(Protocol):
+    """Optional bounded metadata availability check, without source body hydration."""
+
+    def unavailable_sources(
+        self,
+        references: tuple[SourceRef, ...],
+        *,
+        local_connection: sqlite3.Connection,
+        local_store_id: CanonicalId,
+        call_budget: int,
+    ) -> tuple[tuple[SourceRef, ...], int]:
+        """Read exact source/part headers grouped by store; unavailable scopes fail closed."""
         ...
 
 
@@ -140,11 +156,13 @@ class SqliteArchiveStore:
             lambda connection: self._write(connection, snapshot, frozen_keys)
         )
 
-    def submit_batch(self, batch: NormalizedArchiveBatch) -> Future[ArchiveWriteReceipt]:
+    def submit_batch(
+        self, batch: NormalizedArchiveBatch, *, keys: tuple[SourceKeyAssignment, ...] = ()
+    ) -> Future[ArchiveWriteReceipt]:
         """Submit a snapshot to existing bounded writers without blocking a realtime event loop."""
         snapshot = NormalizedArchiveBatch.model_validate_json(batch.model_dump_json())
         return self.database.submit(
-            lambda connection: self._write(connection, snapshot, ()), write=True
+            lambda connection: self._write(connection, snapshot, tuple(keys)), write=True
         )
 
     def _write(
