@@ -78,3 +78,10 @@ Golden tests retain the complete 0.1.2 prompt/schema/policy hashes. New optional
 use extractor 0.2.0/new jobs; no retroactive adoption or rewriting of running jobs. Existing
 processing HTTP requests and gateway health remain 0.2.0 compatible. Worker reentrancy is
 forbidden: initialize a client before entering its writer, as the rejection regression tests.
+
+Review correction: certificates reuse the same effective grant-window helper as the
+derived index. A temporary alternative cannot introduce an expiry when a permanent
+matching grant exists. Among live temporary alternatives the latest expiry wins per
+source; independent required sources retain the earliest of those effective boundaries.
+An already-expired alternative is ignored, and absent authority fails closed. The
+bounded selected-evidence queries and fresh delivery checks retain their existing owner.

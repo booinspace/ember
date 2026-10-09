@@ -46,6 +46,8 @@ class ArchiveDialogueSink:
             record_id=context_id,
             record_revision=1,
         )
+        # Archive replay ignores recorded_at and retains the first persisted timestamp.
+        # All other conversation fields must stay stable for this session identity.
         conversation = Conversation(
             source=conversation_ref,
             recorded_at=stamp,
@@ -87,7 +89,10 @@ class ArchiveDialogueSink:
                     ),
                 )
             )
-        digest = sha256(str(context_id).encode()).hexdigest()
+        conversation_digest = sha256(str(context_id).encode()).hexdigest()
+        # Each atomic delivery is a component, including shorter interrupted turns.
+        # Sharing its cursor with another delivery would make record counts regress.
+        delivery_digest = sha256(str(delivery_id).encode()).hexdigest()
         specification = ProcessingSpecRef(
             name="ember.native_delivery",
             version="0.2.0",
@@ -100,8 +105,8 @@ class ArchiveDialogueSink:
             processing_spec=specification,
             records=(conversation, *messages),
             resume_cursor=ImportCursor(
-                logical_inventory_sha256=digest,
-                component_sha256=digest,
+                logical_inventory_sha256=conversation_digest,
+                component_sha256=delivery_digest,
                 next_record_index=len(messages) + 1,
                 adapter="native_delivery",
                 adapter_version="0.2.0",

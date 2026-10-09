@@ -2881,8 +2881,8 @@ recall deadline and exceed the 50–100 ms warm-recall aim. Complete prepared-an
 separately as end-to-end delivery cost. During concurrent immutable index copy, the
 foreground sample maximum was 154.58 ms; the soft deadline is not a hard wall-clock bound.
 These results are one Windows CPU/SSD run; they do not certify the Phase 5 million-memory,
-multi-platform, or all-load targets. See the [full sanitized report](reports/phase-7-memory-benchmark.json)
-and [Phase 7 validation](phase-7-validation.md).
+multi-platform, or all-load targets. See the [full sanitized report](docs/reports/phase-7-memory-benchmark.json)
+and [Phase 7 validation](docs/phase-7-validation.md).
 
 Compare the same ordinary queries, character, encoder/index and model configuration
 with the profile disabled and enabled. Include unrelated queries, up to eight eligible

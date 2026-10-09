@@ -4,7 +4,11 @@ import sqlite3
 from datetime import timedelta
 from uuid import UUID
 
-from ember_memory_abi.common import CanonicalId, timestamp_from_datetime
+from ember_memory_abi.common import (
+    CanonicalId,
+    timestamp_from_datetime,
+    timestamp_from_unix_microseconds,
+)
 from ember_memory_abi.errors import AccessDeniedError, MemoryError
 from ember_memory_abi.evidence import SourceRef
 from ember_memory_abi.memory import Memory
@@ -20,6 +24,7 @@ from ember_memory_abi.related import (
 from ._state import CharacterState
 from .archive import SourceHeaderResolver
 from .database import check_deadline, load_model, row_int, row_text
+from .source_access import evidence_grant_window
 
 
 def certificate(
@@ -54,24 +59,14 @@ def certificate(
             )
             sources[ref.identity_key()] = ref
     boundaries = [memory.temporal.valid_until for memory in memories if memory.temporal.valid_until]
-    if sources:
-        for reference in sources.values():
-            if reference.source_store_id == state.character_id:
-                continue
-            row = connection.execute(
-                "SELECT MIN(expires_at) AS expires_at FROM source_grants WHERE source_store_id=? "
-                "AND record_kind=? AND record_id=? AND record_revision=? AND part_id IN (?, '') "
-                "AND capability='evidence_read' AND expires_at IS NOT NULL",
-                (
-                    str(reference.source_store_id),
-                    reference.record_kind,
-                    str(reference.record_id),
-                    reference.record_revision,
-                    str(reference.part_id) if reference.part_id else "",
-                ),
-            ).fetchone()
-            if row and row["expires_at"]:
-                boundaries.append(row_text(row, "expires_at"))
+    now = timestamp_from_datetime(state.database.clock.now())
+    allowed, grant_until = evidence_grant_window(
+        connection, state.character_id, tuple(sources.values()), now
+    )
+    if not allowed:
+        boundaries.append(now)
+    elif grant_until is not None:
+        boundaries.append(timestamp_from_unix_microseconds(grant_until))
     return ContextDependencies(
         memories=tuple(
             MemoryReference(memory_id=m.memory_id, revision=m.revision) for m in memories

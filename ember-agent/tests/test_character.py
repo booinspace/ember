@@ -2,8 +2,10 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 import pytest
 from livekit.agents import llm
@@ -17,6 +19,7 @@ from ember_agent.inference.contracts import (
 )
 from ember_agent.memory.backends.dialogue import ArchiveDialogueSink
 from ember_agent.realtime.livekit import EmberAgent
+from ember_memory_abi.archive import ArchiveWriteReceipt, Message
 from ember_memory_abi.interfaces import ForgetRequest
 from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
@@ -101,6 +104,131 @@ def test_memory_recall_prompt_provenance_and_native_delivery(tmp_path: Path) -> 
         )
     with CanonicalEngine(root) as restarted:
         assert restarted.character(character.store_id).get_sources(identity)[0].quote == text
+
+
+def test_session_archives_multiple_turns_without_rewriting_conversation(tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    first_stamp = datetime(2026, 10, 9, tzinfo=UTC)
+    snapshots: list[tuple[object, ...]] = []
+    with patch("ember_agent.memory.backends.dialogue.datetime") as delivery_clock:
+        delivery_clock.now.side_effect = [
+            first_stamp + timedelta(seconds=index) for index in range(4)
+        ]
+        with CanonicalEngine(root) as engine:
+            character = engine.create_character().store_id
+            subject = ensure_subject(engine, character)
+            archive = engine.archive(character)
+            memory = InProcessAsyncMemoryClient(engine.character(character))
+            sink = ArchiveDialogueSink(archive, subject)
+
+            async def run() -> UUID:
+                core = CharacterCore(memory, FakeModel(), model_tag="synthetic", sink=sink)
+                for prompt in ("First synthetic question.", "Second synthetic question."):
+                    turn = await core.prepare(prompt)
+                    assert "".join([event.text async for event in core.stream(turn)])
+                    snapshots.append(
+                        archive.database.read(
+                            lambda c: tuple(
+                                c.execute(
+                                    "SELECT payload_json,payload_sha256,recorded_at_us FROM "
+                                    "source_records WHERE record_kind='conversation'"
+                                ).fetchone()
+                            )
+                        )
+                    )
+                await sink.aclose()
+                assert not sink.pending
+                await memory.aclose()
+                return core.context_id
+
+            conversation_id = asyncio.run(run())
+            messages = archive.database.read(
+                lambda c: tuple(
+                    Message.model_validate_json(row[0])
+                    for row in c.execute(
+                        "SELECT payload_json FROM source_records WHERE record_kind='message'"
+                    )
+                )
+            )
+            assert snapshots[0] == snapshots[1]
+            assert len(messages) == len({m.source.record_id for m in messages}) == 4
+            assert all(m.conversation.record_id == conversation_id for m in messages)
+            assert all(m.conversation.record_revision == 1 for m in messages)
+            assert all(m.channel == "final" and m.recipient == "complete" for m in messages)
+            users = tuple(m for m in messages if m.actor.role == "user")
+            assert len(users) == 2 and all(m.actor.actor_id == subject.entity_id for m in users)
+            assert {m.parts[0].text for m in users} == {
+                "First synthetic question.",
+                "Second synthetic question.",
+            }
+            assert (
+                archive.database.read(
+                    lambda c: c.execute("SELECT COUNT(*) FROM source_keys").fetchone()[0]
+                )
+                == 4
+            )
+            written = archive.database.read(
+                lambda c: tuple(
+                    ArchiveWriteReceipt.model_validate_json(row[0]).records_written
+                    for row in c.execute("SELECT receipt_json FROM archive_receipts")
+                )
+            )
+            assert sorted(written) == [2, 3]
+
+        with CanonicalEngine(root) as reopened:
+            archive = reopened.archive(character)
+            sink = ArchiveDialogueSink(archive, subject)
+
+            async def append_after_restart() -> None:
+                await sink.commit(
+                    conversation_id, "Third synthetic question.", "Third visible reply.", True
+                )
+                await sink.commit(conversation_id, "Interrupted synthetic question.", "", False)
+                await sink.aclose()
+
+            asyncio.run(append_after_restart())
+            assert (
+                archive.database.read(
+                    lambda c: tuple(
+                        c.execute(
+                            "SELECT payload_json,payload_sha256,recorded_at_us FROM source_records "
+                            "WHERE record_kind='conversation'"
+                        ).fetchone()
+                    )
+                )
+                == snapshots[0]
+            )
+            assert (
+                archive.database.read(
+                    lambda c: c.execute(
+                        "SELECT COUNT(*) FROM source_records WHERE record_kind='message'"
+                    ).fetchone()[0]
+                )
+                == 7
+            )
+            assert (
+                archive.database.read(
+                    lambda c: c.execute("SELECT COUNT(*) FROM source_keys").fetchone()[0]
+                )
+                == 7
+            )
+            assert (
+                archive.database.read(
+                    lambda c: c.execute("SELECT COUNT(*) FROM imports").fetchone()[0]
+                )
+                == 4
+            )
+            messages = archive.database.read(
+                lambda c: tuple(
+                    Message.model_validate_json(row[0])
+                    for row in c.execute(
+                        "SELECT payload_json FROM source_records WHERE record_kind='message'"
+                    )
+                )
+            )
+            assert sum(m.recipient == "partial_delivery" for m in messages) == 1
+            assert all(m.conversation.record_id == conversation_id for m in messages)
+        assert delivery_clock.now.call_count == 4
 
 
 def test_forget_invalidates_prepared_turn_and_copied_history(tmp_path: Path) -> None:

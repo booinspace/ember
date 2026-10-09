@@ -232,6 +232,66 @@ def test_import_grant_expiry_invalidates_profile_before_limits(
     ).memories
 
 
+@pytest.mark.parametrize(
+    "grant_case",
+    ("permanent_part", "permanent_record", "overlapping_temporary", "expired_temporary"),
+)
+def test_certificate_uses_effective_grant_window(
+    engine: CanonicalEngine, tmp_path: Path, clock: TestClock, grant_case: str
+) -> None:
+    from datetime import timedelta
+
+    library, selections = approved_profile(engine, tmp_path)
+    character = engine.create_character().store_id
+    ids = seed_profile(engine, character, library, selections)
+    store = engine.character(character)
+    start = clock.now()
+    for index, identity in enumerate(ids):
+        source = store.get(identity).content.evidence[0].evidence.source
+        short_expiry = timestamp_from_datetime(start + timedelta(seconds=1))
+        if grant_case != "permanent_part":
+            engine.grant_source(
+                character,
+                SourceGrant(
+                    references=(source,),
+                    capabilities=frozenset({"evidence_read"}),
+                    expires_at=short_expiry,
+                ),
+            )
+        if grant_case == "permanent_record":
+            record_expiry = None
+        elif grant_case == "permanent_part":
+            record_expiry = short_expiry
+        else:
+            record_expiry = timestamp_from_datetime(start + timedelta(seconds=3 + index))
+        engine.grant_source(
+            character,
+            SourceGrant(
+                references=(source.model_copy(update={"part_id": None}),),
+                capabilities=frozenset({"evidence_read"}),
+                expires_at=record_expiry,
+            ),
+        )
+    if grant_case == "expired_temporary":
+        clock.advance(1)
+    dependencies = context(engine, character).fast_dependencies
+    assert dependencies is not None
+    permanent = grant_case.startswith("permanent_")
+    assert dependencies.valid_until == (
+        None if permanent else timestamp_from_datetime(start + timedelta(seconds=3))
+    )
+    clock.advance(1)
+    assert store.lookup_related(RelatedRequest(intent="validate", dependencies=dependencies)).valid
+    assert len(context(engine, character).profile.automatic) == 3
+    if permanent:
+        clock.advance(10)
+    else:
+        clock.advance(int((start + timedelta(seconds=3) - clock.now()).total_seconds()))
+    valid = store.lookup_related(RelatedRequest(intent="validate", dependencies=dependencies)).valid
+    assert valid == permanent
+    assert len(context(engine, character).profile.automatic) == (3 if permanent else 2)
+
+
 def test_related_foreign_scope_deadline_and_row_limit(tmp_path: Path) -> None:
     from ember_memory_abi.errors import DeadlineExceededError
 

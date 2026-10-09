@@ -81,3 +81,21 @@ Implementation was isolated in `ember-phase-seven` to protect the user's editabl
 and ongoing ingest. Production memory databases have not been migrated or imported here.
 The gateway was restarted only after the user explicitly authorized it. Deployment commands
 are in the [runbook](../phase-7-runbook.md); architecture review precedes Phase 8.
+
+## Review corrections: archive replay and effective grant expiry
+
+The immutable archive writer ignores a caller's recorded_at when checking an existing
+revision and preserves its original stored bytes/time. Multi-turn regression coverage
+verifies one session conversation, distinct attributed messages, atomic receipts and
+unchanged conversation bytes through reopen. A shorter interrupted turn did expose a
+separate cursor regression: each delivery now uses its own import component digest
+within the stable session inventory. This reuses existing batch/cursor contracts and
+adds one small cursor row per delivery alongside its receipt; storage remains linear
+in archived turns. Previously archived turns are not rewritten.
+
+Dependency certificates now reuse evidence_grant_window, also used by index projection.
+Permanent matching grants take precedence, otherwise each source uses its latest live
+matching expiry; the earliest boundary across required sources limits the certificate.
+Tests cover permanent part/record grants, overlapping temporary grants and expired
+alternatives. Fresh suppression/grant checks remain in delivery validation. No new
+authorization primitive, cache, schema migration or ABI change is needed for these fixes.

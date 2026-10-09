@@ -89,12 +89,13 @@ def evidence_grant_window(
     references: tuple[SourceRef, ...],
     now: str,
 ) -> tuple[bool, int | None]:
-    """Maintenance-only projection of existing grants, not a new authorization authority.
+    """Effective evidence authorization window for certificates and index projections.
 
     Each hard evidence source needs a current part or whole-record grant. An
     unbounded matching grant wins; otherwise the latest matching expiry wins.
     The complete memory expires at the earliest of these independent boundaries.
-    Canonical suppression and fresh selected-result checks remain separate.
+    This projects existing grants; canonical suppression and fresh selected-result
+    checks remain separate.
     """
     boundaries: list[int] = []
     for ref in references:

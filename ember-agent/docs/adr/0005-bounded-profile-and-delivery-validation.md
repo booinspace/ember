@@ -47,3 +47,10 @@ realtime session, so background imports are not blocked for a session lifetime. 
 unadmitted HTTP rejection may retry; uncertain transport outcomes never silently retry.
 Detailed results and caveats are in the [validation record](../../../docs/phase-7-validation.md).
 No voice/browser or DeepRecallService implementation is implied by these text checks.
+
+Multi-turn archive regression coverage verifies that repeated session conversation
+records retain the original persisted bytes and recorded time; archive replay compares
+all other immutable fields. Each delivery has a separate cursor component within the
+session inventory. This prevents a one-message interrupted turn from regressing the
+cursor after a two-message completed turn, including after reopening the store. No
+session cache, new archive format or canonical writer behavior is introduced.

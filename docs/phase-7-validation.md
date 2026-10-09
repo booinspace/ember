@@ -32,8 +32,8 @@ eventual deployment.
 ## Quality and compatibility checks
 
 The locked environment sync completed in the isolated worktree. The root quality gate
-passes Ruff format check, Ruff lint and strict Pyright, followed by **487 passed and 7
-skipped** in the full 494-test suite. Contract schema export check passes with
+passes Ruff format check, Ruff lint and strict Pyright, followed by **492 passed and 7
+skipped** in the full 499-test suite. Contract schema export check passes with
 `scripts/export_contract_schemas.py --check`. The suite includes existing Phase 0–6
 coverage; seven integration/model tests remain skipped by their explicit runtime
 requirements. Passing this Phase 7 run does not close the older Phase 5 million-record,
@@ -44,3 +44,19 @@ no generated answer text or private archive content. Real LiveKit transport used
 generation; real Qwen extraction/prompt measurement ran separately with no realtime
 session reservation. These two checks must not be described as one combined live room
 using the real Qwen model.
+
+## Review regression evidence
+
+- `ember-agent/tests/test_character.py::test_session_archives_multiple_turns_without_rewriting_conversation`
+  exercises two completed core turns in one context, then a completed and an interrupted
+  delivery after reopening the store. Submitted timestamps differ; stored conversation
+  bytes/hash/time remain unchanged. All seven messages retain the session reference and
+  native speaker crosswalk. The interrupted delivery reproduced a cursor RevisionConflict
+  before the fix; per-delivery cursor components now preserve it atomically.
+- `memory-engine/tests/test_phase_seven_portability.py::test_certificate_uses_effective_grant_window`
+  covers permanent part grants with temporary whole-record alternatives and the inverse,
+  overlapping temporary grants, already-expired alternatives and the earliest effective
+  boundary across independent sources. The pre-existing certificate stays valid when
+  only an obsolete alternative expires and becomes invalid at the effective boundary.
+- PLAN's benchmark and validation links are relative to the root PLAN file and now
+  resolve to docs/reports and docs, respectively.
