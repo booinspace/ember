@@ -54,3 +54,18 @@ all other immutable fields. Each delivery has a separate cursor component within
 session inventory. This prevents a one-message interrupted turn from regressing the
 cursor after a two-message completed turn, including after reopening the store. No
 session cache, new archive format or canonical writer behavior is introduced.
+
+## Planned Phase 8 temporal extension
+
+[Root ADR 0014](../../../docs/adr/0014-planned-conversational-temporal-recall.md) records
+the accepted, not implemented ordinary temporal design. One small typed local resolver
+maps text/confirmed speech and an explicit reference clock/IANA timezone to existing
+MemoryQuery/TemporalQuery or clarification. Retain only the last scope and selected
+references for follow-ups; do not automatically invoke DeepRecallService.
+
+An independently opt-in, default-off interpreter makes at most one bounded structured
+P0 call through the gateway. It proposes intent without permissions/write authority;
+invalid/ambiguous/timeout outcomes clarify. Deep invocation still has no extra planning
+call. Scope historical delivery independently of current profile pins under existing
+prompt/reference bounds and fresh access checks. PLAN P8-AC-23 through P8-AC-30 require
+quality/performance evidence; Phase 7 TTFT reports do not measure this interpreter.

@@ -85,3 +85,18 @@ matching grant exists. Among live temporary alternatives the latest expiry wins 
 source; independent required sources retain the earliest of those effective boundaries.
 An already-expired alternative is ignored, and absent authority fails closed. The
 bounded selected-evidence queries and fresh delivery checks retain their existing owner.
+
+## Planned Phase 8 temporal extension
+
+[Root ADR 0014](../../../docs/adr/0014-planned-conversational-temporal-recall.md) records
+the accepted, not implemented conversational temporal design. The engine retains
+parameterized temporal filtering before candidate limits and current authorization.
+Distinguish ended episode occurrence from current-state validity in canonical/index
+eligibility and certificates; historical revisions use their explicit query selector,
+while current profile dependencies and grant/source/suppression checks remain current.
+
+New extraction versions retain exact date evidence/precision/basis. Separately reviewed
+enrichment reuses processing, UpdateRequest revisions and semantic vector reuse,
+preserving identities, approvals and origins without changing pinned jobs or silently
+updating seeded characters from a library. PLAN P8-AC-23 through P8-AC-30 own acceptance;
+no schema/ABI migration or new performance result is implied by this appendix.

@@ -138,3 +138,14 @@ profile pins to the ordinary context baseline in Phase 7. Deep recall reuses tha
 profile and its dependency/source-selection checks without duplicating its prompt
 content or allocation. Existing deep-recall limits and historical evidence remain
 unchanged; this extension is documentation only.
+
+## Planned Phase 8 ordinary temporal extension
+
+[Root ADR 0014](0014-planned-conversational-temporal-recall.md) makes calendar/time-axis
+filtering available to ordinary conversation independently of deep investigation.
+Reuse its local resolver in the deep path; P8-AC-13 still requires no extra planning
+call. An independently opt-in ordinary-query interpreter defaults off and is measured
+separately. Historical ordinary/deep delivery uses explicit selectors and current access
+checks. PLAN adds P8-AC-23 through P8-AC-30 without changing existing AC IDs, resource
+limits or historical evidence. Event-date enrichment remains separately reviewed;
+this design extension does not implement Phase 8 or mutate production data.

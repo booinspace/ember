@@ -29,3 +29,9 @@ that corresponding agent integration has shipped.
 Phase 7 profile integration reuses the same CharacterCore for terminal and LiveKit
 text and uses public ABI validation contracts; see Agent ADR 0005 and Root ADR 0013.
 It does not add continuous native extraction or deep recall orchestration.
+
+The planned temporal extension in [Root ADR 0014](../../../docs/adr/0014-planned-conversational-temporal-recall.md)
+and [Agent ADR 0005](0005-bounded-profile-and-delivery-validation.md#planned-phase-8-temporal-extension)
+covers shared ordinary query resolution, small follow-up scope, default-off one-call
+interpretation and historical delivery. This accepted Phase 8 design does not make
+voice, DeepRecallService or temporal interpretation currently operational.

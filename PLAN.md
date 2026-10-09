@@ -788,6 +788,34 @@ Queries distinguish:
 
 Similarity alone does not merge episodes or resolve contradictions.
 
+### Event occurrence, state validity and recall eligibility: planned Phase 8
+
+The valid axis describes when an accepted assertion applies in the world: an episode's
+supported occurrence interval or a state fact's validity interval. Observed time is when
+the source described it; recorded time is when the engine stored that interpretation.
+A July 2026 message saying "I went to Berlin last December" can support December 2025
+event time. Neither July observation nor October import/seed time substitutes for it.
+
+An episode's ended event interval does not expire the memory of that episode. Current
+state facts retain their current-validity checks; past episodes remain recallable while
+their lifecycle and current access policy permit them. Apply this distinction consistently
+to canonical queries, derived lexical/vector eligibility and delivery certificates.
+Do not implement event-time support by applying wall-clock validity to every memory kind.
+
+Retain precision, basis, exact date evidence and original timezone assumptions. A coarse
+occurrence interval does not assert that an event lasted throughout that interval.
+Distinguish supported matches from uncertain overlaps; unknown/ambiguous boundaries are
+not fabricated dates or independent confirmation. Completed-event requests must not
+silently include plans, intentions, hypotheticals or assistant-authored narratives.
+
+Historical selectors authorize a time interpretation, not renewed access. Current
+forgetting, dependency suppression, source availability, grants and source selection
+still apply to old revisions. Recorded history uses the existing recorded_before
+as-of cutoff; it is not a claim that the ABI already supports arbitrary recorded ranges.
+
+See [conversational temporal recall](#conversational-temporal-recall-planned-phase-8-architecture)
+and [Root ADR 0014](docs/adr/0014-planned-conversational-temporal-recall.md).
+
 ---
 
 ## 10. SQLite schema and data classification
@@ -1369,6 +1397,43 @@ Original source spans remain evidence.
 
 Re-extraction proposes diffs and respects manual corrections/suppression.
 
+### Event dates and accepted-memory enrichment: planned Phase 8
+
+Current general extraction assigns source observed_at with
+source_observation_not_validity; its existing claim schemas do not generally extract
+event dates. Temporal SQL support alone therefore cannot make the present imported
+memories answer strict event-period questions.
+
+Version the extraction contract, prompt/schema hashes and temporal policy for new jobs.
+Capture exact source passages supporting the event date, normalize source-relative dates
+against the original message clock and supported timezone, and retain precision/basis.
+A July source's "last December" resolves to the previous December, independently of the
+querying conversation's clock. Vague or conflicting time stays unknown/qualified.
+Plans, hypotheticals, third-party attributions and assistant narratives retain modality
+and authority; date normalization cannot promote them to completed personal events.
+
+Offer a separate, resumable enrichment workflow for a selected character's already
+accepted memories. Reuse processing provenance, exact source references, interactive
+review and compare-and-swap UpdateRequest revisions. Review/apply explicit temporal
+proposals; never implicitly approve a new semantic claim. Preserve memory IDs, payload,
+modality, confidence/importance, original acceptance/approval history and seed origins;
+append dated processing/evidence provenance and a new recorded interpretation revision.
+Apply/reject decisions and checkpoints are durable and idempotent. Concurrent revision
+changes require revalidation/review; forgotten, disabled or inaccessible targets stay
+excluded. Reject proposals that alter semantic content or unsupported dates.
+
+Library changes never silently update independent seeded characters. Enrich the selected
+character's eligible records using their exact source/origin dependencies instead of
+reseeding or repeating the whole archive import. Publish metadata/index updates through
+existing outbox/generation machinery and reuse embeddings when semantic input is unchanged.
+Old recorded interpretations remain available under authorized historical selectors.
+
+Do not edit, restart or reinterpret an ongoing extraction job's pinned specification,
+completed windows or candidates. Old jobs can finish with unknown event dates; subsequent
+reviewed enrichment is independent. Background enrichment generation remains P3/P4 under
+the existing gateway admission rules, never relabelled P0 to run in a connected session.
+No automatic maintenance, index rebuild or data migration occurs at startup.
+
 ### Early versus full extraction
 
 Phase 3 uses a narrow **production deterministic extractor** for supported explicit facts, plus normal evidence validation and audit. It proves the real path without introducing a background Qwen workload before P3 exists.
@@ -1553,6 +1618,86 @@ the Phase 8 capability leaves this path and its soft deadline unchanged.
 
 Vector filtering must search eligible records correctly rather than discard an unrestricted tiny top-k.
 
+### Conversational temporal recall: planned Phase 8 architecture
+
+Status: accepted design, not implemented. Temporal intent resolution is ordinary memory
+query construction, distinct from Deep Associative Recall's multi-record investigation.
+The current CharacterCore passes the utterance as MemoryQuery.text without a temporal
+selector. The engine already accepts valid/observed intervals and recorded_before, but
+these are not yet connected to ordinary conversation. Current prompt rows include time
+metadata; that alone does not construct or enforce the requested historical scope.
+
+Normal flow:
+
+Utterance or confirmed STT transcript -> local typed query resolution ->
+retrieve_context with MemoryQuery/TemporalQuery -> bounded prompt -> final Qwen P0 reply.
+
+#### Query ownership and reuse
+
+ember-agent owns one small typed resolver shared by terminal, browser, voice and deep
+invocation. It takes the utterance, injected conversation reference clock, configured
+IANA timezone and optional previous resolved scope, returning a narrowed query or
+clarification with interpretation/uncertainty labels. Default deployment timezone is
+Europe/London; do not silently infer it from the execution host or import date.
+Explicit setup supplies IANA timezone data (tzdata for Python zoneinfo on Windows);
+startup/readiness checks the configured zone without downloading dependencies.
+Unavailable/invalid zone data produces a typed temporal-capability/clarification outcome,
+not a host-clock fallback. The currently installed root environment lacks tzdata; this
+is a Phase 8 setup requirement, not a dependency installed by this documentation change.
+Calendar summer uses northern meteorological bounds: local June 1 through September 1,
+exclusive. Season policy/reference timezone are explicit and inspectable.
+
+Resolve explicit dates, months, seasons, years and calendar-relative expressions locally.
+For "summer 2026" in London the UTC bounds are 2026-05-31T23:00:00Z through
+2026-08-31T23:00:00Z, exclusive. Respect DST and leap years; "last year" means the previous
+local calendar year. Missing years/ambiguous antecedents request clarification rather
+than silently selecting a year. Strip recognized scope/control language from topical
+search terms; a date-only question uses structured retrieval, not a meaningless embedding.
+
+| Conversational request | Selector/meaning |
+|---|---|
+| "Memories of events from summer 2026" | Supported valid/event interval overlap; unknown event dates are omitted explicitly |
+| "NAS problems from that summer" | Same time scope plus existing lexical/semantic topical retrieval |
+| "What did I tell you that summer?" | Observed-time interval; description time does not prove event time |
+| "What did you believe before that correction?" | recorded_before as-of interpretation, only with a supported cutoff |
+| "What was my job then?" / "What is my job now?" | Historical valid-time state / current-state selection, separately labelled |
+| "The year before" / "during that same period" | Narrow follow-up based on an unambiguous previous resolved scope |
+
+The engine owns parameterized SQL, indexed temporal filtering before candidate limits,
+ranking and current grants/suppression/source controls. Reuse MemoryQuery, TemporalQuery,
+ContextRequest, coverage and optional batched validation. BGE supplies conceptual
+similarity, not date parsing or temporal eligibility. Do not introduce another database,
+query daemon, persistent temporal graph, general planner or inference scheduler.
+
+#### Optional interpretation and small follow-up state
+
+Qwen interpretation is independently opt-in and defaults off. An unresolved linguistic
+request may make at most one short schema-constrained foreground P0 call through the
+existing gateway, before retrieval/final synthesis. Composition bounds input, output
+tokens and deadline; cancellation is owned and there are no automatic interpretation
+retry loops. Output is an untrusted proposed intent, never SQL, character identity,
+permissions or mutation authority. Validate allowed fields, calendar bounds, original
+request consistency and any claimed event anchor. Ambiguity, missing anchor support,
+invalid output, timeout or unavailable capability produces a typed clarification/limited
+outcome, not an unfiltered answer presented as historically scoped.
+
+This call adds serial GPU work; its queue/prefill/decoding and final-answer TTFT require
+measurement. It is query interpretation, not reranking, condensation or deep planning.
+Installing deep recall never enables it, and P8-AC-13's deep path still uses no extra
+planning call. Background extraction/enrichment remains P3/P4; it cannot masquerade as
+this foreground user-request interpretation.
+
+Retain only the last resolved scope/reference clock and selected exact references within
+the conversation. Relative follow-ups reuse that scope and revalidate dependencies;
+ambiguous references clarify. Never retain whole result blobs, inherit broader permissions
+or automatically start deep expansion. Historical/current comparisons use bounded,
+explicitly labelled selections within the same six-memory total and prompt/dependency
+budgets. Unsupported event-relative requests offer clarification or explicit deep recall,
+rather than manufacturing a move/replacement date.
+
+[Root ADR 0014](docs/adr/0014-planned-conversational-temporal-recall.md) records ownership,
+minimum contract extensions, failures and the new P8-AC-23 through P8-AC-30 gates.
+
 ### Deep Archive Search
 
 Separate mode:
@@ -1734,6 +1879,11 @@ canonical supported links/source coordinates and require final policy checks.
 Do not require an elaborate persistent knowledge graph.
 
 #### 5. Temporal interpretation and uncertainty
+
+Reuse the local resolver and time-axis semantics in
+[conversational temporal recall](#conversational-temporal-recall-planned-phase-8-architecture).
+Calendar filtering is available to ordinary turns; deep mode adds supported anchor/
+association investigation. It does not enable the optional Qwen interpreter.
 
 Resolve "last year" against the requesting conversation's reference date and IANA
 timezone: the preceding calendar year, converted to UTC half-open bounds. "Around
@@ -2582,6 +2732,31 @@ Keep diagnostic IDs/counts separate from raw sensitive text.
 
 Task-result delivery uses the existing excerpt allocation and P0 generation.
 
+### Planned conversational temporal recall prompt selection
+
+Reuse the same personality, bounded profile/pins and prompt composer across text and
+audio. Include the resolved selector/axis, reference timezone, event-date precision/basis,
+historical/current labels and unknown-date coverage within existing categories. Keep at
+most six ordinary selected memories, the section 25 allocations and 7,000 serialized
+input ceiling/response reserve. Temporal qualifiers cannot be trimmed into false certainty.
+
+Extend delivery dependency validation with the minimum capability-gated public selector
+scope needed to validate exact historical revisions. Do not flatten historical selections
+and current profile pins into one current-only test. Validate historical ordinary/deep
+items against their original valid/observed/recorded selector and profile/manual current
+pins under their appropriate selection rules. Retain the existing 256-reference/64-KiB
+combined bounds, whole-turn history trimming and batched validation path. Legacy clients
+without historical validation must disclose unavailable temporal delivery or clarify,
+not reactivate superseded memories or silently substitute current results.
+
+Event interval ends are not wall-clock certificate expiries for remembered episodes.
+Certificate freshness/permission boundaries still account for policy/selection changes,
+source grants and current-state dependencies. Forgotten/suppressed/inaccessible revisions
+remain excluded even if their historical selector matches. Recheck at preparation,
+before generation and visible delivery/final completion, including retained follow-ups.
+Unknown-date exclusions and bounded coverage remain explicit; an empty matching set
+does not establish that no such event ever occurred.
+
 ### Planned Deep Associative Recall prompt selection
 
 For an explicitly requested deep answer, DeepRecallService supplies typed result data
@@ -2603,13 +2778,15 @@ model call, canonical summary write or hidden reasoning is required.
 
 Final P0 generation synthesizes this data and tracks memory/source/selection dependencies
 through delivery and subsequent history. Current CharacterCore.current checks only
-latest active revisions; Phase 8 must validate historical deep items under their
+latest active revisions; Phase 8 must validate historical ordinary/deep items under their
 explicit valid/observed/recorded selector rather than misuse that current-only check
 or reactivate superseded memories. Final suppression/grants still use current policy.
 New ordinary turns do not inherit a cached
 deep-result blob automatically. Follow-up use is explicit, bounded and revalidated.
 Measure condensation/serialization and model prefill separately from retrieval.
-Ordinary fast turns retain their original representation/cost when deep mode is off.
+Unscoped ordinary turns retain their baseline representation/cost when deep mode is off.
+Explicit ordinary temporal turns include their selector/qualifiers under the preceding
+conversational temporal prompt policy, not a deep-result blob or larger allocation.
 
 ---
 
@@ -2908,6 +3085,36 @@ with indexed selection and direct bounded validation; add a cache/projection lay
 if paired measurements justify it. A failed complexity/performance gate remains open;
 an optional fallback never substitutes for meeting Phase 7 acceptance.
 
+### Conversational temporal recall performance gate (Phase 8, not yet measured)
+
+Benchmark local resolution, canonical/indexed temporal eligibility, lexical/vector lookup,
+query-aware validation, prompt formatting and final P0 TTFT separately. Compare matched
+unscoped/scoped query sets with the feature disabled, enabled but idle and in use; keep
+hardware/model/encoder/index/profile fixed and report cold/warm/distinct-query results,
+p50/p95/p99, coverage/fallback rates, SQL/ABI calls, materialized rows, reference bytes and
+event-loop responsiveness. Use representative dated/undated/closed episodes and states,
+not only duplicate synthetic assertions. Include source switches, refresh/enrichment and
+deep/background contention under their current permitted admission profiles.
+
+Retain the 150 ms soft fast-recall deadline, six-memory ordinary prompt bound and section
+30's existing ordinary regression caps. Unscoped/default rule-based turns must add no
+model generation, archive hydration, relationship traversal or new query embedding.
+A scoped topical turn uses the existing embedding; date-only requests need none.
+Do not silently replace missed deadlines with unbounded canonical scans or broad results.
+
+Measure opt-in interpretation separately: one-call count, schema/semantic validity,
+clarification/timeout/cancellation, queue/load/prefill/decoding, interpretation completion,
+and time from original request/confirmed transcript to the final answer's first visible
+token/audio. The extra serial call is outside the CPU retrieval deadline but inside the
+reported conversational latency; it is not evidence of a 150 ms end-to-end response.
+Keep fallback off by default and document measured tradeoffs before enabling it for a
+deployment. Phase 7 Qwen TTFT/profile reports are not query-interpretation benchmarks.
+
+Enrichment must measure bounded checkpoint/write/index cost and demonstrate reuse of
+unchanged semantic embeddings without rewriting sources, importing the full archive again
+or competing for canonical ownership. A foreground session may defer background inference
+under the existing P3/P4 rule; it does not justify weakening that rule.
+
 ### Deep Associative Recall performance gate (Phase 8, not yet measured)
 
 Keep the original Phase 5 measurements and misses unchanged. The 94.30 ms warm p95
@@ -2935,7 +3142,9 @@ record in the implementation ADR before enabling concurrent mode:
 - Retain the 150 ms soft fast-recall deadline and existing 50–100 ms warm p95 aim.
   Caps do not hide an already failing idle baseline or close Phase 5 component gates.
 - Instrument every ordinary call: deep mode off must submit no expansion,
-  evidence hydration or planning work and add no deep prompt text.
+  evidence hydration or deep planning work and add no deep prompt text. The separate
+  opt-in temporal interpreter is counted/reported under its preceding gate; default
+  ordinary turns and the explicit deep path still make no interpretation call.
 - Measure deep p50/p95/p99/completion/coverage versus resource limits and the curated
   answer/evidence quality. The five-second deadline is a work bound, not a speed SLO.
 - If residual nonpreemptible work violates a cap, ship explicit conservative
@@ -3027,6 +3236,36 @@ Use sanitized accepted-memory fixtures and both fake/public and in-process clien
 - Representative real-Qwen text integration demonstrates the supplied profile can
   inform an unrelated answer. Inspect prompt inclusion separately from model wording;
   a name need not be forced into every reply. Run section 30's profile measurements.
+
+### Conversational temporal recall quality acceptance (Phase 8)
+
+Use sanitized, versioned fixtures with frozen intended axis, supported date evidence,
+query interval, expected eligible revisions and forbidden output. Require correct
+calendar/axis handling and exact evidence correctness in every deterministic fixture;
+zero unauthorized disclosure, unsupported event dates or plans promoted to completed
+events. Grade retrieval and Qwen answer qualification separately.
+
+| Fixture | Required observable result |
+|---|---|
+| Text and confirmed speech: "memories from summer 2026" | Same London-local half-open valid/event bounds without deep invocation or extra generation |
+| Local midnight/DST, leap day, last year and December/January boundary | Correct explicit timezone conversion and calendar arithmetic; no host/import-clock substitution |
+| Missing IANA data/invalid configured zone on Windows | Explicit setup/readiness reports unavailable temporal capability; no download or silent host-clock fallback |
+| July 2026 source describes "last December"; import occurs in October | Supported December 2025 event interval, July observation and October recording remain distinct |
+| Month/season precision, unknown year, ambiguous source zone/date | Preserve coarse/unknown basis; clarify or qualify uncertain overlaps, never invent an exact occurrence |
+| Past trip versus expired state and future plan | Ended episode remains recallable; current-state checks remain correct; plan is not a completed event |
+| Historical state, corrected belief and recorded_before | Appropriate old permitted interpretation reaches delivery without current-state substitution/reactivation |
+| "The year before", "during that period", competing antecedents | Reuse only the correct bounded scope/references; ambiguous follow-up clarifies |
+| Undated summary or no matching accepted event | Honest unknown-date/coverage omission, not proof the event never happened |
+| Reviewed enrichment, restart, repeated apply and concurrent revision | Preserve IDs/approval/origins and exact date evidence; idempotent resume or explicit conflict |
+| Legacy extractor job while temporal work is added | Unchanged pinned model/prompt/schema/policy hashes and completed-window replay |
+| Missing/corrupt index, cold/refresh generation and strict date filter | Scoped degraded/partial output within budgets; no unrestricted top-k then misleading date filtering |
+| Malformed/ambiguous Qwen fallback, unavailable gateway, timeout/cancel | At most one authorized P0 call; typed clarification/outcome, no direct Ollama or background-class bypass |
+| Forgetting, source switch, expiry or revocation before/during delivery | Zero excluded historical/current content; safe stop and no stale completed history |
+| Date-only versus topical range query | Structured/no embedding versus existing hybrid embedding, same six-memory/prompt bounds |
+
+Connect these fixtures to P8-AC-23 through P8-AC-30 and the preceding performance gate.
+Current text-only LiveKit support does not close the voice acceptance requirement.
+Temporal-only queries do not require archive/source hydration or a new planner.
 
 ### Deep Associative Recall quality and isolation acceptance
 
@@ -3241,7 +3480,7 @@ Each phase leaves working, tested behavior.
 | **5 — Retrieval/indexes** | Grouping, FTS, BGE-small, sqlite-vec, hybrid, diagnostics, rebuild |
 | **6 — Full extraction** | Structured model extraction, resumable jobs, policies/summary import; **same gateway gains P3/P4 queues and conservative admission** |
 | **7 — Consolidation/time + user profile** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance, bounded source-backed profile pins in terminal/LiveKit text, origin preservation and bounded relationship/temporal prerequisites for Phase 8 |
-| **8 — Stable application integration** | Browser/audio/memory, automatic native capture and source controls, **Deep Associative Recall** with explicit invocation/inspection/cancellation and measured fast-path isolation, prompt budgets, **single-command composition/startup/shutdown**, health and portability |
+| **8 — Stable application integration** | Browser/audio/memory, automatic native capture and source controls, **ordinary conversational temporal recall** with supported event dates, reviewed existing-memory enrichment and historical delivery validation; **Deep Associative Recall** with explicit invocation/inspection/cancellation and measured fast-path isolation, prompt budgets, **single-command composition/startup/shutdown**, health and portability |
 | **9 — Generic agent foundations** | Events/attention, ToolProvider/TaskRouter foundations, operational store; **same gateway gains P1/P2, reservation, fairness/accounting** |
 | **10 — Direct MCP** | Discovery, normalization, credentials, scoped authority, UI |
 | **11 — Odysseus delegation** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
@@ -3611,6 +3850,8 @@ These requirements extend application memory integration; browser/audio, prompt
 budgets, composition, health and portability deliverables remain required. Reuse the
 Phase 7 profile and its dependency/control contracts rather than implementing a second
 profile. Phase 8 source selection covers that profile as well as ordinary/deep recall.
+P8-AC-23 through P8-AC-30 add ordinary temporal query interpretation, supported event
+dates, reviewed enrichment and historical delivery; they are distinct from deep recall.
 
 - **P8-AC-01:** Normal supported chat automatically records completed conversation sources and
   durably queues candidate extraction under a configured per-character native
@@ -3709,6 +3950,50 @@ profile. Phase 8 source selection covers that profile as well as ordinary/deep r
   checkpoints while ephemeral deep investigations are cancelled, not promoted or
   silently replayed. Deep capability/budget/ranker diagnostics are private-safe;
   a fake memory backend proves no SQL/engine internals enter character logic.
+
+- **P8-AC-23:** Ordinary text and supported voice requests resolve explicit dates, months,
+  seasons, years and calendar-relative ranges into the intended valid/observed/recorded
+  selector without deep invocation or another model call. London summer 2026 uses local
+  June 1 through September 1, exclusive; DST/leap-year arithmetic, topical versus
+  structured date-only retrieval and filtering before candidate limits pass.
+- **P8-AC-24:** New versioned extraction records only source-supported event dates with
+  exact date passages, precision, basis and original clock/timezone assumptions. A July
+  2026 source describing "last December" receives December 2025 event time independently
+  of July observation/October recording. Unknown dates stay unknown; coarse dates remain
+  qualified, and plans/hypotheticals/assistant narratives never become completed events.
+- **P8-AC-25:** A separate explicitly reviewed character-memory enrichment workflow
+  resumes/idempotently applies metadata revisions, preserves IDs, payload, approval
+  history, provenance and seed origins, and detects concurrent revision conflicts.
+  Reuse unchanged semantic embeddings; library changes cannot silently alter seeded
+  characters. Existing extraction jobs, hashes and completed windows remain untouched.
+- **P8-AC-26:** Ended episodes remain ordinarily recallable; current state facts retain
+  their validity checks. Historical state and pre-correction recorded-history selectors
+  survive query-aware preparation/delivery validation, with current profile pins scoped
+  separately. Current forgetting, suppression, source controls, revocation and grant
+  expiry still prevent disclosure; no historical record is reactivated to bypass checks.
+- **P8-AC-27:** Conversation-local follow-ups such as "the year before" and "during that
+  same period" retain only the last resolved scope/reference clock and selected exact
+  references, then revalidate. Ambiguous antecedents clarify; historical/current
+  comparisons remain explicitly labelled within six selected ordinary memories and
+  existing prompt/reference bounds. Follow-ups do not automatically start deep recall.
+- **P8-AC-28:** Independently opt-in interpretation defaults off and uses at most one
+  bounded schema-constrained foreground P0 call through the gateway. Validate proposed
+  intent/fields/calendar bounds/anchor support; no SQL, grants, identity or mutation
+  authority comes from output. Invalid/ambiguous output, unavailable capability,
+  timeout and cancellation produce explicit outcomes/clarification without retry loops
+  or an unfiltered answer masquerading as scoped. P8-AC-13 remains unchanged.
+- **P8-AC-29:** Strict event-time retrieval excludes undated records and discloses that
+  coverage limitation; uncertain coarse overlaps stay qualified. Empty/bounded results
+  do not establish that an event never occurred. Observed descriptions, historical
+  beliefs, current states and planned versus completed events remain distinguishable
+  in prompt composition, answers and supported inspection.
+- **P8-AC-30:** Paired benchmarks separately measure parsing, temporal SQL/index lookup,
+  historical validation, formatting and optional inference/final-answer TTFT. Retain
+  the six-memory bound, 150 ms soft retrieval deadline and existing ordinary regression
+  limits with cold/warm queries, refresh/contention and degraded indexes. Count optional
+  interpretation and report its added serial latency; Phase 7 TTFT results are not
+  evidence of interpreter performance. The section 31 temporal fixtures, including
+  cancellation and mid-response permission changes, pass with zero unauthorized output.
 
 ### Phase 9 acceptance criteria: generic agent foundations
 
@@ -4222,6 +4507,13 @@ measured ordinary-recall isolation. It is distinct from Deep Archive Search and 
 not require the optional harness or an elaborate graph/planner. Its release gates are
 P8-AC-13 through P8-AC-22 and sections 13, 30–33; existing Phase 5/6 delivery is unchanged.
 
+Conversational temporal recall is a separate planned Phase 8 v1 capability under
+P8-AC-23 through P8-AC-30: rule-based query scope, supported event dates, reviewed
+existing-memory enrichment, small follow-ups and query-aware historical delivery.
+The optional one-call Qwen interpreter defaults off and is separately measured.
+[Root ADR 0014](docs/adr/0014-planned-conversational-temporal-recall.md) records this
+accepted design; no runtime, schema migration or completed Phase 8 claim is implied.
+
 Live preemption is conditional on measured acceptance; conservative scheduling is a valid documented fallback.
 
 The bounded source-backed user profile is implemented experimentally under
@@ -4229,6 +4521,24 @@ P7-AC-10 through P7-AC-17. It uses existing pin/retrieval contracts and survives
 replacement; Phase 8 browser/audio/source controls reuse it. Root ADR 0011 preserves
 the original design; Root ADR 0013 records the implementation without changing
 historical Phase 5/6 delivery status.
+
+### Conversational memory uses with remaining routing gaps
+
+These examples identify remaining use/integration gaps, not additional delivery gates
+for this amendment. Existing Phase 8 automatic capture, corrections, profile/source
+controls, browser/audio and deep recall criteria remain required.
+
+| Request | Existing direction and remaining gap |
+|---|---|
+| "How do you know that?" | Authorized provenance/exact-source inspection is planned; ordinary conversational routing must choose supported inspection without granting archive access |
+| "Show me everything from that summer" | Ordinary recall selects six items; bounded timeline browsing/pagination must disclose coverage rather than claim completeness |
+| "What happened before I moved?" | Deep recall plans supported transition anchors; ordinary interpretation must clarify/offer explicit investigation when a boundary is unknown |
+| "Which Alex was that?" | Entity/source attribution exists, but conversation-context disambiguation must resolve the intended person rather than guess or merge identities |
+| "Remember to remind me next month" | A remembered intention is not a scheduled action; reminder delivery belongs with later generic task/event infrastructure |
+
+The approved temporal amendment deliberately includes ordinary temporal requests,
+reviewed event-date enrichment and small scope follow-ups. Broader browsing, entity
+disambiguation and scheduling are not silently added as P8-AC-23 through P8-AC-30 gates.
 
 ### Deferred
 
@@ -4244,7 +4554,10 @@ Qdrant/experimental ANN, multimodal archive understanding, distributed/multiple 
 - Removed machine-specific paths from durable architecture.
 - Updated model status to complete/imported and scheduled integration measurements immediately where relevant.
 - Added deployment, dependency-boundary, gateway-phase, and prompt-composition acceptance tests.
-
+- Added Phase 8 ordinary conversational temporal recall, supported event-date
+  extraction/reviewed enrichment, historical validation and bounded opt-in
+  interpretation; retained P8-AC-01 through P8-AC-22 and added P8-AC-23 through
+  P8-AC-30 without changing historical implementation/performance evidence.
 
 ## Engineering language and code-quality standards
 

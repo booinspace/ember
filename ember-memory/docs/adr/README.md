@@ -35,3 +35,9 @@ label and link. Keep memory decisions with this component if repositories are
 separated, and update root phase status when a local decision changes application
 behavior. Runtime/gateway decisions belong to
 [agent ADRs](../../../ember-agent/docs/adr/README.md), not this backend.
+
+The planned temporal extension in [Root ADR 0014](../../../docs/adr/0014-planned-conversational-temporal-recall.md)
+and [Memory ADR 0008](0008-native-consolidation-and-profile.md#planned-phase-8-temporal-extension)
+covers source-supported event dates, reviewed character-memory enrichment and
+query-aware historical eligibility. This is accepted Phase 8 design, not a migrated
+schema, implemented workflow or measured release.
