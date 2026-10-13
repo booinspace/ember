@@ -19,8 +19,18 @@ class RetrievalBackend(Protocol):
 
     def available(self) -> bool: ...
     def memory(
-        self, state: "CharacterState", canonical: sqlite3.Connection, query: MemoryQuery
+        self,
+        state: "CharacterState",
+        canonical: sqlite3.Connection,
+        query: MemoryQuery,
+        *,
+        deep: bool = False,
     ) -> SearchResponse | None: ...
     def archive(
-        self, state: "CharacterState", canonical: sqlite3.Connection, query: ArchiveQuery
+        self,
+        state: "CharacterState",
+        canonical: sqlite3.Connection,
+        query: ArchiveQuery,
+        *,
+        deep: bool = False,
     ) -> ArchiveSearchResponse | None: ...

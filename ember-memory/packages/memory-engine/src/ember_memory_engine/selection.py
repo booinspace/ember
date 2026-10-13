@@ -118,3 +118,14 @@ def unrestricted(connection: sqlite3.Connection) -> bool:
         ).fetchone()
         is not None
     )
+
+
+def source_selected(policy: RecallSelection, character_id: UUID, source_store_id: UUID) -> bool:
+    """Apply the same origin selection to raw source certificates, without adding grants."""
+    if source_store_id == character_id:
+        return policy.local_enabled
+    return (
+        policy.import_mode != "none"
+        and source_store_id not in policy.excluded_libraries
+        and (policy.import_mode == "all" or source_store_id in policy.included_libraries)
+    )

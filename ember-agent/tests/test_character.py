@@ -122,7 +122,13 @@ def test_session_archives_multiple_turns_without_rewriting_conversation(tmp_path
             sink = ArchiveDialogueSink(archive, subject)
 
             async def run() -> UUID:
-                core = CharacterCore(memory, FakeModel(), model_tag="synthetic", sink=sink)
+                core = CharacterCore(
+                    memory,
+                    FakeModel(),
+                    model_tag="synthetic",
+                    sink=sink,
+                    reference_clock=delivery_clock.now,
+                )
                 for prompt in ("First synthetic question.", "Second synthetic question."):
                     turn = await core.prepare(prompt)
                     assert "".join([event.text async for event in core.stream(turn)])
@@ -154,7 +160,11 @@ def test_session_archives_multiple_turns_without_rewriting_conversation(tmp_path
             assert len(messages) == len({m.source.record_id for m in messages}) == 4
             assert all(m.conversation.record_id == conversation_id for m in messages)
             assert all(m.conversation.record_revision == 1 for m in messages)
-            assert all(m.channel == "final" and m.recipient == "complete" for m in messages)
+            assert all(m.channel == "final" for m in messages)
+            assert all(
+                m.recipient == ("input_observed" if m.actor.role == "user" else "complete")
+                for m in messages
+            )
             users = tuple(m for m in messages if m.actor.role == "user")
             assert len(users) == 2 and all(m.actor.actor_id == subject.entity_id for m in users)
             assert {m.parts[0].text for m in users} == {
@@ -173,7 +183,7 @@ def test_session_archives_multiple_turns_without_rewriting_conversation(tmp_path
                     for row in c.execute("SELECT receipt_json FROM archive_receipts")
                 )
             )
-            assert sorted(written) == [2, 3]
+            assert sorted(written) == [1, 1, 1, 2]
 
         with CanonicalEngine(root) as reopened:
             archive = reopened.archive(character)
@@ -216,7 +226,7 @@ def test_session_archives_multiple_turns_without_rewriting_conversation(tmp_path
                 archive.database.read(
                     lambda c: c.execute("SELECT COUNT(*) FROM imports").fetchone()[0]
                 )
-                == 4
+                == 6
             )
             messages = archive.database.read(
                 lambda c: tuple(

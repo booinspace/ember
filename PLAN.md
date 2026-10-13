@@ -4559,17 +4559,51 @@ Qdrant/experimental ANN, multimodal archive understanding, distributed/multiple 
   interpretation; retained P8-AC-01 through P8-AC-22 and added P8-AC-23 through
   P8-AC-30 without changing historical implementation/performance evidence.
 
-## Phase 8 implementation status (2026-10-09)
+## Phase 8 implementation status (2026-10-13)
 
 Implementation is in progress in the independent ember-phase-eight clone, based on
 origin/master 640888d. Source selection, historical selector certificates, ordinary
 calendar parsing, incremental native capture, a separate dated extraction profile
 and reviewed temporal enrichment have initial implementations and synthetic tests.
-This does not satisfy the complete Phase 8 acceptance criteria yet. Browser/voice,
-deep recall, optional interpretation, full quality/performance measurements and
-requested code-review remain open. The primary checkout, ingest and runtime have
-not been changed. [Root ADR 0015](docs/adr/0015-phase-eight-implementation.md) and
-[the AC matrix](docs/phase-8-validation.md) record current evidence and remaining gates.
+The isolated implementation now also contains explicit bounded deep orchestration,
+exact-source inspection and condensed prompt accounting, production React browser
+controls, optional CPU speech adapters with SDK playback receipts, disconnected
+native capture lifecycle and independently opt-in bounded P0 calendar interpretation.
+New native jobs use dated extractor 0.3.1/native acceptance 0.2; legacy queued jobs
+keep their pinned profiles. A supporting date passage must contain its claim.
+Reviewed enrichment now supports revision-pinned batches, per-item resume/replay,
+CAS conflicts, unchanged-vector reuse and selected-bundle review history.
+Failed native checkpoints remain inspectable and explicitly retryable; they do not
+block later checkpoints or loop endlessly during idle draining. Browser controls
+include library labels and demand-refreshed processing/index counts. Exact spoken
+day dates retain day precision. Mixed deep archive observations are restricted to
+authorized accepted-source/conversation neighborhoods and remain distinct from
+accepted beliefs; conflicts do not by themselves merge independent incidents.
+Installed managed Kokoro startup uses the existing owned process mechanism after
+STT readiness, with child-only CPU/offline environment guards and text degradation.
+Startup cancellation drains loaded CPU speech; validator failures fence the room.
+
+This does not satisfy the complete Phase 8 acceptance criteria yet. Initial
+1,000-request CPU BGE contention evidence found that completed concurrent deep work
+failed ordinary regression limits. A foreground guard therefore defers deep reads
+when ordinary native jobs are admitted. The repeated guard comparison passed its
+measured p50/p95/p99/rate gates; it does not establish large-corpus, refresh or
+completed-concurrent-deep acceptance. A separate 1,000-sample-per-selector
+synthetic benchmark now measures nonempty event/observed/recorded retrieval,
+historical validation and row formatting; it is not final-answer/audio latency.
+One warm entity-annotated synthetic NAS probe retrieves all eight expected memories
+with exact passages and keeps independent incidents separate; broader paraphrase,
+cold and final Qwen reconstruction gates remain open. Inspector dates, inclusion
+explanations and exact-span navigation reuse existing contracts. Missing background
+credentials block idle continuation instead of causing a retry loop.
+Original Unicode spans and technical-year exclusions are tested. Entity-valued
+facts can use already-authorized non-generic aliases for deep inclusion even when
+their payload contains IDs rather than literal names; this adds no graph service.
+Current parser-only timing is recorded separately from retrieval and inference.
+Reports are in docs/reports, and
+docs/phase-8-validation.md tracks each AC. Actual Qwen/voice acceptance remains
+deferred while the primary ingest uses the GPU. Requested plugin review has not
+run. Further architecture, quality and performance gates remain open.
 
 ## Engineering language and code-quality standards
 

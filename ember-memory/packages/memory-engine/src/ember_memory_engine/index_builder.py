@@ -516,7 +516,6 @@ class IndexBuilder:
                                 active,
                                 header["valid_from_us"]
                                 if header["valid_from_us"] is not None
-                                and header["memory_kind"] != "episode"
                                 else -(2**63),
                                 min(
                                     header["valid_until_us"]

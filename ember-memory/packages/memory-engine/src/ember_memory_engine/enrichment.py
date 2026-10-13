@@ -4,7 +4,7 @@ import sqlite3
 from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
 
 from ember_memory_abi.archive import Document, Message
 from ember_memory_abi.common import (
@@ -14,7 +14,7 @@ from ember_memory_abi.common import (
     Sha256,
     canonical_object_sha256,
 )
-from ember_memory_abi.errors import AccessDeniedError
+from ember_memory_abi.errors import AccessDeniedError, MemoryError
 from ember_memory_abi.evidence import Evidence, EvidenceAssertion, SourceRef, make_evidence_span
 from ember_memory_abi.interfaces import MutationReceipt, UpdateRequest
 from ember_memory_abi.memory import MemoryDraft
@@ -24,7 +24,7 @@ from . import mutations
 from .archive import source_text
 from .database import load_model, model_bytes, payload_hash, row_text
 from .engine import CanonicalEngine
-from .event_dates import resolve_date, supported_position
+from .event_dates import interpretation_date, supported_position
 from .models import MutationAuthority
 from .processing_contracts import DateSupport, ProcessingError
 
@@ -52,6 +52,22 @@ class TemporalReview(ContractModel):
     decision: Literal["pending", "approve", "reject"] = "pending"
 
 
+class TemporalBatchReview(ContractModel):
+    """Bounded operator review file; each item keeps its own immutable proposal and receipt."""
+
+    version: Literal["ember.temporal-batch-review@0.1.0"] = "ember.temporal-batch-review@0.1.0"
+    reviews: tuple[TemporalReview, ...] = Field(min_length=1, max_length=64)
+
+
+class TemporalBatchOutcome(ContractModel):
+    """A failed item cannot erase applied receipts or disclose private error values."""
+
+    proposal_id: CanonicalId
+    memory_id: CanonicalId
+    outcome: Literal["applied", "already_applied", "pending", "rejected", "failed"]
+    error_code: str | None = None
+
+
 class TemporalEnrichmentService:
     """Reuse canonical evidence and update receipts; no rescan, automatic approval or reseeding."""
 
@@ -69,9 +85,10 @@ class TemporalEnrichmentService:
         support: DateSupport,
         *,
         timezone: str = "Europe/London",
+        expected_revision: Revision | None = None,
     ) -> TemporalReview:
-        """Persist a resumable exact-date proposal using the original source clock."""
-        memory = self.store.get(memory_id)
+        """Persist a pinned date proposal; an old snapshot still requires CAS when applied."""
+        memory = self.store.get(memory_id, revision=expected_revision)
         if memory.lifecycle != "active":
             raise ProcessingError("enrichment_requires_active_memory")
         if source not in tuple(a.evidence.source for a in memory.content.evidence):
@@ -85,7 +102,20 @@ class TemporalEnrichmentService:
             raise ProcessingError("unsupported_completed_event")
         original = source_text(record, source)
         start = supported_position(original, support.quote, support.quote_start)
-        temporal = resolve_date(support, record.created_time.value, timezone)
+        if not any(
+            assertion.evidence.source.identity_key() == source.identity_key()
+            and max(start, assertion.evidence.span.start_codepoint)
+            < min(start + len(support.quote), assertion.evidence.span.end_codepoint)
+            for assertion in memory.content.evidence
+        ):
+            raise ProcessingError("enrichment_date_not_linked_to_accepted_passage")
+        temporal = interpretation_date(
+            support,
+            memory.content.kind,
+            record.created_time.value,
+            timezone,
+            observed_precision=record.created_time.precision,
+        )
         if temporal.valid_from is None:
             raise ProcessingError("enrichment_date_unresolved")
         seed: dict[str, JsonValue] = {
@@ -176,6 +206,31 @@ class TemporalEnrichmentService:
                 "decision": row_text(decision, "decision") if decision else "pending",
             }
         )
+
+    def apply_batch(self, batch: TemporalBatchReview) -> tuple[TemporalBatchOutcome, ...]:
+        """Resume item receipts; conflicts stay pending for explicit re-review."""
+        outcomes: list[TemporalBatchOutcome] = []
+        for review in batch.reviews:
+            error_code = None
+            try:
+                receipt = self.apply(review)
+                outcome = (
+                    receipt.outcome
+                    if receipt is not None
+                    else ("rejected" if review.decision == "reject" else "pending")
+                )
+            except (MemoryError, ProcessingError) as error:
+                outcome = "failed"
+                error_code = error.info.code if isinstance(error, MemoryError) else error.code
+            outcomes.append(
+                TemporalBatchOutcome(
+                    proposal_id=review.proposal.proposal_id,
+                    memory_id=review.proposal.memory_id,
+                    outcome=outcome,
+                    error_code=error_code,
+                )
+            )
+        return tuple(outcomes)
 
     def apply(self, review: TemporalReview) -> MutationReceipt | None:
         """Apply only an approved exact proposal using existing CAS and idempotency machinery."""

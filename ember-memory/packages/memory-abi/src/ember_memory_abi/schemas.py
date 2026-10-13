@@ -52,6 +52,7 @@ from .memory import (
     SessionSummary,
 )
 from .predicates import PredicateDefinition
+from .read_profiles import ReadUsage
 from .related import (
     ContextDependencies,
     MemoryReference,
@@ -66,6 +67,7 @@ from .selection import RecallSelection
 
 CONTRACT_TYPES: tuple[type[ContractModel], ...] = (
     SourceRef,
+    ReadUsage,
     EvidenceSpan,
     Evidence,
     EvidenceAssertion,

@@ -67,6 +67,7 @@ _WINDOW_OUTPUT_FAILURES = frozenset(
         "quote_not_exact",
         "date_quote_missing_or_ambiguous",
         "date_expression_not_in_quote",
+        "date_passage_not_linked_to_claim",
         "unsupported_completed_event",
         "fact_value_missing",
         "entity_mention_unverified",
@@ -122,10 +123,15 @@ class ProcessingService:
             "ember.atomic-claims@0.1.2",
             "ember.atomic-claims@0.2.0",
             "ember.atomic-claims@0.3.0",
+            "ember.atomic-claims@0.3.1",
         }:
             raise ProcessingError("processing_extractor_changed")
         if request.specification.extractor == "ember.atomic-claims@0.2.0" and (
             self.info.kind != "character" and request.source_kind == "native"
+        ):
+            raise ProcessingError("native_profile_requires_character_sources")
+        if request.specification.extractor == "ember.atomic-claims@0.3.1" and (
+            self.info.kind != "character" or request.source_kind != "native"
         ):
             raise ProcessingError("native_profile_requires_character_sources")
         from .processing_prompt import instructions_for
@@ -140,7 +146,10 @@ class ProcessingService:
             raise ProcessingError("job_owner_mismatch")
         if request.specification.policy_sha256 != POLICY.reference().specification_sha256:
             raise ProcessingError("processing_policy_changed")
-        if request.specification.extractor == "ember.atomic-claims@0.3.0":
+        if request.specification.extractor in {
+            "ember.atomic-claims@0.3.0",
+            "ember.atomic-claims@0.3.1",
+        }:
             from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
             try:
@@ -386,9 +395,11 @@ class ProcessingService:
             observed_at=reference.observed_at, basis="source_observation_not_validity"
         )
         if isinstance(claim, (DatedFactClaim, DatedOtherClaim)) and claim.date is not None:
-            from .event_dates import resolve_date, supported_position
+            from .event_dates import interpretation_date, supported_position
 
             support = claim.date
+            if claim.quote not in support.quote:
+                raise ProcessingError("date_passage_not_linked_to_claim")
             position = supported_position(window.text, support.quote, support.quote_start)
             if claim.kind == "episode" and (
                 support.status != "completed"
@@ -419,7 +430,22 @@ class ProcessingService:
             timezone = definition.request.specification.temporal_timezone
             if timezone is None:
                 raise ProcessingError("temporal_timezone_missing")
-            temporal = resolve_date(support, reference.observed_at, timezone)
+            if not isinstance(original_record, (Message, Document)):
+                raise ProcessingError("unsupported_source_window")
+            temporal = interpretation_date(
+                support,
+                claim.kind,
+                reference.observed_at,
+                timezone,
+                observed_precision=original_record.created_time.precision,
+            )
+            if (
+                claim.kind == "episode"
+                and temporal.valid_from is not None
+                and reference.observed_at is not None
+                and temporal.valid_from > reference.observed_at
+            ):
+                raise ProcessingError("unsupported_completed_event")
         entity = None
         value: FactValue
         payload: MemoryPayload
@@ -513,7 +539,7 @@ class ProcessingService:
                                 *(
                                     phase_seven_predicates()
                                     if definition.request.specification.extractor
-                                    == "ember.atomic-claims@0.2.0"
+                                    in {"ember.atomic-claims@0.2.0", "ember.atomic-claims@0.3.1"}
                                     else ()
                                 ),
                             ),
@@ -710,6 +736,7 @@ class ProcessingService:
         window_attempts: int = 1,
         continue_on_error: bool = False,
         on_progress: Callable[[JobStatus], None] | None = None,
+        should_continue: Callable[[], bool] | None = None,
     ) -> JobStatus:
         """Resume pure immutable steps; commit only validated complete window outputs.
 
@@ -749,11 +776,14 @@ class ProcessingService:
                 "ember.atomic-claims@0.1.2",
                 "ember.atomic-claims@0.2.0",
                 "ember.atomic-claims@0.3.0",
+                "ember.atomic-claims@0.3.1",
             }:
                 raise ProcessingError("processing_extractor_changed")
             await offload(partial(self._resume, job_id, retry_failed))
             processed = 0
             while max_windows is None or processed < max_windows:
+                if should_continue is not None and not should_continue():
+                    break
                 row = await offload(partial(self._next, job_id))
                 if row is None:
                     break
@@ -763,6 +793,9 @@ class ProcessingService:
                     await offload(partial(self._mark_running, job_id, ordinal))
                     try:
                         window = await offload(partial(self._input, definition, reference))
+                        if should_continue is not None and not should_continue():
+                            await offload(partial(self._set_status, job_id, "paused"))
+                            return await offload(partial(self.status, job_id))
                         try:
                             result = await model.extract(window)
                             result = batch_type_for(

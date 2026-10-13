@@ -1,0 +1,176 @@
+{
+  "fixture_records": 1000,
+  "dated_examples": 18,
+  "encoder": "CPU BGE small, one thread",
+  "warm_samples_per_selector": 1000,
+  "measurements": {
+    "ended_episode_structured": {
+      "retrieval": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.9048000210896134,
+        "p95_ms": 0.9937998838722706,
+        "p99_ms": 1.0907999239861965,
+        "over_150_ms": 0,
+        "degraded": 1000
+      },
+      "historical_validation": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.5164999747648835,
+        "p95_ms": 0.5896999500691891,
+        "p99_ms": 0.7616998627781868,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "qualified_row_formatting": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.0073998235166072845,
+        "p95_ms": 0.007500173524022102,
+        "p99_ms": 0.00909995287656784,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "selected_memories": 2,
+      "dependency_bytes": 1113,
+      "dependency_references": 4
+    },
+    "ended_episode_topical": {
+      "retrieval": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 6.211050087586045,
+        "p95_ms": 6.666500121355057,
+        "p99_ms": 7.273500086739659,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "historical_validation": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.5689499666914344,
+        "p95_ms": 0.925400061532855,
+        "p99_ms": 1.0468000546097755,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "qualified_row_formatting": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.007300172001123428,
+        "p95_ms": 0.0074999406933784485,
+        "p99_ms": 0.009399838745594025,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "selected_memories": 2,
+      "dependency_bytes": 1113,
+      "dependency_references": 4
+    },
+    "ended_state_historical": {
+      "retrieval": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.8517500245943666,
+        "p95_ms": 0.9469999931752682,
+        "p99_ms": 1.0085999965667725,
+        "over_150_ms": 0,
+        "degraded": 1000
+      },
+      "historical_validation": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.43955002911388874,
+        "p95_ms": 0.5355998873710632,
+        "p99_ms": 0.6326998118311167,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "qualified_row_formatting": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.00500003807246685,
+        "p95_ms": 0.005100155249238014,
+        "p99_ms": 0.005300156772136688,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "selected_memories": 1,
+      "dependency_bytes": 729,
+      "dependency_references": 2
+    },
+    "observation_time": {
+      "retrieval": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.7807000074535608,
+        "p95_ms": 0.861399807035923,
+        "p99_ms": 0.9232000447809696,
+        "over_150_ms": 0,
+        "degraded": 1000
+      },
+      "historical_validation": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.5316500319167972,
+        "p95_ms": 0.6024001631885767,
+        "p99_ms": 0.658900011330843,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "qualified_row_formatting": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.0070999376475811005,
+        "p95_ms": 0.007200054824352264,
+        "p99_ms": 0.010699965059757233,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "selected_memories": 2,
+      "dependency_bytes": 1113,
+      "dependency_references": 4
+    },
+    "recorded_before_correction": {
+      "retrieval": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.9275000775232911,
+        "p95_ms": 1.0134000331163406,
+        "p99_ms": 1.160199986770749,
+        "over_150_ms": 0,
+        "degraded": 1000
+      },
+      "historical_validation": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.5571001674979925,
+        "p95_ms": 0.6206000689417124,
+        "p99_ms": 0.699999975040555,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "qualified_row_formatting": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.007400056347250938,
+        "p95_ms": 0.007500173524022102,
+        "p99_ms": 0.01119985245168209,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "selected_memories": 2,
+      "dependency_bytes": 1138,
+      "dependency_references": 4
+    }
+  },
+  "not_measured": [
+    "cold distinct-query sets",
+    "simultaneous refresh/contention",
+    "large archive",
+    "actual peak working memory",
+    "source-switch regression",
+    "Qwen and actual voice TTFT"
+  ]
+}

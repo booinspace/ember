@@ -731,6 +731,24 @@
       "additionalProperties": false,
       "description": "Small fast-path certificate; policy changes invalidate rather than widen access.",
       "properties": {
+        "archive_sources": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 256,
+          "title": "Archive Sources",
+          "type": "array"
+        },
+        "excerpt_sources": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 256,
+          "title": "Excerpt Sources",
+          "type": "array"
+        },
         "extensions": {
           "additionalProperties": {
             "$ref": "#/$defs/JsonValue"
@@ -828,6 +846,11 @@
           },
           "title": "Extensions",
           "type": "object"
+        },
+        "include_memory_search": {
+          "default": true,
+          "title": "Include Memory Search",
+          "type": "boolean"
         },
         "include_pinned": {
           "default": true,
@@ -3168,6 +3191,44 @@
       "title": "ReadManifest",
       "type": "object"
     },
+    "ReadUsage": {
+      "additionalProperties": false,
+      "description": "Counts represent actual materialized rows/statements, not similarity truth scores.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "limits_hit": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Limits Hit",
+          "type": "array"
+        },
+        "materialized_bytes": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        },
+        "materialized_rows": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        },
+        "sql_statements": {
+          "$ref": "#/$defs/NonnegativeInteger",
+          "default": 0
+        }
+      },
+      "title": "ReadUsage",
+      "type": "object"
+    },
     "RecallSelection": {
       "additionalProperties": false,
       "description": "Persistent origin selection independent of capture, grants and model identity.",
@@ -3330,6 +3391,24 @@
           ],
           "default": null
         },
+        "entity_names": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WireString"
+          },
+          "maxItems": 8,
+          "title": "Entity Names",
+          "type": "array"
+        },
+        "excerpts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 24,
+          "title": "Excerpts",
+          "type": "array"
+        },
         "extensions": {
           "additionalProperties": {
             "$ref": "#/$defs/JsonValue"
@@ -3339,6 +3418,11 @@
           },
           "title": "Extensions",
           "type": "object"
+        },
+        "include_relationships": {
+          "default": true,
+          "title": "Include Relationships",
+          "type": "boolean"
         },
         "intent": {
           "enum": [
@@ -3356,12 +3440,38 @@
           "title": "Limit",
           "type": "integer"
         },
+        "recall_only": {
+          "default": false,
+          "title": "Recall Only",
+          "type": "boolean"
+        },
         "row_budget": {
           "default": 256,
           "maximum": 512,
           "minimum": 1,
           "title": "Row Budget",
           "type": "integer"
+        },
+        "source_capability": {
+          "default": "evidence_read",
+          "enum": [
+            "evidence_read",
+            "archive_search"
+          ],
+          "title": "Source Capability",
+          "type": "string"
+        },
+        "sources": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 32,
+          "title": "Sources",
+          "type": "array"
+        },
+        "temporal": {
+          "$ref": "#/$defs/TemporalQuery"
         }
       },
       "required": [
@@ -3374,6 +3484,35 @@
       "additionalProperties": false,
       "description": "Validation performs no hydration; relationship reads disclose partial coverage.",
       "properties": {
+        "dependencies": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContextDependencies"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "entities": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ResolvedEntity"
+          },
+          "maxItems": 8,
+          "title": "Entities",
+          "type": "array"
+        },
+        "excerpts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SourceObservation"
+          },
+          "maxItems": 24,
+          "title": "Excerpts",
+          "type": "array"
+        },
         "extensions": {
           "additionalProperties": {
             "$ref": "#/$defs/JsonValue"
@@ -3516,6 +3655,34 @@
         }
       },
       "title": "RequestOptions",
+      "type": "object"
+    },
+    "ResolvedEntity": {
+      "additionalProperties": false,
+      "description": "An explicitly matched non-generic entity alias from eligible accepted memories.",
+      "properties": {
+        "alias": {
+          "$ref": "#/$defs/WireString"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "reference": {
+          "$ref": "#/$defs/EntityRef"
+        }
+      },
+      "required": [
+        "reference",
+        "alias"
+      ],
+      "title": "ResolvedEntity",
       "type": "object"
     },
     "ResultLimit": {
@@ -3833,6 +4000,71 @@
         "status"
       ],
       "title": "SourceLink",
+      "type": "object"
+    },
+    "SourceObservation": {
+      "additionalProperties": false,
+      "description": "Exact original excerpt plus independent observation clock and branch labels.",
+      "properties": {
+        "branch_status": {
+          "$ref": "#/$defs/WireString",
+          "default": "not_evaluated"
+        },
+        "conversation_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recorded_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "role": {
+          "$ref": "#/$defs/WireString",
+          "default": "unknown"
+        },
+        "source": {
+          "$ref": "#/$defs/MemorySource"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "SourceObservation",
       "type": "object"
     },
     "SourceRecord": {

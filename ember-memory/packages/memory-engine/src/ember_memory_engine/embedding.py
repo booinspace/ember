@@ -175,7 +175,7 @@ class EncodingPool:
         self._cache: OrderedDict[str, Future[bytes]] = OrderedDict()
         self.error_count = 0
 
-    def query(self, text: str) -> Future[bytes]:
+    def query(self, text: str, *, deep: bool = False) -> Future[bytes]:
         """Submit one query encoding; reject missing encoder or full admission immediately."""
         if self.encoder is None:
             raise EmbeddingError()
@@ -186,8 +186,16 @@ class EncodingPool:
         with self._guard:
             existing = self._cache.get(key)
             if existing is not None:
+                if deep and not existing.done():
+                    raise EmbeddingError()
                 self._cache.move_to_end(key)
                 return existing
+            # Initial deep mode admits only cached semantic work. An uncached deep
+            # encode cannot occupy the single CPU owner ahead of ordinary recall.
+            # Broader admission requires the paired contention gate, not a flag
+            # inferred from an idle GPU or another model's generation benchmark.
+            if deep:
+                raise EmbeddingError()
 
             def encode_query() -> bytes:
                 vectors = encoder.encode((text,), query=True)

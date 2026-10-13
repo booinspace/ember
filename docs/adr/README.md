@@ -86,4 +86,8 @@ choice as extended or superseded and link its replacement; do not rewrite a past
 scaffold restriction into a permanent ban. Separate accepted design, implemented
 behavior, pending review and unfulfilled acceptance gates. Summarize the tested
 phase and stop for user review before beginning the next one.
-\nPhase 8 implementation is in progress: [Root ADR 0015](0015-phase-eight-implementation.md) and [acceptance status](../phase-8-validation.md). It is not yet complete.\n
+
+Phase 8 implementation is in progress: [Root ADR 0015](0015-phase-eight-implementation.md) and
+[acceptance status](../phase-8-validation.md) record runtime/capture, calendar,
+deep source/alias recall, enrichment, measured performance and remaining gates.
+The isolated implementation is not complete or deployed.

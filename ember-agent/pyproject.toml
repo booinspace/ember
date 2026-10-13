@@ -22,6 +22,11 @@ dependencies = [
 
 [project.optional-dependencies]
 local-deployment = ["ember-memory-engine[search,processing]==0.6.0"]
+audio = [
+    "faster-whisper>=1.2,<2",
+    "livekit-plugins-silero>=1.8.5,<1.9",
+    "livekit-plugins-openai>=1.8.5,<1.9",
+]
 
 [project.scripts]
 ember = "ember_agent.cli:main"

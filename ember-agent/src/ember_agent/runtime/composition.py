@@ -1,6 +1,7 @@
 """Only local composition constructs concrete memory; character and adapters receive contracts."""
 
 import asyncio
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -9,21 +10,32 @@ from uuid import uuid4
 from pydantic import UUID4, ValidationError
 
 from ember_memory_abi.errors import MemoryError
+from ember_memory_abi.selection import RecallSelection
 from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 from ember_memory_engine.authoring import MemoryAuthoringService, NewMemoryInput, ensure_subject
-from ember_memory_engine.capture import CaptureService
+from ember_memory_engine.capture import CaptureService, CaptureSettings
+from ember_memory_engine.deep_profile import DeepSources
 from ember_memory_engine.embedding import BgeEncoder
 from ember_memory_engine.errors import EmbeddingError
-from ember_memory_engine.processing_contracts import ProcessingError, native_specification
+from ember_memory_engine.processing_contracts import (
+    ExtractionSpec,
+    ProcessingError,
+    native_temporal_specification,
+)
 from ember_memory_engine.processing_gateway import GatewayExtractionModel
+from ember_memory_engine.read_budget import ReadBudget
 
-from ..character.core import CharacterCore, Personality
+from ..character.core import CharacterCore, Personality, TurnObservation
+from ..character.interpretation import CalendarInterpreter
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
 from ..memory.backends.dialogue import ArchiveDialogueSink
+from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
+from ..memory.deep_recall import DeepRecallService
 from .config import DeploymentConfig, RuntimeModel
 from .console import read_line
+from .controls import CaptureControl, LibraryChoice, ProcessingStatus
 
 
 class CharacterBinding(RuntimeModel):
@@ -67,6 +79,14 @@ class LocalRuntime:
             self.personality = self._personality(personality_path)
             token = (config.runtime_root / "gateway.token").read_text(encoding="utf-8").strip()
             self.memory = InProcessAsyncMemoryClient(store)
+
+            def deep_client(deadline: float) -> InProcessAsyncMemoryClient:
+                budget = ReadBudget(deadline=deadline)
+                return InProcessAsyncMemoryClient(
+                    store, deep_sources=DeepSources(self.engine, budget), read_budget=budget
+                )
+
+            self.deep = DeepRecallService(binding.character_id, deep_client, validation=self.memory)
             self.model = HttpGatewayClient(config.services.gateway.endpoint, token)
             self.capture = CaptureService(self.engine, binding.character_id)
             self.sink = ArchiveDialogueSink(self.engine.archive(binding.character_id), self.subject)
@@ -82,6 +102,13 @@ class LocalRuntime:
                 personality=self.personality,
                 sink=self.sink,
                 timezone=config.recall_timezone,
+                interpreter=CalendarInterpreter(
+                    self.model,
+                    config.model_tag,
+                    timeout_seconds=config.interpretation.timeout_seconds,
+                )
+                if config.interpretation.enabled
+                else None,
             )
         except Exception:
             self.engine.close()
@@ -97,15 +124,100 @@ class LocalRuntime:
             stream.write(value.model_dump_json(indent=2))
         return value
 
+    async def investigate(self, query: str, observation: TurnObservation) -> DeepRecallResult:
+        """Bind explicit text/speech recall to original observation and trusted character scope."""
+        if observation.context_id != self.core.context_id:
+            raise GatewayError("turn_observation_mismatch")
+        return await self.deep.investigate(
+            DeepRecallRequest(
+                request_id=observation.request_id,
+                character_id=self.memory.character_id,
+                context_id=observation.context_id,
+                query=query,
+                reference_at=observation.observed_at,
+                timezone=self.config.recall_timezone,
+                previous_scope=self.core.last_scope,
+            )
+        )
+
+    async def processing_status(self) -> ProcessingStatus:
+        """Aggregate only on operator request; ordinary turns do not inspect job machinery."""
+        summary = await asyncio.wrap_future(self.pool.submit(self.capture.summary))
+        counts = {
+            name: getattr(summary, name)
+            for name in (
+                "queued",
+                "paused",
+                "processing",
+                "failed",
+                "complete",
+                "accepted",
+                "supported",
+                "superseded",
+                "deferred",
+                "rejected",
+            )
+        }
+        return ProcessingStatus(
+            counts=counts,
+            failure_codes=summary.failure_codes,
+            index_status=(await self.memory.capabilities()).index_status,
+        )
+
+    async def libraries(self) -> tuple[LibraryChoice, ...]:
+        """Use registered source metadata; no new catalog, grant or archive scan is needed."""
+
+        def choices() -> tuple[LibraryChoice, ...]:
+            return tuple(
+                LibraryChoice(
+                    library_id=info.store_id,
+                    namespace=info.namespace,
+                    available=info.availability == "available",
+                )
+                for info in self.engine.stores()
+                if info.kind == "library"
+            )[:128]
+
+        return await asyncio.wrap_future(self.pool.submit(choices))
+
+    async def capture_settings(self) -> CaptureControl:
+        """Inspect persistent operator controls off the realtime loop."""
+        settings = await asyncio.wrap_future(self.pool.submit(self.capture.settings))
+        return CaptureControl(enabled=settings.enabled, revision=settings.revision)
+
+    async def configure_capture(self, value: CaptureControl) -> CaptureControl:
+        """Operator-confirmed capture CAS never accepts imported claims."""
+        settings = await asyncio.wrap_future(
+            self.pool.submit(
+                self.capture.configure,
+                CaptureSettings(**value.model_dump()),
+                MutationAuthority(mode="confirmed_user"),
+            )
+        )
+        return CaptureControl(enabled=settings.enabled, revision=settings.revision)
+
+    async def recall_settings(self) -> RecallSelection:
+        """Inspect controls using existing ABI workers."""
+        return await self.memory.recall_selection()
+
+    async def configure_recall(self, value: RecallSelection) -> RecallSelection:
+        """Confirmed-user mutation stays in composition rather than model tool execution."""
+        store = self.engine.character(
+            self.memory.character_id, authority=MutationAuthority(mode="confirmed_user")
+        )
+        return await asyncio.wrap_future(self.pool.submit(store.configure_recall, value))
+
     async def remember(self, key: str, text: str) -> str:
         """Explicit human entry shared by terminal and room composition; never model-invoked."""
         request = NewMemoryInput(idempotency_key=key, text=text)
         receipt = await asyncio.wrap_future(self.pool.submit(self.author.create, request))
         return receipt.outcome
 
-    async def consolidate(self) -> int:
+    async def consolidate(self, should_continue: Callable[[], bool] | None = None) -> int:
         """Process a bounded idle batch; gateway P3 admission owns GPU isolation."""
-        pending = await asyncio.wrap_future(self.pool.submit(self.capture.pending))
+        pending = await asyncio.wrap_future(
+            self.pool.submit(self.capture.pending, runnable_only=True)
+        )
         if not pending:
             return 0
         token_path = self.config.runtime_root / "gateway-background.token"
@@ -113,17 +225,38 @@ class LocalRuntime:
             token = await asyncio.wrap_future(
                 self.pool.submit(token_path.read_text, encoding="utf-8")
             )
-        except FileNotFoundError:
-            return len(pending)
+        except FileNotFoundError as error:
+            # A non-progressing pending count would make idle continuation spin.
+            raise GatewayError("native_capture_credentials_unavailable") from error
         model = GatewayExtractionModel(
             self.config.services.gateway.endpoint,
             token.strip(),
-            native_specification(self.config.model_tag, self.config.model_digest, workload="P3"),
+            native_temporal_specification(
+                self.config.model_tag,
+                self.config.model_digest,
+                timezone=self.config.recall_timezone,
+                workload="P3",
+            ),
         )
+
+        def model_for(spec: ExtractionSpec) -> GatewayExtractionModel:
+            # The batch owner closes the shared transport once; each job retains immutable pins.
+            return (
+                model
+                if model.specification == spec
+                else GatewayExtractionModel(
+                    self.config.services.gateway.endpoint, token.strip(), spec, client=model.client
+                )
+            )
+
         try:
             async with asyncio.timeout(90):
-                remaining = await self.capture.drain(model, self.pool)
+                remaining = await self.capture.drain(
+                    model, self.pool, should_continue=should_continue, model_for=model_for
+                )
             return len(remaining)
+        except ProcessingError as error:
+            raise GatewayError("native_capture_deferred") from error
         finally:
             await model.aclose()
 
@@ -138,6 +271,7 @@ class LocalRuntime:
             cleanup.push_async_callback(self.model.aclose)
             cleanup.push_async_callback(self.memory.aclose)
             cleanup.push_async_callback(self.sink.aclose)
+            cleanup.push_async_callback(self.deep.aclose)
 
     def close_workers(self) -> None:
         """Join the drained lifecycle worker outside the realtime loop."""
@@ -160,7 +294,7 @@ class LocalRuntime:
                         )
                 except TimeoutError:
                     print("Native consolidation paused at its durable checkpoint.")
-                except ProcessingError as error:
+                except GatewayError as error:
                     print("Native consolidation deferred: " + error.code)
             finally:
                 await self.aclose()
@@ -196,7 +330,29 @@ class LocalRuntime:
                     print("Memory input is invalid.")
                 continue
             try:
-                turn = await self.core.prepare(text)
+                investigation = None
+                observation = None
+                if text.startswith("/recall "):
+                    query = text.removeprefix("/recall ").strip()
+                    if not query:
+                        print("Usage: /recall QUESTION")
+                        continue
+                    observation = await self.core.observe_input(text)
+                    investigation = await self.investigate(query, observation)
+                    print(
+                        "Deep recall: "
+                        + investigation.outcome
+                        + "; "
+                        + str(len(investigation.memories))
+                        + " memories; "
+                        + str(len(investigation.observations))
+                        + " source observations."
+                    )
+                    if investigation.reasons:
+                        print("Coverage: " + ", ".join(investigation.reasons))
+                turn = await self.core.prepare(
+                    text, investigation=investigation, observation=observation
+                )
                 print(self.personality.name + ": ", end="", flush=True)
                 async for event in self.core.stream(turn):
                     if event.kind == "text":

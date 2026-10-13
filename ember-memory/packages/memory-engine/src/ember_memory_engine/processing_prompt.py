@@ -54,6 +54,8 @@ def instructions_for(extractor: str) -> str:
         return INSTRUCTIONS
     if extractor == "ember.atomic-claims@0.3.0":
         return TEMPORAL_INSTRUCTIONS
+    if extractor == "ember.atomic-claims@0.3.1":
+        return NATIVE_TEMPORAL_INSTRUCTIONS
     if extractor == "ember.atomic-claims@0.2.0":
         return NATIVE_INSTRUCTIONS
     from .processing_contracts import ProcessingError
@@ -70,4 +72,12 @@ TEMPORAL_INSTRUCTIONS = (
     "such as last December; the host resolves them against the original source clock. "
     "Plans and hypothetical narratives must not be represented as completed episodes. "
     "Use an episode only for a clearly stated completed event. Unknown dates remain null."
+)
+
+
+NATIVE_TEMPORAL_INSTRUCTIONS = (
+    TEMPORAL_INSTRUCTIONS
+    + NATIVE_INSTRUCTIONS[len(INSTRUCTIONS) :]
+    + "\nA supporting date passage must contain the exact claim quote. "
+    "Keep unknown dates null; no processing or delivery clock is an event date."
 )

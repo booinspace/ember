@@ -43,12 +43,33 @@ SEASONS = {
 }
 CALENDAR = re.compile(
     r"\b(?:(?P<date>\d{4}-\d{2}-\d{2})|"
+    r"(?P<date_day>\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(?P<date_month>"
+    + "|".join(MONTHS)
+    + r")\s+(?P<date_year>\d{4})|(?P<month_first>"
+    + "|".join(MONTHS)
+    + r")\s+(?P<month_day>\d{1,2})(?:st|nd|rd|th)?,?\s+(?P<month_year>\d{4})|"
     r"(?P<period>spring|summer|autumn|fall|winter|"
     + "|".join(MONTHS)
-    + r")\s+(?P<year>\d{4}|\d{2})|(?P<relative>last|this)\s+"
-    r"(?P<unit>year|month|week)|(?P<day>today|yesterday)|(?P<whole_year>20\d{2}))\b",
+    + r")\s+(?:of\s+)?(?P<year>\d{4}|\d{2})|(?P<relative>last|this)\s+"
+    r"(?P<unit>year|month|week)|(?P<relative_season>last|this)\s+"
+    r"(?P<season>spring|summer|autumn|fall|winter)|"
+    r"(?P<day>today|yesterday)|(?P<whole_year>(?:18|19|20|21)\d{2}))\b",
     re.IGNORECASE,
 )
+
+
+def requested_axis(text: str) -> TimeAxis:
+    """Distinguish the system's recorded belief from the person's historical state."""
+    lower = text.casefold()
+    if re.search(
+        r"\b(?:(?:you|ember|system)\s+(?:believe|believed)|was\s+believed|"
+        r"(?:your|system(?:'s)?)\s+belief)\b",
+        lower,
+    ):
+        return "recorded"
+    if re.search(r"\b(tell|told|said|mentioned)\b", lower):
+        return "observed"
+    return "event"
 
 
 def _month_after(year: int, month: int) -> tuple[int, int]:
@@ -71,14 +92,12 @@ class CalendarResolver:
         if len(text) > 8192:
             return QueryResolution(status="clarification", reasons=("query_too_long",))
         lower = text.casefold()
-        axis: TimeAxis = (
-            "recorded"
-            if re.search(r"\b(believe|believed|belief)\b", lower)
-            else "observed"
-            if re.search(r"\b(tell|told|said|mentioned)\b", lower)
-            else "event"
+        axis = requested_axis(text)
+        if re.search(r"\b\d{1,2}[/.]\d{1,2}[/.]\d{2,4}\b", lower):
+            return QueryResolution(status="clarification", reasons=("ambiguous_numeric_date",))
+        followup = re.search(
+            r"\b(the year before|during that same period|same period)\b", text, re.IGNORECASE
         )
-        followup = re.search(r"\b(the year before|during that same period|same period)\b", lower)
         if followup:
             if previous is None:
                 return QueryResolution(
@@ -89,25 +108,79 @@ class CalendarResolver:
                 datetime.fromisoformat(previous.end),
             )
             start, end = start.astimezone(self.zone), end.astimezone(self.zone)
-            axis = previous.axis
-            if followup.group() == "the year before":
+            axis = axis if axis != "event" else previous.axis
+            if followup.group().casefold() == "the year before":
                 try:
                     start, end = start.replace(year=start.year - 1), end.replace(year=end.year - 1)
                 except ValueError:
                     return QueryResolution(status="clarification", reasons=("ambiguous_leap_day",))
-            return self._resolved(text, followup.span(), start, end, axis)
-        matches = list(CALENDAR.finditer(lower))
+            return self.from_scope(text, followup.span(), start, end, axis)
+        # Match original Unicode text: casefold can expand characters and invalidate spans.
+        matches = [
+            match
+            for match in CALENDAR.finditer(text)
+            if not (
+                match["whole_year"]
+                and re.search(
+                    r"\b(gpu|rtx|model|port|version)\s*$", text[: match.start()].casefold()
+                )
+            )
+        ]
         if not matches:
-            if re.search(r"\b(" + "|".join((*MONTHS, *SEASONS)) + r")\b", lower):
+            if re.search(
+                r"\b(before|after|when|while)\b.*\b(moved|move|owned|had|correction|corrected)\b",
+                lower,
+            ):
+                return QueryResolution(
+                    status="clarification", reasons=("supported_event_anchor_required",)
+                )
+            periods = "|".join((*MONTHS, *SEASONS))
+            if (
+                re.search(
+                    r"\b(?:during|from|in|before|after|last|previous)\s+(?:" + periods + r")\b",
+                    lower,
+                )
+                or re.search(r"\bmemories\s+(?:from\s+)?(?:" + periods + r")\b", lower)
+                or lower.strip() in (*MONTHS, *SEASONS)
+            ):
                 return QueryResolution(status="clarification", reasons=("calendar_year_required",))
             return QueryResolution(status="ordinary", query=MemoryQuery(text=text))
+        if len(matches) == 2:
+            first, last_match = matches
+            connector = text[first.end() : last_match.start()].strip().casefold()
+            prefix = text[: first.start()].casefold()
+            if (
+                re.search(r"\b(from|between)\s*$", prefix)
+                and connector in {"to", "through", "until", "and"}
+                and axis != "recorded"
+            ):
+                lower_scope = self.resolve(first.group(), reference)
+                upper_scope = self.resolve(last_match.group(), reference)
+                if lower_scope.scope is not None and upper_scope.scope is not None:
+                    start = datetime.fromisoformat(lower_scope.scope.start)
+                    end = datetime.fromisoformat(
+                        upper_scope.scope.start if connector == "until" else upper_scope.scope.end
+                    )
+                    if end > start:
+                        return self.from_scope(
+                            text, (first.start(), last_match.end()), start, end, axis
+                        )
+            return QueryResolution(status="clarification", reasons=("multiple_calendar_scopes",))
         if len(matches) != 1:
             return QueryResolution(status="clarification", reasons=("multiple_calendar_scopes",))
+        if axis == "recorded" and not re.search(r"\bbefore\b", lower):
+            return QueryResolution(status="clarification", reasons=("recorded_cutoff_required",))
         match = matches[0]
         local = reference.astimezone(self.zone)
         try:
             if match["date"]:
                 start = datetime.fromisoformat(match["date"]).replace(tzinfo=self.zone)
+                end = start + timedelta(days=1)
+            elif match["date_day"] or match["month_day"]:
+                name = match["date_month"] or match["month_first"]
+                year = int(match["date_year"] or match["month_year"])
+                day = int(match["date_day"] or match["month_day"])
+                start = datetime(year, MONTHS[name.casefold()], day, tzinfo=self.zone)
                 end = start + timedelta(days=1)
             elif match["period"]:
                 raw_year = match["year"]
@@ -125,6 +198,16 @@ class CalendarResolver:
                     start = datetime(year, month, 1, tzinfo=self.zone)
                     next_year, next_month = _month_after(year, month)
                     end = datetime(next_year, next_month, 1, tzinfo=self.zone)
+            elif match["relative_season"]:
+                season = match["season"].casefold()
+                first, last_month = SEASONS[season]
+                year = local.year
+                if season == "winter" and local.month < 3:
+                    year -= 1
+                start = datetime(year, first, 1, tzinfo=self.zone)
+                end = datetime(year + (last_month < first), last_month, 1, tzinfo=self.zone)
+                if match["relative_season"].casefold() == "last" and end > local:
+                    start, end = start.replace(year=start.year - 1), end.replace(year=end.year - 1)
             elif match["whole_year"]:
                 year = int(match["whole_year"])
                 start = datetime(year, 1, 1, tzinfo=self.zone)
@@ -154,11 +237,19 @@ class CalendarResolver:
                     end = start + timedelta(days=7)
         except (ValueError, OverflowError):
             return QueryResolution(status="clarification", reasons=("invalid_calendar_date",))
-        return self._resolved(text, match.span(), start, end, axis)
+        return self.from_scope(text, match.span(), start, end, axis)
 
-    def _resolved(
+    def from_scope(
         self, text: str, span: tuple[int, int], start: datetime, end: datetime, axis: TimeAxis
     ) -> QueryResolution:
+        """Compose validated boundaries and an exact input span into existing query contracts."""
+        if (
+            start.tzinfo is None
+            or end.tzinfo is None
+            or end <= start
+            or not 0 <= span[0] <= span[1] <= len(text)
+        ):
+            raise ValueError("A bounded timezone-aware calendar scope is required.")
         start_utc, end_utc = timestamp_from_datetime(start), timestamp_from_datetime(end)
         temporal = (
             TemporalQuery(valid_from=start_utc, valid_until=end_utc)
@@ -178,6 +269,7 @@ class CalendarResolver:
             "happened",
             "in",
             "from",
+            "between",
             "during",
             "memories",
             "memory",
@@ -201,6 +293,7 @@ class CalendarResolver:
             "recall",
             "please",
             "when",
+            "on",
             "was",
             "a",
             "an",

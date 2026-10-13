@@ -26,10 +26,10 @@ def windows(source: sqlite3.Connection, job: JobDefinition) -> Iterator[WindowRe
         )
     elif request.source_kind == "archive":
         selection += " AND record_kind='message'"
-    elif (
-        request.source_kind == "native"
-        and request.specification.extractor == "ember.atomic-claims@0.2.0"
-    ):
+    elif request.source_kind == "native" and request.specification.extractor in {
+        "ember.atomic-claims@0.2.0",
+        "ember.atomic-claims@0.3.1",
+    }:
         selection += (
             " AND record_kind='message' AND record_id IN (SELECT record_id FROM source_keys"
             " WHERE adapter='native_delivery')"
@@ -88,7 +88,10 @@ def windows(source: sqlite3.Connection, job: JobDefinition) -> Iterator[WindowRe
                 if resolved
                 else "ambiguous"
             )
-        if request.specification.extractor == "ember.atomic-claims@0.2.0":
+        if request.specification.extractor in {
+            "ember.atomic-claims@0.2.0",
+            "ember.atomic-claims@0.3.1",
+        }:
             trusted = (
                 isinstance(record, Message)
                 and record.actor.role == "user"

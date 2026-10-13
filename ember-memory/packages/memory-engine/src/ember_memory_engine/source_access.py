@@ -3,6 +3,7 @@
 import sqlite3
 from collections.abc import Iterator
 from hashlib import sha256
+from typing import Literal
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -91,6 +92,8 @@ def evidence_grant_window(
     character_id: CanonicalId,
     references: tuple[SourceRef, ...],
     now: str,
+    *,
+    capability: Literal["evidence_read", "archive_search"] = "evidence_read",
 ) -> tuple[bool, int | None]:
     """Effective evidence authorization window for certificates and index projections.
 
@@ -107,7 +110,7 @@ def evidence_grant_window(
         row = connection.execute(
             "SELECT MAX(expires_at IS NULL) AS permanent,MAX(expires_at) AS expiry "
             "FROM source_grants WHERE source_store_id=? AND record_kind=? AND record_id=? "
-            "AND record_revision=? AND part_id IN (?, '') AND capability='evidence_read' "
+            "AND record_revision=? AND part_id IN (?, '') AND capability=? "
             "AND (expires_at IS NULL OR expires_at>?)",
             (
                 str(ref.source_store_id),
@@ -115,6 +118,7 @@ def evidence_grant_window(
                 str(ref.record_id),
                 ref.record_revision,
                 str(ref.part_id) if ref.part_id else "",
+                capability,
                 now,
             ),
         ).fetchone()

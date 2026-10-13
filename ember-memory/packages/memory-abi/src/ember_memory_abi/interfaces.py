@@ -146,6 +146,7 @@ class ContextRequest(ContractModel):
     archive_token_budget: NonnegativeInteger = 0
     summary_token_budget: NonnegativeInteger = 0
     include_recent_native: bool = True
+    include_memory_search: bool = Field(default=True, exclude_if=lambda value: value)
     include_pinned: bool = True
     include_profile: bool = False
     include_summaries: bool = True

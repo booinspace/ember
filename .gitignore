@@ -27,3 +27,6 @@ build/
 dist/
 coverage.xml
 .coverage
+
+# Browser dependencies and generated assets; the pnpm lockfile is tracked.
+node_modules/

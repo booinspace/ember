@@ -2,6 +2,7 @@
 
 import asyncio
 import sqlite3
+from collections.abc import Callable
 from concurrent.futures import Executor
 from typing import Annotated, Literal
 from uuid import UUID
@@ -13,12 +14,19 @@ from ember_memory_abi.common import CanonicalId, ContractModel
 from ember_memory_abi.errors import AccessDeniedError, RevisionConflictError
 from ember_memory_abi.evidence import SourceRef
 
-from .consolidation import NativeAcceptanceRequest, NativeAcceptanceService
+from .consolidation import DATED_POLICY, POLICY, NativeAcceptanceRequest, NativeAcceptanceService
 from .database import row_int, row_text
 from .engine import CanonicalEngine
 from .models import MutationAuthority, SourceKeyAssignment
 from .processing import ProcessingService
-from .processing_contracts import ExtractionModel, JobRequest, native_specification
+from .processing_contracts import (
+    ExtractionModel,
+    ExtractionSpec,
+    JobRequest,
+    ProcessingError,
+    native_specification,
+    native_temporal_specification,
+)
 
 _REFERENCE_ADAPTER = TypeAdapter(tuple[SourceRef, ...])
 
@@ -38,6 +46,22 @@ class CaptureCheckpoint(ContractModel):
     status: Literal["queued", "paused", "processing", "complete", "failed"]
     job_id: CanonicalId | None = None
     error_code: str | None = None
+
+
+class CaptureSummary(ContractModel):
+    """Aggregate native progress and bounded failure codes; no source or model text."""
+
+    queued: int = Field(ge=0, default=0)
+    paused: int = Field(ge=0, default=0)
+    processing: int = Field(ge=0, default=0)
+    failed: int = Field(ge=0, default=0)
+    complete: int = Field(ge=0, default=0)
+    accepted: int = Field(ge=0, default=0)
+    supported: int = Field(ge=0, default=0)
+    superseded: int = Field(ge=0, default=0)
+    deferred: int = Field(ge=0, default=0)
+    rejected: int = Field(ge=0, default=0)
+    failure_codes: Annotated[tuple[str, ...], Field(max_length=8)] = ()
 
 
 def enqueue_delivery(
@@ -98,6 +122,35 @@ class CaptureService:
 
         return self.database.read(read)
 
+    def summary(self) -> CaptureSummary:
+        """Operator inspection only; aggregate canonical tables without hydrating proposals."""
+
+        def read(connection: sqlite3.Connection) -> CaptureSummary:
+            values = {
+                row_text(row, "status"): row_int(row, "count")
+                for row in connection.execute(
+                    "SELECT status,COUNT(*) AS count FROM native_capture GROUP BY status"
+                )
+            }
+            values.update(
+                {
+                    row_text(row, "outcome"): row_int(row, "count")
+                    for row in connection.execute(
+                        "SELECT outcome,COUNT(*) AS count FROM native_acceptance GROUP BY outcome"
+                    )
+                }
+            )
+            codes = tuple(
+                row_text(row, "error_code")
+                for row in connection.execute(
+                    "SELECT DISTINCT error_code FROM native_capture WHERE status='failed' "
+                    "AND error_code IS NOT NULL ORDER BY error_code LIMIT 8"
+                )
+            )
+            return CaptureSummary.model_validate({**values, "failure_codes": codes})
+
+        return self.database.read(read)
+
     def configure(self, value: CaptureSettings, authority: MutationAuthority) -> CaptureSettings:
         """Confirmed-user CAS changes affect future drain and never approve imports."""
         if authority.mode != "confirmed_user":
@@ -121,7 +174,9 @@ class CaptureService:
 
         return self.database.write(write)
 
-    def pending(self, limit: int = 8) -> tuple[CaptureCheckpoint, ...]:
+    def pending(
+        self, limit: int = 8, *, runnable_only: bool = False
+    ) -> tuple[CaptureCheckpoint, ...]:
         """Bounded FIFO by durable insertion order; interrupted processing resumes first."""
         if not 1 <= limit <= 32:
             raise ValueError("Capture batch must contain between one and 32 deliveries.")
@@ -138,23 +193,49 @@ class CaptureService:
                     }
                 )
                 for row in connection.execute(
-                    "SELECT * FROM native_capture WHERE status<>'complete' ORDER BY rowid LIMIT ?",
+                    "SELECT * FROM native_capture WHERE status<>'complete' "
+                    + ("AND status<>'failed' " if runnable_only else "")
+                    + "ORDER BY rowid LIMIT ?",
                     (limit,),
                 )
             )
 
         return self.database.read(read)
 
-    def _mark(self, key: str, status: str, job_id: CanonicalId) -> None:
+    def retry(self, key: str, authority: MutationAuthority) -> None:
+        """Explicitly requeue failed work with its existing pinned job, never a new snapshot."""
+        if authority.mode != "confirmed_user":
+            raise AccessDeniedError()
+
+        def write(connection: sqlite3.Connection) -> None:
+            updated = connection.execute(
+                "UPDATE native_capture SET status='queued',error_code=NULL "
+                "WHERE delivery_key=? AND status='failed'",
+                (key,),
+            )
+            if updated.rowcount != 1:
+                raise ProcessingError("capture_failed_checkpoint_missing")
+
+        self.database.write(write)
+
+    def _mark(
+        self, key: str, status: str, job_id: CanonicalId, error_code: str | None = None
+    ) -> None:
         self.database.write(
             lambda connection: connection.execute(
-                "UPDATE native_capture SET status=?,job_id=? WHERE delivery_key=?",
-                (status, str(job_id), key),
+                "UPDATE native_capture SET status=?,job_id=?,error_code=? WHERE delivery_key=?",
+                (status, str(job_id), error_code, key),
             )
         )
 
     async def drain(
-        self, model: ExtractionModel, executor: Executor, *, limit: int = 8
+        self,
+        model: ExtractionModel,
+        executor: Executor,
+        *,
+        limit: int = 8,
+        should_continue: Callable[[], bool] | None = None,
+        model_for: Callable[[ExtractionSpec], ExtractionModel] | None = None,
     ) -> tuple[CaptureCheckpoint, ...]:
         """Called only after realtime reservation release; cancellation leaves durable work.
 
@@ -164,19 +245,40 @@ class CaptureService:
         loop = asyncio.get_running_loop()
         if not (await loop.run_in_executor(executor, self.settings)).enabled:
             return ()
-        checkpoints = await loop.run_in_executor(executor, lambda: self.pending(limit))
-        spec = native_specification(
-            model.specification.model, model.specification.model_digest, workload="P3"
+        checkpoints = await loop.run_in_executor(
+            executor, lambda: self.pending(limit, runnable_only=True)
+        )
+        spec = (
+            native_temporal_specification(
+                model.specification.model,
+                model.specification.model_digest,
+                workload="P3",
+                timezone=model.specification.temporal_timezone or "Europe/London",
+            )
+            if model.specification.extractor == "ember.atomic-claims@0.3.1"
+            else native_specification(
+                model.specification.model, model.specification.model_digest, workload="P3"
+            )
         )
         if model.specification != spec:
             raise ValueError("Native capture requires the pinned P3 processing profile.")
         for item in checkpoints:
+            if should_continue is not None and not should_continue():
+                break
             if not (await loop.run_in_executor(executor, self.settings)).enabled:
                 break
+            pinned = await loop.run_in_executor(
+                executor,
+                lambda item=item: self.processing.definition(item.job_id) if item.job_id else None,
+            )
+            job_spec = pinned.request.specification if pinned is not None else spec
+            selected_model = model_for(job_spec) if model_for is not None else model
+            if selected_model.specification != job_spec:
+                raise ProcessingError("processing_model_specification_mismatch")
             request = JobRequest(
                 idempotency_key="native-capture:" + item.delivery_key,
                 owner_store_id=self.character,
-                specification=spec,
+                specification=job_spec,
                 source_kind="native",
                 source_references=item.sources,
             )
@@ -192,16 +294,19 @@ class CaptureService:
             )
             outcome = await self.processing.run(
                 identity,
-                model,
+                selected_model,
                 max_windows=8,
                 retry_failed=True,
                 window_attempts=3,
                 continue_on_error=True,
+                should_continue=should_continue,
             )
 
             # Each native decision has its own immutable receipt; retrying a partially
             # accepted delivery cannot append duplicate memories or supports.
-            def accept(identity: CanonicalId = identity) -> bool:
+            def accept(
+                identity: CanonicalId = identity, job_spec: ExtractionSpec = job_spec
+            ) -> bool:
                 last = ""
                 while True:
                     rows = self.database.read(
@@ -222,6 +327,9 @@ class CaptureService:
                             NativeAcceptanceRequest(
                                 candidate_id=candidate,
                                 idempotency_key="native-capture:" + str(candidate),
+                                policy=DATED_POLICY
+                                if job_spec.extractor == "ember.atomic-claims@0.3.1"
+                                else POLICY,
                             )
                         )
 
@@ -233,10 +341,15 @@ class CaptureService:
                 if not accepted_all or outcome.status in {"paused", "running"}
                 else "failed"
             )
+            error_code = (
+                (outcome.failures[0].code if outcome.failures else "native_capture_incomplete")
+                if status == "failed"
+                else None
+            )
             await loop.run_in_executor(
                 executor,
-                lambda item=item, identity=identity, status=status: self._mark(
-                    item.delivery_key, status, identity
+                lambda item=item, identity=identity, status=status, error_code=error_code: (
+                    self._mark(item.delivery_key, status, identity, error_code)
                 ),
             )
-        return await loop.run_in_executor(executor, lambda: self.pending(limit))
+        return await loop.run_in_executor(executor, lambda: self.pending(limit, runnable_only=True))

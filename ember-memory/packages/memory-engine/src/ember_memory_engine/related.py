@@ -26,7 +26,7 @@ from ember_memory_abi.temporal import TemporalQuery
 from ._state import CharacterState
 from .archive import SourceHeaderResolver
 from .database import check_deadline, load_model, row_int, row_text
-from .selection import origin_scope, permitted
+from .selection import origin_scope, permitted, settings, source_selected
 from .source_access import evidence_grant_window
 
 
@@ -162,10 +162,10 @@ def validate(
 
         at = timestamp_to_unix_microseconds(now)
         for row in rows:
-            if row["kind"] == "episode":
-                continue
             if (row["valid_from_us"] is not None and row_int(row, "valid_from_us") > at) or (
-                row["valid_until_us"] is not None and at >= row_int(row, "valid_until_us")
+                row["kind"] != "episode"
+                and row["valid_until_us"] is not None
+                and at >= row_int(row, "valid_until_us")
             ):
                 reasons.append("memory_outside_validity")
         # Reuse the actual eligibility compiler. Historical selectors never grant
@@ -207,7 +207,21 @@ def validate(
     supplied = {source.identity_key() for source in dependencies.sources}
     if not required <= supplied:
         reasons.append("evidence_dependency_missing")
-    rows_count += len(dependencies.sources)
+    all_sources = (*dependencies.sources, *dependencies.archive_sources)
+    raw_sources = (*dependencies.archive_sources, *dependencies.excerpt_sources)
+    if raw_sources:
+        policy = settings(connection)
+        if any(
+            not source_selected(policy, state.character_id, ref.source_store_id)
+            for ref in raw_sources
+        ):
+            reasons.append("source_selection_changed")
+    if any(
+        not state.source_permitted(connection, ref, "archive_search")
+        for ref in dependencies.archive_sources
+    ):
+        reasons.append("archive_source_denied")
+    rows_count += len(all_sources)
     if rows_count > request.row_budget:
         reasons.append("row_budget")
     calls = 0
@@ -223,13 +237,13 @@ def validate(
             if isinstance(resolver, SourceHeaderResolver):
                 try:
                     missing, calls = resolver.unavailable_sources(
-                        dependencies.sources,
+                        all_sources,
                         local_connection=connection,
                         local_store_id=state.character_id,
                         call_budget=request.call_budget,
                     )
                 except MemoryError:
-                    missing = dependencies.sources
+                    missing = all_sources
                 if missing:
                     reasons.append("source_unavailable")
             else:
@@ -242,6 +256,11 @@ def validate(
         not state.source_permitted(connection, ref, "evidence_read") for ref in dependencies.sources
     ):
         reasons.append("source_denied")
+    if any(
+        not state.source_permitted(connection, ref, "archive_search")
+        for ref in dependencies.archive_sources
+    ):
+        reasons.append("archive_source_denied")
     return RelatedResponse(
         status="invalid" if reasons else "complete",
         valid=not reasons,
@@ -264,11 +283,20 @@ def lookup(
     epoch = state.policy_epoch(connection)
     memories: dict[CanonicalId, Memory] = {}
     edges: dict[CanonicalId, MemoryRelationship] = {}
-    rows = 0
-    partial = False
+    from .related_expansion import eligible_reference, neighborhood
+
+    expanded, entities, rows = neighborhood(state, connection, request)
+    distinct = {
+        (reference.memory_id, reference.revision): reference
+        for reference in (*request.anchors, *expanded)
+    }
+    anchors = tuple(distinct.values())[:32]
+    partial = len(distinct) > 32 or rows >= request.row_budget
 
     def authorized(reference: MemoryReference) -> Memory:
         check_deadline(state.database.clock, deadline)
+        if request.recall_only and not eligible_reference(state, connection, request, reference):
+            raise AccessDeniedError()
         latest = state.read_memory(connection, reference.memory_id)
         # Historical active revisions cannot bypass a later manual lifecycle decision.
         if latest.lifecycle in {"disabled", "forgotten"}:
@@ -283,7 +311,7 @@ def lookup(
             raise AccessDeniedError()
         return memory
 
-    for anchor in request.anchors:
+    for anchor in anchors:
         current = anchor
         visited: set[CanonicalId] = set()
         for _ in range(min(16, request.row_budget)):
@@ -308,22 +336,30 @@ def lookup(
             if remaining <= 0:
                 partial = True
                 break
-            found = connection.execute(
-                "SELECT * FROM memory_relationships WHERE "
-                "(source_id=? AND source_revision=?) OR (target_id=? AND target_revision=?) "
-                "ORDER BY relationship_id LIMIT ?",
-                (
-                    str(current.memory_id),
-                    current.revision,
-                    str(current.memory_id),
-                    current.revision,
-                    remaining,
-                ),
-            ).fetchall()
+            found = (
+                connection.execute(
+                    "SELECT * FROM memory_relationships WHERE "
+                    "(source_id=? AND source_revision=?) OR (target_id=? AND target_revision=?) "
+                    "ORDER BY relationship_id LIMIT ?",
+                    (
+                        str(current.memory_id),
+                        current.revision,
+                        str(current.memory_id),
+                        current.revision,
+                        remaining,
+                    ),
+                ).fetchall()
+                if request.include_relationships
+                else []
+            )
             rows += min(len(found), remaining)
             if len(found) >= remaining:
                 partial = True
-            if request.intent == "expand" and remaining > len(found):
+            if (
+                request.include_relationships
+                and request.intent == "expand"
+                and remaining > len(found)
+            ):
                 supports = connection.execute(
                     "SELECT * FROM memory_supports WHERE memory_id=? ORDER BY support_id LIMIT ?",
                     (str(current.memory_id), remaining - len(found)),
@@ -432,11 +468,129 @@ def lookup(
                 and (e.target is None or e.target.memory_id in bounded_memories)
                 and not any(a.evidence.source.identity_key() in denied for a in e.evidence)
             }
+    from pydantic import ValidationError
+
+    from .related_excerpts import excerpts as read_excerpts
+
+    allowed_excerpts = max(0, min(24, (request.row_budget - rows) // 2))
+    selected_excerpts, excerpt_partial = read_excerpts(
+        state,
+        connection,
+        request.model_copy(update={"excerpts": request.excerpts[:allowed_excerpts]}),
+    )
+    partial = partial or excerpt_partial or allowed_excerpts < len(request.excerpts)
+    rows += 2 * len(selected_excerpts)
+    dependencies = None
+    if request.recall_only:
+        selected = list(bounded_memories.values())[: request.limit]
+        quotes = list(selected_excerpts)
+        while True:
+            try:
+                dependencies = certificate(
+                    state,
+                    connection,
+                    tuple(selected),
+                    temporal=request.temporal,
+                )
+                quoted_sources = tuple(
+                    {
+                        item.source.evidence.source.identity_key(): item.source.evidence.source
+                        for item in quotes
+                    }.values()
+                )
+                permitted_window, expiry = evidence_grant_window(
+                    connection,
+                    state.character_id,
+                    quoted_sources,
+                    timestamp_from_datetime(state.database.clock.now()),
+                    capability=request.source_capability,
+                )
+                boundary = (
+                    timestamp_from_datetime(state.database.clock.now())
+                    if not permitted_window
+                    else timestamp_from_unix_microseconds(expiry)
+                    if expiry is not None
+                    else None
+                )
+                boundaries = tuple(
+                    value for value in (boundary, dependencies.valid_until) if value is not None
+                )
+                dependencies = ContextDependencies.model_validate(
+                    {
+                        **dependencies.model_dump(),
+                        "excerpt_sources": quoted_sources
+                        if request.source_capability == "evidence_read"
+                        else (),
+                        "archive_sources": quoted_sources
+                        if request.source_capability == "archive_search"
+                        else (),
+                        "sources": dependencies.sources
+                        if request.source_capability == "archive_search"
+                        else tuple(
+                            {
+                                ref.identity_key(): ref
+                                for ref in (*dependencies.sources, *quoted_sources)
+                            }.values()
+                        ),
+                        "valid_until": min(boundaries) if boundaries else None,
+                    }
+                )
+                break
+            except ValidationError:
+                partial = True
+                if quotes:
+                    quotes.pop()
+                elif selected:
+                    selected.pop()
+                else:
+                    raise
+        selected_excerpts = tuple(quotes)
+        bounded_memories = {m.memory_id: m for m in selected}
+        bounded_edges = {
+            key: edge
+            for key, edge in bounded_edges.items()
+            if edge.source.memory_id in bounded_memories
+            and (edge.target is None or edge.target.memory_id in bounded_memories)
+        }
+    from ember_memory_abi.memory import MemoryDraft
+
+    if dependencies is not None:
+        confirmed = validate(
+            state,
+            connection,
+            RelatedRequest(
+                intent="validate",
+                dependencies=dependencies,
+                row_budget=512,
+                call_budget=32,
+                deadline_at=deadline,
+            ),
+        )
+        rows += confirmed.rows_examined
+        calls += confirmed.source_calls
+        if confirmed.valid is not True:
+            partial = True
+            bounded_memories.clear()
+            bounded_edges.clear()
+            selected_excerpts = ()
+            entities = ()
+            dependencies = certificate(state, connection, ())
+    from .library import entity_references
+
+    entity_ids = {
+        ref.entity_id
+        for memory in bounded_memories.values()
+        for ref in entity_references(MemoryDraft(content=memory.content))
+    }
+    entities = tuple(alias for alias in entities if alias.reference.entity_id in entity_ids)
     state.check_policy(connection, epoch)
     check_deadline(state.database.clock, deadline)
     meta = connection.execute("SELECT recorded_clock_us FROM store_metadata").fetchone()
     return RelatedResponse(
         status="partial" if partial else "complete",
+        entities=entities,
+        excerpts=selected_excerpts,
+        dependencies=dependencies,
         memories=tuple(bounded_memories.values())[: request.limit],
         relationships=tuple(bounded_edges.values())[: request.limit],
         rows_examined=rows,

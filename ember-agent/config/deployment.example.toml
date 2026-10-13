@@ -34,6 +34,11 @@ shutdown_timeout_seconds = 30.0
 [services.kokoro]
 endpoint = "http://127.0.0.1:8880"
 mode = "attach"
+# Managed mode launches an explicitly installed CPU server command; no shell or setup at startup.
+executable = ""
+arguments = []
+working_directory = ""
+startup_timeout_seconds = 20.0
 
 [gateway]
 endpoint = "http://127.0.0.1:11435"
@@ -45,6 +50,11 @@ preemption_enabled = false
 mode = "disabled"
 
 [audio]
+enabled = false
+# Explicitly install local faster-whisper artifacts; startup never downloads.
+stt_model_directory = ""
+stt_threads = 2
+language = "en"
 stt_device = "cpu"
 tts_voice = "af_alloy"
 
@@ -52,3 +62,16 @@ tts_voice = "af_alloy"
 # CPU encoding; absent assets leave canonical/lexical recall available.
 [search]
 embedding_directory = "" # e.g. "../../.local/models/bge-small-en-v1.5"
+
+timezone = "Europe/London"
+
+[browser]
+enabled = false
+endpoint = "http://127.0.0.1:8787"
+# Build ember-agent/frontend during setup, then point to its production dist directory.
+assets = "../frontend/dist"
+
+[interpretation]
+# Independent of deep recall. Common calendar queries always resolve locally.
+enabled = false
+timeout_seconds = 8.0

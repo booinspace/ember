@@ -990,3 +990,76 @@ def test_schema_two_upgrade_backs_up_and_retries_failed_ddl(
             assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
             assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
     assert len(tuple(root.rglob("*.schema-2*.backup.db"))) >= 3
+
+
+@pytest.mark.parametrize("version", (4, 5))
+def test_previous_phase_bundle_schema_restores_and_migrates(version: int, tmp_path: Path) -> None:
+    from hashlib import sha256
+
+    from ember_memory_engine.authoring import MemoryAuthoringService, NewMemoryInput, ensure_subject
+
+    data = tmp_path / "original"
+    with CanonicalEngine(data) as owner:
+        character = owner.create_character().store_id
+        authored = MemoryAuthoringService(
+            owner, ensure_subject(owner, character), authority=AUTHORITY
+        )
+        memory = authored.create(NewMemoryInput(idempotency_key="legacy", text="LEGACY_SYNTHETIC"))
+        identity = memory.affected[0].memory_id
+    bundle = tmp_path / "legacy-bundle"
+    BundleService(data).export_character(character, bundle)
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    phase_eight_tables = (
+        "recall_policy",
+        "recall_libraries",
+        "capture_policy",
+        "native_capture",
+        "temporal_enrichments",
+        "temporal_enrichment_reviews",
+    )
+    phase_seven_tables = (
+        "claim_projection",
+        "profile_policy",
+        "profile_exclusions",
+        "native_acceptance",
+        "memory_supports",
+        "memory_relationships",
+    )
+    for member in manifest["files"]:
+        path = bundle / member["path"]
+        if not path.name.endswith(".db"):
+            continue
+        with sqlite3.connect(path) as database:
+            if path.name != "registry.db":
+                for table in (*phase_eight_tables, *(phase_seven_tables if version == 4 else ())):
+                    database.execute(f"DROP TABLE {table}")
+                database.execute("DROP INDEX entity_alias_fold")
+                if version == 4:
+                    database.execute("DROP INDEX pins_priority")
+                    database.execute("DROP INDEX memory_recent_order")
+                    database.execute("DROP INDEX materialized_source_header")
+                assert (
+                    database.execute(
+                        "SELECT 1 FROM sqlite_master WHERE name='capture_policy'"
+                    ).fetchone()
+                    is None
+                )
+            database.execute("DELETE FROM schema_versions WHERE version>?", (version,))
+            database.execute(f"PRAGMA user_version={version}")
+        database.close()
+        # This represents an actual older table layout, not merely a rewritten header.
+        content = path.read_bytes()
+        member["size"], member["sha256"] = len(content), sha256(content).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    restored = tmp_path / "restored"
+    restore_bundles((bundle,), restored)
+    with CanonicalEngine(restored) as reopened:
+        assert reopened.character(character).get_sources(identity)[0].quote == "LEGACY_SYNTHETIC"
+        _, database = reopened.maintenance_store(character)
+        assert (
+            database.read(
+                lambda connection: connection.execute("PRAGMA user_version").fetchone()[0]
+            )
+            == 6
+        )

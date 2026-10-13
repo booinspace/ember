@@ -1,0 +1,39 @@
+{
+  "fixture": "synthetic dated NAS projects with two independently labelled alternatives",
+  "encoder": "installed CPU BGE small, one thread",
+  "query_cache": "one explicitly warmed ordinary topical query",
+  "expected_relevant_memories": 8,
+  "selected": 8,
+  "precision": 1.0,
+  "support_recall": 1.0,
+  "exact_supported_selected": 8,
+  "independent_clusters": 8,
+  "outcome": "partial",
+  "coverage_reasons": [
+    "archive_observation_dates_cannot_supply_event_time",
+    "undated_records_excluded"
+  ],
+  "elapsed_ms": 42.15179989114404,
+  "counters": {
+    "extensions": {},
+    "inspected": 8,
+    "searches": 1,
+    "abi_calls": 5,
+    "rows_reported": 360,
+    "hydrated_spans": 8,
+    "elapsed_ms": 47,
+    "uncached_embeddings": 0,
+    "sql_statements": 931,
+    "materialized_bytes": 159615
+  },
+  "cross_character_and_source_switch": "passed",
+  "retrieval_gate_passed": true,
+  "not_measured": [
+    "actual Qwen answer reconstruction",
+    "cold query semantic recall",
+    "incidents without explicit entity annotations",
+    "broad paraphrase query sets",
+    "private imported corpus",
+    "large corpus or concurrent index refresh"
+  ]
+}

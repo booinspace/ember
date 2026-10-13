@@ -25,6 +25,7 @@ from .bundle_contracts import BundleFile, BundleManifest, StoreSnapshot
 from .consolidation import NativeAcceptanceReceipt
 from .database import SqliteDatabase, load_model, model_bytes, payload_hash, row_text
 from .engine import CanonicalEngine
+from .enrichment import TemporalProposal
 from .errors import BundleError, CorruptStoreError
 from .library import KnowledgeSelection, LibraryService, entity_references
 from .models import StoreInfo
@@ -579,6 +580,26 @@ class BundleService:
                     "memory_supports",
                 ):
                     transfer(table, lambda row: row_text(row, "memory_id") in selected)
+                evidence_ids = {item.evidence.evidence_id for item in closure}
+                enrichment_ids: set[str] = set()
+                for row in connection.execute("SELECT * FROM temporal_enrichments"):
+                    if row_text(row, "memory_id") not in selected:
+                        continue
+                    proposal = load_model(row, TemporalProposal)
+                    # A proposed date passage can extend beyond the accepted claim.
+                    # Self-contained export includes only already selected exact evidence.
+                    if all(
+                        assertion.evidence.evidence_id in evidence_ids
+                        for assertion in proposal.draft.content.evidence
+                    ):
+                        target.execute(
+                            "INSERT INTO temporal_enrichments VALUES(?,?,?,?,?)", tuple(row)
+                        )
+                        enrichment_ids.add(row_text(row, "proposal_id"))
+                transfer(
+                    "temporal_enrichment_reviews",
+                    lambda row: row_text(row, "proposal_id") in enrichment_ids,
+                )
                 transfer(
                     "memory_relationships",
                     lambda row: (
@@ -713,7 +734,8 @@ def _read_manifest(bundle: Path) -> BundleManifest:
                 *(str(item) for item in manifest.dependencies),
             }
             or registry.execute("PRAGMA quick_check").fetchone()[0] != "ok"
-            or registry.execute("PRAGMA user_version").fetchone()[0] not in {2, 3, SCHEMA_VERSION}
+            or registry.execute("PRAGMA user_version").fetchone()[0]
+            not in {2, 3, 4, 5, SCHEMA_VERSION}
         ):
             raise BundleError()
     for snapshot in manifest.stores:
@@ -733,7 +755,7 @@ def _read_manifest(bundle: Path) -> BundleManifest:
                 raise BundleError()
             if (
                 connection.execute("PRAGMA user_version").fetchone()[0]
-                not in {2, 3, SCHEMA_VERSION}
+                not in {2, 3, 4, 5, SCHEMA_VERSION}
                 or connection.execute("PRAGMA quick_check").fetchone()[0] != "ok"
                 or connection.execute("SELECT coverage FROM store_coverage").fetchone()[0]
                 != snapshot.coverage

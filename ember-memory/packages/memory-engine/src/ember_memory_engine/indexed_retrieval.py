@@ -34,6 +34,7 @@ from .database import load_model, row_int, row_text
 from .embedding import EncodingPool
 from .errors import EmbeddingError, EngineBusyError, IndexError
 from .index_storage import IndexStore, connect
+from .read_budget import ReadBudget, bounded_connection
 from .retrieval import memory_scope
 from .search_contracts import IndexGeneration
 from .selection import source_scope, unrestricted
@@ -132,8 +133,8 @@ def projected_memory_scope(
         )
     else:
         clauses.append(
-            "(d.memory_kind='episode' OR ((d.valid_from_us IS NULL OR d.valid_from_us<=?) "
-            "AND (d.valid_until_us IS NULL OR ?<d.valid_until_us)))"
+            "(d.valid_from_us IS NULL OR d.valid_from_us<=?) AND "
+            "(d.memory_kind='episode' OR d.valid_until_us IS NULL OR ?<d.valid_until_us)"
         )
     values.extend((at, at))
     if query.entity_ids:
@@ -275,13 +276,15 @@ class IndexedRetriever:
         self.deep_vectors = deep_vectors
         self.last_failure: str | None = None
         self._epoch: int | None = None
+        self.read_budget: ReadBudget | None = None
 
     def available(self) -> bool:
         """Report only a readable character generation; no filesystem/model repair or download."""
         try:
-            _, path = self.indexes[self.identity].active()
+            _, path = self.indexes[self.identity].active(self.read_budget)
             with closing(connect(path, immutable=True, require_extension=False)) as connection:
-                connection.execute("SELECT count(*) FROM metadata").fetchone()
+                with bounded_connection(connection, self.read_budget):
+                    connection.execute("SELECT count(*) FROM metadata").fetchone()
             return True
         except (IndexError, sqlite3.Error):
             return False
@@ -298,18 +301,28 @@ class IndexedRetriever:
         vector_ids: str | None = None,
         plain_current: bool = False,
         deep: bool = False,
+        isolated: bool = False,
     ) -> tuple[
         IndexGeneration,
         list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]],
         tuple[str, ...],
     ]:
-        generation, path = index.active()
+        generation, path = index.active(state.read_budget)
         reasons: list[str] = []
         lexical: list[int] = []
         semantic: list[int] = []
-        with closing(connect(path, immutable=True, require_extension=False)) as connection:
+        with (
+            closing(connect(path, immutable=True, require_extension=False)) as connection,
+            bounded_connection(connection, state.read_budget),
+        ):
             _attach(connection, state)
-            connection.set_progress_handler(lambda: int(monotonic() > deadline), 1000)
+            connection.set_progress_handler(
+                lambda: int(
+                    monotonic() > deadline
+                    or (state.read_budget is not None and state.read_budget.exhausted())
+                ),
+                1000,
+            )
             vector_job: Future[tuple[int, ...]] | None = None
             if mode not in {"lexical", "literal", "structured"}:
                 if (
@@ -347,13 +360,18 @@ class IndexedRetriever:
                                 canonical=state.database.path,
                                 statement=statement,
                                 parameters=parameters,
-                                encoding=self.pool.query(text),
+                                encoding=self.pool.query(text, deep=isolated),
                                 release=release,
+                                budget=state.read_budget,
                             )
                         )
                     except (EmbeddingError, EngineBusyError):
                         release()
-                        reasons.append("semantic_deadline_or_admission_miss")
+                        reasons.append(
+                            "deep_semantic_deferred_for_foreground_isolation"
+                            if isolated
+                            else "semantic_deadline_or_admission_miss"
+                        )
             try:
                 if mode == "literal":
                     connection.create_function(
@@ -418,17 +436,23 @@ class IndexedRetriever:
             return generation, result, tuple(reasons)
 
     def memory(
-        self, state: CharacterState, canonical: sqlite3.Connection, query: MemoryQuery
+        self,
+        state: CharacterState,
+        canonical: sqlite3.Connection,
+        query: MemoryQuery,
+        *,
+        deep: bool = False,
     ) -> SearchResponse | None:
         """Filter canonical scope before top-k, then fuse/rank/deduplicate verified revisions."""
         epoch = state.policy_epoch(canonical)
         if epoch != self._epoch:
-            self.pool.invalidate()
+            if not deep:
+                self.pool.invalidate()
             self._epoch = epoch
         deadline = monotonic() + 0.15
         try:
             index = self.indexes[self.identity]
-            previous, path = index.active()
+            previous, path = index.active(state.read_budget)
             pending = (
                 canonical.execute(
                     "SELECT 1 FROM index_outbox WHERE sequence>? AND kind NOT IN "
@@ -460,7 +484,11 @@ class IndexedRetriever:
                         query.temporal.valid_until,
                     )
                 )
-                and index.certified(previous, path)
+                and (
+                    index.certified(previous, path, cached_only=True)
+                    if deep
+                    else index.certified(previous, path)
+                )
             )
             scope, values = (
                 projected_memory_scope(state, query)
@@ -476,6 +504,8 @@ class IndexedRetriever:
                 query.mode,
                 deadline,
                 None if certified else _memory_vector_ids(state, query),
+                deep=deep,
+                isolated=deep,
                 plain_current=(
                     certified
                     and not query.kinds
@@ -640,12 +670,18 @@ class IndexedRetriever:
             return None
 
     def archive(
-        self, state: CharacterState, canonical: sqlite3.Connection, query: ArchiveQuery
+        self,
+        state: CharacterState,
+        canonical: sqlite3.Connection,
+        query: ArchiveQuery,
+        *,
+        deep: bool = False,
     ) -> ArchiveSearchResponse | None:
         """Search shared archive projections with whole-scope eligibility and exact provenance."""
         epoch = state.policy_epoch(canonical)
         if epoch != self._epoch:
-            self.pool.invalidate()
+            if not deep:
+                self.pool.invalidate()
             self._epoch = epoch
         deadline = monotonic() + 0.5
         scope, values = _archive_eligibility(state, query)
@@ -675,6 +711,7 @@ class IndexedRetriever:
                         query.mode,
                         deadline,
                         deep=True,
+                        isolated=deep,
                     )
                 except IndexError:
                     reasons.append("source_index_unavailable")

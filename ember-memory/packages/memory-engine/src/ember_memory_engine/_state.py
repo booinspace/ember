@@ -47,6 +47,7 @@ from .database import (
 )
 from .errors import CorruptStoreError
 from .models import ForgetImpact, MutationAuthority, TokenCounter
+from .read_budget import ReadBudget
 from .retrieval_port import RetrievalBackend
 
 
@@ -66,6 +67,8 @@ class CharacterState:
         self.authority = authority
         self.tokens = token_counter
         self.retriever = retriever
+        self.max_read_bytes: int | None = None
+        self.read_budget: ReadBudget | None = None
         self.predicates = (*initial_predicates(), *phase_seven_predicates())
 
         def register(connection: sqlite3.Connection) -> None:
@@ -177,6 +180,15 @@ class CharacterState:
         allow_suppressed: bool = False,
     ) -> Memory:
         check_deadline(self.database.clock, options.deadline_at if options else None)
+        if self.max_read_bytes is not None:
+            size = connection.execute(
+                "SELECT length(CAST(r.payload_json AS BLOB)) AS payload_size "
+                "FROM memory_revisions r JOIN memories m ON m.memory_id=r.memory_id "
+                "WHERE r.memory_id=? AND r.revision=COALESCE(?,m.current_revision)",
+                (str(memory_id), revision),
+            ).fetchone()
+            if size is not None and row_int(size, "payload_size") > self.max_read_bytes:
+                raise SourceUnavailableError()
         if revision is None:
             row = connection.execute(
                 "SELECT r.* FROM memory_revisions r JOIN memories m ON "

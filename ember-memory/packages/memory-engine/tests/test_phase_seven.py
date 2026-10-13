@@ -59,6 +59,7 @@ def append_native(
     role: str = "user",
     bound: bool = True,
     observed: str | None = None,
+    observed_precision: str = "microsecond",
 ) -> Message:
     subject = ensure_subject(engine, character)
     stamp = observed or timestamp_from_datetime(engine.clock.now())
@@ -77,7 +78,9 @@ def append_native(
         conversation=conversation,
         channel="final",
         actor=ActorAttribution(role=role, actor_id=subject.entity_id if bound else None),
-        created_time=SourceTimestamp(value=stamp, basis="runtime_delivery_observed"),
+        created_time=SourceTimestamp(
+            value=stamp, basis="runtime_delivery_observed", precision=observed_precision
+        ),
         parts=(
             ContentPart(
                 part_id=uuid4(),

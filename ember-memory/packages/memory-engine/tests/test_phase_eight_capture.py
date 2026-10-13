@@ -55,3 +55,120 @@ def test_capture_disabled_is_independent_of_recall_and_survives_restart(tmp_path
         service.configure(CaptureSettings(enabled=True, revision=1), AUTHORITY)
         assert not asyncio.run(service.drain(CaptureModel("user.preferred_name", "Rowan"), worker))
         assert len(engine.character(character).search(MemoryQuery()).results) == 1
+
+
+def test_new_native_capture_has_supported_event_time_without_repinning_legacy_queue(
+    tmp_path: Path,
+) -> None:
+    from ember_memory_engine.consolidation import DATED_POLICY, NativeAcceptanceReceipt
+    from ember_memory_engine.processing_contracts import (
+        DatedClaimBatch,
+        DatedOtherClaim,
+        DateSupport,
+        ExtractionModel,
+        ExtractionSpec,
+        JobRequest,
+        ModelWindow,
+        native_temporal_specification,
+    )
+
+    dated_spec = native_temporal_specification("synthetic", "a" * 64)
+
+    class DatedModel:
+        specification = dated_spec
+
+        async def extract(self, window: ModelWindow) -> DatedClaimBatch:
+            return DatedClaimBatch(
+                claims=(
+                    DatedOtherClaim(
+                        kind="episode",
+                        statement=window.text,
+                        quote=window.text,
+                        quote_start=None,
+                        modality="FACTUAL_ASSERTION",
+                        confidence=0.99,
+                        importance=0.8,
+                        verdict="supported",
+                        predicate=None,
+                        value=None,
+                        entity_name=None,
+                        date=DateSupport(
+                            expression="last December", quote=window.text, status="completed"
+                        ),
+                    ),
+                )
+            )
+
+    with CanonicalEngine(tmp_path / "data") as engine, ThreadPoolExecutor(max_workers=1) as worker:
+        character = engine.create_character().store_id
+        append_native(engine, character, "Please call me Rowan.")
+        service = CaptureService(engine, character)
+        checkpoint = service.pending()[0]
+        legacy = service.processing.create(
+            JobRequest(
+                idempotency_key="native-capture:" + checkpoint.delivery_key,
+                owner_store_id=character,
+                specification=SPEC,
+                source_kind="native",
+                source_references=checkpoint.sources,
+            )
+        )
+        service._mark(checkpoint.delivery_key, "paused", legacy.definition.job_id)
+        original = legacy.definition.model_dump_json()
+        append_native(
+            engine,
+            character,
+            "I went to Berlin last December.",
+            observed="2026-07-15T12:00:00.000000Z",
+        )
+
+        def factory(spec: ExtractionSpec) -> ExtractionModel:
+            return CaptureModel("user.preferred_name", "Rowan") if spec == SPEC else DatedModel()
+
+        assert not asyncio.run(service.drain(DatedModel(), worker, model_for=factory))
+        assert service.processing.definition(legacy.definition.job_id).model_dump_json() == original
+        memories = engine.character(character).search(MemoryQuery()).results
+        assert len(memories) == 2
+        event = next(
+            result.memory for result in memories if result.memory.content.kind == "episode"
+        )
+        assert event.temporal.valid_from == "2025-12-01T00:00:00.000000Z"
+        assert event.temporal.valid_until == "2026-01-01T00:00:00.000000Z"
+        assert event.temporal.observed_at == "2026-07-15T12:00:00.000000Z"
+        receipts = service.database.read(
+            lambda c: tuple(
+                NativeAcceptanceReceipt.model_validate_json(row[0])
+                for row in c.execute("SELECT payload_json FROM native_acceptance")
+            )
+        )
+        assert any(
+            receipt.policy == DATED_POLICY and receipt.outcome == "accepted" for receipt in receipts
+        )
+        assert not asyncio.run(service.drain(DatedModel(), worker, model_for=factory))
+        assert len(engine.character(character).search(MemoryQuery()).results) == 2
+
+
+def test_failed_checkpoint_is_visible_without_blocking_later_capture(tmp_path: Path) -> None:
+    from ember_memory_engine.processing_contracts import ClaimBatch, ModelWindow, ProcessingError
+
+    class FailingModel(CaptureModel):
+        async def extract(self, window: ModelWindow) -> ClaimBatch:
+            if "SYNTHETIC_FAILURE" in window.text:
+                raise ProcessingError("synthetic_failure")
+            return await super().extract(window)
+
+    with CanonicalEngine(tmp_path / "data") as engine, ThreadPoolExecutor(max_workers=1) as worker:
+        character = engine.create_character().store_id
+        append_native(engine, character, "Please call me Rowan. SYNTHETIC_FAILURE")
+        append_native(engine, character, "Please call me Rowan.")
+        service = CaptureService(engine, character)
+        remaining = asyncio.run(service.drain(FailingModel("user.preferred_name", "Rowan"), worker))
+        assert remaining == ()  # Automatic background continuation has no runnable work left.
+        failed = service.pending()[0]
+        assert failed.status == "failed" and failed.error_code == "synthetic_failure"
+        original_job = failed.job_id
+        assert len(engine.character(character).search(MemoryQuery()).results) == 1
+        service.retry(failed.delivery_key, AUTHORITY)
+        assert service.pending()[0].job_id == original_job
+        assert not asyncio.run(service.drain(CaptureModel("user.preferred_name", "Rowan"), worker))
+        assert not service.pending() and len(service.processing.definitions()) == 2

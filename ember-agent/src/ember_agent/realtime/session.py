@@ -3,15 +3,29 @@
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
+from typing import Protocol
+from uuid import UUID, uuid4
 
 from livekit import rtc
-from livekit.agents import AgentSession, llm, room_io
+from livekit.agents import (
+    AgentSession,
+    APIConnectOptions,
+    ConversationItemAddedEvent,
+    llm,
+    room_io,
+    stt,
+    tts,
+    vad,
+)
+from livekit.agents.types import NOT_GIVEN
+from livekit.agents.voice.agent_session import SessionConnectOptions
 from pydantic import ValidationError
 
 from ember_memory_abi.errors import MemoryError
 
-from ..character.core import CharacterCore
+from ..character.core import CharacterCore, TurnObservation
 from ..inference.contracts import GatewayError
+from ..memory.deep_contracts import DeepRecallResult
 from .contracts import (
     READY_METHOD,
     REMEMBER_METHOD,
@@ -23,6 +37,19 @@ from .contracts import (
     TurnResult,
 )
 from .livekit import EmberAgent
+
+
+class VoiceProviders(Protocol):
+    """Optional provider composition does not import speech plugins into text startup."""
+
+    @property
+    def streaming_stt(self) -> stt.StreamAdapter: ...
+
+    @property
+    def vad(self) -> vad.VAD: ...
+
+    @property
+    def tts(self) -> tts.TTS[object] | None: ...
 
 
 class HostedRoom:
@@ -38,20 +65,55 @@ class HostedRoom:
         core: CharacterCore,
         binding: RoomBinding,
         remember: Callable[[RememberInput], Awaitable[str]],
+        *,
+        voice: VoiceProviders | None = None,
+        investigate: Callable[[str, TurnObservation], Awaitable[DeepRecallResult]] | None = None,
+        before_turn: Callable[[], Awaitable[None]] | None = None,
+        connection_changed: Callable[[bool], None] | None = None,
     ) -> None:
         self.core = core
         self.binding = binding
         self.remember = remember
         self.room = rtc.Room()
-        self.agent = EmberAgent(core)
-        self.session: AgentSession[object] = AgentSession()
+        self.voice = voice
+        self.before_turn = before_turn
+        self.connection_changed = connection_changed
+        self.agent = EmberAgent(core, defer_delivery=True, investigate=investigate)
+        self.agent.before_turn = self._before_turn
+        self.agent.prepare_failed = self._prepare_failed
+        self.permission_watch: asyncio.Task[None] | None = None
+        self.permission_failure = False
+        connection = SessionConnectOptions(
+            stt_conn_options=APIConnectOptions(max_retry=0, timeout=30),
+            llm_conn_options=APIConnectOptions(max_retry=0, timeout=190),
+            tts_conn_options=APIConnectOptions(max_retry=0, timeout=10),
+        )
+        self.session: AgentSession[object] = AgentSession(
+            stt=voice.streaming_stt if voice else NOT_GIVEN,
+            vad=voice.vad if voice else None,
+            tts=voice.tts if voice and voice.tts is not None else NOT_GIVEN,
+            conn_options=connection,
+            turn_handling={
+                "turn_detection": "vad" if voice else "manual",
+                "preemptive_generation": {"enabled": False},
+                "interruption": {"enabled": True},
+            },
+            user_away_timeout=None,
+        )
+        self.delivery_tasks: set[asyncio.Task[None]] = set()
+        self.delivery_failed = False
+        # SDK EventEmitter callback return annotations are unspecified.
+        self.session.on("conversation_item_added", self._conversation_item)  # pyright: ignore[reportUnknownMemberType]
         self.busy = False
         self.closing = False
         self.seen: deque[str] = deque(maxlen=128)
         self.active: asyncio.Task[str] | None = None
 
     async def start(self, token: str) -> None:
-        """Join the already-created room and start text-only output with recording disabled."""
+        """Join one room; only configured CPU STT and local TTS enable media."""
+        # Room EventEmitter annotations do not type callback return values.
+        self.room.on("participant_connected", self._participant_joined)  # pyright: ignore[reportUnknownMemberType]
+        self.room.on("participant_disconnected", self._participant_left)  # pyright: ignore[reportUnknownMemberType]
         await self.room.connect(self.binding.endpoint, token)
         participant = self.room.local_participant
         participant.register_rpc_method(READY_METHOD, self._ready)
@@ -64,15 +126,130 @@ class HostedRoom:
             record=False,
             session_host=False,
             room_options=room_io.RoomOptions(
-                audio_input=False,
-                audio_output=False,
+                audio_input=room_io.AudioInputOptions(sample_rate=16000, num_channels=1)
+                if self.voice
+                else False,
+                audio_output=room_io.AudioOutputOptions(sample_rate=24000)
+                if self.voice and self.voice.tts
+                else False,
                 video_input=False,
                 text_input=False,
-                text_output=room_io.TextOutputOptions(sync_transcription=False),
+                text_output=room_io.TextOutputOptions(
+                    sync_transcription=bool(self.voice and self.voice.tts)
+                ),
                 participant_identity=USER_IDENTITY,
                 close_on_disconnect=False,
             ),
         )
+        self._start_permission_watch()
+
+    def _start_permission_watch(self) -> None:
+        if self.permission_watch is None:
+            self.permission_watch = asyncio.create_task(
+                self._watch_permissions(), name="ember-room-permissions"
+            )
+
+    def _prepare_failed(self) -> None:
+        if self.active is None:
+            self.busy = False
+
+    async def _watch_permissions(self) -> None:
+        # Generation can finish before buffered audio plays. A failed validator must
+        # fence the transport too; it cannot silently stop this owned watcher.
+        try:
+            while not self.closing:
+                await asyncio.sleep(0.05)
+                turn = self.agent.gateway_llm.active_turn
+                if turn is not None and not await self.core.current(
+                    turn.dependencies, turn.certificate
+                ):
+                    self.permission_failure = True
+                    await self.session.interrupt(force=True)
+                    await self.agent.gateway_llm.generation_done.wait()
+                    await self._discard_unheard()
+        except Exception:
+            self.permission_failure = True
+            self.delivery_failed = True
+            self.closing = True
+            self.session.input.set_audio_enabled(False)
+            try:
+                await self.room.disconnect()
+            finally:
+                await self.session.aclose()
+
+    def _participant_joined(self, participant: rtc.RemoteParticipant) -> None:
+        if participant.identity == USER_IDENTITY and not self.closing:
+            if self.connection_changed is not None:
+                self.connection_changed(True)
+            if self.voice is not None:
+                self.session.input.set_audio_enabled(True)
+
+    def _participant_left(self, participant: rtc.RemoteParticipant) -> None:
+        if participant.identity == USER_IDENTITY and self.connection_changed is not None:
+            self.connection_changed(False)
+
+    async def quiesce(self) -> None:
+        """Drain speech and generation before any realtime reservation is released."""
+        self.session.input.set_audio_enabled(False)
+        await self.session.interrupt(force=True)
+        await self.agent.gateway_llm.generation_done.wait()
+        await self._discard_unheard()
+        if self.active is not None:
+            await asyncio.shield(self.active)
+
+    async def _before_turn(self) -> None:
+        await self._drain_delivery()
+        self.permission_failure = False
+        if self.closing or self.delivery_failed:
+            raise GatewayError("livekit_delivery_unavailable")
+        if self.before_turn is not None:
+            await self.before_turn()
+        self.busy = True
+
+    def _conversation_item(self, event: ConversationItemAddedEvent) -> None:
+        message = event.item
+        turn = self.agent.gateway_llm.active_turn
+        if not isinstance(message, llm.ChatMessage) or message.role != "assistant" or turn is None:
+            return
+        # The SDK emits its own message ID after playout; the sole owned turn binds this receipt.
+        text = message.raw_text_content or ""
+        task = asyncio.create_task(
+            self._acknowledge(turn.request.request_id, text, message.interrupted),
+            name="ember-room-delivery",
+        )
+        self.delivery_tasks.add(task)
+
+        def observed(completed: asyncio.Task[None]) -> None:
+            self.delivery_tasks.discard(completed)
+            if completed.cancelled() or completed.exception() is not None:
+                self.delivery_failed = True
+
+        task.add_done_callback(observed)
+
+    async def _acknowledge(self, identity: UUID, text: str, interrupted: bool) -> None:
+        await self.agent.gateway_llm.generation_done.wait()
+        pending = self.core.pending_delivery
+        if pending is None or pending[0].request.request_id != identity:
+            return
+        complete = not interrupted and pending[2] and text == pending[1]
+        await self.core.acknowledge(pending[0].request.request_id, text, complete=complete)
+        self.agent.gateway_llm.active_turn = None
+        if self.active is None:
+            self.busy = False
+
+    async def _drain_delivery(self) -> None:
+        tasks = tuple(self.delivery_tasks)
+        if tasks:
+            await asyncio.gather(*(asyncio.shield(task) for task in tasks))
+        if self.delivery_failed:
+            raise GatewayError("livekit_delivery_unavailable")
+
+    async def _discard_unheard(self) -> None:
+        await self._drain_delivery()
+        pending = self.core.pending_delivery
+        if pending is not None:
+            await self.core.acknowledge(pending[0].request.request_id, "", complete=False)
+        self.agent.gateway_llm.active_turn = None
 
     def _authorize(self, data: rtc.RpcInvocationData) -> None:
         if data.caller_identity != USER_IDENTITY or self.closing:
@@ -120,16 +297,37 @@ class HostedRoom:
                 self.busy = False
                 self.active = None
 
-    async def _reply(self, request: TurnInput) -> str:
+    async def answer_investigation(self, result: DeepRecallResult) -> str:
+        """A revalidated explicit inspector action reuses the sole owned SDK session."""
+        if self.busy or self.closing or result.context_id != self.core.context_id:
+            raise GatewayError("character_busy")
+        request = TurnInput(request_id=uuid4(), text=result.query)
+        self.busy = True
+        self.active = asyncio.create_task(self._reply(request, result), name="ember-deep-answer")
+        try:
+            return await asyncio.shield(self.active)
+        finally:
+            if self.active.done():
+                self.active = None
+                self.busy = False
+
+    async def _reply(
+        self, request: TurnInput, investigation: DeepRecallResult | None = None
+    ) -> str:
         try:
             context = llm.ChatContext()
             message = context.add_message(role="user", content=request.text)
-            await self.agent.on_user_turn_completed(context, message)
+            await self.agent.prepare_turn(
+                message, request_id=request.request_id, investigation=investigation
+            )
             prepared = self.agent.gateway_llm.prepared
             assert prepared is not None
             retained = prepared[1].retained_memories
             handle = self.session.generate_reply(user_input=message, allow_interruptions=False)
             await handle.wait_for_playout()
+            await self._drain_delivery()
+            if self.permission_failure:
+                raise GatewayError("context_invalidated")
             if (
                 handle.interrupted
                 or self.agent.gateway_llm.completed_request_id != prepared[1].request.request_id
@@ -144,6 +342,7 @@ class HostedRoom:
                 request_id=request.request_id, outcome="error", code=code
             ).model_dump_json()
         finally:
+            await self._discard_unheard()
             # CharacterCore owns bounded history; SDK copies must not become another history store.
             await self.agent.update_chat_ctx(llm.ChatContext())
             self.busy = False
@@ -152,11 +351,15 @@ class HostedRoom:
         """Stop admission, drain the sole turn, then close session and room."""
         self.closing = True
         try:
+            if self.permission_watch is not None:
+                await asyncio.shield(self.permission_watch)
+                self.permission_watch = None
             if self.active is not None:
                 async with asyncio.timeout(190):
                     await asyncio.shield(self.active)
         finally:
             try:
                 await self.session.aclose()
+                await self._discard_unheard()
             finally:
                 await self.room.disconnect()

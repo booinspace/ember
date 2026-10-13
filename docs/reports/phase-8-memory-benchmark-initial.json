@@ -1,0 +1,100 @@
+{
+  "fixture_records": 1000,
+  "encoder": "CPU BGE small, one thread",
+  "generation": "experimental 0.6.0",
+  "cold_queries": {
+    "extensions": {},
+    "samples": 4,
+    "p50_ms": 19.984300015494227,
+    "p95_ms": 24.691600003279746,
+    "p99_ms": 24.691600003279746,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "ordinary_deep_disabled": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 13.866699999198318,
+    "p95_ms": 17.740000039339066,
+    "p99_ms": 21.226099925115705,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "ordinary_deep_enabled_idle": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 14.038149965927005,
+    "p95_ms": 18.784199957735837,
+    "p99_ms": 22.433499922044575,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "ordinary_deep_active": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 23.4606500598602,
+    "p95_ms": 32.688100007362664,
+    "p99_ms": 38.731600041501224,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "idle_regression": {
+    "limits_ms": {
+      "p50_ms": 0.6933349999599159,
+      "p95_ms": 1.7740000039339066,
+      "p99_ms": 3.1839149887673557
+    },
+    "deltas_ms": {
+      "p50_ms": 0.1714499667286873,
+      "p95_ms": 1.044199918396771,
+      "p99_ms": 1.2073999969288707
+    },
+    "timeout_delta_percentage_points": 0.0,
+    "degraded_delta_percentage_points": 0.0,
+    "passed": true
+  },
+  "active_regression": {
+    "limits_ms": {
+      "p50_ms": 0.6933349999599159,
+      "p95_ms": 1.7740000039339066,
+      "p99_ms": 3.1839149887673557
+    },
+    "deltas_ms": {
+      "p50_ms": 9.593950060661882,
+      "p95_ms": 14.948099968023598,
+      "p99_ms": 17.50550011638552
+    },
+    "timeout_delta_percentage_points": 0.0,
+    "degraded_delta_percentage_points": 0.0,
+    "passed": false
+  },
+  "calendar_parsing": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 0.021000043489038944,
+    "p95_ms": 0.02210005186498165,
+    "p99_ms": 0.02759997732937336,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "deep_runs": 169,
+  "deep_elapsed": {
+    "extensions": {},
+    "samples": 169,
+    "p50_ms": 140.99999994505197,
+    "p95_ms": 157.00000000651926,
+    "p99_ms": 172.0000000204891,
+    "over_150_ms": 45,
+    "degraded": 0
+  },
+  "deep_encoder_policy": "completed query cache only; no uncached encodes",
+  "not_measured": [
+    "simultaneous index refresh",
+    "large archive",
+    "temporal nonempty SQL and historical validation",
+    "actual peak working memory",
+    "curated support precision and recall",
+    "Qwen interpretation/final-answer TTFT",
+    "actual voice delivery"
+  ]
+}

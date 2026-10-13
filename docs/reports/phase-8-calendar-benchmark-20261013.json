@@ -1,0 +1,94 @@
+{
+  "samples_per_case": 1000,
+  "calendar_resolution": {
+    "summer": {
+      "timing": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.0195999164134264,
+        "p95_ms": 0.020300038158893585,
+        "p99_ms": 0.02310005947947502,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "outcome": "resolved"
+    },
+    "spoken_day": {
+      "timing": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.02059992402791977,
+        "p95_ms": 0.020800158381462097,
+        "p99_ms": 0.023200176656246185,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "outcome": "resolved"
+    },
+    "unicode_day": {
+      "timing": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.020799925550818443,
+        "p95_ms": 0.021300045773386955,
+        "p99_ms": 0.024099834263324738,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "outcome": "resolved"
+    },
+    "calendar_range": {
+      "timing": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.060999998822808266,
+        "p95_ms": 0.06349990144371986,
+        "p99_ms": 0.07720012217760086,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "outcome": "resolved"
+    },
+    "older_year": {
+      "timing": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.020799925550818443,
+        "p95_ms": 0.021200161427259445,
+        "p99_ms": 0.023799948394298553,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "outcome": "resolved"
+    },
+    "technical_identifier": {
+      "timing": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.007600057870149612,
+        "p95_ms": 0.007700175046920776,
+        "p99_ms": 0.00790017656981945,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "outcome": "ordinary"
+    },
+    "ambiguous_year": {
+      "timing": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 0.008100178092718124,
+        "p95_ms": 0.008399831131100655,
+        "p99_ms": 0.009599840268492699,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "outcome": "clarification"
+    }
+  },
+  "inference_calls": 0,
+  "not_measured": [
+    "retrieval",
+    "final-answer or voice latency"
+  ]
+}

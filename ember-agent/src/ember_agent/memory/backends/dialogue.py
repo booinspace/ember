@@ -34,12 +34,73 @@ class ArchiveDialogueSink:
         self.pending: set[Future[ArchiveWriteReceipt]] = set()
 
     async def commit(self, context_id: UUID, user: str, delivered: str, complete: bool) -> None:
-        """Commit an immutable turn snapshot on the archive owner's bounded writer."""
-        stamp = timestamp_from_datetime(datetime.now(UTC))
-        observed = SourceTimestamp(
-            value=stamp, basis="runtime_delivery_observed", units="UTC", precision="microsecond"
+        """Legacy terminal delivery remains one atomic source batch."""
+        await self._persist(
+            context_id,
+            user,
+            delivered,
+            complete,
+            delivery_id=uuid4(),
+            stamp=timestamp_from_datetime(datetime.now(UTC)),
         )
-        delivery_id = uuid4()
+
+    async def begin_input(
+        self, context_id: UUID, request_id: UUID, observed_at: str, user: str
+    ) -> None:
+        """Stable input receipt survives generation failure and duplicate transport submission."""
+        await self._persist(
+            context_id,
+            user,
+            "",
+            False,
+            delivery_id=request_id,
+            stamp=observed_at,
+            observed_input=True,
+            operation="input",
+        )
+
+    async def commit_delivery(
+        self,
+        context_id: UUID,
+        request_id: UUID,
+        observed_at: str,
+        delivered: str,
+        complete: bool,
+    ) -> None:
+        """A separate receipt contains only the output the transport actually delivered."""
+        await self._persist(
+            context_id,
+            "",
+            delivered,
+            complete,
+            delivery_id=request_id,
+            stamp=observed_at,
+            operation="output",
+        )
+
+    async def _persist(
+        self,
+        context_id: UUID,
+        user: str,
+        delivered: str,
+        complete: bool,
+        *,
+        delivery_id: UUID,
+        stamp: str,
+        observed_input: bool = False,
+        operation: str = "delivery",
+    ) -> None:
+        observed = SourceTimestamp(
+            value=stamp,
+            basis="runtime_input_observed" if observed_input else "runtime_turn_reference_clock",
+            units="UTC",
+            precision="microsecond",
+        )
+
+        def identity(label: str) -> UUID:
+            digest = sha256((str(delivery_id) + ":" + label).encode()).digest()
+            return UUID(bytes=digest[:16], version=4)
+
         conversation_ref = SourceRef(
             source_store_id=self.archive.source_store_id,
             record_kind="conversation",
@@ -64,7 +125,7 @@ class ArchiveDialogueSink:
                     source=SourceRef(
                         source_store_id=self.archive.source_store_id,
                         record_kind="message",
-                        record_id=uuid4(),
+                        record_id=identity(role + ":message"),
                         record_revision=1,
                     ),
                     recorded_at=stamp,
@@ -77,10 +138,14 @@ class ArchiveDialogueSink:
                     ),
                     channel="final",
                     created_time=observed,
-                    recipient="complete" if complete else "partial_delivery",
+                    recipient="input_observed"
+                    if role == "user" and observed_input
+                    else "complete"
+                    if complete
+                    else "partial_delivery",
                     parts=(
                         ContentPart(
-                            part_id=uuid4(),
+                            part_id=identity(role + ":part"),
                             kind="text",
                             status="available",
                             text=text,
@@ -92,7 +157,7 @@ class ArchiveDialogueSink:
         conversation_digest = sha256(str(context_id).encode()).hexdigest()
         # Each atomic delivery is a component, including shorter interrupted turns.
         # Sharing its cursor with another delivery would make record counts regress.
-        delivery_digest = sha256(str(delivery_id).encode()).hexdigest()
+        delivery_digest = sha256((operation + ":" + str(delivery_id)).encode()).hexdigest()
         specification = ProcessingSpecRef(
             name="ember.native_delivery",
             version="0.2.0",
@@ -101,7 +166,7 @@ class ArchiveDialogueSink:
         batch = NormalizedArchiveBatch(
             source_store_id=self.archive.source_store_id,
             source_namespace=self.archive.namespace,
-            idempotency_key="delivery:" + str(delivery_id),
+            idempotency_key=operation + ":" + str(delivery_id),
             processing_spec=specification,
             records=(conversation, *messages),
             resume_cursor=ImportCursor(

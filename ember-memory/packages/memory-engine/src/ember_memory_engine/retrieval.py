@@ -131,8 +131,8 @@ def memory_scope(
     ):
         now = timestamp_to_unix_microseconds(timestamp_from_datetime(state.database.clock.now()))
         conditions.append(
-            "(r.kind='episode' OR ((r.valid_from_us IS NULL OR r.valid_from_us<=?) "
-            "AND (r.valid_until_us IS NULL OR ?<r.valid_until_us)))"
+            "(r.valid_from_us IS NULL OR r.valid_from_us<=?) AND "
+            "(r.kind='episode' OR r.valid_until_us IS NULL OR ?<r.valid_until_us)"
         )
         parameters.extend((now, now))
     if include_text and query.text:
@@ -218,6 +218,7 @@ def search(
     query: MemoryQuery,
     *,
     recent_first: bool = False,
+    deep: bool = False,
 ) -> SearchResponse:
     """Filter current policy and temporal visibility before bounded canonical ranking."""
     check_deadline(state.database.clock, query.options.deadline_at)
@@ -230,7 +231,7 @@ def search(
         and query.mode != "structured"
         and not recent_first
     ):
-        indexed = state.retriever.memory(state, connection, query)
+        indexed = state.retriever.memory(state, connection, query, deep=deep)
         if indexed is not None:
             return indexed
     sql, parameters = memory_scope(
@@ -351,7 +352,11 @@ def branch_status(state: CharacterState, record: SourceRecord) -> str:
 
 
 def search_archive(
-    state: CharacterState, connection: sqlite3.Connection, query: ArchiveQuery
+    state: CharacterState,
+    connection: sqlite3.Connection,
+    query: ArchiveQuery,
+    *,
+    deep: bool = False,
 ) -> ArchiveSearchResponse:
     """Scan a bounded explicit snapshot scope with final current-policy validation."""
     from contextlib import closing
@@ -363,7 +368,7 @@ def search_archive(
         raise UnsupportedQueryError()
     epoch = state.policy_epoch(connection)
     if state.retriever is not None and query.text:
-        indexed = state.retriever.archive(state, connection, query)
+        indexed = state.retriever.archive(state, connection, query, deep=deep)
         if indexed is not None:
             return indexed
     results: list[ArchiveResult] = []
@@ -437,7 +442,14 @@ def search_archive(
                 ):
                     continue
             if query.roles and (
-                not isinstance(record, Message) or record.actor.role not in query.roles
+                (
+                    record.actor.role
+                    if isinstance(record, Message)
+                    else "user"
+                    if isinstance(record, Document)
+                    else ""
+                )
+                not in query.roles
             ):
                 continue
             if (
@@ -518,7 +530,11 @@ def retrieve_context(
     manual_ids = {pin.memory_id for pin in pinned}
     if selection:
         pinned = (*pinned, *(pin for pin in selection.automatic if pin.memory_id not in manual_ids))
-    response = search(state, connection, request.memory_query)
+    response = (
+        search(state, connection, request.memory_query)
+        if request.include_memory_search
+        else SearchResponse(results=(), coverage=coverage(state))
+    )
     context_coverage = response.coverage
     candidates: list[MemoryResult] = []
     used: set[CanonicalId] = set()
@@ -659,7 +675,7 @@ def retrieve_context(
                 connection,
                 tuple(r.memory for r in memories),
                 profile_epoch=selection.selection_epoch if selection else None,
-                temporal=request.memory_query.temporal,
+                temporal=request.memory_query.temporal if request.include_memory_search else None,
                 current_ids=frozenset(p.memory_id for p in kept_pins),
             )
             break
@@ -742,7 +758,7 @@ def retrieve_context(
                 connection,
                 tuple(r.memory for r in memories),
                 profile_epoch=selection.selection_epoch if selection else None,
-                temporal=request.memory_query.temporal,
+                temporal=request.memory_query.temporal if request.include_memory_search else None,
                 current_ids=frozenset(p.memory_id for p in kept_pins),
             )
     if selection and selection.valid_until:

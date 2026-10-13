@@ -77,8 +77,9 @@ class SqliteMemoryStore:
             lambda connection: selection.configure(self.state, connection, value)
         )
 
-    def capabilities(self) -> MemoryCapabilities:
+    def capabilities(self, *, _state: CharacterState | None = None) -> MemoryCapabilities:
         """Report implemented modes and current character index availability."""
+        state = _state or self.state
         mutations = (
             (
                 "remember",
@@ -90,13 +91,13 @@ class SqliteMemoryStore:
                 "unpin",
                 "record_access",
             )
-            if self.state.authority.mode == "confirmed_user"
+            if state.authority.mode == "confirmed_user"
             else ()
         )
         return MemoryCapabilities(
             supported_kinds=("fact", "episode", "goal", "plan"),
             supported_modalities=tuple(sorted(KNOWN_MODALITIES)),
-            supported_predicates=tuple(definition.name for definition in self.state.predicates),
+            supported_predicates=tuple(definition.name for definition in state.predicates),
             retrieval_modes=(
                 "hybrid_if_indexed",
                 "deep_archive_if_indexed",
@@ -110,10 +111,14 @@ class SqliteMemoryStore:
                 "batch_context_validation_v1",
                 "temporal_ranges_v1",
                 "source_selection_v1",
+                "deep_read_profile_v1",
+                "related_neighborhood_v1",
+                "historical_context_validation_v1",
+                "pins_only_context_v1",
             ),
             mutations=mutations,
             index_status="available"
-            if self.state.retriever and self.state.retriever.available()
+            if state.retriever and state.retriever.available()
             else "degraded",
         )
 

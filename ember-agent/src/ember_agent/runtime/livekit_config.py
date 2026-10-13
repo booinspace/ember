@@ -21,8 +21,8 @@ class LiveKitCredentials(RuntimeModel):
     api_key: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{8,128}$")] = Field(repr=False)
     api_secret: Annotated[str, Field(min_length=32, max_length=128)] = Field(repr=False)
 
-    def token(self, room: str, identity: str, *, agent: bool = False) -> str:
-        """Authorize one text participant in one room; no administration or media publication."""
+    def token(self, room: str, identity: str, *, agent: bool = False, audio: bool = False) -> str:
+        """Authorize one participant; optional media grants permit microphone audio only."""
         return (
             api.AccessToken(self.api_key, self.api_secret)
             .with_identity(identity)
@@ -32,7 +32,8 @@ class LiveKitCredentials(RuntimeModel):
                 api.VideoGrants(
                     room_join=True,
                     room=room,
-                    can_publish=False,
+                    can_publish=audio,
+                    can_publish_sources=["microphone"] if audio else [],
                     can_publish_data=True,
                     can_subscribe=True,
                     can_update_own_metadata=False,

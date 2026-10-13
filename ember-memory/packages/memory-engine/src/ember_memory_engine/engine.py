@@ -38,6 +38,7 @@ from .models import (
     Utf8ByteBudget,
 )
 from .ownership import validate_local_root
+from .read_budget import ReadBudget, bounded_connection
 from .search_contracts import Encoder, IndexGeneration
 from .vector_search import VectorPool
 from .workers import OwnedWorkers
@@ -266,7 +267,13 @@ class CanonicalEngine:
             ),
         )
 
-    def resolve(self, reference: SourceRef) -> SourceRecord:
+    def resolve(
+        self,
+        reference: SourceRef,
+        *,
+        max_payload_bytes: int | None = None,
+        read_budget: ReadBudget | None = None,
+    ) -> SourceRecord:
         """Resolve exact immutable source bytes on this caller's owned thread, without worker
         recursion.
         """
@@ -278,18 +285,28 @@ class CanonicalEngine:
                 )
             ) as connection:
                 connection.row_factory = sqlite3.Row
-                connection.execute("PRAGMA query_only=ON")
-                row = connection.execute(
-                    "SELECT payload_json,payload_sha256 FROM source_records WHERE "
-                    "record_kind=? AND record_id=? AND revision=?",
-                    (reference.record_kind, str(reference.record_id), reference.record_revision),
-                ).fetchone()
-                if row is None:
-                    raise SourceUnavailableError()
-                payload = row_text(row, "payload_json")
-                if payload_hash(payload) != row_text(row, "payload_sha256"):
-                    raise CorruptStoreError()
-                record = self._source_adapter.validate_json(payload)
+                with bounded_connection(connection, read_budget):
+                    connection.execute("PRAGMA query_only=ON")
+                    if max_payload_bytes is not None:
+                        connection.execute("PRAGMA cache_size=-1024")
+                    row = connection.execute(
+                        "SELECT payload_json,payload_sha256 FROM source_records WHERE "
+                        "record_kind=? AND record_id=? AND revision=? "
+                        "AND (? IS NULL OR length(CAST(payload_json AS BLOB))<=?)",
+                        (
+                            reference.record_kind,
+                            str(reference.record_id),
+                            reference.record_revision,
+                            max_payload_bytes,
+                            max_payload_bytes,
+                        ),
+                    ).fetchone()
+                    if row is None:
+                        raise SourceUnavailableError()
+                    payload = row_text(row, "payload_json")
+                    if payload_hash(payload) != row_text(row, "payload_sha256"):
+                        raise CorruptStoreError()
+                    record = self._source_adapter.validate_json(payload)
         except (sqlite3.Error, ValidationError) as error:
             raise SourceUnavailableError() from error
         if record.source.identity_key()[:4] != reference.identity_key()[:4]:
@@ -303,6 +320,7 @@ class CanonicalEngine:
         local_connection: sqlite3.Connection,
         local_store_id: CanonicalId,
         call_budget: int,
+        read_budget: ReadBudget | None = None,
     ) -> tuple[tuple[SourceRef, ...], int]:
         "Batch exact/current source headers by store; return missing refs without"
         " source bodies."
@@ -378,24 +396,43 @@ class CanonicalEngine:
                 with closing(
                     sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True, timeout=2)
                 ) as connection:
-                    missing.extend(unavailable(connection, refs))
+                    with bounded_connection(connection, read_budget):
+                        missing.extend(unavailable(connection, refs))
             except (sqlite3.Error, SourceUnavailableError):
                 missing.extend(refs)
         return tuple(missing), calls
 
-    def validate(self, evidence: Evidence) -> str:
+    def validate(
+        self,
+        evidence: Evidence,
+        *,
+        max_payload_bytes: int | None = None,
+        max_quote_codepoints: int | None = None,
+        read_budget: ReadBudget | None = None,
+    ) -> str:
         """Verify exact evidence against original normalized source/part, never a summary or
         concatenation.
         """
+        if max_quote_codepoints is not None and (
+            evidence.span.end_codepoint - evidence.span.start_codepoint > max_quote_codepoints
+        ):
+            raise SourceUnavailableError()
         try:
-            record = self.resolve(evidence.source)
+            record = (
+                self.resolve(evidence.source)
+                if max_payload_bytes is None
+                else self.resolve(
+                    evidence.source, max_payload_bytes=max_payload_bytes, read_budget=read_budget
+                )
+            )
         except SourceUnavailableError:
             _, database = self._store(evidence.source.source_store_id)
 
             def quote(connection: sqlite3.Connection) -> str:
                 row = connection.execute(
-                    "SELECT * FROM materialized_evidence WHERE evidence_id=?",
-                    (str(evidence.evidence_id),),
+                    "SELECT * FROM materialized_evidence WHERE evidence_id=? "
+                    "AND (? IS NULL OR length(CAST(payload_json AS BLOB))<=?)",
+                    (str(evidence.evidence_id), max_payload_bytes, max_payload_bytes),
                 ).fetchone()
                 if row is None:
                     raise SourceUnavailableError()
@@ -409,7 +446,11 @@ class CanonicalEngine:
                     sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True)
                 ) as connection:
                     connection.row_factory = sqlite3.Row
-                    return quote(connection)
+                    connection.execute("PRAGMA query_only=ON")
+                    if max_payload_bytes is not None:
+                        connection.execute("PRAGMA cache_size=-1024")
+                    with bounded_connection(connection, read_budget):
+                        return quote(connection)
             except sqlite3.Error as error:
                 raise SourceUnavailableError() from error
         reference = SourceRef.model_validate(

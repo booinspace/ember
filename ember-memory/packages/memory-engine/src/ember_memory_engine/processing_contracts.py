@@ -35,6 +35,7 @@ class ExtractionSpec(ContractModel):
         "ember.atomic-claims@0.1.2",
         "ember.atomic-claims@0.2.0",
         "ember.atomic-claims@0.3.0",
+        "ember.atomic-claims@0.3.1",
     ] = "ember.atomic-claims@0.1.2"
     policy: Literal["activation.conservative@0.1.0"] = "activation.conservative@0.1.0"
     policy_sha256: Sha256 = POLICY.reference().specification_sha256
@@ -176,7 +177,11 @@ type ClaimOutput = ClaimBatch | DatedClaimBatch
 
 def batch_type_for(extractor: str) -> type[ClaimBatch] | type[DatedClaimBatch]:
     """Select the immutable schema bound to each extraction version."""
-    return DatedClaimBatch if extractor == "ember.atomic-claims@0.3.0" else ClaimBatch
+    return (
+        DatedClaimBatch
+        if extractor in {"ember.atomic-claims@0.3.0", "ember.atomic-claims@0.3.1"}
+        else ClaimBatch
+    )
 
 
 class ExtractionModel(Protocol):
@@ -337,5 +342,28 @@ def temporal_specification(
         temporal_timezone=timezone,
         workload=workload,
         prompt_sha256=sha256(TEMPORAL_INSTRUCTIONS.encode()).hexdigest(),
+        output_schema_sha256=canonical_object_sha256(DatedClaimBatch.model_json_schema()),
+    )
+
+
+def native_temporal_specification(
+    model: str,
+    digest: str,
+    *,
+    timezone: str = "Europe/London",
+    workload: Literal["P3", "P4"] = "P3",
+) -> ExtractionSpec:
+    """A distinct dated native profile; legacy jobs retain exactly their pinned specification."""
+    from ember_memory_abi.common import canonical_object_sha256
+
+    from .processing_prompt import NATIVE_TEMPORAL_INSTRUCTIONS
+
+    return ExtractionSpec(
+        model=model,
+        model_digest=digest,
+        extractor="ember.atomic-claims@0.3.1",
+        temporal_timezone=timezone,
+        workload=workload,
+        prompt_sha256=sha256(NATIVE_TEMPORAL_INSTRUCTIONS.encode()).hexdigest(),
         output_schema_sha256=canonical_object_sha256(DatedClaimBatch.model_json_schema()),
     )

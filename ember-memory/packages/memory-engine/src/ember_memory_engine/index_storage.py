@@ -16,6 +16,7 @@ from ember_memory_abi.common import CanonicalId
 from .database import row_text
 from .embedding import file_sha256
 from .errors import IndexError
+from .read_budget import ReadBudget, bounded_connection
 from .search_contracts import IndexGeneration
 
 INDEX_SQL = """
@@ -117,18 +118,19 @@ class IndexStore:
         self._leases: dict[Path, int] = {}
         self._certificate: tuple[str, str, int, int] | None = None
 
-    def active(self) -> tuple[IndexGeneration, Path]:
+    def active(self, budget: ReadBudget | None = None) -> tuple[IndexGeneration, Path]:
         """Read the committed pointer and verify logical generation metadata; no model loading."""
         path = self.directory / "search.db"
         try:
             with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as connection:
                 connection.row_factory = sqlite3.Row
-                row = connection.execute(
-                    "SELECT payload_json FROM active_generation WHERE singleton=1"
-                ).fetchone()
-                if row is None:
-                    raise IndexError()
-                generation = IndexGeneration.model_validate_json(row_text(row, "payload_json"))
+                with bounded_connection(connection, budget):
+                    row = connection.execute(
+                        "SELECT payload_json FROM active_generation WHERE singleton=1"
+                    ).fetchone()
+                    if row is None:
+                        raise IndexError()
+                    generation = IndexGeneration.model_validate_json(row_text(row, "payload_json"))
             if generation.store_id != self.store_id:
                 raise IndexError()
             target = self.directory / "generations" / (str(generation.generation) + ".db")
@@ -209,7 +211,9 @@ class IndexStore:
                     # handle; the next publication or final drain retries safely.
                     continue
 
-    def certified(self, generation: IndexGeneration, path: Path) -> bool:
+    def certified(
+        self, generation: IndexGeneration, path: Path, *, cached_only: bool = False
+    ) -> bool:
         """Trust cached header projections only in an unchanged, hash-verified generation."""
         try:
             stat = path.stat()
@@ -220,6 +224,8 @@ class IndexStore:
                 stat.st_mtime_ns,
             )
             if identity != self._certificate:
+                if cached_only:
+                    return False
                 if file_sha256(path) != generation.file_sha256 or (
                     path.stat().st_size,
                     path.stat().st_mtime_ns,

@@ -11,6 +11,7 @@ from time import monotonic
 from .database import row_int
 from .errors import IndexError
 from .index_storage import connect
+from .read_budget import ReadBudget, bounded_connection
 from .workers import OwnedWorkers
 
 
@@ -24,6 +25,7 @@ class VectorRequest:
     parameters: tuple[str | int, ...]
     encoding: Future[bytes]
     release: Callable[[], None]
+    budget: ReadBudget | None = None
 
 
 class VectorPool:
@@ -72,9 +74,25 @@ class VectorPool:
             self._close_connection()
             raise IndexError() from error
         hard_deadline = monotonic() + 2.0
-        connection.set_progress_handler(lambda: int(monotonic() > hard_deadline), 1000)
+        connection.set_progress_handler(
+            lambda: int(
+                monotonic() > hard_deadline
+                or (request.budget is not None and request.budget.exhausted())
+            ),
+            1000,
+        )
         try:
-            rows = connection.execute(request.statement, (vector, *request.parameters)).fetchall()
+            with bounded_connection(connection, request.budget):
+                connection.set_progress_handler(
+                    lambda: int(
+                        monotonic() > hard_deadline
+                        or (request.budget is not None and request.budget.exhausted())
+                    ),
+                    1000,
+                )
+                rows = connection.execute(
+                    request.statement, (vector, *request.parameters)
+                ).fetchall()
             return tuple(dict.fromkeys(row_int(row, "document_id") for row in rows))
         except sqlite3.Error as error:
             raise IndexError() from error

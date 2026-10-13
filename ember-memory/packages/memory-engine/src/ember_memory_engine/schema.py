@@ -324,6 +324,7 @@ CREATE INDEX IF NOT EXISTS relationship_target ON memory_relationships(target_id
 PHASE_SEVEN_IMMUTABLE = ("native_acceptance", "memory_supports", "memory_relationships")
 
 PHASE_EIGHT_SQL = """
+CREATE INDEX IF NOT EXISTS entity_alias_fold ON entity_aliases(lower(alias),entity_id);
 CREATE TABLE IF NOT EXISTS recall_policy (
     singleton INTEGER PRIMARY KEY CHECK(singleton=1), local_enabled INTEGER NOT NULL DEFAULT 1,
     import_mode TEXT NOT NULL DEFAULT 'all' CHECK(import_mode IN ('all','selected','none')),

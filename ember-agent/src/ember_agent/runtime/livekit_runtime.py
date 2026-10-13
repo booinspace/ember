@@ -8,10 +8,11 @@ import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from livekit import api, rtc
+from pydantic import ValidationError
 
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
@@ -23,11 +24,15 @@ from ..realtime.contracts import (
     RoomBinding,
 )
 from ..realtime.session import HostedRoom
+from .browser_control import BrowserControl
+from .browser_server import BrowserServer
+from .capture_lifecycle import CaptureLifecycle
 from .composition import LocalRuntime
 from .config import ConfigurationError, DeploymentConfig
 from .console import read_line
 from .livekit_config import LiveKitCredentials, credentials, server_yaml
 from .processes import OwnedProcess, RuntimeLease
+from .speech_health import check_voice
 
 
 def port_open(endpoint: str) -> bool:
@@ -196,6 +201,67 @@ class RuntimeServices:
             ) from error
         return self.credentials
 
+    async def start_speech(self) -> str:
+        """Start/attach installed Kokoro independently; provider failures leave text available."""
+        settings = self.config.services.kokoro
+        if not self.config.audio.enabled or settings.mode == "disabled":
+            return "disabled"
+        child = None
+        try:
+            occupied = await asyncio.to_thread(port_open, settings.endpoint)
+            if settings.mode == "managed" and not occupied:
+                executable = await asyncio.to_thread(shutil.which, settings.executable)
+                if executable is None:
+                    return "tts_executable_not_installed"
+                if settings.working_directory is not None and not await asyncio.to_thread(
+                    settings.working_directory.is_dir
+                ):
+                    return "tts_working_directory_unavailable"
+                child = await asyncio.to_thread(
+                    OwnedProcess,
+                    [executable, *settings.arguments],
+                    root=self.config.runtime_root,
+                    component="kokoro",
+                    instance=self.instance,
+                    working_directory=settings.working_directory,
+                    environment={
+                        "CUDA_VISIBLE_DEVICES": "-1",
+                        "HF_HUB_OFFLINE": "1",
+                        "TRANSFORMERS_OFFLINE": "1",
+                    },
+                )
+                self.children.append(child)
+            async with asyncio.timeout(settings.startup_timeout_seconds):
+                while True:
+                    if child is not None:
+                        child.check()
+                    try:
+                        await check_voice(settings.endpoint, self.config.audio.tts_voice)
+                        return "ready"
+                    except (httpx.HTTPError, GatewayError, ValidationError, ValueError):
+                        if child is None:
+                            raise
+                        await asyncio.sleep(0.1)
+        except (
+            ConfigurationError,
+            OSError,
+            httpx.HTTPError,
+            GatewayError,
+            ValidationError,
+            ValueError,
+            TimeoutError,
+        ):
+            if child is not None:
+                await asyncio.to_thread(child.stop)
+                self.children.remove(child)
+            return "tts_unavailable_text_output"
+        except BaseException:
+            # Cancellation must not leak a child before the normal cleanup stack owns it.
+            if child is not None:
+                await asyncio.to_thread(child.stop)
+                self.children.remove(child)
+            raise
+
     async def aclose(self) -> None:
         """Request graceful gateway drain, then stop only the exact handles created here."""
         if self.gateway_owned:
@@ -208,8 +274,11 @@ class RuntimeServices:
                         self.config.services.gateway.endpoint + "/v1/shutdown",
                         headers={"Authorization": "Bearer " + token},
                     )
+                gateway_child = next(
+                    child for child in self.children if child.component == "gateway"
+                )
                 await asyncio.to_thread(
-                    self.children[-1].wait,
+                    gateway_child.wait,
                     self.config.services.livekit.shutdown_timeout_seconds,
                 )
             except (OSError, httpx.HTTPError):
@@ -268,15 +337,66 @@ async def run_runtime(
         async def remember(request: RememberInput) -> str:
             return await runtime.remember(request.key, request.text)
 
-        host = HostedRoom(runtime.core, binding, remember)
+        voice = None
+        voice_status = "disabled"
+        if config.audio.enabled:
+            try:
+                from ..audio.components import VoiceComponents
+
+                voice, voice_status = await VoiceComponents.create(
+                    config, start_speech=services.start_speech
+                )
+            except ImportError:
+                voice_status = "audio_dependencies_not_installed"
+            if voice is not None:
+                cleanup.push_async_callback(voice.aclose)
+                voice_status = voice.output_status
+        host = HostedRoom(
+            runtime.core, binding, remember, voice=voice, investigate=runtime.investigate
+        )
         cleanup.push_async_callback(host.aclose)
+
+        async def reserve(identity: UUID, connected: bool) -> None:
+            await reservation.session(identity, connected=connected)
+
+        lifecycle = CaptureLifecycle(services.instance, reserve, host.quiesce, runtime.consolidate)
+        host.before_turn = lifecycle.before_turn
+        host.connection_changed = lifecycle.connection_changed
+        cleanup.push_async_callback(lifecycle.aclose)
         async with asyncio.timeout(config.services.livekit.startup_timeout_seconds):
-            await host.start(value.token(binding.room, AGENT_IDENTITY, agent=True))
+            await host.start(
+                value.token(
+                    binding.room, AGENT_IDENTITY, agent=True, audio=bool(voice and voice.tts)
+                )
+            )
+        lifecycle.start()
         discovery = config.runtime_root / "livekit-room.json"
         await asyncio.to_thread(publish_room, discovery, binding)
         cleanup.push_async_callback(asyncio.to_thread, discovery.unlink, missing_ok=True)
-        print("Memory ready; retrieval degraded. Gateway ready. LiveKit text room ready.")
-        print("Run ember livekit-chat with the same --config. Voice/browser are not implemented.")
+        if config.browser.enabled:
+            if await asyncio.to_thread(port_open, config.browser.endpoint):
+                raise ConfigurationError("Browser control port is already occupied.")
+            control = BrowserControl(
+                origin=config.browser.endpoint,
+                assets=config.browser.assets,
+                binding=binding,
+                core=runtime.core,
+                deep=runtime.deep,
+                controls=runtime,
+                room_token=lambda: value.token(
+                    binding.room, USER_IDENTITY, audio=voice is not None
+                ),
+                answer=host.answer_investigation,
+                voice_ready=voice is not None,
+                voice_status=voice_status,
+            )
+            browser = BrowserServer(control, config.runtime_root)
+            cleanup.push_async_callback(browser.aclose)
+            await browser.start()
+            print("Browser controls ready. Open the private browser-activation.json URL.")
+        print("Gateway and LiveKit room ready. Semantic retrieval: " + runtime.semantic_status)
+        print("Voice: " + voice_status)
+        print("Run ember livekit-chat with the same --config to use terminal chat.")
         await (stop or asyncio.Event()).wait()
 
 

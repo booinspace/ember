@@ -38,8 +38,8 @@ class NativeAcceptancePolicy(ContractModel):
     """Immutable host rules; model verdict/confidence never supplies acceptance authority."""
 
     name: Literal["ember.native-acceptance"] = "ember.native-acceptance"
-    version: Literal["0.1.0"] = "0.1.0"
-    rule: Literal["native-direct-v1"] = "native-direct-v1"
+    version: Literal["0.1.0", "0.2.0"] = "0.1.0"
+    rule: Literal["native-direct-v1", "native-direct-dated-v2"] = "native-direct-v1"
     confidence: float = 0.9
     importance: float = 0.5
     conflicts: Literal["explicit_transition_only"] = "explicit_transition_only"
@@ -54,6 +54,8 @@ class NativeAcceptancePolicy(ContractModel):
 
 NATIVE_POLICY = NativeAcceptancePolicy()
 POLICY = NATIVE_POLICY.reference()
+DATED_NATIVE_POLICY = NativeAcceptancePolicy(version="0.2.0", rule="native-direct-dated-v2")
+DATED_POLICY = DATED_NATIVE_POLICY.reference()
 
 
 class NativeAcceptanceRequest(ContractModel):
@@ -153,7 +155,7 @@ class NativeAcceptanceService:
     def accept(self, request: NativeAcceptanceRequest) -> NativeAcceptanceReceipt:
         """Re-evaluate current canonical policy; replay never reactivates a disabled belief."""
         request = NativeAcceptanceRequest.model_validate_json(request.model_dump_json())
-        if request.policy != POLICY or request.extensions:
+        if request.policy not in (POLICY, DATED_POLICY) or request.extensions:
             raise AccessDeniedError()
         return self.store.database.write(lambda connection: self._accept(connection, request))
 
@@ -213,7 +215,12 @@ class NativeAcceptanceService:
                 if (
                     job is None
                     or job.request.source_kind != "native"
-                    or job.request.specification.extractor != "ember.atomic-claims@0.2.0"
+                    or job.request.specification.extractor
+                    != (
+                        "ember.atomic-claims@0.3.1"
+                        if request.policy == DATED_POLICY
+                        else "ember.atomic-claims@0.2.0"
+                    )
                 ):
                     reasons.append("native_processing_profile_required")
                 reevaluated = evaluate(
@@ -247,7 +254,19 @@ class NativeAcceptanceService:
                     quote = self.engine.validate(assertion.evidence)
                     quotes.append(quote)
                     full_text = source_text(record, source)
-                    if not literal_support(draft, quote) or re.search(
+                    if (
+                        request.policy == DATED_POLICY
+                        and draft.content.kind == "episode"
+                        and re.search(
+                            r"\b(if|would|could|pretend|imagine|planning|hope|will)\b",
+                            full_text.casefold(),
+                        )
+                    ):
+                        reasons.append("semantic_support_requires_review")
+                    date_support = (
+                        request.policy == DATED_POLICY and assertion.verdict == "exact_date_passage"
+                    )
+                    if (not date_support and not literal_support(draft, quote)) or re.search(
                         r"\b(?:said|says|according to|hypothetically|quoted)\b",
                         full_text.casefold(),
                     ):
@@ -323,6 +342,7 @@ class NativeAcceptanceService:
             receipt = NativeAcceptanceReceipt(
                 operation_id=uuid4(),
                 candidate_id=candidate.candidate_id,
+                policy=request.policy,
                 outcome=outcome,
                 reasons=tuple(dict.fromkeys(reasons)) or ("native_policy_satisfied",),
                 memory=MemoryReference(memory_id=memory.memory_id, revision=memory.revision)
@@ -343,10 +363,12 @@ class NativeAcceptanceService:
                     payload_hash(payload),
                 ),
             )
-            policy = model_bytes(NATIVE_POLICY)
+            policy = model_bytes(
+                DATED_NATIVE_POLICY if request.policy == DATED_POLICY else NATIVE_POLICY
+            )
             connection.execute(
                 "INSERT OR IGNORE INTO processing_specs VALUES(?,?,?)",
-                (POLICY.specification_sha256, policy, payload_hash(policy)),
+                (request.policy.specification_sha256, policy, payload_hash(policy)),
             )
             connection.execute(
                 "INSERT INTO audit_events VALUES(?,?,?,?,?)",

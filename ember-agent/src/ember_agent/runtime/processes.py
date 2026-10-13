@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import subprocess
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from hashlib import file_digest
 from pathlib import Path
@@ -48,7 +49,16 @@ class OwnedProcess:
     POSIX children have an independent process group.
     """
 
-    def __init__(self, command: list[str], *, root: Path, component: str, instance: UUID) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        *,
+        root: Path,
+        component: str,
+        instance: UUID,
+        working_directory: Path | None = None,
+        environment: Mapping[str, str] | None = None,
+    ) -> None:
         self.component = component
         self.path = root / (component + "-process.json")
         executable = Path(command[0]).resolve()
@@ -60,6 +70,8 @@ class OwnedProcess:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             shell=False,
+            cwd=working_directory,
+            env={**os.environ, **environment} if environment is not None else None,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             start_new_session=os.name != "nt",
         )

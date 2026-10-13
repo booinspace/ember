@@ -4,10 +4,24 @@ from typing import Annotated, Literal, Protocol, Self, runtime_checkable
 
 from pydantic import Field, model_validator
 
-from .common import CanonicalId, ContractModel, NonnegativeInteger, Revision, UtcTimestamp
-from .evidence import EvidenceAssertion, SourceRef
-from .memory import Memory, OriginMapping, PinnedMemory, ProcessingProvenance
-from .temporal import TemporalQuery
+from .common import (
+    CanonicalId,
+    ContractModel,
+    NonnegativeInteger,
+    Revision,
+    UtcTimestamp,
+    WireString,
+)
+from .evidence import Evidence, EvidenceAssertion, SourceRef
+from .memory import (
+    EntityRef,
+    Memory,
+    MemorySource,
+    OriginMapping,
+    PinnedMemory,
+    ProcessingProvenance,
+)
+from .temporal import SourceTimestamp, TemporalQuery
 
 MAX_CONTEXT_REFERENCES = 256
 MAX_CONTEXT_METADATA_BYTES = 65536
@@ -42,6 +56,12 @@ class ContextDependencies(ContractModel):
     selections: Annotated[
         tuple[TemporalSelection, ...], Field(max_length=32, exclude_if=lambda value: not value)
     ] = ()
+    excerpt_sources: Annotated[
+        tuple[SourceRef, ...], Field(max_length=256, exclude_if=lambda value: not value)
+    ] = ()
+    archive_sources: Annotated[
+        tuple[SourceRef, ...], Field(max_length=256, exclude_if=lambda value: not value)
+    ] = ()
     policy_epoch: NonnegativeInteger
     selection_epoch: NonnegativeInteger | None = None
     valid_until: UtcTimestamp | None = None
@@ -55,7 +75,15 @@ class ContextDependencies(ContractModel):
         references = {(ref.memory_id, ref.revision) for ref in self.memories}
         if len(selected) != len(set(selected)) or not set(selected) <= references:
             raise ValueError("Temporal groups must uniquely select existing dependencies.")
-        if len(self.memories) + len(self.sources) > MAX_CONTEXT_REFERENCES:
+        if not {ref.identity_key() for ref in self.excerpt_sources} <= {
+            ref.identity_key() for ref in self.sources
+        }:
+            raise ValueError("Raw evidence excerpts require their evidence-read dependencies.")
+        source_refs = {
+            ref.identity_key()
+            for ref in (*self.sources, *self.archive_sources, *self.excerpt_sources)
+        }
+        if len(self.memories) + len(source_refs) > MAX_CONTEXT_REFERENCES:
             raise ValueError("Context dependency reference budget exceeded.")
         if len(self.model_dump_json().encode()) > MAX_CONTEXT_METADATA_BYTES:
             raise ValueError("Context dependency metadata budget exceeded.")
@@ -86,6 +114,24 @@ class RelatedRequest(ContractModel):
 
     intent: Literal["resolve", "expand", "validate"]
     anchors: Annotated[tuple[MemoryReference, ...], Field(max_length=32)] = ()
+    sources: Annotated[
+        tuple[SourceRef, ...], Field(max_length=32, exclude_if=lambda value: not value)
+    ] = ()
+    excerpts: Annotated[
+        tuple[Evidence, ...], Field(max_length=24, exclude_if=lambda value: not value)
+    ] = ()
+    source_capability: Literal["evidence_read", "archive_search"] = Field(
+        default="evidence_read", exclude_if=lambda value: value == "evidence_read"
+    )
+    entity_names: Annotated[
+        tuple[WireString, ...], Field(max_length=8, exclude_if=lambda value: not value)
+    ] = ()
+    temporal: TemporalQuery = Field(
+        default_factory=TemporalQuery,
+        exclude_if=lambda value: not any(value.model_dump(exclude={"extensions"}).values()),
+    )
+    recall_only: bool = Field(default=False, exclude_if=lambda value: not value)
+    include_relationships: bool = Field(default=True, exclude_if=lambda value: value)
     dependencies: ContextDependencies | None = None
     limit: Annotated[int, Field(ge=1, le=100)] = 32
     row_budget: Annotated[int, Field(ge=1, le=512)] = 256
@@ -96,7 +142,9 @@ class RelatedRequest(ContractModel):
     def shape(self) -> Self:
         if (self.intent == "validate") != (self.dependencies is not None):
             raise ValueError("Only validate requests carry compact context dependencies.")
-        if self.intent == "validate" and self.anchors:
+        if self.intent == "validate" and (
+            self.anchors or self.sources or self.entity_names or self.excerpts
+        ):
             raise ValueError("Validation uses the dependency union, not relationship anchors.")
         return self
 
@@ -123,6 +171,24 @@ class ReadManifest(ContractModel):
     recorded_clock_us: NonnegativeInteger
 
 
+class ResolvedEntity(ContractModel):
+    """An explicitly matched non-generic entity alias from eligible accepted memories."""
+
+    reference: EntityRef
+    alias: WireString
+
+
+class SourceObservation(ContractModel):
+    """Exact original excerpt plus independent observation clock and branch labels."""
+
+    source: MemorySource
+    role: WireString = "unknown"
+    conversation_id: CanonicalId | None = None
+    observed: SourceTimestamp | None = None
+    recorded_at: UtcTimestamp | None = None
+    branch_status: WireString = "not_evaluated"
+
+
 class RelatedResponse(ContractModel):
     """Validation performs no hydration; relationship reads disclose partial coverage."""
 
@@ -131,6 +197,11 @@ class RelatedResponse(ContractModel):
     reasons: tuple[str, ...] = ()
     memories: Annotated[tuple[Memory, ...], Field(max_length=100)] = ()
     relationships: Annotated[tuple[MemoryRelationship, ...], Field(max_length=100)] = ()
+    excerpts: Annotated[tuple[SourceObservation, ...], Field(max_length=24)] = ()
+    entities: Annotated[tuple[ResolvedEntity, ...], Field(max_length=8)] = ()
+    dependencies: ContextDependencies | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     manifest: ReadManifest | None = None
     rows_examined: NonnegativeInteger = 0
     source_calls: NonnegativeInteger = 0

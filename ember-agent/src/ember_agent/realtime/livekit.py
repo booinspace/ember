@@ -1,24 +1,34 @@
 """LiveKit RAG hook and owned visible stream, with no default provider or auxiliary generation."""
 
+import asyncio
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import replace
 from uuid import UUID
 
-from livekit.agents import Agent, APIConnectOptions, UserTurnExceededEvent, llm
+from livekit import rtc
+from livekit.agents import Agent, APIConnectOptions, ModelSettings, UserTurnExceededEvent, llm
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 
-from ..character.core import CharacterCore, PreparedTurn
+from ember_memory_abi.errors import MemoryError
+
+from ..character.core import CharacterCore, PreparedTurn, TurnObservation
 from ..inference.contracts import GatewayError
+from ..memory.deep_contracts import DeepRecallResult
 
 
 class GatewayLLM(llm.LLM[object]):
     """SDK LLM whose single-use authorization comes from a completed user-turn hook."""
 
-    def __init__(self, core: CharacterCore) -> None:
+    def __init__(self, core: CharacterCore, *, defer_delivery: bool = False) -> None:
         super().__init__()
         self.core = core
         self.completed_request_id: UUID | None = None
         self.prepared: tuple[str, PreparedTurn] | None = None
+        self.defer_delivery = defer_delivery
+        self.active_turn: PreparedTurn | None = None
+        self.generation_done = asyncio.Event()
+        self.generation_done.set()
 
     def authorize(self, message_id: str, turn: PreparedTurn) -> None:
         """Bind one user input identity; prompts/tools from auxiliary SDK calls cannot bypass P0."""
@@ -49,6 +59,8 @@ class GatewayLLM(llm.LLM[object]):
         if latest.text_content != turn.user:
             raise GatewayError("livekit_turn_changed")
         self.prepared = None
+        self.active_turn = turn
+        self.generation_done.clear()
         return GatewayStream(
             self,
             core=self.core,
@@ -82,7 +94,15 @@ class GatewayStream(llm.LLMStream):
         self._record_content = False
 
     async def _run(self) -> None:
-        async with aclosing(self.core.stream(self.turn)) as events:
+        try:
+            await self._generate()
+        finally:
+            self.model.generation_done.set()
+
+    async def _generate(self) -> None:
+        async with aclosing(
+            self.core.stream(self.turn, defer_delivery=self.model.defer_delivery)
+        ) as events:
             async for event in events:
                 if event.kind == "text":
                     self._event_ch.send_nowait(
@@ -110,9 +130,18 @@ class GatewayStream(llm.LLMStream):
 class EmberAgent(Agent):
     """LiveKit receives the same injected core; no source/provider owns personality or identity."""
 
-    def __init__(self, core: CharacterCore) -> None:
+    def __init__(
+        self,
+        core: CharacterCore,
+        *,
+        defer_delivery: bool = False,
+        investigate: Callable[[str, TurnObservation], Awaitable[DeepRecallResult]] | None = None,
+    ) -> None:
         self.core = core
-        self.gateway_llm = GatewayLLM(core)
+        self.investigate = investigate
+        self.before_turn: Callable[[], Awaitable[None]] | None = None
+        self.prepare_failed: Callable[[], None] | None = None
+        self.gateway_llm = GatewayLLM(core, defer_delivery=defer_delivery)
         # SDK constructor annotations omit generic parameters for optional plugins.
         super().__init__(instructions=core.personality.instructions, llm=self.gateway_llm, tools=[])  # pyright: ignore[reportUnknownMemberType]
 
@@ -121,11 +150,50 @@ class EmberAgent(Agent):
     ) -> None:
         """Recall before generation; SDK chat history is not a second memory/prompt owner."""
         del turn_ctx
+        await self.prepare_turn(new_message)
+
+    async def prepare_turn(
+        self,
+        new_message: llm.ChatMessage,
+        *,
+        request_id: UUID | None = None,
+        investigation: DeepRecallResult | None = None,
+    ) -> None:
+        """Text and final speech use identical observation and explicit deep-command routing."""
         text = new_message.text_content
         if text is None or new_message.role != "user":
             raise GatewayError("invalid_user_turn")
-        turn = await self.core.prepare(text)
+        if self.before_turn is not None:
+            await self.before_turn()
+        try:
+            observation = await self.core.observe_input(text, request_id=request_id)
+            query = None
+            for prefix in ("/recall ", "recall deeply "):
+                if text.strip().casefold().startswith(prefix):
+                    query = text.strip()[len(prefix) :].strip()
+                    break
+            if investigation is None and query is not None:
+                if not query or self.investigate is None:
+                    raise GatewayError("deep_recall_unavailable")
+                investigation = await self.investigate(query, observation)
+            turn = await self.core.prepare(
+                text, investigation=investigation, observation=observation
+            )
+        except (GatewayError, MemoryError, asyncio.CancelledError):
+            if self.prepare_failed is not None:
+                self.prepare_failed()
+            raise
         self.gateway_llm.authorize(new_message.id, turn)
+
+    async def tts_node(
+        self, text: AsyncIterable[str], model_settings: ModelSettings
+    ) -> AsyncGenerator[rtc.AudioFrame, None]:
+        """Revalidate synthesized frames; queued transport audio also needs runtime fencing."""
+        async for frame in Agent.default.tts_node(self, text, model_settings):
+            turn = self.gateway_llm.active_turn
+            if turn is None or not await self.core.current(turn.dependencies, turn.certificate):
+                raise GatewayError("context_invalidated")
+            yield frame
 
     async def on_user_turn_exceeded(self, ev: UserTurnExceededEvent) -> None:
         """Suppress the SDK's automatic auxiliary reply; only completed user turns are P0."""

@@ -50,12 +50,28 @@ class _LiveKitSettings(ServiceSettings):
     shutdown_timeout_seconds: Annotated[float, Field(gt=0, le=200)] = 30.0
 
 
+class KokoroSettings(ServiceSettings):
+    """An installed local speech command; arguments are passed directly without a shell."""
+
+    executable: str = ""
+    arguments: tuple[str, ...] = ()
+    working_directory: Path | None = None
+    startup_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 20.0
+
+
+class _KokoroSettings(ServiceSettings):
+    executable: str = ""
+    arguments: list[str] = Field(default_factory=list, max_length=32)
+    working_directory: str = ""
+    startup_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 20.0
+
+
 class DeployedServices(RuntimeModel):
     """Named runtime services; port availability alone never establishes ownership."""
 
     ollama: ServiceSettings
     livekit: LiveKitSettings
-    kokoro: ServiceSettings
+    kokoro: KokoroSettings
     gateway: ServiceSettings
 
     def items(self) -> tuple[tuple[ServiceName, ServiceSettings], ...]:
@@ -66,6 +82,39 @@ class DeployedServices(RuntimeModel):
             ("kokoro", self.kokoro),
             ("gateway", self.gateway),
         )
+
+
+class BrowserSettings(RuntimeModel):
+    """App-owned loopback controls require prebuilt assets; startup never runs a package manager."""
+
+    enabled: bool = False
+    endpoint: str = "http://127.0.0.1:8787"
+    assets: Path = Field(
+        default_factory=lambda: Path(__file__).resolve().parents[3] / "frontend/dist"
+    )
+
+
+class _BrowserSettings(RuntimeModel):
+    enabled: bool = False
+    endpoint: str = "http://127.0.0.1:8787"
+    assets: str = ""
+
+
+class AudioSettings(RuntimeModel):
+    """CPU speech is optional and loads only explicit installed model artifacts."""
+
+    enabled: bool = False
+    stt_model_directory: Path | None = None
+    stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
+    language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
+    tts_voice: Annotated[str, Field(min_length=1)] = "af_heart"
+
+
+class InterpretationSettings(RuntimeModel):
+    """Independent opt-in; installing deep recall never enables serial foreground interpretation."""
+
+    enabled: bool = False
+    timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 8.0
 
 
 class DeploymentConfig(RuntimeModel):
@@ -82,6 +131,9 @@ class DeploymentConfig(RuntimeModel):
     services: DeployedServices
     embedding_directory: Path | None = None
     recall_timezone: str = "Europe/London"
+    browser: BrowserSettings = Field(default_factory=BrowserSettings)
+    audio: AudioSettings = Field(default_factory=AudioSettings)
+    interpretation: InterpretationSettings = Field(default_factory=InterpretationSettings)
 
     @property
     def model_pin_configured(self) -> bool:
@@ -105,7 +157,7 @@ class _ModelSettings(RuntimeModel):
 class _SupportServices(RuntimeModel):
     ollama: ServiceSettings
     livekit: _LiveKitSettings
-    kokoro: ServiceSettings
+    kokoro: _KokoroSettings
 
 
 class _GatewaySettings(RuntimeModel):
@@ -125,6 +177,10 @@ class _Providers(RuntimeModel):
 class _AudioSettings(RuntimeModel):
     stt_device: Literal["cpu"]
     tts_voice: Annotated[str, Field(min_length=1)]
+    enabled: bool = False
+    stt_model_directory: str = ""
+    stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
+    language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
 
 
 class _SearchSettings(RuntimeModel):
@@ -142,6 +198,8 @@ class _DeploymentSettings(RuntimeModel):
     providers: _Providers
     audio: _AudioSettings
     search: _SearchSettings = _SearchSettings()
+    browser: _BrowserSettings = _BrowserSettings()
+    interpretation: InterpretationSettings = InterpretationSettings()
 
 
 def _read_settings(path: Path) -> _DeploymentSettings:
@@ -159,7 +217,7 @@ def _read_settings(path: Path) -> _DeploymentSettings:
         ) from error
 
 
-def _validate_endpoint(settings: ServiceSettings, name: ServiceName) -> None:
+def _validate_endpoint(settings: ServiceSettings, name: ServiceName | Literal["browser"]) -> None:
     schemes = {"ws", "wss"} if name == "livekit" else {"http"}
     try:
         parsed = urlsplit(settings.endpoint)
@@ -232,7 +290,21 @@ def _validate_services(
             startup_timeout_seconds=settings.services.livekit.startup_timeout_seconds,
             shutdown_timeout_seconds=settings.services.livekit.shutdown_timeout_seconds,
         ),
-        kokoro=settings.services.kokoro,
+        kokoro=KokoroSettings(
+            endpoint=settings.services.kokoro.endpoint,
+            mode=settings.services.kokoro.mode,
+            executable=(
+                str((base / settings.services.kokoro.executable).resolve())
+                if "/" in settings.services.kokoro.executable
+                or "\\" in settings.services.kokoro.executable
+                else settings.services.kokoro.executable
+            ),
+            arguments=tuple(settings.services.kokoro.arguments),
+            working_directory=(base / settings.services.kokoro.working_directory).resolve()
+            if settings.services.kokoro.working_directory
+            else None,
+            startup_timeout_seconds=settings.services.kokoro.startup_timeout_seconds,
+        ),
         gateway=ServiceSettings(endpoint=settings.gateway.endpoint, mode=settings.gateway.mode),
     )
     for name, service in services.items():
@@ -267,6 +339,9 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     settings = _read_settings(path)
     data_root, runtime_root = _resolve_roots(settings.paths, path.resolve().parent)
     tag, digest = _validate_model(settings.model, require_model_pin)
+    _validate_endpoint(
+        ServiceSettings(endpoint=settings.browser.endpoint, mode="managed"), "browser"
+    )
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
     try:
@@ -284,6 +359,25 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         output_reserve_tokens=settings.model.output_reserve_tokens,
         services=_validate_services(settings, path.resolve().parent, runtime_root),
         recall_timezone=settings.search.timezone,
+        interpretation=settings.interpretation,
+        audio=AudioSettings(
+            enabled=settings.audio.enabled,
+            stt_model_directory=(
+                path.resolve().parent / settings.audio.stt_model_directory
+            ).resolve()
+            if settings.audio.stt_model_directory
+            else None,
+            stt_threads=settings.audio.stt_threads,
+            language=settings.audio.language,
+            tts_voice=settings.audio.tts_voice,
+        ),
+        browser=BrowserSettings(
+            enabled=settings.browser.enabled,
+            endpoint=settings.browser.endpoint,
+            assets=(path.resolve().parent / settings.browser.assets).resolve()
+            if settings.browser.assets
+            else BrowserSettings().assets,
+        ),
         embedding_directory=(
             (path.resolve().parent / settings.search.embedding_directory).resolve()
             if settings.search.embedding_directory

@@ -1,0 +1,104 @@
+{
+  "fixture_records": 1000,
+  "encoder": "CPU BGE small, one thread",
+  "generation": "experimental 0.6.0",
+  "cold_queries": {
+    "extensions": {},
+    "samples": 4,
+    "p50_ms": 20.149300107732415,
+    "p95_ms": 24.734099861234426,
+    "p99_ms": 24.734099861234426,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "ordinary_deep_disabled": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 13.38555000256747,
+    "p95_ms": 14.733099844306707,
+    "p99_ms": 20.070099970325828,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "ordinary_deep_enabled_idle": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 13.37739999871701,
+    "p95_ms": 14.910500030964613,
+    "p99_ms": 19.95730004273355,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "ordinary_deep_active": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 13.523300061933696,
+    "p95_ms": 15.270699979737401,
+    "p99_ms": 20.452599972486496,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "idle_regression": {
+    "limits_ms": {
+      "p50_ms": 0.6692775001283735,
+      "p95_ms": 1.4733099844306707,
+      "p99_ms": 3.010514995548874
+    },
+    "deltas_ms": {
+      "p50_ms": -0.008150003850460052,
+      "p95_ms": 0.17740018665790558,
+      "p99_ms": -0.11279992759227753
+    },
+    "timeout_delta_percentage_points": 0.0,
+    "degraded_delta_percentage_points": 0.0,
+    "passed": true
+  },
+  "active_regression": {
+    "limits_ms": {
+      "p50_ms": 0.6692775001283735,
+      "p95_ms": 1.4733099844306707,
+      "p99_ms": 3.010514995548874
+    },
+    "deltas_ms": {
+      "p50_ms": 0.1377500593662262,
+      "p95_ms": 0.5376001354306936,
+      "p99_ms": 0.3825000021606684
+    },
+    "timeout_delta_percentage_points": 0.0,
+    "degraded_delta_percentage_points": 0.0,
+    "passed": true
+  },
+  "calendar_parsing": {
+    "extensions": {},
+    "samples": 1000,
+    "p50_ms": 0.020999927073717117,
+    "p95_ms": 0.022499822080135345,
+    "p99_ms": 0.0295999925583601,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "deep_runs": 292,
+  "deep_outcomes": {
+    "deferred": 292
+  },
+  "foreground_policy": "deep defers to admitted foreground native reads",
+  "deep_elapsed": {
+    "extensions": {},
+    "samples": 292,
+    "p50_ms": 0.41544996201992035,
+    "p95_ms": 0.664199935272336,
+    "p99_ms": 0.7436000742018223,
+    "over_150_ms": 0,
+    "degraded": 0
+  },
+  "deep_encoder_policy": "completed query cache only; no uncached encodes",
+  "not_measured": [
+    "simultaneous index refresh",
+    "large archive",
+    "temporal nonempty SQL and historical validation",
+    "actual peak working memory",
+    "curated support precision and recall",
+    "Qwen interpretation/final-answer TTFT",
+    "actual voice delivery"
+  ]
+}
