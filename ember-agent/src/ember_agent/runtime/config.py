@@ -2,6 +2,7 @@
 
 import re
 import tomllib
+from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -85,10 +86,11 @@ class DeployedServices(RuntimeModel):
 
 
 class BrowserSettings(RuntimeModel):
-    """App-owned loopback controls require prebuilt assets; startup never runs a package manager."""
+    """App-owned controls; optional explicit private IPv4 LAN access retains operator auth."""
 
     enabled: bool = False
     endpoint: str = "http://127.0.0.1:8787"
+    lan_address: str | None = None
     assets: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parents[3] / "frontend/dist"
     )
@@ -98,6 +100,7 @@ class _BrowserSettings(RuntimeModel):
     enabled: bool = False
     endpoint: str = "http://127.0.0.1:8787"
     assets: str = ""
+    lan_address: str = ""
 
 
 class AudioSettings(RuntimeModel):
@@ -329,6 +332,20 @@ def _validate_services(
     return services
 
 
+def private_lan_address(value: str) -> str:
+    """Accept a literal RFC1918 IPv4 address, never wildcard/public/DNS/loopback hosts."""
+    try:
+        address = IPv4Address(value)
+    except ValueError as error:
+        raise ConfigurationError("browser.lan_address requires a private IPv4 address.") from error
+    if not any(
+        address in IPv4Network(network)
+        for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+    ):
+        raise ConfigurationError("browser.lan_address must belong to a private LAN.")
+    return str(address)
+
+
 def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentConfig:
     """Validate deployment and resolve paths relative to its file, without creating state.
 
@@ -342,6 +359,16 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     _validate_endpoint(
         ServiceSettings(endpoint=settings.browser.endpoint, mode="managed"), "browser"
     )
+    lan_address = (
+        private_lan_address(settings.browser.lan_address) if settings.browser.lan_address else None
+    )
+    if lan_address and (
+        not settings.browser.enabled
+        or urlsplit(settings.browser.endpoint).hostname == "::1"
+        or settings.services.livekit.mode != "managed"
+        or urlsplit(settings.services.livekit.endpoint).hostname == "::1"
+    ):
+        raise ConfigurationError("LAN access requires an enabled browser and managed IPv4 LiveKit.")
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
     try:
@@ -374,6 +401,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         browser=BrowserSettings(
             enabled=settings.browser.enabled,
             endpoint=settings.browser.endpoint,
+            lan_address=lan_address,
             assets=(path.resolve().parent / settings.browser.assets).resolve()
             if settings.browser.assets
             else BrowserSettings().assets,

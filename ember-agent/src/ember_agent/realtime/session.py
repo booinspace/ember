@@ -80,6 +80,7 @@ class HostedRoom:
         self.connection_changed = connection_changed
         self.agent = EmberAgent(core, defer_delivery=True, investigate=investigate)
         self.agent.before_turn = self._before_turn
+        self.agent.before_generation = self._reserve_generation
         self.agent.prepare_failed = self._prepare_failed
         self.permission_watch: asyncio.Task[None] | None = None
         self.permission_failure = False
@@ -202,9 +203,13 @@ class HostedRoom:
         self.permission_failure = False
         if self.closing or self.delivery_failed:
             raise GatewayError("livekit_delivery_unavailable")
+        self.busy = True
+
+    async def _reserve_generation(self) -> None:
+        # Previous delivery is drained and original input is durable before gateway
+        # admission. A provider outage cannot lose the completed user utterance.
         if self.before_turn is not None:
             await self.before_turn()
-        self.busy = True
 
     def _conversation_item(self, event: ConversationItemAddedEvent) -> None:
         message = event.item

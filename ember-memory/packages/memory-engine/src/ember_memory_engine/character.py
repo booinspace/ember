@@ -109,6 +109,7 @@ class SqliteMemoryStore:
                 "profile_pins_v1",
                 "related_lookup_v1",
                 "batch_context_validation_v1",
+                "selected_context_dependencies_v1",
                 "temporal_ranges_v1",
                 "source_selection_v1",
                 "deep_read_profile_v1",

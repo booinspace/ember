@@ -1,4 +1,6 @@
+import { createRequestId, enableLanIds } from "./ids";
 import { Room, RoomEvent, Track } from "livekit-client";
+import { z } from "zod";
 import {
   control,
   roomAccess,
@@ -8,7 +10,7 @@ import {
 } from "./contracts";
 
 export class CharacterConnection {
-  readonly room = new Room({ adaptiveStream: true });
+  readonly room: Room;
   private reads = new Set<Promise<void>>();
   private audio = new Set<HTMLMediaElement>();
   private readonly abort = new AbortController();
@@ -21,9 +23,11 @@ export class CharacterConnection {
       segment: string,
       role: "user" | "assistant",
     ) => void,
-    private failure: () => void,
+    private failure: (message?: string) => void,
     private disconnected: () => void = () => undefined,
   ) {
+    enableLanIds();
+    this.room = new Room({ adaptiveStream: true });
     this.room.registerTextStreamHandler(
       "lk.transcription",
       (reader, sender) => {
@@ -33,7 +37,16 @@ export class CharacterConnection {
           this.reads.size >= 2
         )
           return;
-        const role = sender.identity === "ember-user" ? "user" : "assistant";
+        // The hosted standard participant publishes speech transcripts itself.
+        // Its SDK transcribed-track attribute identifies our current microphone.
+        const track = reader.info.attributes?.["lk.transcribed_track_id"];
+        const localSpeech =
+          track !== undefined &&
+          this.room.localParticipant.audioTrackPublications.has(track);
+        const role =
+          sender.identity === "ember-user" || localSpeech
+            ? "user"
+            : "assistant";
         const segment =
           reader.info.attributes?.["lk.segment_id"] ?? reader.info.id;
         const finalUser =
@@ -91,32 +104,54 @@ export class CharacterConnection {
   }
 
   async connect(state: RuntimeState): Promise<void> {
-    const access = await control("room-token", roomAccess, {});
-    if (this.closed) throw new Error("Connection closed.");
-    await this.room.connect(access.endpoint, access.token);
-    if (this.closed) {
-      await this.room.disconnect();
-      throw new Error("Connection closed.");
+    let stage: "authorization" | "join" | "readiness" = "authorization";
+    try {
+      const access = await control("room-token", roomAccess, {});
+      if (this.closed) throw new Error("Connection closed.");
+      stage = "join";
+      await this.room.connect(access.endpoint, access.token);
+      if (this.closed) {
+        await this.room.disconnect();
+        throw new Error("Connection closed.");
+      }
+      stage = "readiness";
+      const reply = await this.room.localParticipant.performRpc({
+        destinationIdentity: "ember-agent",
+        method: "ember.ready",
+        payload: "",
+      });
+      const value: unknown = JSON.parse(reply);
+      const binding = runtimeState.shape.binding.parse(value);
+      if (
+        binding.instance_id !== state.binding.instance_id ||
+        binding.character_id !== state.binding.character_id
+      ) {
+        throw new Error("Room identity changed.");
+      }
+    } catch {
+      if (this.closing) throw new Error("Connection closed.");
+      const messages = {
+        authorization:
+          "Room authorization failed. Reopen the activation link from the running Ember instance.",
+        join: "LiveKit room is unavailable. Restart Ember and reopen its activation link.",
+        readiness:
+          "The Ember worker is unavailable in this room. Restart Ember before reconnecting.",
+      };
+      throw new Error(messages[stage]);
     }
-    const reply = await this.room.localParticipant.performRpc({
-      destinationIdentity: "ember-agent",
-      method: "ember.ready",
-      payload: "",
-    });
-    const value: unknown = JSON.parse(reply);
-    const binding = runtimeState.shape.binding.parse(value);
-    if (
-      binding.instance_id !== state.binding.instance_id ||
-      binding.character_id !== state.binding.character_id
-    ) {
-      await this.close();
-      throw new Error("Room identity changed; reconnect.");
+    if (state.voice) {
+      try {
+        await this.room.startAudio();
+      } catch {
+        this.failure(
+          "Audio playback is blocked. Text chat is ready; use the microphone button to enable audio.",
+        );
+      }
     }
-    await this.room.startAudio();
   }
 
   async ask(text: string): Promise<number> {
-    const requestId = crypto.randomUUID();
+    const requestId = createRequestId();
     const reply = await this.room.localParticipant.performRpc({
       destinationIdentity: "ember-agent",
       method: "ember.turn",
@@ -132,7 +167,16 @@ export class CharacterConnection {
   }
 
   async microphone(enabled: boolean): Promise<void> {
+    if (enabled) await this.room.startAudio();
     await this.room.localParticipant.setMicrophoneEnabled(enabled);
+  }
+
+  async answerInvestigation(identity: string, _query: string): Promise<void> {
+    await control(
+      "deep/" + identity + "/answer",
+      z.object({ receipt: z.string() }),
+      {},
+    );
   }
 
   private removeAudio(): void {

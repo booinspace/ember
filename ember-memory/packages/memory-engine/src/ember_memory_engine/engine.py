@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from pydantic import TypeAdapter, ValidationError
 
-from ember_memory_abi.archive import SourceRecord
+from ember_memory_abi.archive import Conversation, GraphNode, Message, SourceRecord
 from ember_memory_abi.common import CanonicalId, canonical_object_sha256, timestamp_from_datetime
 from ember_memory_abi.errors import (
     AccessDeniedError,
@@ -24,7 +24,7 @@ from ember_memory_abi.evidence import Evidence, SourceRef, validate_evidence
 from ember_memory_abi.memory import Entity, MemorySource
 
 from .archive import SqliteArchiveStore, source_text
-from .database import SqliteDatabase, load_model, model_bytes, payload_hash, row_text
+from .database import SqliteDatabase, load_model, model_bytes, payload_hash, row_int, row_text
 from .embedding import EncodingPool
 from .errors import CorruptStoreError, EngineBusyError, EngineClosedError, IndexError
 from .index_storage import IndexStore
@@ -312,6 +312,71 @@ class CanonicalEngine:
         if record.source.identity_key()[:4] != reference.identity_key()[:4]:
             raise CorruptStoreError()
         return record
+
+    def message_branch_status(
+        self, message: Message, conversation: Conversation, *, read_budget: ReadBudget | None = None
+    ) -> str:
+        """Use exact selected-path keys, reading only its first missing or matching node.
+
+        The immutable conversation and matching node are hash-verified. Missing
+        earlier nodes retain the legacy ambiguous outcome. No grant is inferred.
+        Large paths remain explicitly unavailable within the deep read envelope.
+        """
+        selection = conversation.selection
+        if selection is None or selection.status != "resolved":
+            return "ambiguous"
+        path = selection.path
+        if len(path) > 1024:
+            return "unavailable"
+        if not path:
+            return "alternative"
+        if conversation.source.identity_key() != message.conversation.identity_key():
+            raise CorruptStoreError()
+        _, database = self._store(message.source.source_store_id)
+        values = ",".join("(?,?,?,?)" for _ in path)
+        parameters = tuple(
+            value
+            for ordinal, ref in enumerate(path)
+            for value in (ordinal, ref.record_kind, str(ref.record_id), ref.record_revision)
+        )
+        try:
+            with closing(
+                sqlite3.connect(database.path.as_uri() + "?mode=ro", uri=True)
+            ) as connection:
+                connection.row_factory = sqlite3.Row
+                with bounded_connection(connection, read_budget):
+                    row = connection.execute(
+                        "WITH requested(ordinal,kind,id,rev) AS (VALUES " + values + ") "
+                        "SELECT q.ordinal,s.payload_json,s.payload_sha256 FROM requested q "
+                        "LEFT JOIN source_records s ON s.record_kind=q.kind "
+                        "AND s.record_id=q.id AND s.revision=q.rev "
+                        "WHERE s.record_id IS NULL OR "
+                        "(json_extract(s.payload_json,'$.message.record_id')=? "
+                        "AND json_extract(s.payload_json,'$.message.record_revision')=?) "
+                        "ORDER BY q.ordinal LIMIT 1",
+                        (
+                            *parameters,
+                            str(message.source.record_id),
+                            message.source.record_revision,
+                        ),
+                    ).fetchone()
+                    if row is None:
+                        return "alternative"
+                    if row["payload_json"] is None:
+                        return "ambiguous"
+                    node = load_model(row, GraphNode)
+                    if (
+                        node.source.identity_key() != path[row_int(row, "ordinal")].identity_key()
+                        or node.conversation.identity_key() != message.conversation.identity_key()
+                        or node.message is None
+                        or node.message.identity_key() != message.source.identity_key()
+                    ):
+                        raise CorruptStoreError()
+                    return "selected"
+        except sqlite3.Error as error:
+            if read_budget is not None:
+                read_budget.check()
+            raise SourceUnavailableError() from error
 
     def unavailable_sources(
         self,

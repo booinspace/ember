@@ -49,6 +49,11 @@ class CaptureLifecycle:
             self.connected = connected
             self.changed.set()
 
+    def policy_changed(self) -> None:
+        """Resume enabled disconnected backlog through the existing coalesced owner."""
+        if not self.closed:
+            self.changed.set()
+
     async def before_turn(self) -> None:
         """Do not prepare a reply until the gateway confirms background quiescence."""
         if self.closed:

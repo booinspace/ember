@@ -42,6 +42,7 @@ from .database import (
 from .errors import CorruptStoreError, UnsupportedQueryError
 from .selection import origin_scope, source_scope
 from .source_access import memory_source_scope
+from .word_recall import EXTRACTED_TEXT_SQL, register_word_match, value_word_hits
 
 
 def coverage(state: CharacterState, *reasons: str) -> RetrievalCoverage:
@@ -137,9 +138,9 @@ def memory_scope(
         parameters.extend((now, now))
     if include_text and query.text:
         conditions.append(
-            "instr(lower(json_extract(r.payload_json,'$.content.payload')),lower(?))>0"
+            "(ember_word_hits(" + EXTRACTED_TEXT_SQL + ")>0 OR "
+            "ember_word_hits(replace(replace(p.predicate,'.',' '),'_',' '))>0)"
         )
-        parameters.append(query.text)
     for column, lower, upper in (
         ("p.observed_at", query.temporal.observed_from, query.temporal.observed_until),
     ):
@@ -177,6 +178,8 @@ def memory_scope(
         if recent_first
         else ("r.importance DESC,r.recorded_at_us DESC,r.memory_id")
     )
+    if include_text and query.text and not recent_first:
+        order = "ember_word_hits(" + EXTRACTED_TEXT_SQL + ") DESC," + order
     projection = "r.memory_id,r.revision" if metadata_only else "r.*"
     ordered_recent = recent_first and before is None and query.lifecycles == ("active",)
     lookup = (
@@ -225,6 +228,7 @@ def search(
     if query.cursor is not None:
         raise UnsupportedQueryError()
     epoch = state.policy_epoch(connection)
+    terms = register_word_match(connection, query.text)
     if (
         state.retriever is not None
         and query.text
@@ -248,14 +252,17 @@ def search(
         )
         if memory.character_id != state.character_id:
             raise CorruptStoreError()
+        score = memory.content.importance
+        if terms and query.mode != "structured" and not recent_first:
+            score += 2 * value_word_hits(memory, terms) / len(terms)
         results.append(
             MemoryResult(
                 memory=memory,
-                score=memory.content.importance,
+                score=score,
                 ranking=(
                     RankingExplanation(
                         method="canonical_fallback",
-                        score=memory.content.importance,
+                        score=score,
                         reasons=("STRUCTURED_FACT_MATCH",)
                         if query.mode == "structured"
                         else ("DEGRADED_FALLBACK",),
@@ -316,6 +323,10 @@ def branch_status(state: CharacterState, record: SourceRecord) -> str:
     """Preserve original graph selection or ambiguity; never repair a source branch."""
     from ember_memory_abi.archive import Conversation, GraphNode, Message
 
+    from .archive import SourceBranchResolver
+
+    if isinstance(state.resolver, SourceBranchResolver):
+        return state.resolver.branch_status(record)
     if isinstance(record, Conversation):
         return record.selection.status if record.selection else "unavailable"
     if not isinstance(record, (Message, GraphNode)):
@@ -554,7 +565,11 @@ def retrieve_context(
         used.add(memory.memory_id)
     ordinary = 0
     for result in response.results:
-        if result.memory.memory_id not in used and ordinary < 6:
+        if (
+            result.memory.memory_id not in used
+            and ordinary < request.memory_query.limit
+            and len(candidates) < 100
+        ):
             candidates.append(result)
             used.add(result.memory.memory_id)
             ordinary += 1

@@ -90,4 +90,16 @@ phase and stop for user review before beginning the next one.
 Phase 8 implementation is in progress: [Root ADR 0015](0015-phase-eight-implementation.md) and
 [acceptance status](../phase-8-validation.md) record runtime/capture, calendar,
 deep source/alias recall, enrichment, measured performance and remaining gates.
-The isolated implementation is not complete or deployed.
+The experimental main-device runtime has installed browser/speech evidence; the full phase remains incomplete. See the Phase 8 runbook for the single launch command.
+
+The [2026-10-16 review](../reports/phase-8-architecture-review-20261016.md) and
+[remediation design](../phase-8-review-remediation.md) cover source qualification,
+selected prompt certificates, capture resumption and degraded browser operation.
+
+The user-directed [ordinary word-recall correction](../phase-8-word-recall.md)
+supersedes the ordinary six-row/768-byte limits with word-ranked candidates and
+bounded extracted-value packing. Root ADR 0015 and both component Phase 8 ADRs
+record this change; deep bounds and remaining release gates stay explicit.
+
+The subsequent operator-approved 32k activation and bounded live Connect/recall
+checks are recorded in Root ADR 0015 and the phase validation record.

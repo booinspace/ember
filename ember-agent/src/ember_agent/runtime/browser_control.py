@@ -3,8 +3,10 @@
 import asyncio
 import secrets
 from collections.abc import Awaitable, Callable
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
@@ -22,8 +24,9 @@ from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
-from .config import RuntimeModel
+from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, RuntimeControls
+from .text_session import DirectTextSession, TextReply
 
 COOKIE = "ember_session"
 
@@ -35,6 +38,25 @@ class Bootstrap(RuntimeModel):
 class InvestigationInput(RuntimeModel):
     request_id: Annotated[UUID4, Field(strict=False)]
     text: str = Field(min_length=1, max_length=1600, repr=False)
+
+
+class TextLeaseInput(RuntimeModel):
+    """Bind a control request to the current authenticated browser transport lease."""
+
+    session_id: Annotated[UUID4, Field(strict=False)]
+
+
+class TextAcknowledgement(TextLeaseInput):
+    """Identify the exact pending response whose delivery the browser confirms."""
+
+    request_id: Annotated[UUID4, Field(strict=False)]
+
+
+class TextTurnInput(TextAcknowledgement):
+    """Bounded original input; an optional investigation ID grants no new source access."""
+
+    text: str = Field(min_length=1, max_length=1600, repr=False)
+    investigation_id: Annotated[UUID4, Field(strict=False)] | None = None
 
 
 class BrowserControl:
@@ -58,8 +80,15 @@ class BrowserControl:
         answer: Callable[[DeepRecallResult], Awaitable[str]],
         voice_ready: bool = False,
         voice_status: str = "disabled",
+        capture_changed: Callable[[], None] | None = None,
+        lan_origin: str | None = None,
+        text_session: DirectTextSession | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
+        self.lan_origin = lan_origin
+        self._origins = {
+            urlsplit(value).netloc: value for value in (self.origin, lan_origin) if value
+        }
         self.assets = assets
         self.binding = binding
         self.core = core
@@ -69,6 +98,8 @@ class BrowserControl:
         self.answer = answer
         self.voice_ready = voice_ready
         self.voice_status = voice_status
+        self.capture_changed = capture_changed
+        self.text_session = text_session
         self.activation = secrets.token_urlsafe(48)
         self._session = secrets.token_urlsafe(48)
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
@@ -80,6 +111,8 @@ class BrowserControl:
     async def aclose(self) -> None:
         """Stop admission, cancel owned requests and drain before the runtime engine closes."""
         self._closed = True
+        if self.text_session is not None:
+            await self.text_session.aclose()
         tasks = tuple(self._tasks.values())
         for task in tasks:
             if not task.cancelling():
@@ -98,13 +131,22 @@ class BrowserControl:
             request: Request, next_handler: Callable[[Request], Awaitable[Response]]
         ) -> Response:
             host = request.headers.get("host", "")
-            if host != self.origin.split("://", 1)[1]:
+            request_origin = self._origins.get(host)
+            if request_origin is None:
                 return JSONResponse({"error": "invalid_host"}, status_code=403)
+            if self.lan_origin and request.client is not None:
+                try:
+                    peer = ip_address(request.client.host)
+                    allowed = peer.is_loopback or bool(private_lan_address(str(peer)))
+                except ValueError:
+                    allowed = False
+                if not allowed:
+                    return JSONResponse({"error": "lan_peer_required"}, status_code=403)
             if request.url.path.startswith("/api/"):
                 if self._closed:
                     return JSONResponse({"error": "runtime_closing"}, status_code=503)
                 if request.method != "GET":
-                    if request.headers.get("origin") != self.origin:
+                    if request.headers.get("origin") != request_origin:
                         return JSONResponse({"error": "invalid_origin"}, status_code=403)
                     size = request.headers.get("content-length", "")
                     if len(size) > 5 or not size.isdecimal() or int(size) > 32768:
@@ -143,10 +185,21 @@ class BrowserControl:
             )
             return response
 
+        def browser_binding(request: Request) -> RoomBinding:
+            # Host passed the exact allowlist above; never trust forwarded headers.
+            if self._origins[request.headers["host"]] != self.lan_origin:
+                return self.binding
+            address = urlsplit(self.lan_origin or "")
+            endpoint = urlsplit(self.binding.endpoint)
+            return self.binding.model_copy(
+                update={"endpoint": f"ws://{address.hostname}:{endpoint.port}"}
+            )
+
         @app.get("/api/state")
-        async def state() -> dict[str, object]:
+        async def state(request: Request) -> dict[str, object]:
             return {
-                "binding": self.binding.model_dump(mode="json"),
+                "binding": browser_binding(request).model_dump(mode="json"),
+                "lan_available": self.lan_origin is not None,
                 "context_id": str(self.core.context_id),
                 "recall": (await self.controls.recall_settings()).model_dump(mode="json"),
                 "capture": (await self.controls.capture_settings()).model_dump(mode="json"),
@@ -157,11 +210,19 @@ class BrowserControl:
                 "deep": "available",
                 "voice": self.voice_ready,
                 "voice_status": self.voice_status,
+                "transport": "http" if self.text_session is not None else "livekit",
+                "text_available": self.text_session.model_available if self.text_session else True,
             }
 
         @app.post("/api/room-token")
-        async def token() -> dict[str, str]:
-            return {"token": self.room_token(), "endpoint": self.binding.endpoint}
+        async def token(request: Request) -> dict[str, str]:
+            return {"token": self.room_token(), "endpoint": browser_binding(request).endpoint}
+
+        @app.post("/api/lan-link")
+        async def lan_link() -> dict[str, str]:
+            if self.lan_origin is None:
+                raise HTTPException(status_code=404, detail="lan_not_configured")
+            return {"url": self.lan_origin + "/#activate=" + self.activation}
 
         @app.post("/api/recall")
         async def recall(value: RecallSelection) -> RecallSelection:
@@ -169,7 +230,40 @@ class BrowserControl:
 
         @app.post("/api/capture")
         async def capture(value: CaptureControl) -> CaptureControl:
-            return await self.controls.configure_capture(value)
+            configured = await self.controls.configure_capture(value)
+            if self.capture_changed is not None:
+                self.capture_changed()
+            return configured
+
+        def direct_text() -> DirectTextSession:
+            if self.text_session is None:
+                raise HTTPException(status_code=409, detail="use_room_transport")
+            return self.text_session
+
+        @app.post("/api/text/connect")
+        async def text_connect() -> dict[str, str]:
+            return {"session_id": str(await direct_text().connect())}
+
+        @app.post("/api/text/heartbeat")
+        async def text_heartbeat(value: TextLeaseInput) -> dict[str, bool]:
+            direct_text().heartbeat(value.session_id)
+            return {"connected": True}
+
+        @app.post("/api/text/disconnect")
+        async def text_disconnect(value: TextLeaseInput) -> dict[str, bool]:
+            await direct_text().disconnect(value.session_id)
+            return {"connected": False}
+
+        @app.post("/api/text/turn")
+        async def text_turn(value: TextTurnInput) -> TextReply:
+            return await direct_text().turn(
+                value.session_id, value.request_id, value.text, value.investigation_id
+            )
+
+        @app.post("/api/text/acknowledge")
+        async def text_acknowledge(value: TextAcknowledgement) -> dict[str, bool]:
+            await direct_text().acknowledge(value.session_id, value.request_id)
+            return {"delivered": True}
 
         @app.post("/api/deep")
         async def investigate(value: InvestigationInput) -> dict[str, str]:

@@ -47,7 +47,7 @@ class CharacterBinding(RuntimeModel):
 class LocalRuntime:
     """Construct off-loop; drain clients and close their engine off-loop."""
 
-    def __init__(self, config: DeploymentConfig) -> None:
+    def __init__(self, config: DeploymentConfig, *, gateway_available: bool = True) -> None:
         self.config = config
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ember-runtime-owner")
         encoder = None
@@ -77,7 +77,11 @@ class LocalRuntime:
             )
             personality_path = config.runtime_root / (config.active_profile + "-personality.json")
             self.personality = self._personality(personality_path)
-            token = (config.runtime_root / "gateway.token").read_text(encoding="utf-8").strip()
+            token = (
+                (config.runtime_root / "gateway.token").read_text(encoding="utf-8").strip()
+                if gateway_available
+                else ""
+            )
             self.memory = InProcessAsyncMemoryClient(store)
 
             def deep_client(deadline: float) -> InProcessAsyncMemoryClient:

@@ -67,7 +67,44 @@ def test_connected_session_never_runs_capture_in_an_idle_gap() -> None:
         lifecycle.start()
         await asyncio.wait_for(reservation.wait(), 2)
         assert lifecycle.status == "realtime_reserved"
+        reservation.clear()
+        lifecycle.policy_changed()
+        await asyncio.wait_for(reservation.wait(), 2)
+        assert lifecycle.status == "realtime_reserved"
         await lifecycle.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_capture_policy_resumes_idle_backlog_without_another_connection_event() -> None:
+    async def exercise() -> None:
+        enabled = False
+        attempted = asyncio.Event()
+        resumed = asyncio.Event()
+
+        async def reserve(_: UUID, connected: bool) -> None:
+            assert not connected
+
+        async def quiesce() -> None:
+            pass
+
+        async def consolidate(allowed: Callable[[], bool]) -> int:
+            assert allowed()
+            attempted.set()
+            if enabled:
+                resumed.set()
+            return 0
+
+        lifecycle = CaptureLifecycle(uuid4(), reserve, quiesce, consolidate)
+        lifecycle.start()
+        await asyncio.wait_for(attempted.wait(), 2)
+        assert not resumed.is_set()
+        enabled = True
+        lifecycle.policy_changed()
+        await asyncio.wait_for(resumed.wait(), 2)
+        await lifecycle.aclose()
+        lifecycle.policy_changed()
+        assert not lifecycle.changed.is_set() or lifecycle.closed
 
     asyncio.run(exercise())
 

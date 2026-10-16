@@ -2,7 +2,9 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -13,16 +15,150 @@ from ember_agent.inference.contracts import (
     GatewayRequest,
     GenerationUsage,
 )
+from ember_agent.memory.deep_contracts import DeepRecallResult
 from ember_memory_abi.common import CanonicalId
-from ember_memory_abi.interfaces import MemoryCapabilities, RequestOptions
+from ember_memory_abi.interfaces import (
+    ContextRequest,
+    MemoryCapabilities,
+    MemoryQuery,
+    MemoryResult,
+    RequestOptions,
+)
 from ember_memory_abi.memory import FactPayload, Memory, StringValue
 from ember_memory_abi.related import RelatedRequest, RelatedResponse
+from ember_memory_abi.temporal import TemporalBounds
 from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 from ember_memory_engine.authoring import MemoryAuthoringService, NewMemoryInput, ensure_subject
 from ember_memory_engine.related import certificate
 
 AUTHORITY = MutationAuthority(mode="confirmed_user")
+
+
+@pytest.mark.parametrize("expires_in_prompt", [False, True])
+@pytest.mark.parametrize("selected_capability", [False, True])
+def test_final_prompt_certifies_only_selected_memories(
+    tmp_path: Path, expires_in_prompt: bool, selected_capability: bool
+) -> None:
+    class Clock:
+        value = datetime(2026, 10, 16, 12, tzinfo=UTC)
+
+        def now(self) -> datetime:
+            return self.value
+
+    clock = Clock()
+    with CanonicalEngine(tmp_path / "data", clock=clock) as engine:
+        character = engine.create_character().store_id
+        subject = ensure_subject(engine, character)
+        author = MemoryAuthoringService(engine, subject, authority=AUTHORITY)
+        for index in range(3):
+            author.create(
+                NewMemoryInput(idempotency_key=str(index), text=f"GPU observation {index}")
+            )
+        expiring = author.create(
+            NewMemoryInput(
+                idempotency_key="expiring",
+                text="I own an expiring synthetic GPU.",
+                payload=FactPayload(
+                    subject=subject,
+                    predicate="hardware.owns_gpu",
+                    definition_version="0.1.0",
+                    value=StringValue(value="SYNTHETIC_GPU"),
+                ),
+                importance=1.0 if expires_in_prompt else 0.1,
+                temporal=TemporalBounds(valid_until="2026-10-16T12:00:01.000000Z"),
+            )
+        ).affected[0]
+        baseline = engine.character(character).retrieve_context(
+            ContextRequest(memory_query=MemoryQuery(mode="structured"), memory_token_budget=4096)
+        )
+        assert expiring.memory_id in {row.memory.memory_id for row in baseline.memories}
+        assert baseline.fast_dependencies is not None
+        assert baseline.fast_dependencies.valid_until == "2026-10-16T12:00:01.000000Z"
+
+        class SelectionClient(CountingMemory):
+            async def capabilities(self) -> MemoryCapabilities:
+                value = await super().capabilities()
+                return (
+                    value
+                    if selected_capability
+                    else value.model_copy(
+                        update={
+                            "retrieval_modes": tuple(
+                                mode
+                                for mode in value.retrieval_modes
+                                if mode != "selected_context_dependencies_v1"
+                            )
+                        }
+                    )
+                )
+
+            async def lookup_related(self, request: RelatedRequest) -> RelatedResponse:
+                assert selected_capability or not request.refresh_dependencies
+                return await super().lookup_related(request)
+
+        async def exercise() -> None:
+            memory = SelectionClient(engine.character(character))
+            # Force an actual category omission under the configurable allocation.
+            core = CharacterCore(memory, ProgressModel(), model_tag="synthetic", input_ceiling=2400)
+            turn = await core.prepare("Explain GPU observations")
+            assert turn.certificate is not None
+            if selected_capability:
+                assert len(turn.certificate.sources) == len(turn.dependencies)
+            assert ((expiring.memory_id, 1) in turn.dependencies) == expires_in_prompt
+            assert (turn.certificate.valid_until is not None) == (
+                expires_in_prompt or not selected_capability
+            )
+            assert memory.expansions == memory.gets == 0 and memory.validations == 1
+            clock.value += timedelta(seconds=2)
+            if expires_in_prompt or not selected_capability:
+                with pytest.raises(GatewayError, match="context_invalidated"):
+                    _ = [event async for event in core.stream(turn)]
+            else:
+                assert "Synthetic reply" == "".join(
+                    [event.text async for event in core.stream(turn)]
+                )
+            await memory.aclose()
+
+        asyncio.run(exercise())
+
+
+def test_deep_answer_does_not_duplicate_current_profile_pins(tmp_path: Path) -> None:
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        author_profile(engine, character)
+        store = engine.character(character)
+        context = store.retrieve_context(
+            ContextRequest(
+                memory_query=MemoryQuery(mode="structured"),
+                memory_token_budget=4096,
+                include_profile=True,
+            )
+        )
+        name = next(
+            result
+            for result in context.memories
+            if isinstance(result.memory.content.payload, FactPayload)
+            and result.memory.content.payload.predicate == "user.preferred_name"
+        )
+
+        async def exercise() -> None:
+            memory = CountingMemory(store)
+            core = CharacterCore(memory, ProgressModel(), model_tag="synthetic")
+            result = DeepRecallResult(
+                request_id=uuid4(),
+                character_id=character,
+                context_id=core.context_id,
+                outcome="complete_within_budget",
+                memories=(MemoryResult(memory=name.memory, score=1.0),),
+                dependencies=context.fast_dependencies,
+            )
+            turn = await core.prepare("Explain the remembered name", investigation=result)
+            assert turn.retained_pins == 4 and turn.retained_memories == 0
+            assert sum(message.content.count("Rowan") for message in turn.request.messages) == 1
+            await memory.aclose()
+
+        asyncio.run(exercise())
 
 
 def author_profile(
@@ -110,7 +246,7 @@ class ProgressModel:
         )
 
 
-def test_unrelated_prompt_includes_profile_and_six_distinct_recall_slots(tmp_path: Path) -> None:
+def test_prompt_includes_profile_and_budgeted_distinct_recall_values(tmp_path: Path) -> None:
     with CanonicalEngine(tmp_path / "data") as engine:
         character = engine.create_character().store_id
         author_profile(engine, character)
@@ -128,8 +264,8 @@ def test_unrelated_prompt_includes_profile_and_six_distinct_recall_slots(tmp_pat
             memory = CountingMemory(engine.character(character))
             core = CharacterCore(memory, ProgressModel(), model_tag="synthetic")
             turn = await core.prepare("How does my NAS resolve DNS?")
-            assert turn.retained_pins == 4 and 0 < turn.retained_memories <= 6
-            assert turn.accounting is not None and turn.accounting.memories <= 768
+            assert turn.retained_pins == 4 and turn.retained_memories == 8
+            assert turn.accounting is not None and turn.accounting.memories <= core.memory_ceiling
             assert turn.accounting.recent_and_current <= 2304
             assert (
                 "Rowan" in turn.request.messages[1].content

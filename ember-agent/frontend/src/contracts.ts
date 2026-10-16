@@ -43,8 +43,11 @@ export const runtimeState = z.object({
     })
     .default({ counts: {}, failure_codes: [], index_status: "unknown" }),
   deep: z.string(),
+  lan_available: z.boolean().default(false),
   voice: z.boolean().default(false),
   voice_status: z.string().default("disabled"),
+  transport: z.enum(["livekit", "http"]).default("livekit"),
+  text_available: z.boolean().default(true),
 });
 export type RuntimeState = z.infer<typeof runtimeState>;
 
@@ -61,6 +64,7 @@ export const turnReceipt = z.object({
 });
 
 export const investigation = z.object({
+  query: z.string().max(8192).default(""),
   request_id: z.string().uuid(),
   outcome: z.enum([
     "complete_within_budget",
@@ -118,7 +122,13 @@ export const investigation = z.object({
     )
     .max(24)
     .default([]),
-  counters: z.record(z.string(), z.unknown()),
+  counters: z.object({
+    sql_statements: z.number().int().nonnegative().default(0),
+    rows_reported: z.number().int().nonnegative().default(0),
+    materialized_bytes: z.number().int().nonnegative().default(0),
+    elapsed_ms: z.number().int().nonnegative().default(0),
+    limits_hit: z.array(z.string()).max(8).default([]),
+  }),
   prompt_memories: z.array(
     z.object({ memory_id: z.string().uuid(), revision: z.number().int() }),
   ),
@@ -134,10 +144,12 @@ export async function control<T>(
   path: string,
   schema: z.ZodType<T>,
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch("/api/" + path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
+    ...(signal ? { signal } : {}),
     ...(body === undefined
       ? {}
       : {

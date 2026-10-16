@@ -208,3 +208,15 @@ def test_public_schema_artifacts_match_typed_contracts_and_contain_no_sample_sou
         assert "SENTINEL" not in json.dumps(schema)
     catalog = contract_schemas()[f"memory-abi-{ABI_VERSION}.schema.json"]
     assert {"SourceRef", "EvidenceSpan", "RememberRequest", "Memory"} <= set(catalog["$defs"])
+
+
+def test_selected_dependency_refresh_is_opt_in_and_validation_only() -> None:
+    from ember_memory_abi.related import ContextDependencies, RelatedRequest
+
+    dependencies = ContextDependencies(policy_epoch=0)
+    ordinary = RelatedRequest(intent="validate", dependencies=dependencies)
+    assert "refresh_dependencies" not in ordinary.model_dump()
+    refreshed = ordinary.model_copy(update={"refresh_dependencies": True})
+    assert refreshed.model_dump()["refresh_dependencies"] is True
+    with pytest.raises(ValueError, match="Only validation"):
+        RelatedRequest(intent="expand", refresh_dependencies=True)

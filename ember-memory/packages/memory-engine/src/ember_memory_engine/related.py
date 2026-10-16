@@ -4,6 +4,8 @@ import sqlite3
 from datetime import timedelta
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from ember_memory_abi.common import (
     CanonicalId,
     timestamp_from_datetime,
@@ -119,6 +121,8 @@ def validate(
         reasons.append("time_boundary")
     rows_count = 0
     required: set[tuple[object, ...]] = set()
+    required_sources: list[SourceRef] = []
+    boundaries = [dependencies.valid_until] if dependencies.valid_until else []
     if dependencies.memories:
         placeholders = ",".join("(?,?)" for _ in dependencies.memories)
         parameters = tuple(
@@ -168,6 +172,8 @@ def validate(
                 and at >= row_int(row, "valid_until_us")
             ):
                 reasons.append("memory_outside_validity")
+            if row["kind"] != "episode" and row["valid_until_us"] is not None:
+                boundaries.append(timestamp_from_unix_microseconds(row_int(row, "valid_until_us")))
         # Reuse the actual eligibility compiler. Historical selectors never grant
         # permission or bypass current forgetting, revocation or source controls.
         from ember_memory_abi.interfaces import MemoryQuery
@@ -195,15 +201,49 @@ def validate(
             (*parameters, request.row_budget + 1),
         ):
             rows_count += 1
-            required.add(
-                (
-                    UUID(row_text(row, "source_store_id")),
-                    row_text(row, "record_kind"),
-                    UUID(row_text(row, "record_id")),
-                    row_int(row, "record_revision"),
-                    UUID(row_text(row, "part_id")) if row["part_id"] else None,
-                )
+            reference = SourceRef(
+                source_store_id=UUID(row_text(row, "source_store_id")),
+                record_kind=row_text(row, "record_kind"),
+                record_id=UUID(row_text(row, "record_id")),
+                record_revision=row_int(row, "record_revision"),
+                part_id=UUID(row_text(row, "part_id")) if row["part_id"] else None,
             )
+            required.add(reference.identity_key())
+            required_sources.append(reference)
+    if request.refresh_dependencies:
+        # This is selected-result certification, not authority supplied by the caller.
+        # Hard evidence comes from canonical metadata; explicit raw excerpts stay scoped.
+        sources = tuple(
+            {
+                ref.identity_key(): ref
+                for ref in (*required_sources, *dependencies.excerpt_sources)
+            }.values()
+        )
+        allowed, expiry = evidence_grant_window(connection, state.character_id, sources, now)
+        archive_allowed, archive_expiry = evidence_grant_window(
+            connection,
+            state.character_id,
+            dependencies.archive_sources,
+            now,
+            capability="archive_search",
+        )
+        if not allowed or not archive_allowed:
+            reasons.append("source_denied")
+        boundaries.extend(
+            timestamp_from_unix_microseconds(boundary)
+            for boundary in (expiry, archive_expiry)
+            if boundary is not None
+        )
+        try:
+            dependencies = ContextDependencies.model_validate(
+                {
+                    **dependencies.model_dump(),
+                    "sources": sources,
+                    "valid_until": min(boundaries) if boundaries else None,
+                }
+            )
+        except ValidationError:
+            reasons.append("dependency_budget")
     supplied = {source.identity_key() for source in dependencies.sources}
     if not required <= supplied:
         reasons.append("evidence_dependency_missing")
@@ -267,6 +307,7 @@ def validate(
         reasons=tuple(dict.fromkeys(reasons)),
         rows_examined=rows_count,
         source_calls=calls,
+        dependencies=dependencies if request.refresh_dependencies and not reasons else None,
     )
 
 
@@ -301,7 +342,11 @@ def lookup(
         # Historical active revisions cannot bypass a later manual lifecycle decision.
         if latest.lifecycle in {"disabled", "forgotten"}:
             raise AccessDeniedError()
-        memory = state.read_memory(connection, reference.memory_id, reference.revision)
+        memory = (
+            latest
+            if latest.revision == reference.revision
+            else state.read_memory(connection, reference.memory_id, reference.revision)
+        )
         if not permitted(state, connection, str(memory.memory_id), memory.revision):
             raise AccessDeniedError()
         if any(

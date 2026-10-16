@@ -39,6 +39,12 @@ from .retrieval import memory_scope
 from .search_contracts import IndexGeneration
 from .selection import source_scope, unrestricted
 from .vector_search import VectorPool, VectorRequest
+from .word_recall import (
+    EXTRACTED_TEXT_SQL,
+    WORD_RANKER,
+    query_words,
+    register_word_match,
+)
 
 
 def fts_expression(text: str) -> str:
@@ -302,6 +308,7 @@ class IndexedRetriever:
         plain_current: bool = False,
         deep: bool = False,
         isolated: bool = False,
+        memory_words: bool = False,
     ) -> tuple[
         IndexGeneration,
         list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]],
@@ -311,11 +318,14 @@ class IndexedRetriever:
         reasons: list[str] = []
         lexical: list[int] = []
         semantic: list[int] = []
+        value_scores: dict[int, float] = {}
         with (
             closing(connect(path, immutable=True, require_extension=False)) as connection,
             bounded_connection(connection, state.read_budget),
         ):
             _attach(connection, state)
+            terms = register_word_match(connection, text) if memory_words else ()
+            lexical_text = " ".join(terms) if memory_words else text
             connection.set_progress_handler(
                 lambda: int(
                     monotonic() > deadline
@@ -387,16 +397,45 @@ class IndexedRetriever:
                             (*values, text.casefold()),
                         ).fetchall()
                     ]
-                elif mode not in {"semantic", "structured"} and fts_expression(text):
+                elif mode not in {"semantic", "structured"} and fts_expression(lexical_text):
+                    value_join = (
+                        " JOIN canonical.memory_revisions r ON r.memory_id=d.target_id "
+                        "AND r.revision=d.revision "
+                        if memory_words
+                        else " "
+                    )
+                    order = (
+                        "value_hits DESC,r.importance DESC,document_fts.rank,d.id LIMIT 100"
+                        if memory_words
+                        else "document_fts.rank LIMIT 40"
+                    )
+                    projection = (
+                        "d.id,ember_word_hits(" + EXTRACTED_TEXT_SQL + ") AS value_hits,"
+                        "r.importance AS memory_importance"
+                        if memory_words
+                        else "d.id"
+                    )
                     rows = connection.execute(
-                        "SELECT d.id FROM document_fts CROSS JOIN documents d "
+                        "SELECT " + projection + " FROM document_fts CROSS JOIN documents d "
                         "ON d.id=document_fts.rowid "
-                        "WHERE document_fts MATCH ? AND "
+                        + value_join
+                        + "WHERE document_fts MATCH ? AND "
                         + scope
-                        + " ORDER BY document_fts.rank LIMIT 40",
-                        (fts_expression(text), *values),
+                        + " ORDER BY "
+                        + order,
+                        (fts_expression(lexical_text), *values),
                     ).fetchall()
                     lexical = [row_int(row, "id") for row in rows]
+                    if memory_words and terms:
+                        for row in rows:
+                            hits = row_int(row, "value_hits")
+                            importance: object = row["memory_importance"]
+                            if not isinstance(importance, (int, float)):
+                                raise IndexError()
+                            if hits:
+                                value_scores[row_int(row, "id")] = (
+                                    0.05 * hits / len(terms) * (0.5 + importance / 2)
+                                )
             except sqlite3.OperationalError as error:
                 if error.sqlite_errorcode != sqlite3.SQLITE_INTERRUPT:
                     raise
@@ -409,7 +448,7 @@ class IndexedRetriever:
                 except (EmbeddingError, EngineBusyError, IndexError, TimeoutError):
                     reasons.append("semantic_deadline_or_admission_miss")
             # Candidate computation is deadline-bounded. Final exact-ID reads are
-            # bounded by 80 candidates and must still enforce canonical policy.
+            # bounded by 140 memory candidates and must still enforce canonical policy.
             connection.set_progress_handler(None, 0)
             ranks: dict[int, list[RankingExplanation]] = {}
             for candidates, reason in ((lexical, "LEXICAL_MATCH"), (semantic, "SEMANTIC_MATCH")):
@@ -423,6 +462,16 @@ class IndexedRetriever:
                             extensions={"ember.rank": rank},
                         )
                     )
+            # Promote literal values before hydration as well as final ranking, so
+            # a soft deadline cannot spend all its reads on generic semantic labels.
+            for identity, contribution in value_scores.items():
+                ranks[identity].append(
+                    RankingExplanation(
+                        method="extracted_word_match_v1",
+                        score=contribution,
+                        reasons=("LEXICAL_MATCH",),
+                    )
+                )
             result: list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]] = []
             for identity, explanations in ranks.items():
                 row = connection.execute(
@@ -506,6 +555,7 @@ class IndexedRetriever:
                 None if certified else _memory_vector_ids(state, query),
                 deep=deep,
                 isolated=deep,
+                memory_words=True,
                 plain_current=(
                     certified
                     and not query.kinds
@@ -594,7 +644,7 @@ class IndexedRetriever:
                 dirty = sql.rsplit(" ORDER BY ", 1)[0] + (
                     " AND r.recorded_at_us>? ORDER BY r.recorded_at_us DESC LIMIT 100"
                 )
-                terms = re.findall(r"[^\W_]\w*", query.text.casefold())[:32]
+                terms = query_words(query.text)
                 from .index_builder import memory_text
 
                 present = {item.memory.memory_id for item in result}
@@ -654,7 +704,8 @@ class IndexedRetriever:
                         "ember.retrieval": {
                             "generation": str(generation.generation),
                             "policy_epoch": epoch,
-                            "ranker": generation.ranker,
+                            "ranker": WORD_RANKER,
+                            "generation_ranker": generation.ranker,
                             "distance_metric": generation.distance_metric,
                             "certified_headers": certified,
                             "outbox_sequence": generation.outbox_sequence,

@@ -1,12 +1,14 @@
 # Phase 8 implementation validation
 
-Status: **in progress, not complete or deployed**. Work is isolated in
-ember-phase-eight, based on origin/master 640888d. The primary checkout, private
-database, gateway, ongoing ingest and GPU have not been changed.
+Status: **in progress, not accepted**. The current implementation is in `ember`,
+including its uncommitted Phase 8 changes at `1107679`. Earlier isolated-clone
+evidence below remains historical. Main-device integration is recorded in the
+2026-10-13/14 sections; the 2026-10-16 review changes have not restarted services
+or modified production memory data.
 
 ## Executed verification
 
-The latest full Python gate passed **601 tests, 6 skipped**, in 119.42
+The earlier isolated Python gate passed **601 tests, 6 skipped**, in 119.42
 seconds on 2026-10-13. Strict Pyright, Ruff formatting/lint and the locked
 offline environment check pass. One external Starlette/httpx deprecation warning
 remains; it does not indicate a first-party test failure.
@@ -140,3 +142,206 @@ establishes transport behavior, not model quality, first-answer latency or audio
 
 See [Root ADR 0015](adr/0015-phase-eight-implementation.md) and the approved
 [implementation proposal](phase-8-implementation-proposal.md).
+
+
+## Main-checkout launch verification: 2026-10-13
+
+The configured primary non-MTP deployment passed a startup-only smoke check after
+the operator reported finished ingest. It served the production frontend, completed
+private capability bootstrap, returned authenticated state matching the existing
+character binding, reported CPU semantic retrieval available, and drained owned
+services on shutdown. The activation discovery file was removed. No prompt was
+submitted and no candidate was approved or seeded. Voice was disabled; actual
+microphone, synthesis, Qwen answer and broad acceptance gates remain open.
+
+The root PowerShell wrapper passed syntax validation. Browser-launch regression
+coverage checks ready-state admission, exact private URL dispatch, OS refusal/error
+without runtime loss, CLI routing, and rejection of disabled browser before startup.
+The current frontend built and its six tests passed.
+
+The updated root quality gate passed: 603 Python tests passed, six explicit
+service/model tests skipped, Ruff formatting/lint and strict Pyright passed.
+Contract schemas remain current. Frontend formatting, build and six tests passed.
+
+
+## Installed browser/voice evidence: 2026-10-14
+
+Actual installed Edge connected to the primary runtime and enabled Send/microphone
+without submitting a conversation to the private character. Kokoro/af_alloy synthesized
+real PCM/WAV and CPU int8 faster-whisper-small.en recognized the known synthetic phrase.
+The managed provider was started/stopped through retained owned handles. Runtime guards
+force CPU/offline operation and warning-only speech logs.
+
+A separate synthetic character, accepted/indexed color memory and the single shared
+primary gateway then passed two real browser cases: typed question to recalled Qwen
+answer/spoken RTP, and synthetic microphone to final Whisper transcription, recalled
+Qwen answer/spoken RTP. First successful receipts measured 4,952 ms and 8,832 ms to the
+supported visible answer, with 50,989 and 40,308 inbound audio bytes respectively. Those
+samples include browser/utterance/generation/playout behavior and are not p95, Qwen-only
+TTFT, strict retrieval measurements or optional interpretation measurements. See the
+[aggregate receipts](reports/phase-8-speech-browser-20261014.json). The final lifecycle re-run also passed both cases: 9,527 ms / 54,328 bytes
+for text and 6,767 ms / 24,344 bytes for voice. Variability and the tiny sample
+count prevent a percentile or regression claim.
+
+The browser run caught errors native fixtures missed: expired dependent-agent rooms,
+unusable forced-loopback media candidates, current provider voice objects, and agent-
+published microphone transcripts incorrectly shown/duplicated as assistant text.
+Regressions cover these protocol boundaries, audio-refusal text fallback and original
+input persistence when gateway admission fails or is cancelled. Optional browser tests
+check exact synthetic-character identity and zero libraries before sending input; they
+skip without an explicit fixture and never use a physical microphone or private archive.
+
+P8-AC-10 and P8-AC-11 now have installed-provider/installed-browser functional evidence.
+Physical microphone/headset/speech quality, full degraded LiveKit/browser fallback,
+buffered mid-playout policy revocation, broad recall quality, large-corpus/refresh/RSS
+and other outstanding criteria remain open. Phase 8 remains in progress.
+
+
+The final main-checkout gate passed 607 Python tests with six explicit service/model
+cases skipped; Ruff formatting/lint, strict Pyright and schema freshness passed.
+Frontend formatting/build/type checks passed, as did 11 unit tests and both installed-
+browser speech/recall cases after the final lifecycle changes. The main runtime
+reported voice ready and its existing character index available. No additional
+private import review/approval/seeding or primary-character conversation occurred.
+
+
+## Large private-memory-set regression: 2026-10-14
+
+The operator authorized testing the large imported character memory set. The running
+browser API reproduced resource exhaustion; further profiling/benchmarks used read-only
+SQLite backups and copied disposable indexes under an ignored isolated root. Original
+archive, character sources, approvals, seed origins and running runtime ownership were
+preserved. No generation, approval, extraction or seeding was performed for this check.
+
+[Aggregate before/after evidence](reports/phase-8-deep-large-set-20261014.json) contains no
+private query text, findings, quotes, store/character IDs or credentials. It measures the
+same fourteen queries over three rounds on 12,563 canonical character memories. Earlier
+branch hydration spent thousands of SQL statements re-reading shared conversation nodes.
+The new bounded selected-path lookup, request-local immutable cache and revision reuse
+remove that repetition. Completed certificate checkpoints survive later budget exhaustion;
+they still undergo current policy/source validation on inspection and answer delivery.
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Budget failures / 42 investigations | 30 | 0 |
+| Investigations containing accepted memories | 9 | 39 |
+| Deep p50 | 859 ms | 476 ms |
+| Deep p95 | 983 ms | 577 ms |
+| Maximum deep duration | 1,016 ms | 593 ms |
+
+The remaining three zero-memory outcomes are strict event-time queries that exclude
+undated memories, not execution failures. Counts establish usable retrieval, not semantic
+precision/recall or support-quality scores. Cold deep semantics remain conservatively
+unavailable without a cached query embedding, with lexical retrieval still usable.
+
+Each ordinary condition measured 1,000 warm retrievals on the snapshot: p95 42.89 ms with
+deep disabled, 42.82 ms enabled idle, and 43.74 ms with competing deep attempts. Existing
+p50/p95/p99 and partial/timeout regression caps passed; none exceeded 150 ms. All 638
+contending attempts were deferred, so completed concurrent deep semantic admission remains
+uncertified. No refreshed-index, peak-RSS, multi-character, Qwen or speech timing gate is
+closed by this report. SQL/row/byte/deadline limits were not increased.
+
+Regression fixtures cover a 300-node original conversation with 24 accepted memories,
+exact quote integrity despite immutable cache reuse, selected/alternative/missing original
+branches, certified-checkpoint retention after final/optional-archive budget failures, and
+invalidation after source selection changes. The UI reports the exhausted limit and refuses
+answering from an empty prompt selection. Seven new Python regression cases passed.
+The full installed gate passed 610 Python tests with 10 explicit integration/model cases
+skipped; frontend tests passed 12 cases. Ruff format/lint, strict Pyright, public schema
+freshness and frontend type checking/build passed. Phase 8 remains in progress.
+
+An additional authenticated control-API check constructed LocalRuntime with the current
+deployment settings and existing character binding in the isolated snapshot. BrowserControl
+bootstrap, investigation and current-policy inspection routes returned 11/24, 6/14 and
+12/24 memories/observations in 578, 344 and 515 ms respectively, without exhausted limits.
+ASGI transport exercised the same browser routes; no room connection or generation occurred.
+The operator's running main process retains its old imports until a normal restart.
+## Current-checkout review and remediation: 2026-10-16
+
+The current `ember` checkout, including existing uncommitted changes, was reviewed
+against PLAN P8-AC-01–30 and the supplied engineering checklist. See the
+[complete review](reports/phase-8-architecture-review-20261016.md) and
+[remediation design](phase-8-review-remediation.md).
+
+Verified corrections cover a reproduced hypothetical/assistant-reported native
+claim acceptance, the new LAN test's root collection failure, dependencies from
+discarded retrieval candidates, repeated profile pins in deep answers and idle
+capture resumption. Full-source qualification tests exercise both legacy and dated
+extraction through real capture/acceptance and restart. Selected certification
+uses metadata only, preserves grant/expiry/revocation/row bounds and negotiates
+capability fallback without changing old default serialization.
+
+A missing degraded startup path now serves authenticated browser HTTP text through
+the existing character core and gateway, or controls only without a ready gateway.
+Tests exercise actual HTTP listener publication and shutdown, canonical input capture,
+explicit delivery receipts, replay/overlap, lease expiry/cancellation, and acknowledgement
+racing with disconnect. Browser tests cover reply/receipt ordering, pending-connect
+teardown and failed heartbeat cleanup. These checks use isolated synthetic stores
+and injected unavailable services; no production runtime or data was changed.
+
+The locked offline sync, Ruff formatting/lint, strict Pyright, schema freshness and
+full Python gate pass: **659 passed, 10 skipped**. Frontend formatting, TypeScript,
+production build and **16 tests** pass. Three guarded installed-browser cases skip
+without their explicitly configured fixtures/services. The existing third-party
+Starlette/httpx warning and Vite dependency/chunk warnings remain. No new Qwen,
+physical voice, RSS/refresh/large-scale or real-time latency claim follows from
+these tests. The complete Phase 8 acceptance matrix remains open as described in
+the review; the implementation remains experimental.
+
+## Ordinary word recall correction: 2026-10-16
+
+The user requested individual-word recall over all eligible accepted memories and
+bounded extracted values in context. See the [design](phase-8-word-recall.md),
+Root ADR 0015 and the component Phase 8 ADRs. This supersedes the ordinary six-row
+limit and 768-byte allocation; previous performance measurements remain historical.
+
+Seven new sanitized cases exercise the actual canonical engine and shared composer:
+indexed and degraded name questions among 110 noisy predicate matches with a
+distinct source-like subject; 32 word matches across facts, episodes, goals and
+plans beyond the old importance sample; Unicode/case/word boundaries and independent
+terms; forgetting/source exclusion; oversized and duplicate values; small and large
+configured input guards; selected-delivery invalidation; and polarity, hypothetical
+modality and supported date preservation. A larger guard fits 40 distinct short
+values. Existing profile allocation and selected-certificate regressions pass with
+explicitly budgeted omission fixtures.
+
+The full installed quality gate passes: **666 passed, 10 skipped**; Ruff formatting
+and lint and strict Pyright pass. The existing third-party Starlette/httpx warning
+remains. Tests introduce no model inference or real personal fixtures. The narrow
+live diagnosis used read-only queries; no canonical data, deployment configuration
+or service was changed. An indexed lexical check establishes candidate selection,
+not complete live Qwen response quality or a new end-to-end latency benchmark.
+
+Current deployment config inspection shows 8,192 context tokens and a 7,000 input
+ceiling. The composer supports 32,768 when configured, with its memory share capped
+at 6,144 conservative UTF-8 units and gateway output reserves still enforced.
+Activation/restart, real-model response checks and new expanded-bound performance
+measurements remain pending; Phase 8 remains in progress.
+
+## Operator-approved 32k activation: 2026-10-16
+
+The operator explicitly approved activating the recall correction, setting 32,768
+context tokens, 28,000 input and a 4,096 output reserve, restarting Ember and checking
+recall. The ignored private deployment file was validated and atomically updated,
+with a verbatim private backup. Graceful console interrupts were restricted to
+verified runtime/launcher membership. Managed services and the runtime lease drained
+before replacement; the independently attached Ollama service was retained.
+
+An intervening launch exposed HTTP text fallback and a reported Connect-busy error.
+Authenticated Connect/disconnect succeeded when inspected, so the transient busy
+report was not reproduced. HTTP generation returned the expected saved-name answer
+using 20 memories and its explicit delivery acknowledgement succeeded. A subsequent
+clean managed launch restored LiveKit transport and voice readiness. The standard
+RoomClient verified the room identity, completed a saved-name question with 20
+memories and disconnected its diagnostic participant. No personal prompt, answer,
+quote or credential is included in this record. Verification creates normal native
+conversation observations; it does not reclassify or approve imported claims.
+
+Final authenticated health reports gateway ready, context 32,768 and journal
+available; the loaded Ollama model independently reports context 32,768. Browser
+state reports LiveKit transport, text available and voice ready. The current private
+activation page was reopened. No canonical migration, source re-extraction or index
+rebuild was needed. The diagnostic RoomClient interpreter emitted third-party FFI
+destructor assertions after its completed disconnect; the runtime remained healthy.
+This is a bounded text recall/connect check, not physical microphone/playback or
+broad model-quality/performance acceptance. Phase 8 remains experimental.

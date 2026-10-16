@@ -1,6 +1,8 @@
+import { createRequestId } from "./ids";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { CharacterConnection } from "./connection";
+import type { TextConnection } from "./text_connection";
 import { activate } from "./contracts";
 import {
   control,
@@ -26,8 +28,11 @@ export function App() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [error, setError] = useState("");
   const [deepStatus, setDeepStatus] = useState("");
+  const [lanLink, setLanLink] = useState("");
+  const microphoneAvailable =
+    globalThis.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
   const [result, setResult] = useState<Investigation | null>(null);
-  const connection = useRef<CharacterConnection | null>(null);
+  const connection = useRef<CharacterConnection | TextConnection | null>(null);
   const outputId = useRef<string | null>(null);
   const investigationId = useRef<string | null>(null);
   const mounted = useRef(true);
@@ -74,6 +79,21 @@ export function App() {
       return [...old.slice(-23), { id, role, text }];
     });
   };
+  const shareLan = async (): Promise<void> => {
+    try {
+      const link = await control(
+        "lan-link",
+        z.object({ url: z.string().url().max(1024) }),
+        {},
+      );
+      setLanLink(link.url);
+      if (navigator.clipboard) await navigator.clipboard.writeText(link.url);
+    } catch {
+      report(
+        "Could not copy the LAN link. Use the private activation file on the host.",
+      );
+    }
+  };
   const connect = async (): Promise<void> => {
     if (!state || busy) return;
     setBusy(true);
@@ -85,18 +105,21 @@ export function App() {
         setConnected(false);
         setMicrophone(false);
       } else {
-        const { CharacterConnection } = await import("./connection");
+        const Connection =
+          state.transport === "http"
+            ? (await import("./text_connection")).TextConnection
+            : (await import("./connection")).CharacterConnection;
         if (!mounted.current) return;
-        const client = new CharacterConnection(
+        const client = new Connection(
           append,
-          () => report("Reply delivery was interrupted."),
+          (message) => report(message ?? "Reply delivery was interrupted."),
           () => {
             if (!mounted.current) return;
             connection.current = null;
             setConnected(false);
             setMicrophone(false);
             setBusy(false);
-            report("Room disconnected; reconnect to continue.");
+            report("Conversation disconnected; reconnect to continue.");
           },
         );
         connection.current = client;
@@ -107,13 +130,15 @@ export function App() {
         }
         setConnected(true);
       }
-    } catch {
+    } catch (failure: unknown) {
       await connection.current?.close().catch(() => undefined);
       connection.current = null;
       setConnected(false);
       setMicrophone(false);
       setError(
-        "Room connection is unavailable. Check runtime readiness and try again.",
+        failure instanceof Error
+          ? failure.message
+          : "Room connection is unavailable. Restart Ember and reconnect.",
       );
     } finally {
       setBusy(false);
@@ -128,7 +153,7 @@ export function App() {
     outputId.current = null;
     setTurns((old) => [
       ...old.slice(-23),
-      { id: crypto.randomUUID(), role: "user", text },
+      { id: createRequestId(), role: "user", text },
     ]);
     try {
       await connection.current.ask(text);
@@ -165,7 +190,7 @@ export function App() {
     if (!state || !input.trim() || investigationId.current) return;
     setError("");
     setResult(null);
-    const id = crypto.randomUUID();
+    const id = createRequestId();
     investigationId.current = id;
     setDeepStatus("working");
     try {
@@ -207,10 +232,9 @@ export function App() {
     setBusy(true);
     outputId.current = null;
     try {
-      await control(
-        "deep/" + result.request_id + "/answer",
-        z.object({ receipt: z.string() }),
-        {},
+      await connection.current?.answerInvestigation(
+        result.request_id,
+        result.query,
       );
     } catch {
       report("This recall can no longer be used. Refresh the investigation.");
@@ -242,10 +266,35 @@ export function App() {
         <span className="status">
           {connected ? "Connected" : "Disconnected"}
         </span>
-        <button disabled={!state || busy} onClick={() => void connect()}>
+        <button
+          disabled={!state || !state.text_available || busy}
+          onClick={() => void connect()}
+        >
           {connected ? "Disconnect" : "Connect"}
         </button>
       </header>
+      {state?.transport === "http" && (
+        <p role="status">
+          {state.text_available
+            ? "Voice is unavailable. Text chat and memory controls are ready."
+            : "Conversation is unavailable. Memory controls are ready."}
+        </p>
+      )}
+      {state?.lan_available && (
+        <div>
+          <button onClick={() => void shareLan()}>Copy LAN link</button>
+          {lanLink && (
+            <label>
+              Private LAN access link{" "}
+              <input
+                readOnly
+                value={lanLink}
+                onFocus={(event) => event.target.select()}
+              />
+            </label>
+          )}
+        </div>
+      )}
       {error && (
         <div role="alert" className="error">
           {error}
@@ -310,7 +359,9 @@ export function App() {
               )}
               <button
                 type="button"
-                disabled={!connected || !state?.voice || busy}
+                disabled={
+                  !connected || !state?.voice || !microphoneAvailable || busy
+                }
                 onClick={() => void toggleMicrophone()}
               >
                 {microphone ? "Mute microphone" : "Use microphone"}
@@ -319,6 +370,19 @@ export function App() {
             {deepStatus && (
               <p className="coverage" role="status">
                 Deep recall: {deepStatus}
+              </p>
+            )}
+            {!connected && (
+              <p className="quiet" role="status">
+                {state
+                  ? "Connect above to enable Send."
+                  : "Waiting for Ember activation…"}
+              </p>
+            )}
+            {state?.voice && !microphoneAvailable && (
+              <p className="hint">
+                Microphone input on another device requires HTTPS. Text chat and
+                spoken replies are available.
               </p>
             )}
             {!state?.voice && (

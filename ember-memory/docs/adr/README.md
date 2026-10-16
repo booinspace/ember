@@ -41,4 +41,12 @@ and [Memory ADR 0008](0008-native-consolidation-and-profile.md#planned-phase-8-t
 covers source-supported event dates, reviewed character-memory enrichment and
 query-aware historical eligibility. This is accepted Phase 8 design, not a migrated
 schema, implemented workflow or measured release.
-\n[Memory ADR 0009](0009-phase-eight-scope-and-temporal-capture.md) records the in-progress Phase 8 source/temporal/capture implementation.\n
+
+[Memory ADR 0009](0009-phase-eight-scope-and-temporal-capture.md) records the in-progress Phase 8 source/temporal/capture implementation.
+
+The 2026-10-16 review corrections are recorded in the component Phase 8 ADR and
+[Root ADR 0015](../../../docs/adr/0015-phase-eight-implementation.md).
+
+The same records include the user-directed
+[ordinary word-recall correction](../../../docs/phase-8-word-recall.md): extracted
+value matches before limits and requested context limits within the existing ABI.

@@ -137,3 +137,36 @@ def test_disabled_audio_never_starts_managed_speech() -> None:
     )
     runtime = RuntimeServices(config, EXAMPLE)
     assert asyncio.run(runtime.start_speech()) == "disabled" and runtime.children == []
+
+
+def test_speech_health_supports_named_voice_objects_without_matching_display_names() -> None:
+    from unittest.mock import patch
+
+    import httpx
+    import pytest
+
+    from ember_agent.inference.contracts import GatewayError
+    from ember_agent.runtime.speech_health import check_voice
+
+    responses = [
+        {"voices": [{"id": "af_alloy", "name": "Alloy", "language": "en"}]},
+        {"voices": [{"id": "unavailable", "name": "af_alloy"}]},
+    ]
+    client_type = httpx.AsyncClient
+
+    async def exercise() -> None:
+        for index, payload in enumerate(responses):
+            transport = httpx.MockTransport(
+                lambda request, payload=payload: httpx.Response(200, json=payload)
+            )
+            with patch(
+                "ember_agent.runtime.speech_health.httpx.AsyncClient",
+                return_value=client_type(transport=transport),
+            ):
+                if index == 0:
+                    await check_voice("http://127.0.0.1:8880", "af_alloy")
+                else:
+                    with pytest.raises(GatewayError, match="tts_voice_unavailable"):
+                        await check_voice("http://127.0.0.1:8880", "af_alloy")
+
+    asyncio.run(exercise())

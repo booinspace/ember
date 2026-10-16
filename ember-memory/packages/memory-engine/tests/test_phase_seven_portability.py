@@ -292,6 +292,48 @@ def test_certificate_uses_effective_grant_window(
     assert len(context(engine, character).profile.automatic) == (3 if permanent else 2)
 
 
+def test_selected_certificate_uses_only_selected_effective_grant_boundary(
+    engine: CanonicalEngine, tmp_path: Path, clock: TestClock
+) -> None:
+    from ember_memory_abi.related import ContextDependencies, MemoryReference
+
+    library, selections = approved_profile(engine, tmp_path)
+    character = engine.create_character().store_id
+    identities = seed_profile(engine, character, library, selections)
+    store = engine.character(character)
+    omitted_source = store.get(identities[0]).content.evidence[0].evidence.source
+    engine.grant_source(
+        character,
+        SourceGrant(
+            references=(omitted_source,),
+            capabilities=frozenset({"evidence_read"}),
+            expires_at="2026-10-07T12:00:01.000000Z",
+        ),
+    )
+    original = context(engine, character).fast_dependencies
+    assert original is not None and original.valid_until is not None
+    selected = ContextDependencies(
+        memories=(MemoryReference(memory_id=identities[1], revision=1),),
+        policy_epoch=original.policy_epoch,
+        selection_epoch=original.selection_epoch,
+    )
+    checked = store.lookup_related(
+        RelatedRequest(intent="validate", dependencies=selected, refresh_dependencies=True)
+    )
+    assert checked.valid and checked.dependencies is not None
+    assert checked.dependencies.valid_until is None
+    assert omitted_source not in checked.dependencies.sources
+    clock.advance(2)
+    assert store.lookup_related(
+        RelatedRequest(intent="validate", dependencies=checked.dependencies)
+    ).valid
+    engine.revoke_source(character, library)
+    denied = store.lookup_related(
+        RelatedRequest(intent="validate", dependencies=selected, refresh_dependencies=True)
+    )
+    assert not denied.valid and denied.dependencies is None
+
+
 def test_related_foreign_scope_deadline_and_row_limit(tmp_path: Path) -> None:
     from ember_memory_abi.errors import DeadlineExceededError
 

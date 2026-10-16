@@ -1,5 +1,7 @@
 """Historical query certificates retain selectors while enforcing today's permission policy."""
 
+import pytest
+
 from ember_memory_abi.interfaces import (
     ContextRequest,
     DisableRequest,
@@ -9,10 +11,55 @@ from ember_memory_abi.interfaces import (
 )
 from ember_memory_abi.memory import EpisodePayload, MemoryDraft
 from ember_memory_abi.related import RelatedRequest
+from ember_memory_abi.selection import RecallSelection
 from ember_memory_abi.temporal import TemporalBounds
 from ember_memory_engine.character import SqliteMemoryStore
 
 from .conftest import TestClock
+
+
+def test_selected_dependency_refresh_is_metadata_only_and_never_grants_access(
+    store: SqliteMemoryStore, draft: MemoryDraft, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ember_memory_abi.related import ContextDependencies, MemoryReference
+
+    reference = store.remember(RememberRequest(idempotency_key="selected", draft=draft)).affected[0]
+    original = store.retrieve_context(
+        ContextRequest(memory_query=MemoryQuery(mode="structured"), memory_token_budget=4096)
+    ).fast_dependencies
+    assert original is not None
+    request = ContextDependencies(
+        memories=(MemoryReference(memory_id=reference.memory_id, revision=1),),
+        policy_epoch=original.policy_epoch,
+        selection_epoch=original.selection_epoch,
+    )
+    assert not store.lookup_related(RelatedRequest(intent="validate", dependencies=request)).valid
+
+    def no_hydration(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("Selected certification must not hydrate memories or sources.")
+
+    monkeypatch.setattr(store.state, "read_memory", no_hydration)
+    monkeypatch.setattr(store.state.resolver, "resolve", no_hydration)
+    monkeypatch.setattr(store.state.resolver, "validate", no_hydration)
+    refreshed = store.lookup_related(
+        RelatedRequest(intent="validate", dependencies=request, refresh_dependencies=True)
+    )
+    assert refreshed.valid and refreshed.dependencies is not None
+    assert refreshed.dependencies.sources == original.sources
+    assert not refreshed.memories and not refreshed.relationships and not refreshed.excerpts
+    assert store.lookup_related(
+        RelatedRequest(intent="validate", dependencies=refreshed.dependencies)
+    ).valid
+    limited = store.lookup_related(
+        RelatedRequest(
+            intent="validate", dependencies=request, refresh_dependencies=True, row_budget=1
+        )
+    )
+    assert not limited.valid and limited.dependencies is None
+    store.configure_recall(RecallSelection(local_enabled=False, import_mode="none"))
+    assert not store.lookup_related(
+        RelatedRequest(intent="validate", dependencies=request, refresh_dependencies=True)
+    ).valid
 
 
 def test_ended_episode_recall_and_historical_delivery(

@@ -16,6 +16,7 @@ class _StartArguments(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     command: Literal["start"]
     config: Path
+    open_browser: bool
 
 
 class _GatewayArguments(BaseModel):
@@ -45,6 +46,12 @@ class _BaselineArguments(BaseModel):
     output: Path
 
 
+class _NetworkArguments(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    command: Literal["network-info"]
+    config: Path
+
+
 class _DoctorArguments(BaseModel):
     model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
     command: Literal["doctor"]
@@ -59,22 +66,30 @@ type _Arguments = Annotated[
     | _GatewayArguments
     | _ChatArguments
     | _BaselineArguments
-    | _LiveKitChatArguments,
+    | _LiveKitChatArguments
+    | _NetworkArguments,
     Field(discriminator="command"),
 ]
 
 
 def _arguments(argv: list[str] | None) -> _Arguments:
     parser = argparse.ArgumentParser(prog="ember")
-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0 (phase 3 slice)")
+    parser.add_argument(
+        "--version", action="version", version="%(prog)s 0.1.0 (experimental runtime)"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
+    network = commands.add_parser("network-info", help="Describe configured LAN listeners offline")
+    network.add_argument("--config", type=Path, required=True)
     doctor = commands.add_parser("doctor", help="Validate configuration without starting services")
     doctor.add_argument("--config", type=Path, required=True)
     doctor.add_argument("--require-model-pin", action="store_true")
     doctor.add_argument("--json", dest="json_output", action="store_true")
-    start = commands.add_parser("start", help="Start the phase 3 LiveKit text runtime")
+    start = commands.add_parser("start", help="Start the local character and browser runtime")
     start.add_argument(
         "--config", type=Path, default=Path("ember-agent/config/deployment.local.toml")
+    )
+    start.add_argument(
+        "--open-browser", action="store_true", help="Open the private browser after readiness"
     )
     room_chat = commands.add_parser("livekit-chat", help="Join the running Ember LiveKit text room")
     room_chat.add_argument("--config", type=Path, required=True)
@@ -106,19 +121,30 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(
             arguments.config,
             require_model_pin=(
-                arguments.require_model_pin if arguments.command == "doctor" else True
+                arguments.require_model_pin
+                if arguments.command == "doctor"
+                else arguments.command != "network-info"
             ),
         )
     except ConfigurationError as error:
         print(f"Configuration error: {error}", file=sys.stderr)
         return 2
+    if arguments.command == "network-info":
+        from .runtime.network import network_info
+
+        try:
+            print(network_info(config).model_dump_json())
+        except ConfigurationError as error:
+            print(f"Configuration error: {error}", file=sys.stderr)
+            return 2
+        return 0
     if arguments.command != "doctor":
         return _runtime(arguments, config)
     report = readiness(config)
     if arguments.json_output:
         print(report.model_dump_json(indent=2))
     else:
-        print("Phase 3 configuration is valid. Gateway/character health is not probed.")
+        print("Deployment configuration is valid. Runtime health is not probed.")
         print(f"Model pin: {report.model_pin}. Service health: not probed.")
         for blocker in report.blockers:
             print(f"Pending: {blocker}")
@@ -159,7 +185,7 @@ def _runtime(
         if arguments.command == "start":
             from .runtime.livekit_runtime import run_runtime
 
-            asyncio.run(run_runtime(config, arguments.config))
+            asyncio.run(run_runtime(config, arguments.config, open_browser=arguments.open_browser))
         elif arguments.command == "livekit-chat":
             from .runtime.livekit_runtime import run_participant
 

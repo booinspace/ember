@@ -28,8 +28,8 @@ def test_pending_pin_validates_without_state_or_runtime_readiness(config_path: P
     assert not config.model_pin_configured
     assert not config.data_root.exists()
     report = readiness(config)
-    assert report.application == "phase3_slice_only"
-    assert report.voice == "not_implemented"
+    assert report.application == "experimental_phase8"
+    assert report.voice == "disabled"
     assert all(service.health == "not_probed" for service in report.services.values())
     with pytest.raises(ConfigurationError, match="tag and digest"):
         load_config(config_path, require_model_pin=True)
@@ -116,7 +116,7 @@ def test_agent_entry_point_serializes_truthful_readiness(config_path: Path) -> N
     )
     assert completed.returncode == 0, completed.stderr
     report = ReadinessReport.model_validate_json(completed.stdout)
-    assert report.application == "phase3_slice_only"
+    assert report.application == "experimental_phase8"
     assert report.model_pin == "pending"
 
 
@@ -129,3 +129,54 @@ def test_installed_ember_commands_use_the_project_name(command: str) -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.startswith("ember ")
+
+
+def test_start_routes_explicit_browser_launch_to_existing_runtime(
+    config_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ember_agent.runtime.config import DeploymentConfig
+
+    original = config_path.read_text(encoding="utf-8")
+    config_path.write_text(
+        original.replace('tag = ""', 'tag = "synthetic"').replace(
+            'expected_digest = ""', 'expected_digest = "' + "a" * 64 + '"'
+        ),
+        encoding="utf-8",
+    )
+    launches: list[bool] = []
+
+    async def run(config: DeploymentConfig, path: Path, *, open_browser: bool = False) -> None:
+        assert config.model_tag == "synthetic" and path == config_path
+        launches.append(open_browser)
+
+    monkeypatch.setattr("ember_agent.runtime.livekit_runtime.run_runtime", run)
+    assert main(["start", "--config", str(config_path), "--open-browser"]) == 0
+    assert main(["start", "--config", str(config_path)]) == 0
+    assert launches == [True, False]
+
+
+def test_disabled_browser_launch_fails_before_starting_services(config_path: Path) -> None:
+    import asyncio
+
+    from ember_agent.runtime.livekit_runtime import run_runtime
+
+    config = load_config(config_path)
+    with pytest.raises(ConfigurationError, match="browser.enabled"):
+        asyncio.run(run_runtime(config, config_path, open_browser=True))
+    assert not config.data_root.exists() and not config.runtime_root.exists()
+
+
+def test_doctor_reports_configured_speech_and_browser_without_runtime_probes(
+    config_path: Path,
+) -> None:
+    text = config_path.read_text(encoding="utf-8")
+    text = text.replace("[audio]\nenabled = false", "[audio]\nenabled = true")
+    text = text.replace('stt_model_directory = ""', 'stt_model_directory = "missing-model"')
+    text = text.replace("[browser]\nenabled = false", "[browser]\nenabled = true")
+    config_path.write_text(text, encoding="utf-8")
+    config = load_config(config_path)
+    report = readiness(config)
+    assert report.phase == "8" and report.voice == "configured_unprobed"
+    assert report.browser == "configured_unprobed"
+    assert all(service.health == "not_probed" for service in report.services.values())
+    assert not config.data_root.exists() and not config.runtime_root.exists()

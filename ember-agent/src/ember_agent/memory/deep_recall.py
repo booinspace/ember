@@ -62,6 +62,7 @@ class _Work:
     abi_calls: int = 0
     searches: int = 0
     rows: int = 0
+    checkpoint: RelatedResponse | None = None
 
     def accept(
         self,
@@ -105,6 +106,12 @@ class _Work:
         )
         response = await self.client.lookup_related(request)
         self.rows += response.rows_examined
+        if (
+            response.status in {"complete", "partial"}
+            and response.dependencies is not None
+            and response.memories
+        ):
+            self.checkpoint = response
         if response.status != "complete":
             self.reasons.update(response.reasons or ("related_partial",))
         return response
@@ -345,6 +352,81 @@ class DeepRecallService:
             work.reasons.add("archive_observations_are_not_accepted_beliefs")
         return (*existing, *retained), merged
 
+    def _finish(
+        self,
+        work: _Work,
+        resolution: QueryResolution,
+        final: RelatedResponse,
+        observations: tuple[SourceObservation, ...],
+        dependencies: ContextDependencies | None,
+    ) -> DeepRecallResult:
+        """Build only from a completed authorization checkpoint, without further reads."""
+        request, client, started = work.request, work.client, work.started
+        results = tuple(
+            work.selected[memory.memory_id].model_copy(update={"memory": memory})
+            for memory in final.memories
+            if memory.memory_id in work.selected
+        )
+        checked_quotes = {
+            (
+                observation.source.evidence.source.identity_key(),
+                observation.source.evidence.span.quoted_span_sha256,
+            )
+            for observation in final.excerpts
+        }
+        checked_edges = tuple(
+            edge
+            for edge in work.edges.values()
+            if edge.evidence
+            and all(
+                (a.evidence.source.identity_key(), a.evidence.span.quoted_span_sha256)
+                in checked_quotes
+                for a in edge.evidence
+            )
+        )
+        associations, clusters = connections(results, checked_edges, request.request_id)
+        if resolution.scope is not None and resolution.scope.axis == "event":
+            work.reasons.add("undated_records_excluded")
+        usage = client.read_usage()
+        result = DeepRecallResult(
+            request_id=request.request_id,
+            character_id=request.character_id,
+            context_id=request.context_id,
+            query=request.query,
+            scope=resolution.scope,
+            outcome="partial" if work.reasons else "complete_within_budget",
+            memories=results,
+            observations=observations,
+            associations=associations,
+            clusters=clusters,
+            dependencies=dependencies,
+            manifest=final.manifest,
+            reasons=tuple(sorted(work.reasons))[:64],
+            counters=RecallCounters(
+                inspected=len(work.inspected),
+                searches=work.searches,
+                abi_calls=work.abi_calls,
+                rows_reported=usage.materialized_rows,
+                hydrated_spans=len(observations),
+                elapsed_ms=int((monotonic() - started) * 1000),
+                sql_statements=usage.sql_statements,
+                materialized_bytes=usage.materialized_bytes,
+                limits_hit=usage.limits_hit,
+            ),
+        )
+        prompt = condense(result)
+        result = result.model_copy(
+            update={
+                "prompt_memories": prompt.memories,
+                "prompt_observations": prompt.observations,
+            }
+        )
+        if len(result.model_dump_json().encode()) > request.budget.result_bytes:
+            return self._empty(request, "partial", "serialized_result_budget").model_copy(
+                update={"counters": result.counters}
+            )
+        return result
+
     async def _run(self, request: DeepRecallRequest, started: float) -> DeepRecallResult:
         deadline = started + request.budget.deadline_ms / 1000
         resolution = CalendarResolver(request.timezone).resolve(
@@ -492,71 +574,32 @@ class DeepRecallService:
             work.rows += final.rows_examined
             if final.status != "complete":
                 work.reasons.update(final.reasons or ("delivery_validation_partial",))
-            observations, dependencies = await self._archive_observations(work, resolution, final)
-            results = tuple(
-                work.selected[memory.memory_id].model_copy(update={"memory": memory})
-                for memory in final.memories
-                if memory.memory_id in work.selected
-            )
-            checked_quotes = {
-                (
-                    observation.source.evidence.source.identity_key(),
-                    observation.source.evidence.span.quoted_span_sha256,
+            try:
+                observations, dependencies = await self._archive_observations(
+                    work, resolution, final
                 )
-                for observation in final.excerpts
-            }
-            checked_edges = tuple(
-                edge
-                for edge in work.edges.values()
-                if edge.evidence
-                and all(
-                    (a.evidence.source.identity_key(), a.evidence.span.quoted_span_sha256)
-                    in checked_quotes
-                    for a in edge.evidence
-                )
-            )
-            associations, clusters = connections(results, checked_edges, request.request_id)
-            if resolution.scope is not None and resolution.scope.axis == "event":
-                work.reasons.add("undated_records_excluded")
-            usage = client.read_usage()
-            result = DeepRecallResult(
-                request_id=request.request_id,
-                character_id=request.character_id,
-                context_id=request.context_id,
-                query=request.query,
-                scope=resolution.scope,
-                outcome="partial" if work.reasons else "complete_within_budget",
-                memories=results,
-                observations=observations,
-                associations=associations,
-                clusters=clusters,
-                dependencies=dependencies,
-                manifest=final.manifest,
-                reasons=tuple(sorted(work.reasons))[:64],
-                counters=RecallCounters(
-                    inspected=len(work.inspected),
-                    searches=work.searches,
-                    abi_calls=work.abi_calls,
-                    rows_reported=usage.materialized_rows,
-                    hydrated_spans=len(observations),
-                    elapsed_ms=int((monotonic() - started) * 1000),
-                    sql_statements=usage.sql_statements,
-                    materialized_bytes=usage.materialized_bytes,
-                ),
-            )
-            prompt = condense(result)
-            result = result.model_copy(
-                update={
-                    "prompt_memories": prompt.memories,
-                    "prompt_observations": prompt.observations,
-                }
-            )
-            if len(result.model_dump_json().encode()) > request.budget.result_bytes:
-                return self._empty(request, "partial", "serialized_result_budget").model_copy(
-                    update={"counters": result.counters}
-                )
-            return result
+            except MemoryError as error:
+                if error.info.code not in {"read_budget_exceeded", "deadline_exceeded"}:
+                    raise
+                # Optional archive expansion cannot erase a completed, authorized
+                # memory checkpoint. Inspection/delivery still revalidate its certificate.
+                work.reasons.add(error.info.code)
+                work.reasons.add("archive_expansion_budget")
+                observations, dependencies = final.excerpts, final.dependencies
+            return self._finish(work, resolution, final, observations, dependencies)
         except MemoryError as error:
+            if (
+                error.info.code in {"read_budget_exceeded", "deadline_exceeded"}
+                and work.checkpoint is not None
+            ):
+                work.reasons.update((error.info.code, "validated_checkpoint_only"))
+                return self._finish(
+                    work,
+                    resolution,
+                    work.checkpoint,
+                    work.checkpoint.excerpts,
+                    work.checkpoint.dependencies,
+                )
             usage = client.read_usage()
             return self._empty(
                 request,
@@ -571,6 +614,7 @@ class DeepRecallService:
                         rows_reported=usage.materialized_rows,
                         sql_statements=usage.sql_statements,
                         materialized_bytes=usage.materialized_bytes,
+                        limits_hit=usage.limits_hit,
                         elapsed_ms=int((monotonic() - started) * 1000),
                     )
                 }

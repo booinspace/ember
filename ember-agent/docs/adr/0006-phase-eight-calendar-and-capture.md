@@ -104,3 +104,137 @@ so an RTX model number does not erase or conflict with a separate calendar scope
 Deep inclusion accepts eligible non-generic ResolvedEntity references already returned
 by related lookup; an entity-valued fact need not repeat a literal display name in its
 payload. This reuses the existing alias contract and preserves independent clusters.
+
+
+## Main-checkout launch convenience: 2026-10-13
+
+A root start.ps1 wrapper resolves the configured deployment and installed root
+executable, then delegates to ember start --open-browser. Service policy, character
+binding, memory ownership and shutdown remain in the existing Python composition.
+BrowserServer opens its exact ready activation URL off-loop through the OS browser;
+no new daemon, watcher, token transport or engine owner is introduced. A disabled
+browser fails before service startup, and desktop opening failure retains the runtime
+without logging the activation capability. Existing explicit configuration and
+setup-only dependency/frontend installation rules remain unchanged.
+
+
+## Installed voice and browser corrections: 2026-10-14
+
+The configured main-device runtime now starts installed CPU Whisper/Silero inputs
+and managed Kokoro-FastAPI/af_alloy with the existing owned-process lifecycle. The
+provider remains an ignored installed tool with its own uv environment, not a third
+product or vendored agent framework. Explicit setup pins source/assets; runtime only
+loads/starts them. Child-only offline, CPU, OMP/MKL and warning-log guards preserve
+Qwen's GPU environment. Health narrows both legacy voice names and current voice
+objects, matching exact IDs rather than display labels.
+
+Two actual browser faults required corrections beyond native-room tests. LiveKit's
+dependent agent expired the room without a human, leaving stale discovery. The
+explicitly hosted participant is now standard with unchanged room-scoped media/data
+limits; the runtime remains the room's deletion owner. Native tests wait beyond short
+empty/departure timers and rejoin. Forced loopback node advertisement also failed
+browser peer connection on Windows. Let LiveKit select host-local media addresses
+and enable loopback candidates; control/signalling remain bound to loopback. Existing
+media listeners can use local interfaces and still require signed capabilities/DTLS.
+No browser security flag, firewall change, TURN service or keepalive worker is added.
+
+The SDK publishes microphone transcription from the hosted participant. The frontend
+recognizes its own current microphone track ID, accepts only final user snapshots and
+avoids duplicate transcript text. Audio autoplay refusal preserves text connectivity.
+Connection errors identify authorization, join and worker readiness without leaking
+provider credentials. A disconnected composer explains how to enable Send.
+
+Delivery cleanup still precedes new input observation. Gateway reservation follows
+the durable observation through one additional callback in existing composition;
+admission failure/cancellation cannot lose a completed original input or authorize
+inference. The core's single pending-delivery invariant remains intact. No extra
+memory lookup, scheduler, worker or per-turn profile machinery is introduced.
+
+Installed-browser acceptance in an isolated synthetic character passed typed and
+microphone input through accepted-memory recall, the single Qwen gateway, Kokoro and
+received audio RTP. See the aggregate speech/browser report and acceptance tracker.
+Physical microphone/headset, broad quality/scale, buffered-revocation and other Phase 8
+release gates remain open. Doctor now distinguishes configured/unprobed speech and
+browser from actual health rather than retaining obsolete Phase 3 labels.
+
+
+## Deep recall checkpoints and diagnostics: 2026-10-14
+
+Reuse the completed RelatedResponse dependency certificate as a request-local checkpoint.
+If later optional expansion/final hydration reaches a read/time limit, return only the
+last completed checkpoint under its original temporal selector. An unvalidated candidate
+is never promoted to a result. Optional archive work preserves a completed final response.
+Current inspection/delivery validation still rejects changed policy, revoked grants,
+suppressed memories or invalid source headers; cancellation/foreground deferral retain
+existing behavior. No new persistent result cache, queue or model call is introduced.
+
+RecallCounters now forwards content-free limits_hit diagnostics. The browser distinguishes
+budget exhaustion from absence of memories and disables answer selection without prompt
+material. Public memory ABI/schema versions do not change. Bounds remain unchanged after
+the engine removed repeated original-branch hydration. See [Root ADR 0015](../../../docs/adr/0015-phase-eight-implementation.md)
+and [Memory ADR 0009](../../../ember-memory/docs/adr/0009-phase-eight-scope-and-temporal-capture.md).
+## Review corrections and degraded text: 2026-10-16
+
+The composer negotiates selected dependency certification only after category and
+whole-turn trimming. It retains exact historical selectors and the relevant
+profile/history boundaries. Older backends keep conservative validation. Deep
+rows exclude current profile/manual pins, and only certified selected observations
+enter prompt dependencies. Re-enabling capture signals the existing owned lifecycle
+task; it never authorizes P3 while a browser/room session remains connected.
+
+Unavailable LiveKit at startup now selects authenticated HTTP text using the same
+core, memory client, personality, deep service and pinned gateway. Gateway startup
+is independent of LiveKit readiness; unavailable model/gateway yields controls only.
+No direct Ollama request or second character system is added. The browser reports
+feature readiness and uses a small lazy text adapter when voice is unavailable.
+
+The HTTP adapter owns one renewable 45-second lease, one 190-second bounded turn
+and a 128-ID replay window. The browser renews every 15 seconds. Lease expiry,
+explicit disconnect and shutdown cancel/drain native generation before the existing
+connection lifecycle releases realtime. Buffered responses enter history/archive
+only after an exact pending-turn acknowledgement; failed output is discarded while
+original input remains durable. Initial room setup failure supports fallback;
+in-flight voice turns are never automatically replayed over HTTP. No websocket
+dependency, inference scheduler, background writer or startup download is added.
+
+Authenticated HTTP, real-listener startup with unavailable services, replay/overlap,
+unacknowledged output, expiry cleanup and browser close/heartbeat tests use isolated
+synthetic stores. They establish ownership/protocol behavior, not real Qwen latency
+or physical audio acceptance. See Root ADR 0015 and the 2026-10-16 review report.
+
+## Ordinary extracted-value packing: 2026-10-16
+
+The user replaced the ordinary six-row/768-byte restriction with individual-word
+search and bounded relevant values. CharacterCore requests up to 100 candidates
+from the public memory client with a 65,536-byte working-selection allowance.
+It no longer blanks queries and searches a small unfiltered importance sample when
+the index is unavailable; the engine owns indexed and degraded word selection.
+
+The ordinary prompt includes original extracted values, with subject attribution,
+polarity, modality, goal/plan state and supported dates. Memory IDs, revisions,
+quotes and transport envelopes stay out of model context and remain in the exact
+selected delivery certificate. Recorded timestamps appear only for recorded-history
+questions. Existing detailed deep rows remain unchanged. Whole oversized rows are
+skipped, and identical displayed values are deduplicated before packing.
+
+Ordinary memories use at most one quarter of the configured input guard, capped at
+6,144 conservative UTF-8 units. The total prompt guard and output reservation remain
+independent and mandatory. These units do not claim tokenizer calibration. A
+32,768-token deployment is supported; the inspected active config still declares
+8,192 context/7,000 input. No running service or deployment configuration was changed.
+
+Real-engine synthetic composer tests cover noisy labels, distinct imported-like
+subject identity, per-word recall across kinds, scope/suppression, compact values,
+small/large context allocations, oversized values and delivery invalidation. This
+does not certify model answer quality or new fast-path performance. See
+[Root ADR 0015](../../../docs/adr/0015-phase-eight-implementation.md) and the
+[design](../../../docs/phase-8-word-recall.md).
+
+The operator subsequently approved 32k activation. The private deployment was
+updated with a backup, and an owned graceful restart restored normal LiveKit and
+voice/text readiness. Standard HTTP and RoomClient text checks both completed the
+expected saved-name recall with 20 selected memories. Final gateway and loaded model
+report 32,768 context. No new startup/transport code was needed for this activation;
+the transient busy report was not reproduced. See Root ADR 0015 and the activation
+section in the phase validation record, including the diagnostic client's SDK cleanup
+warning and the remaining physical audio/quality gates.

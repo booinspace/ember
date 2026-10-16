@@ -4,6 +4,28 @@ import { investigation } from "./contracts";
 import { Inspector } from "./Inspector";
 
 describe("authorized recall inspection", () => {
+  it("explains an exhausted budget and disables answers without retrieved evidence", () => {
+    const result = investigation.parse({
+      request_id: "55555555-5555-4555-8555-555555555555",
+      outcome: "partial",
+      scope: null,
+      reasons: ["read_budget_exceeded"],
+      memories: [],
+      observations: [],
+      associations: [],
+      clusters: [],
+      counters: { limits_hit: ["sql_statement_budget"] },
+      prompt_memories: [],
+      prompt_observations: [],
+    });
+    const html = renderToStaticMarkup(
+      <Inspector result={result} answer={() => undefined} busy={false} />,
+    );
+    expect(html).toContain("does not mean your memories are missing");
+    expect(html).toContain("sql_statement_budget");
+    expect(html).toContain('disabled=""');
+  });
+
   it("renders time, modality, inclusion reasons and links to existing exact source data", () => {
     const id = "11111111-1111-4111-8111-111111111111";
     const source = {

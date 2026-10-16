@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ember_agent.character.core import CharacterCore
@@ -47,6 +48,7 @@ class Controls:
 
 
 def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> None:
+    capture_changes: list[bool] = []
     with CanonicalEngine(tmp_path / "canonical") as engine:
         identity = engine.create_character().store_id
         memory = InProcessAsyncMemoryClient(engine.character(identity))
@@ -70,6 +72,7 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
             controls=Controls(),
             room_token=lambda: "synthetic_room_capability",
             answer=answer,
+            capture_changed=lambda: capture_changes.append(True),
         )
         with TestClient(owner.app, base_url=ORIGIN, headers={"origin": ORIGIN}) as client:
             assert client.get("/api/state").status_code == 401
@@ -90,6 +93,7 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
             )
             state = client.get("/api/state").json()
             assert not state["capture"]["enabled"] and state["recall"]["local_enabled"]
+            assert capture_changes == [True]
             assert (
                 client.post(
                     "/api/capture",
@@ -110,12 +114,13 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
         asyncio.run(memory.aclose())
 
 
-def test_owned_browser_socket_startup_shutdown_and_port_conflict(tmp_path: Path) -> None:
+def test_owned_browser_socket_startup_shutdown_and_port_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import socket
-    from unittest.mock import AsyncMock
+    from unittest.mock import AsyncMock, Mock
 
     import httpx
-    import pytest
 
     from ember_agent.runtime.browser_server import BrowserServer
     from ember_agent.runtime.config import ConfigurationError
@@ -147,8 +152,19 @@ def test_owned_browser_socket_startup_shutdown_and_port_conflict(tmp_path: Path)
         server = BrowserServer(owner, tmp_path)
 
         async def exercise() -> None:
+            with pytest.raises(ConfigurationError, match="not ready"):
+                await server.open_browser()
+            opened = Mock(return_value=True)
+            monkeypatch.setattr("ember_agent.runtime.browser_server.webbrowser.open", opened)
             await server.start()
             assert server.activation_file.is_file()
+            assert await server.open_browser()
+            opened.assert_called_once_with(origin + "/#activate=" + owner.activation, new=2)
+            opened.return_value = False
+            assert not await server.open_browser()
+            opened.side_effect = OSError("synthetic desktop failure")
+            assert not await server.open_browser()
+            assert server.task is not None and server.server.started
             async with httpx.AsyncClient(base_url=origin, trust_env=False) as client:
                 assert (await client.get("/api/state")).status_code == 401
                 response = await client.post(

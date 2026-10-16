@@ -57,6 +57,16 @@ POLICY = NATIVE_POLICY.reference()
 DATED_NATIVE_POLICY = NativeAcceptancePolicy(version="0.2.0", rule="native-direct-dated-v2")
 DATED_POLICY = DATED_NATIVE_POLICY.reference()
 
+# The model may select a literal subspan that drops the surrounding qualification.
+# Inspect original source context under both native profiles, not the model's label.
+_QUALIFIED_SOURCE = re.compile(
+    r"\b(?:said|says|told|wrote|assistant|chatgpt|according to|quot(?:e|ed)|"
+    r"hypothetical(?:ly)?|maybe|might|would|could|if|whether|pretend(?:ing)?|"
+    r"imagin(?:e|ed|ing)|suppos(?:e|ing)|assum(?:e|ing)|fiction(?:al)?|"
+    r"role[- ]?play|not true|example|scenario|story)\b",
+    re.IGNORECASE,
+)
+
 
 class NativeAcceptanceRequest(ContractModel):
     """Trusted maintenance request; no grants, imports, arbitrary draft or human authority."""
@@ -266,9 +276,8 @@ class NativeAcceptanceService:
                     date_support = (
                         request.policy == DATED_POLICY and assertion.verdict == "exact_date_passage"
                     )
-                    if (not date_support and not literal_support(draft, quote)) or re.search(
-                        r"\b(?:said|says|according to|hypothetically|quoted)\b",
-                        full_text.casefold(),
+                    if (not date_support and not literal_support(draft, quote)) or (
+                        _QUALIFIED_SOURCE.search(full_text) is not None
                     ):
                         reasons.append("semantic_support_requires_review")
                 if (

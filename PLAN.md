@@ -4605,6 +4605,113 @@ docs/phase-8-validation.md tracks each AC. Actual Qwen/voice acceptance remains
 deferred while the primary ingest uses the GPU. Requested plugin review has not
 run. Further architecture, quality and performance gates remain open.
 
+### Main-checkout launch update: 2026-10-13
+
+After the operator reported completed ingest, the main checkout was fast-forwarded
+from 640888d to the published Phase 8 branch at 1107679. Root start.ps1 delegates to
+ember start --open-browser, preserving the selected deployment's existing model,
+character binding and data root. Browser opening follows ready-state publication;
+OS launch failure retains the running app and never prints its activation capability.
+The primary non-MTP deployment passed startup/static frontend/authenticated state,
+existing-character binding and owned shutdown checks with semantic assets available.
+No conversation prompt, import approval or seeding was performed by that check.
+This is operational startup evidence, not completion of the outstanding Phase 8
+quality/performance/audio gates. See docs/phase-8-runbook.md for the single command.
+
+### Installed voice and browser delivery update: 2026-10-14
+
+The primary non-MTP deployment now enables installed CPU Whisper/Silero and managed
+CPU Kokoro/af_alloy through the existing single-command runtime. Actual installed-browser
+checks identified and fixed room expiry without humans, loopback ICE advertisement,
+microphone transcript ownership/final snapshots, and current Kokoro voice-object health.
+Explicit speech setup pins source/artifacts; runtime remains download/install-free.
+A synthetic isolated accepted-memory fixture passed text and microphone requests through
+recall, Qwen and received audio. Evidence is in docs/reports/phase-8-speech-browser-20261014.json.
+Doctor distinguishes configured/unprobed capability from runtime health. These are
+functional P8-AC-10/11 integration checks, not completion of physical-device testing,
+broad quality/performance, degraded LiveKit fallback or the remaining Phase 8 gates.
+All P8-AC-01-30 remain in scope; previous historical measurements are preserved.
+
+### Large-memory-set deep recall correction: 2026-10-14
+
+Authorized read-only inspection of the running API and an isolated SQLite backup of
+12,563 character memories reproduced budget exhaustion from repeated conversation-branch
+hydration. Engine-local bounded branch lookup and per-investigation immutable source
+reuse now return useful results without increasing the five-second/4,096-statement/
+2,048-row/16-MiB envelope. Optional expansion retains only completed dependency-certified
+checkpoints on resource exhaustion; current privacy and temporal delivery checks remain.
+Ordinary recall introduces no branch expansion or cache work. No database, schema, public
+memory ABI or inference scheduler is added.
+
+The matched fourteen-query/three-round report records budget failures falling from 30/42
+to 0/42; 39 topic investigations contain memories, and three strict date queries honestly
+exclude undated records. Deep p50/p95 are 476/577 ms. Three 1,000-read ordinary conditions
+pass the existing regression caps under conservative foreground deferral. They do not
+certify simultaneous deep semantic execution. See docs/reports/phase-8-deep-large-set-20261014.json,
+docs/phase-8-validation.md and Root ADR 0015/component decisions. Broader relevance,
+refresh/RSS, physical voice and other acceptance gates remain open; Phase 8 is in progress.
+
+### Current-checkout review corrections: 2026-10-16
+
+The independent Phase 8 review uses the current `ember` checkout at 1107679,
+including its existing uncommitted work. Source qualification checks now survive
+model quote selection under both native profiles. Negotiated selected-context
+certification removes unused retrieval dependencies after prompt trimming, while
+selected grant/expiry/revocation checks remain current. Deep rows do not repeat
+profile pins. Persisted capture policy changes resume idle backlog through the
+existing connection owner.
+
+Startup with unavailable LiveKit supports authenticated browser HTTP text through
+the same core and sole gateway; unavailable gateway/model leaves browser controls
+available with conversation disabled. A bounded renewable browser lease owns
+generation and drains before releasing realtime; output requires a delivery receipt.
+No inference scheduler, canonical store, upstream bypass, dependency download or
+Phase 9 responsibility is introduced. Root ADR 0015 and the 2026-10-16 review report
+record the design, tests and remaining acceptance gates. This review has not
+restarted primary services, inspected private sources or changed production data.
+Phase 8 remains in progress; these changes do not establish physical audio,
+buffered playout revocation, broad model quality or full scale/performance acceptance.
+
+### User-directed ordinary word recall correction: 2026-10-16
+
+The user requested individual-word search across all eligible accepted memories
+and bounded context containing the original extracted values. For ordinary recall,
+this explicitly supersedes the six-memory/768-byte limits above. Explicit deep
+recall keeps its existing selection bounds. The
+[word-recall design](docs/phase-8-word-recall.md) defines ownership and acceptance.
+
+One hybrid query still uses FTS and at most one CPU query encoding. FTS candidates
+are ranked by literal words in canonical extracted values before their limit,
+then importance and lexical rank; predicate/entity labels cannot crowd direct
+value matches out. The lexical candidate bound is 100, the semantic bound 40 and
+the existing 150 ms soft deadline remains. Canonical fallback filters individual
+words before limiting, instead of searching only an initial importance sample.
+Scope, source grants, suppression, revision and temporal checks remain mandatory.
+
+The composer requests at most 100 rows within the existing ABI envelope and a
+65,536-byte working-selection budget. It packs exact extracted values into at most
+one quarter of the configured input guard, capped at 6,144 conservative UTF-8 units,
+while preserving subject, polarity, modality, intent/state and supported dates.
+IDs/revisions/evidence remain in the delivery certificate; oversized whole values
+are skipped and duplicate displayed values share a slot. No model summarizes these
+values, no imported identity is rebound, and no proposal becomes approved.
+
+The total configured input limit and output reserve still apply at both agent and
+gateway. A 32,768-token context is supported when configured; inspecting the active
+deployment showed an 8,192 context/7,000 input configuration. No deployment config,
+source data or running service was changed by this correction. Historical timing
+reports do not certify the expanded ordinary selection; Phase 8 release performance
+and real-model quality gates remain open. Root ADR 0015 and both component Phase 8
+ADRs record the implementation and validation.
+
+The operator subsequently approved deployment with 32,768 context tokens, 28,000
+input and 4,096 output reserve. The private config was backed up and updated;
+graceful owned restart and live text recall were verified. Final gateway/loaded
+model context is 32,768, normal LiveKit Connect completes, and browser voice/text
+report ready. The saved-name question returned the expected accepted information
+using 20 recalled memories. See the operator-activation record in
+`docs/phase-8-validation.md`; this bounded check does not close broader Phase 8 gates.
+
 ## Engineering language and code-quality standards
 
 ### Languages

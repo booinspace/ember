@@ -1,7 +1,6 @@
 """One character core for text and LiveKit; canonical memory stays behind the async ABI."""
 
 import json
-import re
 from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -36,7 +35,13 @@ from ..memory.deep_prompt import condense
 from ..runtime.config import RuntimeModel
 from .delivery import ObservedDialogueSink
 from .interpretation import CalendarInterpreter
-from .prompt_budget import PromptAccounting, message_bytes, recall_frame, recalled_message
+from .prompt_budget import (
+    PromptAccounting,
+    message_bytes,
+    recall_frame,
+    recall_value,
+    recalled_message,
+)
 from .temporal import CalendarResolver, CalendarScope
 
 
@@ -139,6 +144,7 @@ class CharacterCore:
         self.model = model
         self.model_tag = model_tag
         self.input_ceiling = input_ceiling
+        self.memory_ceiling = min(6144, input_ceiling // 4)
         self.personality = personality or Personality()
         self.sink = sink
         self.calendar = CalendarResolver(timezone)
@@ -261,23 +267,28 @@ class CharacterCore:
             "batch_context_validation_v1" in capabilities.retrieval_modes
             and isinstance(self.memory, AsyncRelatedLookupClient)
         )
+        selected_certification = (
+            self.batch_validation
+            and "selected_context_dependencies_v1" in capabilities.retrieval_modes
+        )
         if resolved.scope is not None and (
             "historical_context_validation_v1" not in capabilities.retrieval_modes
         ):
             raise GatewayError("temporal_delivery_validation_unsupported")
         if investigation is not None and (
-            not self.batch_validation or not await self.current((), investigation.dependencies)
+            not self.batch_validation
+            or (
+                not selected_certification
+                and not await self.current((), investigation.dependencies)
+            )
         ):
             raise GatewayError("deep_context_invalidated")
         profile_advertised = "profile_pins_v1" in capabilities.retrieval_modes
         profile_supported = profile_advertised and self.batch_validation
-        fallback = capabilities.index_status != "available"
         context = await self.memory.retrieve_context(
             ContextRequest(
-                memory_query=query.model_copy(
-                    update={"text": "" if fallback and query.text else query.text, "limit": 20}
-                ),
-                memory_token_budget=4096,
+                memory_query=query.model_copy(update={"limit": 100}),
+                memory_token_budget=65536,
                 include_memory_search=(
                     investigation is None
                     or "pins_only_context_v1" not in capabilities.retrieval_modes
@@ -325,6 +336,10 @@ class CharacterCore:
                 if await self.current(((memory.memory_id, memory.revision),))
             ]
         if investigation is not None:
+            deep_context = condense(
+                investigation,
+                excluded=frozenset((m.memory_id, m.revision) for m in pins),
+            )
             memories = []
             omissions.extend(deep_context.omissions if deep_context else ())
         live_history: list[CompletedTurn] = []
@@ -349,35 +364,23 @@ class CharacterCore:
             elif base is None and await self.current(old.dependencies):
                 live_history.append(old)
         self.history = live_history
-        # Phase 2 only supports literal substring lookup. Rank this bounded canonical
-        # fallback locally until phase 5 supplies lexical/vector retrieval via the same ABI.
-        stopwords = {
-            "what",
-            "is",
-            "my",
-            "the",
-            "a",
-            "an",
-            "do",
-            "you",
-            "i",
-            "and",
-            "it",
-            "of",
-            "to",
-        }
-        terms = set(re.findall(r"[\w]+", query.text.casefold().replace("_", " "))) - stopwords
-
-        def relevance(item: Memory) -> int:
-            body = json.dumps(item.content.payload.model_dump(mode="json"), ensure_ascii=False)
-            return len(terms & set(re.findall(r"[\w]+", body.casefold().replace("_", " "))))
-
-        if fallback and query.text:
-            memories = sorted(
-                (item for item in memories if relevance(item) > 0), key=relevance, reverse=True
-            )[:6]
-        else:
-            memories = memories[:6]
+        historical = resolved.scope is not None and resolved.scope.axis == "recorded"
+        selected_values: list[Memory] = []
+        seen_values: set[str] = set()
+        for memory in memories:
+            key = json.dumps(recall_value(memory, historical=historical), sort_keys=True)
+            if key in seen_values:
+                omissions.append("duplicate_memory_value")
+                continue
+            if (
+                message_bytes(recalled_message([*selected_values, memory], historical=historical))
+                > self.memory_ceiling
+            ):
+                omissions.append("memory_category_budget")
+                continue
+            selected_values.append(memory)
+            seen_values.add(key)
+        memories = selected_values
         history = self.history[-12:]
         trimmed = len(self.history) - len(history)
         if (
@@ -401,9 +404,6 @@ class CharacterCore:
             history = history[1:]
             trimmed += 1
             omissions.append("history_category_budget")
-        while memories and message_bytes(recalled_message(memories)) > 768:
-            memories.pop()
-            omissions.append("memory_category_budget")
 
         def dependencies() -> tuple[tuple[tuple[UUID, int], ...], ContextDependencies | None]:
             selected = (*pins, *memories)
@@ -446,6 +446,52 @@ class CharacterCore:
                     sources.update((r.identity_key(), r) for r in old.certificate.sources)
                     if old.certificate.valid_until:
                         boundaries.append(old.certificate.valid_until)
+            archive_sources = tuple(
+                {
+                    ref.identity_key(): ref for parent in parents for ref in parent.archive_sources
+                }.values()
+            )
+            excerpt_sources = tuple(
+                {
+                    ref.identity_key(): ref for parent in parents for ref in parent.excerpt_sources
+                }.values()
+            )
+            if selected_certification:
+                # The engine reconstructs canonical hard evidence after final trimming.
+                # Keep only explicitly selected raw observations and retained history.
+                history_parents = tuple(old.certificate for old in history if old.certificate)
+                archive_sources = tuple(
+                    {
+                        ref.identity_key(): ref
+                        for ref in (
+                            *(ref for parent in history_parents for ref in parent.archive_sources),
+                            *(deep_context.archive_sources if deep_context else ()),
+                        )
+                    }.values()
+                )
+                excerpt_sources = tuple(
+                    {
+                        ref.identity_key(): ref
+                        for ref in (
+                            *(ref for parent in history_parents for ref in parent.excerpt_sources),
+                            *(deep_context.excerpt_sources if deep_context else ()),
+                        )
+                    }.values()
+                )
+                sources = {
+                    ref.identity_key(): ref
+                    for ref in (
+                        *(a.evidence.source for m in selected for a in m.content.evidence),
+                        *(ref for parent in history_parents for ref in parent.sources),
+                        *(deep_context.memory_sources if deep_context else ()),
+                        *excerpt_sources,
+                    )
+                }
+                boundaries = [
+                    parent.valid_until for parent in history_parents if parent.valid_until
+                ]
+                if pins and context.profile and context.profile.valid_until:
+                    boundaries.append(context.profile.valid_until)
             selected_refs = set(refs)
             qualified: set[tuple[UUID, int]] = set()
             selections: list[TemporalSelection] = []
@@ -463,20 +509,8 @@ class CharacterCore:
                         qualified.update((ref.memory_id, ref.revision) for ref in members)
             certificate = ContextDependencies(
                 selections=tuple(selections),
-                archive_sources=tuple(
-                    {
-                        ref.identity_key(): ref
-                        for parent in parents
-                        for ref in parent.archive_sources
-                    }.values()
-                ),
-                excerpt_sources=tuple(
-                    {
-                        ref.identity_key(): ref
-                        for parent in parents
-                        for ref in parent.excerpt_sources
-                    }.values()
-                ),
+                archive_sources=archive_sources,
+                excerpt_sources=excerpt_sources,
                 memories=tuple(MemoryReference(memory_id=i, revision=r) for i, r in refs),
                 sources=tuple(sources.values()),
                 policy_epoch=base.policy_epoch,
@@ -502,14 +536,6 @@ class CharacterCore:
                     omissions.append("pin_dependency_budget")
                 else:
                     raise GatewayError("context_dependency_overflow") from None
-        if not await self.current(references, certificate):
-            # One stale member cannot trigger an unbounded per-turn/per-ID probe.
-            # Drop dependent history as a group, then check the current selection once.
-            history = []
-            references, certificate = dependencies()
-            omissions.append("history_dependency_invalid")
-            if not await self.current(references, certificate):
-                raise GatewayError("context_invalidated")
 
         def compose() -> tuple[PromptMessage, ...]:
             messages = [PromptMessage(role="system", content=self.personality.instructions)]
@@ -521,7 +547,7 @@ class CharacterCore:
             if pins:
                 messages.append(pins_message(pins))
             if memories:
-                messages.append(recalled_message(memories))
+                messages.append(recalled_message(memories, historical=historical))
             if deep_context is not None:
                 messages.extend(deep_context.messages)
             for turn in history:
@@ -550,8 +576,46 @@ class CharacterCore:
             messages = compose()
         if prompt_cost(messages) > self.input_ceiling:
             raise GatewayError("prompt_overflow")
-        self.history = history
         references, certificate = dependencies()
+
+        async def certify(
+            references: tuple[tuple[UUID, int], ...], certificate: ContextDependencies | None
+        ) -> tuple[bool, ContextDependencies | None]:
+            if (
+                selected_certification
+                and certificate is not None
+                and isinstance(self.memory, AsyncRelatedLookupClient)
+            ):
+                try:
+                    checked = await self.memory.lookup_related(
+                        RelatedRequest(
+                            intent="validate",
+                            dependencies=certificate,
+                            refresh_dependencies=True,
+                            row_budget=512,
+                            call_budget=8,
+                        )
+                    )
+                except MemoryError:
+                    return False, None
+                return (
+                    checked.valid is True and checked.dependencies is not None,
+                    checked.dependencies,
+                )
+            return await self.current(references, certificate), certificate
+
+        valid, certificate = await certify(references, certificate)
+        if not valid:
+            # One stale member cannot trigger unbounded per-ID probes. Drop dependent
+            # history together, then certify only the remaining prompt once.
+            history = []
+            references, certificate = dependencies()
+            omissions.append("history_dependency_invalid")
+            valid, certificate = await certify(references, certificate)
+            if not valid:
+                raise GatewayError("context_invalidated")
+            messages = compose()
+        self.history = history
         request = GatewayRequest(
             request_id=identity,
             context_id=self.context_id,
@@ -572,7 +636,7 @@ class CharacterCore:
             accounting=PromptAccounting(
                 identity=message_bytes(messages[0]),
                 pins=message_bytes(pins_message(pins)) if pins else 0,
-                memories=message_bytes(recalled_message(memories))
+                memories=message_bytes(recalled_message(memories, historical=historical))
                 if memories
                 else deep_context.memory_bytes
                 if deep_context

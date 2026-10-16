@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
+from ..memory.deep_contracts import DeepRecallResult
 from ..realtime.client import RoomClient
 from ..realtime.contracts import (
     AGENT_IDENTITY,
@@ -33,6 +34,7 @@ from .console import read_line
 from .livekit_config import LiveKitCredentials, credentials, server_yaml
 from .processes import OwnedProcess, RuntimeLease
 from .speech_health import check_voice
+from .text_session import DirectTextSession
 
 
 def port_open(endpoint: str) -> bool:
@@ -94,6 +96,7 @@ class RuntimeServices:
                 port=endpoint.port or 7880,
                 tcp_port=settings.tcp_port,
                 udp_port=settings.udp_port,
+                lan=self.config.browser.lan_address is not None,
             )
             await asyncio.to_thread(config_file.write_text, value, encoding="utf-8")
             await asyncio.to_thread(config_file.chmod, 0o600)
@@ -136,12 +139,18 @@ class RuntimeServices:
         finally:
             await service.aclose()
 
+        await self.start_gateway()
+        return self.credentials
+
+    async def start_gateway(self) -> None:
+        """Verify/start the sole gateway independently of voice transport availability."""
+        settings = self.config.services.livekit
         gateway = self.config.services.gateway
         if gateway.mode == "disabled":
             raise ConfigurationError(
                 "The gateway is disabled; model-backed room chat is unavailable."
             )
-        if not await asyncio.to_thread(port_open, gateway.endpoint):
+        if not self.gateway_owned and not await asyncio.to_thread(port_open, gateway.endpoint):
             if gateway.mode != "managed":
                 raise ConfigurationError("Attached gateway is unavailable.")
             self.children.append(
@@ -165,7 +174,8 @@ class RuntimeServices:
             async with asyncio.timeout(settings.startup_timeout_seconds):
                 while True:
                     for child in self.children:
-                        child.check()
+                        if child.component == "gateway":
+                            child.check()
                     try:
                         token = await asyncio.to_thread(
                             read_token, self.config.runtime_root / "gateway.token"
@@ -199,7 +209,6 @@ class RuntimeServices:
             raise ConfigurationError(
                 "Gateway did not become authenticated-ready in time."
             ) from error
-        return self.credentials
 
     async def start_speech(self) -> str:
         """Start/attach installed Kokoro independently; provider failures leave text available."""
@@ -226,6 +235,11 @@ class RuntimeServices:
                     working_directory=settings.working_directory,
                     environment={
                         "CUDA_VISIBLE_DEVICES": "-1",
+                        "USE_GPU": "false",
+                        "API_LOG_LEVEL": "WARNING",
+                        "PYTHONUTF8": "1",
+                        "OMP_NUM_THREADS": str(self.config.audio.stt_threads),
+                        "MKL_NUM_THREADS": str(self.config.audio.stt_threads),
                         "HF_HUB_OFFLINE": "1",
                         "TRANSFORMERS_OFFLINE": "1",
                     },
@@ -290,24 +304,53 @@ class RuntimeServices:
 
 
 async def run_runtime(
-    config: DeploymentConfig, config_path: Path, *, stop: asyncio.Event | None = None
+    config: DeploymentConfig,
+    config_path: Path,
+    *,
+    stop: asyncio.Event | None = None,
+    open_browser: bool = False,
 ) -> None:
     """Host one text room until Ctrl+C; unwind room, memory and services in reverse order."""
+    if open_browser and not config.browser.enabled:
+        raise ConfigurationError("Enable browser.enabled before requesting browser launch.")
+    from .network import validate_listener
+
+    await asyncio.to_thread(validate_listener, config)
     async with AsyncExitStack() as cleanup:
         lease = await asyncio.to_thread(RuntimeLease, config.runtime_root)
         cleanup.push_async_callback(asyncio.to_thread, lease.close)
         services = RuntimeServices(config, config_path)
         cleanup.push_async_callback(services.aclose)
-        value = await services.start()
-        foreground_token = await asyncio.to_thread(
-            read_token, config.runtime_root / "gateway.token"
+        gateway_available = True
+        try:
+            value = await services.start()
+        except (ConfigurationError, OSError, api.TwirpError, TimeoutError):
+            if not config.browser.enabled:
+                raise
+            value = None
+            try:
+                await services.start_gateway()
+            except (ConfigurationError, OSError, GatewayError, TimeoutError):
+                gateway_available = False
+        foreground_token = (
+            await asyncio.to_thread(read_token, config.runtime_root / "gateway.token")
+            if gateway_available
+            else ""
         )
         reservation = HttpGatewayClient(config.services.gateway.endpoint, foreground_token)
         cleanup.push_async_callback(reservation.aclose)
-        cleanup.push_async_callback(reservation.session, services.instance, connected=False)
-        async with asyncio.timeout(config.services.livekit.startup_timeout_seconds):
-            await reservation.session(services.instance, connected=True)
-        runtime = await asyncio.to_thread(LocalRuntime, config)
+        if gateway_available:
+            try:
+                async with asyncio.timeout(config.services.livekit.startup_timeout_seconds):
+                    await reservation.session(services.instance, connected=True)
+            except (GatewayError, OSError, TimeoutError):
+                if not config.browser.enabled:
+                    raise
+                gateway_available = False
+                value = None
+            else:
+                cleanup.push_async_callback(reservation.session, services.instance, connected=False)
+        runtime = await asyncio.to_thread(LocalRuntime, config, gateway_available=gateway_available)
         cleanup.push_async_callback(asyncio.to_thread, runtime.close_workers)
         cleanup.push_async_callback(runtime.aclose)
         binding = RoomBinding(
@@ -316,6 +359,46 @@ async def run_runtime(
             room="ember-" + services.instance.hex,
             endpoint=config.services.livekit.endpoint,
         )
+        if value is not None:
+            try:
+                await _run_room(
+                    config,
+                    runtime,
+                    services,
+                    value,
+                    binding,
+                    reservation,
+                    stop=stop,
+                    open_browser=open_browser,
+                )
+                return
+            except (ConfigurationError, OSError, api.TwirpError, TimeoutError):
+                if not config.browser.enabled:
+                    raise
+        await _run_text_browser(
+            config,
+            runtime,
+            services,
+            binding,
+            reservation,
+            gateway_available=gateway_available,
+            stop=stop,
+            open_browser=open_browser,
+        )
+
+
+async def _run_room(
+    config: DeploymentConfig,
+    runtime: LocalRuntime,
+    services: RuntimeServices,
+    value: LiveKitCredentials,
+    binding: RoomBinding,
+    reservation: HttpGatewayClient,
+    *,
+    stop: asyncio.Event | None,
+    open_browser: bool,
+) -> None:
+    async with AsyncExitStack() as cleanup:
         service = api.LiveKitAPI(
             binding.endpoint.replace("ws://", "http://").replace("wss://", "https://"),
             value.api_key,
@@ -363,11 +446,12 @@ async def run_runtime(
         host.before_turn = lifecycle.before_turn
         host.connection_changed = lifecycle.connection_changed
         cleanup.push_async_callback(lifecycle.aclose)
+        # Explicitly hosted Ember owns this room for the runtime lifetime. LiveKit
+        # dependent agent participants do not keep a room alive between human visits.
+        # A standard room-scoped host token retains identical media/data limits.
         async with asyncio.timeout(config.services.livekit.startup_timeout_seconds):
             await host.start(
-                value.token(
-                    binding.room, AGENT_IDENTITY, agent=True, audio=bool(voice and voice.tts)
-                )
+                value.token(binding.room, AGENT_IDENTITY, audio=bool(voice and voice.tts))
             )
         lifecycle.start()
         discovery = config.runtime_root / "livekit-room.json"
@@ -378,6 +462,9 @@ async def run_runtime(
                 raise ConfigurationError("Browser control port is already occupied.")
             control = BrowserControl(
                 origin=config.browser.endpoint,
+                lan_origin=f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
+                if config.browser.lan_address
+                else None,
                 assets=config.browser.assets,
                 binding=binding,
                 core=runtime.core,
@@ -389,14 +476,85 @@ async def run_runtime(
                 answer=host.answer_investigation,
                 voice_ready=voice is not None,
                 voice_status=voice_status,
+                capture_changed=lifecycle.policy_changed,
             )
             browser = BrowserServer(control, config.runtime_root)
             cleanup.push_async_callback(browser.aclose)
             await browser.start()
             print("Browser controls ready. Open the private browser-activation.json URL.")
+            if control.lan_origin:
+                print(
+                    "LAN browser: "
+                    + control.lan_origin
+                    + ". Use Copy LAN link in the local browser."
+                )
+            if open_browser and not await browser.open_browser():
+                print("Browser launch unavailable; open the private activation file URL manually.")
         print("Gateway and LiveKit room ready. Semantic retrieval: " + runtime.semantic_status)
         print("Voice: " + voice_status)
         print("Run ember livekit-chat with the same --config to use terminal chat.")
+        await (stop or asyncio.Event()).wait()
+
+
+async def _run_text_browser(
+    config: DeploymentConfig,
+    runtime: LocalRuntime,
+    services: RuntimeServices,
+    binding: RoomBinding,
+    reservation: HttpGatewayClient,
+    *,
+    gateway_available: bool,
+    stop: asyncio.Event | None,
+    open_browser: bool,
+) -> None:
+    async with AsyncExitStack() as cleanup:
+        text = DirectTextSession(
+            runtime.core, runtime.deep, runtime.investigate, model_available=gateway_available
+        )
+
+        async def reserve(identity: UUID, connected: bool) -> None:
+            if not gateway_available:
+                raise GatewayError("gateway_unavailable")
+            await reservation.session(identity, connected=connected)
+
+        lifecycle = CaptureLifecycle(services.instance, reserve, text.quiesce, runtime.consolidate)
+        text.before_turn = lifecycle.before_turn
+        text.connection_changed = lifecycle.connection_changed
+        if gateway_available:
+            cleanup.push_async_callback(lifecycle.aclose)
+            lifecycle.start()
+
+        def room_token() -> str:
+            raise GatewayError("livekit_unavailable")
+
+        async def room_answer(_: DeepRecallResult) -> str:
+            raise GatewayError("use_browser_text_transport")
+
+        control = BrowserControl(
+            origin=config.browser.endpoint,
+            lan_origin=f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
+            if config.browser.lan_address
+            else None,
+            assets=config.browser.assets,
+            binding=binding,
+            core=runtime.core,
+            deep=runtime.deep,
+            controls=runtime,
+            room_token=room_token,
+            answer=room_answer,
+            text_session=text,
+            voice_status="livekit_unavailable",
+            capture_changed=lifecycle.policy_changed,
+        )
+        browser = BrowserServer(control, config.runtime_root)
+        cleanup.push_async_callback(browser.aclose)
+        await browser.start()
+        print(
+            "Browser controls ready. Voice transport unavailable. Text: "
+            + ("ready" if gateway_available else "unavailable; gateway not ready")
+        )
+        if open_browser and not await browser.open_browser():
+            print("Browser launch unavailable; open the private activation file URL manually.")
         await (stop or asyncio.Event()).wait()
 
 

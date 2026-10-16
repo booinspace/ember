@@ -21,6 +21,7 @@ const sdk = vi.hoisted(() => {
     disconnect = vi.fn(async () => undefined);
     startAudio = vi.fn(async () => undefined);
     localParticipant = {
+      audioTrackPublications: new Map<string, object>(),
       performRpc: vi.fn(),
       setMicrophoneEnabled: vi.fn(async () => undefined),
     };
@@ -145,5 +146,142 @@ describe("connection ownership", () => {
     release?.();
     await outcome;
     expect(roomOf(client).connect).not.toHaveBeenCalled();
+  });
+});
+
+function configuredState(voice = false) {
+  return runtimeState.parse({
+    binding: {
+      character_id: "11111111-1111-4111-8111-111111111111",
+      instance_id: "22222222-2222-4222-8222-222222222222",
+      room: "synthetic",
+      endpoint: "ws://127.0.0.1:7880",
+    },
+    context_id: "33333333-3333-4333-8333-333333333333",
+    recall: {
+      local_enabled: true,
+      import_mode: "all",
+      included_libraries: [],
+      excluded_libraries: [],
+      revision: 0,
+    },
+    capture: { enabled: false, revision: 0 },
+    deep: "enabled",
+    voice,
+  });
+}
+
+function authorizeRoom() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            endpoint: "ws://127.0.0.1:7880",
+            token: "synthetic",
+          }),
+        ),
+    ),
+  );
+}
+
+describe("browser room readiness", () => {
+  it("connects text without requiring browser audio playback", async () => {
+    authorizeRoom();
+    const state = configuredState();
+    const client = new CharacterConnection(vi.fn(), vi.fn());
+    const room = roomOf(client);
+    room.localParticipant.performRpc.mockResolvedValue(
+      JSON.stringify(state.binding),
+    );
+    room.startAudio.mockRejectedValue(new Error("Playback unavailable"));
+    await client.connect(state);
+    expect(room.startAudio).not.toHaveBeenCalled();
+    expect(room.localParticipant.performRpc).toHaveBeenCalledWith({
+      destinationIdentity: "ember-agent",
+      method: "ember.ready",
+      payload: "",
+    });
+    await client.close();
+  });
+
+  it("reports room join failure without exposing SDK credentials", async () => {
+    authorizeRoom();
+    const client = new CharacterConnection(vi.fn(), vi.fn());
+    roomOf(client).connect.mockRejectedValue(
+      new Error("PRIVATE_SDK_TOKEN expired room"),
+    );
+    await expect(client.connect(configuredState())).rejects.toThrow(
+      "LiveKit room is unavailable. Restart Ember and reopen its activation link.",
+    );
+    await client.close();
+  });
+
+  it("rejects a worker bound to a different character", async () => {
+    authorizeRoom();
+    const state = configuredState();
+    const client = new CharacterConnection(vi.fn(), vi.fn());
+    roomOf(client).localParticipant.performRpc.mockResolvedValue(
+      JSON.stringify({ ...state.binding, character_id: state.context_id }),
+    );
+    await expect(client.connect(state)).rejects.toThrow(
+      "The Ember worker is unavailable in this room.",
+    );
+    await client.close();
+  });
+
+  it("retains text connectivity when audio is blocked and retries on microphone gesture", async () => {
+    authorizeRoom();
+    const state = configuredState(true);
+    const failure = vi.fn();
+    const client = new CharacterConnection(vi.fn(), failure);
+    const room = roomOf(client);
+    room.localParticipant.performRpc.mockResolvedValue(
+      JSON.stringify(state.binding),
+    );
+    room.startAudio.mockRejectedValueOnce(new Error("Browser playback denied"));
+    await client.connect(state);
+    expect(failure).toHaveBeenCalledWith(
+      expect.stringContaining("Text chat is ready"),
+    );
+    await client.microphone(true);
+    expect(room.startAudio).toHaveBeenCalledTimes(2);
+    expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(
+      true,
+    );
+    await client.close();
+  });
+});
+
+describe("speech transcript ownership", () => {
+  it("labels the agent-published microphone transcript as user and ignores interim snapshots", async () => {
+    const text = vi.fn();
+    const client = new CharacterConnection(text, vi.fn());
+    const room = roomOf(client);
+    room.localParticipant.audioTrackPublications.set("TR_microphone", {});
+    const stream = (final: boolean) => ({
+      info: {
+        id: "transcript",
+        attributes: {
+          "lk.transcribed_track_id": "TR_microphone",
+          "lk.segment_id": "utterance",
+          "lk.transcription_final": String(final),
+        },
+      },
+      async *withAbortSignal() {
+        yield "What is my favorite color?";
+      },
+    });
+    room.handler?.(stream(false), { identity: "ember-agent" });
+    room.handler?.(stream(true), { identity: "ember-agent" });
+    await Promise.resolve();
+    await client.close();
+    expect(text).toHaveBeenCalledTimes(1);
+    expect(text).toHaveBeenCalledWith(
+      "What is my favorite color?",
+      "utterance",
+      "user",
+    );
   });
 });

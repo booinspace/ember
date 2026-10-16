@@ -79,6 +79,7 @@ class RecallCounters(ContractModel):
     uncached_embeddings: NonnegativeInteger = 0
     sql_statements: NonnegativeInteger = 0
     materialized_bytes: NonnegativeInteger = 0
+    limits_hit: Annotated[tuple[str, ...], Field(max_length=8)] = ()
 
 
 class DeepRecallResult(ContractModel):

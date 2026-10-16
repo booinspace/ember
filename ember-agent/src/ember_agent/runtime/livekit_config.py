@@ -64,11 +64,15 @@ def credentials(path: Path, *, create: bool) -> LiveKitCredentials:
     return value
 
 
-def server_yaml(value: LiveKitCredentials, *, port: int, tcp_port: int, udp_port: int) -> str:
-    """Produce a loopback-only server configuration without shared development keys."""
+def server_yaml(
+    value: LiveKitCredentials, *, port: int, tcp_port: int, udp_port: int, lan: bool = False
+) -> str:
+    """Bind optional LAN signalling; model services retain separate loopback listeners."""
+    bind = "0.0.0.0" if lan else "127.0.0.1"
     return (
-        f"port: {port}\nbind_addresses: [127.0.0.1]\n"
-        "rtc:\n  node_ip: 127.0.0.1\n  use_external_ip: false\n"
+        f"port: {port}\nbind_addresses: [{bind}]\n"
+        "rtc:\n  use_external_ip: false\n"
+        "  enable_loopback_candidate: true\n"
         f"  tcp_port: {tcp_port}\n  udp_port: {udp_port}\n  stun_servers: []\n"
         f"keys:\n  {value.api_key}: {json.dumps(value.api_secret)}\n"
         "logging:\n  level: error\nroom:\n  auto_create: false\n  max_participants: 2\n"

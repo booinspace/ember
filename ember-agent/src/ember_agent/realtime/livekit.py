@@ -140,6 +140,7 @@ class EmberAgent(Agent):
         self.core = core
         self.investigate = investigate
         self.before_turn: Callable[[], Awaitable[None]] | None = None
+        self.before_generation: Callable[[], Awaitable[None]] | None = None
         self.prepare_failed: Callable[[], None] | None = None
         self.gateway_llm = GatewayLLM(core, defer_delivery=defer_delivery)
         # SDK constructor annotations omit generic parameters for optional plugins.
@@ -167,6 +168,8 @@ class EmberAgent(Agent):
             await self.before_turn()
         try:
             observation = await self.core.observe_input(text, request_id=request_id)
+            if self.before_generation is not None:
+                await self.before_generation()
             query = None
             for prefix in ("/recall ", "recall deeply "):
                 if text.strip().casefold().startswith(prefix):

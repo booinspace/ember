@@ -3,6 +3,7 @@
 import asyncio
 import json
 import socket
+import webbrowser
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -31,9 +32,10 @@ class BrowserServer:
         self.server = _EmbeddedServer(
             uvicorn.Config(
                 control.app,
-                host=address.hostname or "127.0.0.1",
+                host="0.0.0.0" if control.lan_origin else address.hostname or "127.0.0.1",
                 port=address.port or 8787,
                 access_log=False,
+                proxy_headers=False,
                 log_level="warning",
                 ws="none",
                 lifespan="off",
@@ -66,13 +68,24 @@ class BrowserServer:
             await self.aclose()
             raise
 
+    async def open_browser(self) -> bool:
+        """Open the ready private activation URL off-loop; OS failure retains the runtime."""
+        if self.task is None or not self.server.started:
+            raise ConfigurationError("Browser server is not ready.")
+        url = self.control.origin + "/#activate=" + self.control.activation
+        try:
+            return await asyncio.to_thread(webbrowser.open, url, new=2)
+        except (OSError, webbrowser.Error):
+            return False
+
     def _bind(self) -> socket.socket:
         address = urlsplit(self.control.origin)
         sock = socket.socket(
             socket.AF_INET6 if address.hostname == "::1" else socket.AF_INET, socket.SOCK_STREAM
         )
         try:
-            sock.bind((address.hostname or "127.0.0.1", address.port or 8787))
+            host = "0.0.0.0" if self.control.lan_origin else address.hostname or "127.0.0.1"
+            sock.bind((host, address.port or 8787))
             sock.setblocking(False)
             return sock
         except OSError:
@@ -83,6 +96,9 @@ class BrowserServer:
         payload = json.dumps(
             {
                 "url": self.control.origin + "/#activate=" + self.control.activation,
+                "lan_url": self.control.lan_origin + "/#activate=" + self.control.activation
+                if self.control.lan_origin
+                else None,
             }
         )
         temporary = self.activation_file.with_suffix(".next")

@@ -1,14 +1,19 @@
 """Bounded local speech readiness; no synthesis, prompt or model load is requested."""
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..inference.contracts import GatewayError
 
 
+class _Voice(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore", strict=True)
+    id: str = Field(min_length=1, max_length=128)
+
+
 class _Voices(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", strict=True)
-    voices: tuple[str, ...]
+    voices: tuple[str | _Voice, ...] = Field(max_length=256)
 
 
 async def check_voice(endpoint: str, voice: str) -> None:
@@ -24,5 +29,8 @@ async def check_voice(endpoint: str, voice: str) -> None:
                     raise GatewayError("tts_health_bound")
                 chunks.append(chunk)
             voices = _Voices.model_validate_json(b"".join(chunks))
-            if voice not in voices.voices:
+            identifiers = tuple(
+                item if isinstance(item, str) else item.id for item in voices.voices
+            )
+            if voice not in identifiers:
                 raise GatewayError("tts_voice_unavailable")

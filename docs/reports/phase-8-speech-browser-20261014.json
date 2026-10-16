@@ -1,0 +1,70 @@
+{
+  "scope": "two synthetic browser acceptance scenarios, not latency percentiles or physical microphone validation",
+  "providers": {
+    "whisper": "Systran/faster-whisper-small.en",
+    "whisper_revision": "d1d751a5f8271d482d14ca55d9e2deeebbae577f",
+    "whisper_device": "cpu/int8/two_threads",
+    "kokoro_revision": "61797914e5f8da0baf1d0b97d9d0b15c66625615",
+    "kokoro_voice": "af_alloy",
+    "kokoro_device": "torch 2.8.0+cpu/two_threads",
+    "generation": "configured local 27B Qwen through single shared gateway"
+  },
+  "scenarios": [
+    {
+      "scenario": "text_recall_speech",
+      "corpus": "synthetic_one_accepted_memory",
+      "browser": "installed_browser",
+      "local_providers": true,
+      "visible_answer_ms": 4952,
+      "inbound_audio_bytes": 50989,
+      "supported_answer": true,
+      "physical_microphone_tested": false
+    },
+    {
+      "scenario": "voice_recall_speech",
+      "corpus": "synthetic_one_accepted_memory",
+      "browser": "installed_browser",
+      "local_providers": true,
+      "visible_answer_ms": 8832,
+      "inbound_audio_bytes": 40308,
+      "supported_answer": true,
+      "physical_microphone_tested": false
+    }
+  ],
+  "main_database_conversations_submitted": 0,
+  "private_candidates_approved_or_seeded": 0,
+  "ordinary_retrieval_percentiles_remeasured": false,
+  "optional_interpretation_measured": false,
+  "physical_microphone_or_headset_tested": false,
+  "final_lifecycle_rerun": [
+    {
+      "scenario": "text_recall_speech",
+      "corpus": "synthetic_one_accepted_memory",
+      "browser": "installed_browser",
+      "local_providers": true,
+      "visible_answer_ms": 9527,
+      "inbound_audio_bytes": 54328,
+      "supported_answer": true,
+      "physical_microphone_tested": false
+    },
+    {
+      "scenario": "voice_recall_speech",
+      "corpus": "synthetic_one_accepted_memory",
+      "browser": "installed_browser",
+      "local_providers": true,
+      "visible_answer_ms": 6767,
+      "inbound_audio_bytes": 24344,
+      "supported_answer": true,
+      "physical_microphone_tested": false
+    }
+  ],
+  "validation": {
+    "python_passed": 607,
+    "python_skipped": 6,
+    "frontend_unit_passed": 11,
+    "installed_browser_passed": 2,
+    "ruff": "passed",
+    "pyright": "passed",
+    "contract_schemas": "current"
+  }
+}

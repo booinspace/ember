@@ -1,8 +1,98 @@
-# Phase 8 isolated development runbook
+# Phase 8 application and isolated development runbook
 
-Phase 8 is in progress. This checkout must use its own data, runtime, configuration
-and ports. Do not point it at the primary database or migrate that database while
-ingest is running. Real model/audio tests remain deferred until the GPU is available.
+Phase 8 is in progress. Isolated development uses separate data, runtime,
+configuration and ports. Do not migrate a primary database while ingest is running.
+Main-checkout launch is configured separately below; real generation/audio quality
+acceptance remains distinct from startup verification.
+
+## Main checkout: single-command launch
+
+After installing the locked Python environment, building the frontend and configuring
+browser.enabled = true with assets pointing to ember-agent/frontend/dist, run:
+
+    .\start.ps1
+
+The wrapper uses .local/config/deployment.non-mtp.toml and the root .venv executable.
+It preserves that configuration's existing character binding, model pin and data root.
+Paths passed to the wrapper resolve relative to the repository, including when the
+calling shell is elsewhere. Use -Config .local/config/deployment.mtp.toml for a separately
+configured profile, or -NoBrowser to suppress automatic desktop opening.
+
+The wrapper calls ember start --open-browser. The Python runtime owns all service
+startup/shutdown and opens the private activation URL after the browser server is ready.
+A desktop launch failure leaves the runtime available with its private activation file;
+the activation capability is never printed. Ctrl+C stops the runtime and its owned
+children. Startup does not install packages, download speech models or build assets.
+Voice requires explicit audio.enabled and installed Whisper/Kokoro providers.
+
+A primary root opening can apply existing backed-up schema migrations; finish ingest
+and stop other owners before using that root. Import extraction completion is separate
+from review, approval and seeding; launch does not approve or seed candidates.
+
+## Local voice setup and tested deployment
+
+The primary non-MTP configuration on this device now enables browser and audio,
+uses installed faster-whisper-small.en on CPU int8 with two threads, and starts
+installed Kokoro-FastAPI on loopback as an owned CPU child with af_alloy. Run
+.\start.ps1, click Connect, then Use microphone and allow your browser's microphone
+permission. Text Send needs a connected room and a nonempty prompt.
+
+For a fresh checkout, install/build the root/frontend first, then explicitly run:
+
+    .\scripts\setup_speech.ps1 -Uv uv
+
+The setup script pins Kokoro source at 61797914e5f8da0baf1d0b97d9d0b15c66625615
+and Systran/faster-whisper-small.en at d1d751a5f8271d482d14ca55d9e2deeebbae577f.
+It installs the provider into ignored .local/tools/kokoro-fastapi with its own CPU
+uv environment, downloads verified model weights and the Whisper vocabulary,
+and writes CPU/model/voice paths for that provider. It does not change a character,
+approve candidates or configure a model pin. Configure the private deployment:
+
+    [audio]
+    enabled = true
+    stt_model_directory = "../models/faster-whisper-small.en"
+    stt_threads = 2
+    language = "en"
+    stt_device = "cpu"
+    tts_voice = "af_alloy"
+
+    [services.kokoro]
+    endpoint = "http://127.0.0.1:8880"
+    mode = "managed"
+    executable = "../tools/kokoro-fastapi/.venv/Scripts/python.exe"
+    arguments = ["-m", "uvicorn", "api.src.main:app", "--host", "127.0.0.1", "--port", "8880", "--workers", "1", "--log-level", "warning", "--no-access-log"]
+    working_directory = "../tools/kokoro-fastapi"
+    startup_timeout_seconds = 60.0
+
+These relative paths assume the deployment file lives under .local/config.
+The runtime child has CPU-only/offline guards, bounded OMP/MKL threads, UTF-8 I/O
+and warning-only provider logs. Startup never invokes upstream start scripts, which
+would install/download, and never rebuilds the production frontend.
+
+Ember's explicitly hosted participant keeps the room alive across delayed joins and
+browser disconnection. Signalling and control APIs stay on loopback. LiveKit selects
+usable host-local media addresses; forcing its node IP to loopback failed browser ICE
+on this Windows device while native clients passed. Authenticated encrypted media
+listeners can use local network interfaces; control/credential access is not broadened.
+Provider health accepts legacy voice strings and current voice objects by exact ID.
+Doctor reports configuration only, separately from actual runtime readiness.
+
+## Optional browser speech acceptance
+
+Frontend unit tests remain pnpm run test. Optional pnpm run test:browser uses
+installed Edge on Windows and installed Chromium elsewhere; setup installs a browser
+explicitly if needed. It skips when EMBER_VOICE_FIXTURE_DIR is unset. The fixture
+folder must contain a matching synthetic-character fixture.json, question.wav and
+runtime/browser-activation.json from a running isolated deployment. Never select a
+private character: the test checks the exact fixture ID and zero libraries before
+sending input. It uses a synthetic microphone file and checks final user transcription,
+Qwen's source-backed answer and increasing inbound audio RTP bytes. It records only
+aggregate receipts. Physical microphone/headset testing remains separate.
+
+The first real runs are recorded in docs/reports/phase-8-speech-browser-20261014.json.
+They used one accepted synthetic color memory, the installed CPU providers and the
+shared primary Qwen gateway. This is functional evidence and two latency samples,
+not a distribution benchmark, hardware speech-quality gate or broad recall evaluation.
 
 ## Setup and development checks
 
@@ -150,3 +240,94 @@ Use the existing Phase 5 index-update workflow with the installed CPU encoder af
 accepted metadata changes. Unchanged text vectors are reused. Startup does not
 download embeddings or rebuild an index. A selected bundle retains enrichment
 history only when its exact evidence closure is already included.
+
+
+## Deep recall on a large memory set
+
+Restart the installed editable runtime after pulling/applying Python changes:
+
+```powershell
+.\start.ps1
+```
+
+Stop the previous launch with Ctrl+C first, and refresh the browser after rebuilding its
+assets. An investigation can remain partial while returning useful accepted memories and
+original observations; partial is bounded coverage, not necessarily failure. The inspector
+shows the specific exhausted resource limit if applicable. Answer selection is disabled
+when no retrieved material fits the prompt. Strict event-time searches still exclude
+undated memories, and cold uncached semantic vectors may use lexical retrieval.
+
+For an explicitly authorized local performance check, make isolated SQLite backups of the
+registered canonical stores and copies of their disposable indexes first. Do not point the
+benchmark at the running live root. Store a JSON array of up to 32 queries in an ignored
+private file; the aggregate output contains case numbers/counters rather than query text:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/benchmark_deep_recall.py `
+  --snapshot-root .local/deep-recall-investigation/data `
+  --character $character `
+  --encoder .local/models/bge-small-en-v1.5 `
+  --queries .local/deep-recall-investigation/queries.json `
+  --samples 3 --ordinary-samples 1000 `
+  --output .local/deep-recall-investigation/new-report.json
+```
+
+Use the intended character's existing binding for $character. The benchmark requires a
+new output path, normal exclusive snapshot ownership and installed CPU assets. It never
+approves, seeds, extracts or generates an answer. Contention results distinguish deferred
+deep requests from completed investigations; deferral is not a concurrent quality pass.
+## Degraded browser text and controls
+
+With the browser enabled, unavailable LiveKit during startup or initial room setup
+selects browser text over the same character core and gateway. The UI reports voice
+unavailability; Connect/Send use text and memory controls remain available. Replies
+are buffered in this mode. If the pinned gateway cannot become ready, controls
+remain available and Connect is disabled. Startup does not bypass the gateway or
+install dependencies. The usual private activation link and origin/cookie controls
+apply to both transports.
+
+The text session renews a 45-second lease every 15 seconds. Closing/disconnecting or
+letting a crashed/suspended browser expire cancels and drains its turn before P3
+can resume. Only browser-acknowledged output enters retained history and the source
+archive. Unacknowledged text is discarded; original input remains durable. Reconnect
+after expiry rather than replaying an uncertain turn. An already established failed
+room is not silently replayed into HTTP; a normal application restart can select
+the degraded transport. No service restart was performed by the 2026-10-16 review.
+
+## Ordinary word recall and configured context
+
+Ordinary questions now search individual words in eligible accepted memories.
+Matches in extracted values rank ahead of internal labels; relevant importance
+then helps select values. The engine considers up to 100 lexical and 40 semantic
+candidates within its existing soft deadline. The composer requests up to 100 rows
+and fits whole values into a quarter of its configured input guard, capped at 6,144
+conservative UTF-8 units. This is a bounded relevant subset, not a promise to include
+every matching row. Exact quotes remain available through source inspection.
+
+High importance does not make an imported episode an automatic profile field.
+Profiles still require an eligible allowlisted fact attached to the explicitly
+bound subject. Word retrieval does not rewrite identities, source approval or claims.
+
+Check the chosen deployment file's `[model]` values when assessing context capacity.
+The inspected current configuration still sets 8,192 context/7,000 input. For an
+explicitly authorized 32k deployment, a compatible example is:
+
+```toml
+[model]
+context_tokens = 32768
+max_input_tokens = 28000
+output_reserve_tokens = 4096
+```
+
+Keep the existing pinned model tag/digest and other deployment fields. Both runtime
+and gateway must load the same settings through the normal owned restart. Changing
+only a composer allowance cannot enlarge an already running model's context.
+No live service was restarted by this correction. Existing FTS/vector generations
+remain usable; no index rebuild or source re-extraction is required. See
+[word-recall design](phase-8-word-recall.md) and [validation](phase-8-validation.md).
+
+The operator subsequently authorized and activated these 32k settings on
+2026-10-16. Normal LiveKit Connect, gateway/model context agreement and saved-name
+text recall were verified; voice readiness reports ready. See the activation section
+in validation for the exact scope. After a runtime restart, use its newly published
+private activation link so the page refreshes its authentication and transport state.

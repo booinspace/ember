@@ -133,6 +133,15 @@ class RelatedRequest(ContractModel):
     recall_only: bool = Field(default=False, exclude_if=lambda value: not value)
     include_relationships: bool = Field(default=True, exclude_if=lambda value: value)
     dependencies: ContextDependencies | None = None
+    refresh_dependencies: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description=(
+            "Negotiated selected_context_dependencies_v1 validation returns a fresh bounded "
+            "canonical evidence closure for the selected memories and explicit raw excerpts. "
+            "Caller time bounds and historical/current policy checks remain mandatory."
+        ),
+    )
     limit: Annotated[int, Field(ge=1, le=100)] = 32
     row_budget: Annotated[int, Field(ge=1, le=512)] = 256
     call_budget: Annotated[int, Field(ge=1, le=32)] = 8
@@ -142,6 +151,8 @@ class RelatedRequest(ContractModel):
     def shape(self) -> Self:
         if (self.intent == "validate") != (self.dependencies is not None):
             raise ValueError("Only validate requests carry compact context dependencies.")
+        if self.refresh_dependencies and self.intent != "validate":
+            raise ValueError("Only validation can certify selected prompt dependencies.")
         if self.intent == "validate" and (
             self.anchors or self.sources or self.entity_names or self.excerpts
         ):

@@ -71,6 +71,17 @@ export function Inspector({
       {result.reasons.length > 0 && (
         <p className="coverage">{result.reasons.join(" · ")}</p>
       )}
+      {result.reasons.includes("read_budget_exceeded") && (
+        <p>
+          The investigation reached its search limit. Any results below
+          completed validation; an empty result does not mean your memories are
+          missing.
+        </p>
+      )}
+      {Array.isArray(result.counters.limits_hit) &&
+        result.counters.limits_hit.length > 0 && (
+          <p>Limit reached: {result.counters.limits_hit.join(" · ")}</p>
+        )}
       {result.scope && <pre>{JSON.stringify(result.scope, null, 2)}</pre>}
       {result.clusters.length > 0 && (
         <details>
@@ -175,6 +186,8 @@ export function Inspector({
       <button
         disabled={
           busy ||
+          result.prompt_memories.length + result.prompt_observations.length ===
+            0 ||
           !["complete_within_budget", "partial"].includes(result.outcome)
         }
         onClick={answer}

@@ -83,6 +83,8 @@ def test_credentials_persist_and_tokens_have_only_room_text_authority(tmp_path: 
     assert claims.video.room_admin is not True and claims.video.room_create is not True
     text = server_yaml(value, port=7880, tcp_port=7881, udp_port=7882)
     assert "127.0.0.1" in text and "devkey" not in text
+    assert "node_ip:" not in text and "use_external_ip: false" in text
+    assert "enable_loopback_candidate: true" in text and "stun_servers: []" in text
     with pytest.raises(ConfigurationError, match="existing"):
         credentials(tmp_path / "missing.json", create=False)
 
@@ -552,7 +554,7 @@ def test_missing_managed_binary_fails_without_starting_children(tmp_path: Path) 
 
 @pytest.mark.integration
 def test_runtime_starts_managed_servers_and_drains_only_owned_processes(
-    tmp_path: Path, livekit_executable: str
+    tmp_path: Path, livekit_executable: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from threading import Thread
@@ -560,6 +562,17 @@ def test_runtime_starts_managed_servers_and_drains_only_owned_processes(
     from ember_agent.runtime.livekit_runtime import run_runtime
 
     requests: list[dict[str, object]] = []
+    request_type = api.CreateRoomRequest
+
+    def short_room(
+        *, name: str, max_participants: int, empty_timeout: int
+    ) -> api.CreateRoomRequest:
+        del empty_timeout
+        return request_type(
+            name=name, max_participants=max_participants, empty_timeout=1, departure_timeout=1
+        )
+
+    monkeypatch.setattr(api, "CreateRoomRequest", short_room)
 
     class OllamaFixture(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
@@ -611,6 +624,14 @@ def test_runtime_starts_managed_servers_and_drains_only_owned_processes(
                         await asyncio.sleep(0.05)
                 binding = RoomBinding.model_validate_json(discovery.read_bytes())
                 secret = credentials(config.services.livekit.credentials_file, create=False)
+                # Allow LiveKit cleanup ticks to run. The hosted participant
+                # must keep this room alive beyond its one-second empty/departure limits.
+                await asyncio.sleep(6)
+                client = RoomClient(binding)
+                await client.connect(secret.token(binding.room, USER_IDENTITY))
+                await client.aclose()
+                client = None
+                await asyncio.sleep(6)
                 client = RoomClient(binding)
                 await client.connect(secret.token(binding.room, USER_IDENTITY))
                 assert (

@@ -73,6 +73,15 @@ class SourceHeaderResolver(Protocol):
         ...
 
 
+@runtime_checkable
+class SourceBranchResolver(Protocol):
+    """Optional bounded original-branch inspection; it never supplies access authority."""
+
+    def branch_status(self, record: SourceRecord) -> str:
+        """Classify a preserved source without hydrating every preceding graph node."""
+        ...
+
+
 def source_text(record: SourceRecord, reference: SourceRef) -> str:
     """Resolve a specific available canonical text part; never concatenate or return reasoning."""
     from ember_memory_abi.errors import SourceUnavailableError

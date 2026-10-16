@@ -1,8 +1,8 @@
 # Root ADR 0015: Phase 8 implementation and acceptance boundaries
 
-Status: implementation in progress in the independent ember-phase-eight clone.
+Status: experimental implementation in progress; main-device text/voice startup has functional evidence.
 Base: origin/master 640888d59ffaa0f501b7453e161fd62c9e945ab6.
-Date: 2026-10-09. Phase 8 is not complete or deployed.
+Date: 2026-10-09; implementation/review updates through 2026-10-16. Phase 8 is not complete.
 
 ## Decision and ownership
 
@@ -176,3 +176,166 @@ so requiring that test alone would discard valid related results. No new alias
 table, graph expansion or hydration call is introduced. Current parser timing is
 separate: roughly 0.02 ms warm p95 for common single scopes and 0.064 ms for the
 two-period range case; this is not final-answer or interpretation latency.
+
+
+## Main-checkout launch convenience: 2026-10-13
+
+A root start.ps1 wrapper resolves the configured deployment and installed root
+executable, then delegates to ember start --open-browser. Service policy, character
+binding, memory ownership and shutdown remain in the existing Python composition.
+BrowserServer opens its exact ready activation URL off-loop through the OS browser;
+no new daemon, watcher, token transport or engine owner is introduced. A disabled
+browser fails before service startup, and desktop opening failure retains the runtime
+without logging the activation capability. Existing explicit configuration and
+setup-only dependency/frontend installation rules remain unchanged.
+
+
+## Installed voice and browser corrections: 2026-10-14
+
+The configured main-device runtime now starts installed CPU Whisper/Silero inputs
+and managed Kokoro-FastAPI/af_alloy with the existing owned-process lifecycle. The
+provider remains an ignored installed tool with its own uv environment, not a third
+product or vendored agent framework. Explicit setup pins source/assets; runtime only
+loads/starts them. Child-only offline, CPU, OMP/MKL and warning-log guards preserve
+Qwen's GPU environment. Health narrows both legacy voice names and current voice
+objects, matching exact IDs rather than display labels.
+
+Two actual browser faults required corrections beyond native-room tests. LiveKit's
+dependent agent expired the room without a human, leaving stale discovery. The
+explicitly hosted participant is now standard with unchanged room-scoped media/data
+limits; the runtime remains the room's deletion owner. Native tests wait beyond short
+empty/departure timers and rejoin. Forced loopback node advertisement also failed
+browser peer connection on Windows. Let LiveKit select host-local media addresses
+and enable loopback candidates; control/signalling remain bound to loopback. Existing
+media listeners can use local interfaces and still require signed capabilities/DTLS.
+No browser security flag, firewall change, TURN service or keepalive worker is added.
+
+The SDK publishes microphone transcription from the hosted participant. The frontend
+recognizes its own current microphone track ID, accepts only final user snapshots and
+avoids duplicate transcript text. Audio autoplay refusal preserves text connectivity.
+Connection errors identify authorization, join and worker readiness without leaking
+provider credentials. A disconnected composer explains how to enable Send.
+
+Delivery cleanup still precedes new input observation. Gateway reservation follows
+the durable observation through one additional callback in existing composition;
+admission failure/cancellation cannot lose a completed original input or authorize
+inference. The core's single pending-delivery invariant remains intact. No extra
+memory lookup, scheduler, worker or per-turn profile machinery is introduced.
+
+Installed-browser acceptance in an isolated synthetic character passed typed and
+microphone input through accepted-memory recall, the single Qwen gateway, Kokoro and
+received audio RTP. See the aggregate speech/browser report and acceptance tracker.
+Physical microphone/headset, broad quality/scale, buffered-revocation and other Phase 8
+release gates remain open. Doctor now distinguishes configured/unprobed speech and
+browser from actual health rather than retaining obsolete Phase 3 labels.
+
+
+## Large private-corpus deep recall correction: 2026-10-14
+
+The running browser API reproduced resource exhaustion despite finding candidates.
+Profiling an isolated SQLite backup of 12,563 accepted character memories identified
+repeated original-branch walks during excerpt validation. Each excerpt reloaded the
+conversation and preceding nodes, spending thousands of statements on shared context.
+
+Reuse the existing deep read profile and source resolver. Add an optional engine-local
+SourceBranchResolver capability, implemented only by DeepSources. The engine uses exact
+selected-path keys in one parameterized SQLite lookup and verifies the matching node;
+missing earlier nodes preserve ambiguity. Paths above 1,024 nodes remain explicitly
+unavailable. There is no new graph table, schema migration or public memory ABI change.
+Ordinary source resolution retains its existing behavior. Cache verified immutable
+source records only within one investigation, bounded by 256 entries and 2 MiB of
+serialized payload. This cache is not an authorization cache: exact quote hashes and
+fresh grants, suppression, selection and source headers are still validated.
+
+Related lookup reuses a current revision already loaded for the same selected memory.
+The agent retains the last completed dependency-certified checkpoint; subsequent
+resource/time exhaustion returns only that checkpoint, qualified as partial. Optional
+archive expansion cannot erase final validated memories. Inspection and answer delivery
+continue current-policy validation; privacy failures and cancellation never use this
+resource fallback. Content-free counters now identify the exhausted limit, and the UI
+disables answering when no retrieved material fits the answer selection.
+
+The five-second deadline, 4,096 SQL statements, 2,048 materialized rows, 16 MiB cumulative
+read envelope, six-memory prompt ceiling and foreground deferral remain unchanged.
+The measured fix removed redundant work rather than enlarging the execution envelope.
+The same fourteen private queries over three rounds reduced budget failures from 30/42
+to 0/42 and increased investigations containing memories from 9 to 39. The remaining
+three are strict event-date queries with undated records excluded. Deep p50/p95 were
+476/577 ms. Ordinary warm p95 was 42.89 ms disabled, 42.82 ms enabled idle and 43.74 ms
+under competing attempts; each condition had 1,000 reads. Existing regression caps passed,
+but all 638 contending deep attempts deferred. This is foreground-priority evidence,
+not completed simultaneous deep semantic execution or a relevance-quality benchmark.
+
+See [aggregate measurements](../reports/phase-8-deep-large-set-20261014.json),
+[validation](../phase-8-validation.md), Memory ADR 0009 and Agent ADR 0006.
+Historical measurements and outstanding Phase 8 acceptance gates remain unchanged.
+## Independent review remediation: 2026-10-16
+
+Review the current `ember` checkout, including existing uncommitted work, rather
+than the historical development clone. The [remediation design](../phase-8-review-remediation.md)
+records behavior, ownership, primitives, bounds and tests before implementation.
+The [engineering review](../reports/phase-8-architecture-review-20261016.md)
+distinguishes fixes from remaining acceptance evidence.
+
+Native acceptance now checks original full-source qualifications even when a
+model selects a shorter factual-looking quote. Existing receipts and job pins
+remain immutable. Selected prompt certification uses the existing metadata-only
+validation path and an opt-in negotiated flag; it reconstructs only required
+evidence/grant/time dependencies after trimming. Public schema artifacts are
+updated; default old serialization, storage versions and migration behavior remain.
+Deep condensation removes current pins and omits uncertified raw observations.
+
+Capture policy writes signal the existing lifecycle task so disconnected backlog
+resumes without another room event. Browser startup can degrade to HTTP text over
+the same character core, or controls only when the gateway is unavailable. Its
+single 45-second renewable transport lease owns one generation and 128 replay IDs;
+disconnect/expiry drains before reservation release. Buffered text is recorded only
+after explicit acknowledgement. No new database, inference scheduler, upstream
+fallback or install-at-startup path is introduced. Initial service/room failures
+select fallback; established rooms are not silently replayed into another transport.
+
+The full Phase 8 acceptance gates remain open. No production store was inspected
+or mutated and no live service was restarted during this review.
+
+## User-directed ordinary word recall: 2026-10-16
+
+Following the separate review, the user reported missing durable recall and asked
+for individual-word search over eligible memories with compact extracted values
+in context. Read-only inspection confirmed existing accepted memories were present;
+predicate-label matches and small candidate/prompt limits prevented useful recall.
+See the [preimplementation design](../phase-8-word-recall.md).
+
+The engine now prioritizes extracted-value word matches before the FTS candidate
+limit and combines these with the existing single semantic lookup. Importance
+orders otherwise comparable lexical values. Canonical fallback filters words before
+its limit. Existing FTS/vector generations and source scopes remain valid; there
+is no schema migration or automatic rebuild. The runtime ranking policy is exposed
+as `ember.rrf-extracted-words@0.2.0`, separately from the generation's recorded ranker.
+
+At the user's direction, ordinary context honors the requested ABI limit up to 100
+total rows including pins, replacing the former six-row bound. The agent selects
+whole extracted values into a quarter of its input guard, capped at 6,144 UTF-8
+units. Working selection has a separate 65,536-byte bound. Subject/negation/modality,
+intent/state and meaningful dates survive compaction; evidence and memory identities
+remain in exact delivery dependencies. Oversized and duplicate displayed values do
+not prevent smaller distinct values from fitting. Explicit deep recall keeps its
+previous bounds. No new public contract, model inference or provider coupling is
+introduced; the existing engine/composer responsibility boundary is preserved.
+
+Sanitized real-engine/composer tests cover a name episode with a distinct subject
+among noisy name predicates, individual Unicode words across all supported memory
+kinds, relevance before limits, suppression/source exclusion, 8k/32k allocations,
+oversized/duplicate values and delivery invalidation. Existing native/profile/import
+policies are unchanged. No live generation, service restart or canonical mutation
+was performed. Current config inspection identified an 8,192 context setting;
+32,768 remains a deployment choice requiring the usual gateway restart. Previous
+ordinary performance results do not certify the enlarged candidate bound.
+
+The operator subsequently authorized the private 32k configuration and activation.
+A backed-up atomic config update and graceful owned restart completed. Authenticated
+HTTP text and normal LiveKit room checks both returned the expected saved-name answer
+with 20 recalled memories. Final browser/gateway state reports LiveKit, voice/text
+ready, a healthy journal and 32,768 context; the active model reports the same context.
+The reported transient Connect-busy error was not reproduced during inspection.
+No schema migration, index rebuild or imported-claim approval was required. See
+the [activation evidence](../phase-8-validation.md) for scope and limitations.

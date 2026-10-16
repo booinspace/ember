@@ -1,0 +1,2346 @@
+{
+  "format": "ember.deep-recall-large-set@0.1.0",
+  "date": "2026-10-14",
+  "canonical_memory_records": 12563,
+  "method": "Read-only SQLite backups of the registered stores and copies of disposable indexes; isolated engine ownership. Same fourteen private queries, three rounds, pinned CPU BGE-small, no model generation. Case identifiers replace query text.",
+  "before_summary": {
+    "investigations": 42,
+    "with_memories": 9,
+    "budget_failures": 30,
+    "empty_budget_failures": 30,
+    "p50_ms": 859.0,
+    "p95_ms": 983,
+    "max_ms": 1016
+  },
+  "after_summary": {
+    "investigations": 42,
+    "with_memories": 39,
+    "budget_failures": 0,
+    "empty_budget_failures": 0,
+    "p50_ms": 476.0,
+    "p95_ms": 577,
+    "max_ms": 593
+  },
+  "before": {
+    "memory_records": 12563,
+    "deep_cases": [
+      {
+        "case": 0,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 2032,
+          "hydrated_spans": 0,
+          "elapsed_ms": 968,
+          "uncached_embeddings": 0,
+          "sql_statements": 4099,
+          "materialized_bytes": 1664950
+        }
+      },
+      {
+        "case": 1,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 14,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 15,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 1679,
+          "hydrated_spans": 14,
+          "elapsed_ms": 702,
+          "uncached_embeddings": 0,
+          "sql_statements": 3652,
+          "materialized_bytes": 1489276
+        }
+      },
+      {
+        "case": 2,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 24,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 2049,
+          "hydrated_spans": 0,
+          "elapsed_ms": 922,
+          "uncached_embeddings": 0,
+          "sql_statements": 4039,
+          "materialized_bytes": 1630599
+        }
+      },
+      {
+        "case": 3,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 12,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 14,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 965,
+          "hydrated_spans": 12,
+          "elapsed_ms": 530,
+          "uncached_embeddings": 0,
+          "sql_statements": 1642,
+          "materialized_bytes": 825875
+        }
+      },
+      {
+        "case": 4,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1946,
+          "hydrated_spans": 0,
+          "elapsed_ms": 938,
+          "uncached_embeddings": 0,
+          "sql_statements": 4097,
+          "materialized_bytes": 1454146
+        }
+      },
+      {
+        "case": 5,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1985,
+          "hydrated_spans": 0,
+          "elapsed_ms": 922,
+          "uncached_embeddings": 0,
+          "sql_statements": 4100,
+          "materialized_bytes": 1672064
+        }
+      },
+      {
+        "case": 6,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 917,
+          "hydrated_spans": 9,
+          "elapsed_ms": 452,
+          "uncached_embeddings": 0,
+          "sql_statements": 1785,
+          "materialized_bytes": 657408
+        }
+      },
+      {
+        "case": 7,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 22,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1819,
+          "hydrated_spans": 0,
+          "elapsed_ms": 811,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1476490
+        }
+      },
+      {
+        "case": 8,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 1838,
+          "hydrated_spans": 0,
+          "elapsed_ms": 860,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1534561
+        }
+      },
+      {
+        "case": 9,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 23,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1990,
+          "hydrated_spans": 0,
+          "elapsed_ms": 983,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1590904
+        }
+      },
+      {
+        "case": 10,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1916,
+          "hydrated_spans": 0,
+          "elapsed_ms": 969,
+          "uncached_embeddings": 0,
+          "sql_statements": 4100,
+          "materialized_bytes": 1468741
+        }
+      },
+      {
+        "case": 11,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1672,
+          "hydrated_spans": 0,
+          "elapsed_ms": 858,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1355001
+        }
+      },
+      {
+        "case": 12,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 6,
+          "searches": 1,
+          "abi_calls": 3,
+          "rows_reported": 389,
+          "hydrated_spans": 0,
+          "elapsed_ms": 77,
+          "uncached_embeddings": 0,
+          "sql_statements": 4099,
+          "materialized_bytes": 417727
+        }
+      },
+      {
+        "case": 13,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "canonical_fallback",
+          "index_missing_or_unavailable",
+          "undated_records_excluded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 0,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 24,
+          "hydrated_spans": 0,
+          "elapsed_ms": 0,
+          "uncached_embeddings": 0,
+          "sql_statements": 31,
+          "materialized_bytes": 1471
+        }
+      },
+      {
+        "case": 0,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 2032,
+          "hydrated_spans": 0,
+          "elapsed_ms": 1016,
+          "uncached_embeddings": 0,
+          "sql_statements": 4099,
+          "materialized_bytes": 1664950
+        }
+      },
+      {
+        "case": 1,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 14,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 15,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 1679,
+          "hydrated_spans": 14,
+          "elapsed_ms": 750,
+          "uncached_embeddings": 0,
+          "sql_statements": 3652,
+          "materialized_bytes": 1489276
+        }
+      },
+      {
+        "case": 2,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 24,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 2049,
+          "hydrated_spans": 0,
+          "elapsed_ms": 906,
+          "uncached_embeddings": 0,
+          "sql_statements": 4039,
+          "materialized_bytes": 1630599
+        }
+      },
+      {
+        "case": 3,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 12,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 14,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 965,
+          "hydrated_spans": 12,
+          "elapsed_ms": 515,
+          "uncached_embeddings": 0,
+          "sql_statements": 1642,
+          "materialized_bytes": 825875
+        }
+      },
+      {
+        "case": 4,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1946,
+          "hydrated_spans": 0,
+          "elapsed_ms": 937,
+          "uncached_embeddings": 0,
+          "sql_statements": 4097,
+          "materialized_bytes": 1454146
+        }
+      },
+      {
+        "case": 5,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1985,
+          "hydrated_spans": 0,
+          "elapsed_ms": 922,
+          "uncached_embeddings": 0,
+          "sql_statements": 4100,
+          "materialized_bytes": 1672064
+        }
+      },
+      {
+        "case": 6,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 917,
+          "hydrated_spans": 9,
+          "elapsed_ms": 484,
+          "uncached_embeddings": 0,
+          "sql_statements": 1785,
+          "materialized_bytes": 657408
+        }
+      },
+      {
+        "case": 7,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 22,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1819,
+          "hydrated_spans": 0,
+          "elapsed_ms": 827,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1476490
+        }
+      },
+      {
+        "case": 8,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 1838,
+          "hydrated_spans": 0,
+          "elapsed_ms": 844,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1534561
+        }
+      },
+      {
+        "case": 9,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 23,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1990,
+          "hydrated_spans": 0,
+          "elapsed_ms": 983,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1590904
+        }
+      },
+      {
+        "case": 10,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1916,
+          "hydrated_spans": 0,
+          "elapsed_ms": 952,
+          "uncached_embeddings": 0,
+          "sql_statements": 4100,
+          "materialized_bytes": 1468741
+        }
+      },
+      {
+        "case": 11,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1672,
+          "hydrated_spans": 0,
+          "elapsed_ms": 891,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1355001
+        }
+      },
+      {
+        "case": 12,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 6,
+          "searches": 1,
+          "abi_calls": 3,
+          "rows_reported": 389,
+          "hydrated_spans": 0,
+          "elapsed_ms": 61,
+          "uncached_embeddings": 0,
+          "sql_statements": 4099,
+          "materialized_bytes": 417727
+        }
+      },
+      {
+        "case": 13,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "canonical_fallback",
+          "index_missing_or_unavailable",
+          "undated_records_excluded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 0,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 24,
+          "hydrated_spans": 0,
+          "elapsed_ms": 16,
+          "uncached_embeddings": 0,
+          "sql_statements": 31,
+          "materialized_bytes": 1471
+        }
+      },
+      {
+        "case": 0,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 2032,
+          "hydrated_spans": 0,
+          "elapsed_ms": 1015,
+          "uncached_embeddings": 0,
+          "sql_statements": 4099,
+          "materialized_bytes": 1664950
+        }
+      },
+      {
+        "case": 1,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 14,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 15,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 1679,
+          "hydrated_spans": 14,
+          "elapsed_ms": 765,
+          "uncached_embeddings": 0,
+          "sql_statements": 3652,
+          "materialized_bytes": 1489276
+        }
+      },
+      {
+        "case": 2,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 24,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 2049,
+          "hydrated_spans": 0,
+          "elapsed_ms": 922,
+          "uncached_embeddings": 0,
+          "sql_statements": 4039,
+          "materialized_bytes": 1630599
+        }
+      },
+      {
+        "case": 3,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 12,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 14,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 965,
+          "hydrated_spans": 12,
+          "elapsed_ms": 530,
+          "uncached_embeddings": 0,
+          "sql_statements": 1642,
+          "materialized_bytes": 825875
+        }
+      },
+      {
+        "case": 4,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1946,
+          "hydrated_spans": 0,
+          "elapsed_ms": 969,
+          "uncached_embeddings": 0,
+          "sql_statements": 4097,
+          "materialized_bytes": 1454146
+        }
+      },
+      {
+        "case": 5,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1985,
+          "hydrated_spans": 0,
+          "elapsed_ms": 952,
+          "uncached_embeddings": 0,
+          "sql_statements": 4100,
+          "materialized_bytes": 1672064
+        }
+      },
+      {
+        "case": 6,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 917,
+          "hydrated_spans": 9,
+          "elapsed_ms": 469,
+          "uncached_embeddings": 0,
+          "sql_statements": 1785,
+          "materialized_bytes": 657408
+        }
+      },
+      {
+        "case": 7,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 22,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1819,
+          "hydrated_spans": 0,
+          "elapsed_ms": 844,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1476490
+        }
+      },
+      {
+        "case": 8,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 1838,
+          "hydrated_spans": 0,
+          "elapsed_ms": 827,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1534561
+        }
+      },
+      {
+        "case": 9,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 23,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1990,
+          "hydrated_spans": 0,
+          "elapsed_ms": 983,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1590904
+        }
+      },
+      {
+        "case": 10,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1916,
+          "hydrated_spans": 0,
+          "elapsed_ms": 952,
+          "uncached_embeddings": 0,
+          "sql_statements": 4100,
+          "materialized_bytes": 1468741
+        }
+      },
+      {
+        "case": 11,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1672,
+          "hydrated_spans": 0,
+          "elapsed_ms": 891,
+          "uncached_embeddings": 0,
+          "sql_statements": 4098,
+          "materialized_bytes": 1355001
+        }
+      },
+      {
+        "case": 12,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "read_budget_exceeded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 6,
+          "searches": 1,
+          "abi_calls": 3,
+          "rows_reported": 389,
+          "hydrated_spans": 0,
+          "elapsed_ms": 77,
+          "uncached_embeddings": 0,
+          "sql_statements": 4099,
+          "materialized_bytes": 417727
+        }
+      },
+      {
+        "case": 13,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "canonical_fallback",
+          "index_missing_or_unavailable",
+          "undated_records_excluded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 0,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 24,
+          "hydrated_spans": 0,
+          "elapsed_ms": 16,
+          "uncached_embeddings": 0,
+          "sql_statements": 31,
+          "materialized_bytes": 1471
+        }
+      }
+    ],
+    "ordinary": {},
+    "limits": {
+      "deadline_ms": 5000,
+      "sql_statements": 4096,
+      "rows": 2048,
+      "bytes": 16777216
+    },
+    "privacy": "Aggregate counts only; query text, findings, identifiers and source text excluded.",
+    "limitations": [
+      "Not a source-backed relevance/recall quality evaluation.",
+      "Cold deep queries use lexical retrieval when a query embedding is uncached.",
+      "Foreground contention uses conservative deferral; this does not certify concurrent deep semantic execution.",
+      "No Qwen, speech, refresh, RSS or multi-character measurements."
+    ]
+  },
+  "after": {
+    "memory_records": 12563,
+    "deep_cases": [
+      {
+        "case": 0,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 11,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1033,
+          "hydrated_spans": 24,
+          "elapsed_ms": 577,
+          "uncached_embeddings": 0,
+          "sql_statements": 1472,
+          "materialized_bytes": 894466,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 1,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 14,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 15,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 627,
+          "hydrated_spans": 14,
+          "elapsed_ms": 328,
+          "uncached_embeddings": 0,
+          "sql_statements": 1015,
+          "materialized_bytes": 704257,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 2,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 12,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 24,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1064,
+          "hydrated_spans": 24,
+          "elapsed_ms": 484,
+          "uncached_embeddings": 0,
+          "sql_statements": 1478,
+          "materialized_bytes": 898506,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 3,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 12,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 14,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 723,
+          "hydrated_spans": 12,
+          "elapsed_ms": 452,
+          "uncached_embeddings": 0,
+          "sql_statements": 1049,
+          "materialized_bytes": 517200,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 4,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 17,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 760,
+          "hydrated_spans": 17,
+          "elapsed_ms": 483,
+          "uncached_embeddings": 0,
+          "sql_statements": 1121,
+          "materialized_bytes": 522159,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 5,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 7,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 970,
+          "hydrated_spans": 24,
+          "elapsed_ms": 516,
+          "uncached_embeddings": 0,
+          "sql_statements": 1439,
+          "materialized_bytes": 747396,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 6,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 507,
+          "hydrated_spans": 9,
+          "elapsed_ms": 312,
+          "uncached_embeddings": 0,
+          "sql_statements": 764,
+          "materialized_bytes": 343848,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 7,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 10,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 22,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1042,
+          "hydrated_spans": 24,
+          "elapsed_ms": 546,
+          "uncached_embeddings": 0,
+          "sql_statements": 2040,
+          "materialized_bytes": 1060706,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 8,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 589,
+          "hydrated_spans": 9,
+          "elapsed_ms": 328,
+          "uncached_embeddings": 0,
+          "sql_statements": 903,
+          "materialized_bytes": 753364,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 9,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 23,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 858,
+          "hydrated_spans": 11,
+          "elapsed_ms": 562,
+          "uncached_embeddings": 0,
+          "sql_statements": 1212,
+          "materialized_bytes": 761154,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 10,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 723,
+          "hydrated_spans": 11,
+          "elapsed_ms": 469,
+          "uncached_embeddings": 0,
+          "sql_statements": 1040,
+          "materialized_bytes": 517327,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 11,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 11,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 816,
+          "hydrated_spans": 11,
+          "elapsed_ms": 530,
+          "uncached_embeddings": 0,
+          "sql_statements": 1853,
+          "materialized_bytes": 729159,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 12,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 6,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted",
+          "validation_reserve"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 6,
+          "searches": 2,
+          "abi_calls": 4,
+          "rows_reported": 368,
+          "hydrated_spans": 6,
+          "elapsed_ms": 62,
+          "uncached_embeddings": 0,
+          "sql_statements": 3966,
+          "materialized_bytes": 361555,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 13,
+        "sample": 0,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "canonical_fallback",
+          "index_missing_or_unavailable",
+          "undated_records_excluded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 0,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 24,
+          "hydrated_spans": 0,
+          "elapsed_ms": 0,
+          "uncached_embeddings": 0,
+          "sql_statements": 31,
+          "materialized_bytes": 1471,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 0,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 11,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1033,
+          "hydrated_spans": 24,
+          "elapsed_ms": 577,
+          "uncached_embeddings": 0,
+          "sql_statements": 1472,
+          "materialized_bytes": 894466,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 1,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 14,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 15,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 627,
+          "hydrated_spans": 14,
+          "elapsed_ms": 344,
+          "uncached_embeddings": 0,
+          "sql_statements": 1015,
+          "materialized_bytes": 704257,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 2,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 12,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 24,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1064,
+          "hydrated_spans": 24,
+          "elapsed_ms": 500,
+          "uncached_embeddings": 0,
+          "sql_statements": 1478,
+          "materialized_bytes": 898506,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 3,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 12,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 14,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 723,
+          "hydrated_spans": 12,
+          "elapsed_ms": 453,
+          "uncached_embeddings": 0,
+          "sql_statements": 1049,
+          "materialized_bytes": 517200,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 4,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 17,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 760,
+          "hydrated_spans": 17,
+          "elapsed_ms": 500,
+          "uncached_embeddings": 0,
+          "sql_statements": 1121,
+          "materialized_bytes": 522159,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 5,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 7,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 970,
+          "hydrated_spans": 24,
+          "elapsed_ms": 530,
+          "uncached_embeddings": 0,
+          "sql_statements": 1439,
+          "materialized_bytes": 747396,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 6,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 507,
+          "hydrated_spans": 9,
+          "elapsed_ms": 312,
+          "uncached_embeddings": 0,
+          "sql_statements": 764,
+          "materialized_bytes": 343848,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 7,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 10,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 22,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1042,
+          "hydrated_spans": 24,
+          "elapsed_ms": 515,
+          "uncached_embeddings": 0,
+          "sql_statements": 2040,
+          "materialized_bytes": 1060706,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 8,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 589,
+          "hydrated_spans": 9,
+          "elapsed_ms": 327,
+          "uncached_embeddings": 0,
+          "sql_statements": 903,
+          "materialized_bytes": 753364,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 9,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 23,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 858,
+          "hydrated_spans": 11,
+          "elapsed_ms": 547,
+          "uncached_embeddings": 0,
+          "sql_statements": 1212,
+          "materialized_bytes": 761154,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 10,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 723,
+          "hydrated_spans": 11,
+          "elapsed_ms": 469,
+          "uncached_embeddings": 0,
+          "sql_statements": 1040,
+          "materialized_bytes": 517327,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 11,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 11,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 816,
+          "hydrated_spans": 11,
+          "elapsed_ms": 577,
+          "uncached_embeddings": 0,
+          "sql_statements": 1853,
+          "materialized_bytes": 729159,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 12,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 6,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted",
+          "validation_reserve"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 6,
+          "searches": 2,
+          "abi_calls": 4,
+          "rows_reported": 368,
+          "hydrated_spans": 6,
+          "elapsed_ms": 63,
+          "uncached_embeddings": 0,
+          "sql_statements": 3966,
+          "materialized_bytes": 361555,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 13,
+        "sample": 1,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "canonical_fallback",
+          "index_missing_or_unavailable",
+          "undated_records_excluded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 0,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 24,
+          "hydrated_spans": 0,
+          "elapsed_ms": 0,
+          "uncached_embeddings": 0,
+          "sql_statements": 31,
+          "materialized_bytes": 1471,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 0,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 11,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1033,
+          "hydrated_spans": 24,
+          "elapsed_ms": 593,
+          "uncached_embeddings": 0,
+          "sql_statements": 1472,
+          "materialized_bytes": 894466,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 1,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 14,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 15,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 627,
+          "hydrated_spans": 14,
+          "elapsed_ms": 375,
+          "uncached_embeddings": 0,
+          "sql_statements": 1015,
+          "materialized_bytes": 704257,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 2,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 12,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 24,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1064,
+          "hydrated_spans": 24,
+          "elapsed_ms": 515,
+          "uncached_embeddings": 0,
+          "sql_statements": 1478,
+          "materialized_bytes": 898506,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 3,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 12,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 14,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 723,
+          "hydrated_spans": 12,
+          "elapsed_ms": 452,
+          "uncached_embeddings": 0,
+          "sql_statements": 1049,
+          "materialized_bytes": 517200,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 4,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 17,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 760,
+          "hydrated_spans": 17,
+          "elapsed_ms": 516,
+          "uncached_embeddings": 0,
+          "sql_statements": 1121,
+          "materialized_bytes": 522159,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 5,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 7,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 970,
+          "hydrated_spans": 24,
+          "elapsed_ms": 515,
+          "uncached_embeddings": 0,
+          "sql_statements": 1439,
+          "materialized_bytes": 747396,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 6,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 507,
+          "hydrated_spans": 9,
+          "elapsed_ms": 359,
+          "uncached_embeddings": 0,
+          "sql_statements": 764,
+          "materialized_bytes": 343848,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 7,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 10,
+        "observations": 24,
+        "prompt_memories": 1,
+        "reasons": [
+          "bounded_or_unavailable",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_outbox_pending"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 22,
+          "searches": 1,
+          "abi_calls": 5,
+          "rows_reported": 1042,
+          "hydrated_spans": 24,
+          "elapsed_ms": 483,
+          "uncached_embeddings": 0,
+          "sql_statements": 2040,
+          "materialized_bytes": 1060706,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 8,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 9,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 20,
+          "searches": 2,
+          "abi_calls": 5,
+          "rows_reported": 589,
+          "hydrated_spans": 9,
+          "elapsed_ms": 311,
+          "uncached_embeddings": 0,
+          "sql_statements": 903,
+          "materialized_bytes": 753364,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 9,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 23,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 858,
+          "hydrated_spans": 11,
+          "elapsed_ms": 563,
+          "uncached_embeddings": 0,
+          "sql_statements": 1212,
+          "materialized_bytes": 761154,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 10,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 8,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 17,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 723,
+          "hydrated_spans": 11,
+          "elapsed_ms": 468,
+          "uncached_embeddings": 0,
+          "sql_statements": 1040,
+          "materialized_bytes": 517327,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 11,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 11,
+        "observations": 11,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 16,
+          "searches": 2,
+          "abi_calls": 6,
+          "rows_reported": 816,
+          "hydrated_spans": 11,
+          "elapsed_ms": 547,
+          "uncached_embeddings": 0,
+          "sql_statements": 1853,
+          "materialized_bytes": 729159,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 12,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 6,
+        "observations": 6,
+        "prompt_memories": 1,
+        "reasons": [
+          "canonical_archive_scan",
+          "canonical_fallback",
+          "deep_semantic_deferred_for_foreground_isolation",
+          "index_missing_or_unavailable",
+          "index_outbox_pending",
+          "unavailable_sources_omitted",
+          "validation_reserve"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 6,
+          "searches": 2,
+          "abi_calls": 4,
+          "rows_reported": 368,
+          "hydrated_spans": 6,
+          "elapsed_ms": 62,
+          "uncached_embeddings": 0,
+          "sql_statements": 3966,
+          "materialized_bytes": 361555,
+          "limits_hit": []
+        }
+      },
+      {
+        "case": 13,
+        "sample": 2,
+        "outcome": "partial",
+        "memories": 0,
+        "observations": 0,
+        "prompt_memories": 0,
+        "reasons": [
+          "canonical_fallback",
+          "index_missing_or_unavailable",
+          "undated_records_excluded"
+        ],
+        "inspection_valid": true,
+        "counters": {
+          "inspected": 0,
+          "searches": 1,
+          "abi_calls": 4,
+          "rows_reported": 24,
+          "hydrated_spans": 0,
+          "elapsed_ms": 15,
+          "uncached_embeddings": 0,
+          "sql_statements": 31,
+          "materialized_bytes": 1471,
+          "limits_hit": []
+        }
+      }
+    ],
+    "ordinary": {
+      "disabled": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 33.71939994394779,
+        "p95_ms": 42.89010004140437,
+        "p99_ms": 47.578199999406934,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "idle": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 33.69774983730167,
+        "p95_ms": 42.82279987819493,
+        "p99_ms": 48.755700001493096,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "active": {
+        "extensions": {},
+        "samples": 1000,
+        "p50_ms": 34.06325005926192,
+        "p95_ms": 43.73880010098219,
+        "p99_ms": 48.01720008254051,
+        "over_150_ms": 0,
+        "degraded": 0
+      },
+      "idle_regression": {
+        "limits_ms": {
+          "p50_ms": 1.6859699971973896,
+          "p95_ms": 4.289010004140437,
+          "p99_ms": 7.13672999991104
+        },
+        "deltas_ms": {
+          "p50_ms": -0.021650106646120548,
+          "p95_ms": -0.06730016320943832,
+          "p99_ms": 1.1775000020861626
+        },
+        "timeout_delta_percentage_points": 0.0,
+        "degraded_delta_percentage_points": 0.0,
+        "passed": true
+      },
+      "active_regression": {
+        "limits_ms": {
+          "p50_ms": 1.6859699971973896,
+          "p95_ms": 4.289010004140437,
+          "p99_ms": 7.13672999991104
+        },
+        "deltas_ms": {
+          "p50_ms": 0.343850115314126,
+          "p95_ms": 0.8487000595778227,
+          "p99_ms": 0.4390000831335783
+        },
+        "timeout_delta_percentage_points": 0.0,
+        "degraded_delta_percentage_points": 0.0,
+        "passed": true
+      },
+      "deep_outcomes_during_foreground": {
+        "deferred": 638
+      }
+    },
+    "limits": {
+      "deadline_ms": 5000,
+      "sql_statements": 4096,
+      "rows": 2048,
+      "bytes": 16777216
+    },
+    "privacy": "Aggregate counts only; query text, findings, identifiers and source text excluded.",
+    "limitations": [
+      "Not a source-backed relevance/recall quality evaluation.",
+      "Cold deep queries use lexical retrieval when a query embedding is uncached.",
+      "Foreground contention uses conservative deferral; this does not certify concurrent deep semantic execution.",
+      "No Qwen, speech, refresh, RSS or multi-character measurements."
+    ]
+  },
+  "interpretation": "Thirty-nine topic investigations now return accepted memories. Three strict event-date queries correctly exclude undated records. All retained results pass current dependency inspection. Contending deep attempts are deferred; this is not evidence of completed concurrent deep semantic recall.",
+  "authenticated_control_api": {
+    "method": "LocalRuntime uses deployment settings and existing character binding copied into the isolated snapshot. BrowserControl bootstrap, investigation and inspection routes use ASGI transport. No room connection or model generation.",
+    "receipts": [
+      {
+        "case": 0,
+        "api_status": "partial",
+        "memories": 11,
+        "observations": 24,
+        "elapsed_ms": 578,
+        "limits_hit": []
+      },
+      {
+        "case": 1,
+        "api_status": "partial",
+        "memories": 6,
+        "observations": 14,
+        "elapsed_ms": 344,
+        "limits_hit": []
+      },
+      {
+        "case": 2,
+        "api_status": "partial",
+        "memories": 12,
+        "observations": 24,
+        "elapsed_ms": 515,
+        "limits_hit": []
+      }
+    ]
+  }
+}

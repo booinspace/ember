@@ -3445,6 +3445,12 @@
           "title": "Recall Only",
           "type": "boolean"
         },
+        "refresh_dependencies": {
+          "default": false,
+          "description": "Negotiated selected_context_dependencies_v1 validation returns a fresh bounded canonical evidence closure for the selected memories and explicit raw excerpts. Caller time bounds and historical/current policy checks remain mandatory.",
+          "title": "Refresh Dependencies",
+          "type": "boolean"
+        },
         "row_budget": {
           "default": 256,
           "maximum": 512,

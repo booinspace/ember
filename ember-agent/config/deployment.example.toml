@@ -67,6 +67,10 @@ timezone = "Europe/London"
 
 [browser]
 enabled = false
+# Optional LAN access: set your assigned RFC1918 IPv4 address. Empty keeps loopback-only.
+# start.ps1 ensures application-scoped Private/Domain LocalSubnet firewall rules.
+# Microphone capture from another device requires HTTPS; HTTP LAN supports text/playback.
+lan_address = ""
 endpoint = "http://127.0.0.1:8787"
 # Build ember-agent/frontend during setup, then point to its production dist directory.
 assets = "../frontend/dist"

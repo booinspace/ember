@@ -4,6 +4,8 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
 from ember_memory_abi.interfaces import MemoryQuery
 from ember_memory_engine import CanonicalEngine
 from ember_memory_engine.capture import CaptureService, CaptureSettings
@@ -12,6 +14,73 @@ from ember_memory_engine.processing_contracts import native_specification
 from .test_phase_seven import AUTHORITY, NativeModel, append_native
 
 SPEC = native_specification("synthetic", "a" * 64, workload="P3")
+
+
+@pytest.mark.parametrize("dated", [False, True])
+@pytest.mark.parametrize(
+    "source",
+    [
+        "Imagine Milo is my shark plushie.",
+        "Pretend that Milo is my shark plushie.",
+        "Suppose Milo is my shark plushie.",
+        "Assume Milo is my shark plushie.",
+        "Ember told me: Milo is my shark plushie.",
+        "The assistant wrote: Milo is my shark plushie.",
+        "Use this example: Milo is my shark plushie.",
+        "If Milo is my shark plushie, what should I call the other toy?",
+        "Milo is my shark plushie. That is a fictional scenario.",
+        "Maybe Milo is my shark plushie.",
+        "Milo is my shark plushie. That is not true; it is just a roleplay.",
+    ],
+)
+def test_capture_cannot_strip_source_qualifiers(tmp_path: Path, dated: bool, source: str) -> None:
+    from ember_memory_engine.processing_contracts import (
+        ClaimBatch,
+        DatedClaimBatch,
+        DatedFactClaim,
+        FactClaim,
+        ModelWindow,
+        native_temporal_specification,
+    )
+
+    quote = "Milo is my shark plushie"
+
+    class SelectiveModel:
+        specification = native_temporal_specification("synthetic", "a" * 64) if dated else SPEC
+
+        async def extract(self, window: ModelWindow) -> ClaimBatch | DatedClaimBatch:
+            assert window.text == source
+            fields = {
+                "kind": "fact",
+                "statement": quote,
+                "quote": quote,
+                "quote_start": None,
+                "predicate": "personal.owns_object",
+                "value": quote,
+                "entity_name": None,
+                "modality": "FACTUAL_ASSERTION",
+                "confidence": 0.99,
+                "importance": 0.8,
+                "verdict": "supported",
+            }
+            if dated:
+                return DatedClaimBatch(
+                    claims=(DatedFactClaim.model_validate({**fields, "date": None}),)
+                )
+            return ClaimBatch(claims=(FactClaim.model_validate(fields),))
+
+    root = tmp_path / "data"
+    with CanonicalEngine(root) as engine, ThreadPoolExecutor(max_workers=1) as worker:
+        character = engine.create_character().store_id
+        append_native(engine, character, source)
+        capture = CaptureService(engine, character)
+        assert not asyncio.run(capture.drain(SelectiveModel(), worker))
+        assert capture.summary().deferred == 1
+        assert not engine.character(character).search(MemoryQuery()).results
+    with CanonicalEngine(root) as restarted:
+        capture = CaptureService(restarted, character)
+        assert capture.summary().deferred == 1
+        assert not restarted.character(character).search(MemoryQuery()).results
 
 
 class CaptureModel(NativeModel):

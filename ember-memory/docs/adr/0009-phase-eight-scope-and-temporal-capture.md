@@ -1,6 +1,6 @@
 # Memory ADR 0009: Source selection, temporal selectors and native checkpoints
 
-Status: partial Phase 8 implementation, experimental and not deployed.
+Status: partial Phase 8 implementation, experimental; main-device integration is deployed with broader acceptance still open.
 
 ## Decision
 
@@ -100,3 +100,73 @@ explicit supporting dates remain independently usable. This reads the already
 resolved immutable source record, without changing WindowRef or repinning old jobs.
 Focused enrichment isolation tests preserve immutable library approvals, a second
 character's seed, seed-replay behavior and an existing legacy extraction job.
+
+
+## Large-corpus branch validation: 2026-10-14
+
+DeepSources implements the optional SourceBranchResolver backend capability. An exact
+selected-path lookup replaces repeated connection/payload loads of every node preceding
+each quoted message. The immutable conversation and matching node retain hash/identity
+checks; the first missing earlier node still makes the branch ambiguous. Paths above
+1,024 nodes are unavailable within this profile. Existing schema/source identities,
+ordinary resolver semantics and the public memory ABI remain unchanged.
+
+A per-investigation LRU retains at most 256 verified immutable source records and 2 MiB
+serialized payload. It shares the existing budget and does not cache permissions or
+source availability. Exact evidence validation is reused for every quote, and delivery
+still checks current grant windows, suppression, selection and source headers. Current
+memory revisions are loaded once when identical to the requested revision.
+
+Budgets remain 4,096 statements, 2,048 materialized rows and 16 MiB cumulative reads.
+The isolated 12,563-memory snapshot no longer exhausted these limits for the matched
+42 investigations. See [Root ADR 0015](../../../docs/adr/0015-phase-eight-implementation.md)
+and its aggregate report. Python/native peak RSS, refreshed-index contention and broad
+quality gates remain open; serialized cache bytes are not a peak-RSS measurement.
+## Source context and selected certificates: 2026-10-16
+
+Both native processing profiles validate the original source's reported,
+hypothetical and fictional qualifications, independently of a model's selected
+subspan or factual label. Unsupported proposals stay deferred; prior receipts and
+accepted history are not rewritten. Synthetic capture/extraction/acceptance tests
+reproduce qualifier stripping under both profiles and verify restart visibility.
+
+The optional `selected_context_dependencies_v1` capability negotiates
+`RelatedRequest.refresh_dependencies` on the existing validate operation. Canonical
+header/evidence metadata reconstructs selected hard evidence, effective grant
+windows and current-state expiry. Caller-supplied history/profile boundaries remain
+conservative constraints; historical selectors, current policy/source controls and
+suppression are still validated. Explicit raw excerpt/archive dependencies retain
+their independent permissions. Oversized/invalid results return no certificate.
+No source bodies, memories, vectors or relationships are hydrated. The existing
+response dependency field carries the result; ordinary validation and default
+request serialization remain compatible. This is an experimental ABI 0.5.0 additive
+negotiated contract; engine/schema/index versions and migration requirements remain.
+
+Regression tests cover omitted versus selected expiry, permanent grants after an
+unused temporary grant expires, revocation, source exclusion, row limits and metadata-
+only operation. Root ADR 0015 records integration and remaining release gates.
+
+## Ordinary extracted-word selection: 2026-10-16
+
+The user requested per-word recall with more relevant extracted values. Reuse the
+existing FTS index and canonical revision join: tokenize Unicode words, remove
+conversational filler from multiword lexical queries and prioritize matches in
+extracted values over internal predicate/entity labels before top-k. Importance
+orders equal word coverage; BM25 and the existing single semantic encoding remain.
+The lexical candidate bound is 100 and semantic bound 40, under the unchanged
+150 ms soft deadline. Literal value coverage contributes an explicit ranking reason;
+runtime ranker `ember.rrf-extracted-words@0.2.0` is distinct from generation metadata.
+
+Canonical fallback uses the same literal word scoring in SQL before its limit.
+It no longer requires the whole conversational question as a substring or samples
+only the first high-importance rows. It remains explicitly degraded without a
+derived index. Current source selection, grants, suppression and temporal/revision
+eligibility precede candidate limits and final canonical checks remain mandatory.
+
+`retrieve_context` now honors its requested limit within the existing 100-row ABI
+envelope shared with pins, instead of silently restricting ordinary rows to six.
+Prompt packing is agent-owned. No source, predicate, identity, accepted claim or
+index schema is rewritten; existing generations need no rebuild. See
+[Root ADR 0015](../../../docs/adr/0015-phase-eight-implementation.md) and the
+[design](../../../docs/phase-8-word-recall.md). Historical performance reports need
+new measurements for the expanded ordinary candidate bound.

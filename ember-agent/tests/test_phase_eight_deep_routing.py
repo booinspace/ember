@@ -95,3 +95,47 @@ def test_cancelled_deep_input_still_has_original_capture(tmp_path: Path) -> None
             await memory.aclose()
 
         asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_gateway_admission_failure_keeps_original_input_after_delivery_drain(
+    tmp_path: Path, cancelled: bool
+) -> None:
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        sink = ArchiveDialogueSink(engine.archive(character), ensure_subject(engine, character))
+        memory = InProcessAsyncMemoryClient(engine.character(character))
+
+        async def exercise() -> None:
+            model = FakeModel()
+            core = CharacterCore(memory, model, model_tag="synthetic", sink=sink)
+            agent = EmberAgent(core)
+            events: list[str] = []
+
+            async def drain() -> None:
+                assert len(CaptureService(engine, character).pending()) == 0
+                events.append("drained")
+
+            async def admit() -> None:
+                assert len(CaptureService(engine, character).pending()) == 1
+                events.append("admission")
+                if cancelled:
+                    raise asyncio.CancelledError
+                raise GatewayError("realtime_reservation_failed")
+
+            agent.before_turn = drain
+            agent.before_generation = admit
+            agent.prepare_failed = lambda: events.append("failed")
+            message = llm.ChatContext().add_message(
+                role="user", content="Synthetic original speech."
+            )
+            with pytest.raises(asyncio.CancelledError if cancelled else GatewayError):
+                await agent.prepare_turn(message)
+            assert events == ["drained", "admission", "failed"]
+            assert agent.gateway_llm.prepared is None and core.pending_delivery is None
+            assert len(CaptureService(engine, character).pending()) == 1
+            assert not model.requests
+            await sink.aclose()
+            await memory.aclose()
+
+        asyncio.run(exercise())
