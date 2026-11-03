@@ -7,11 +7,14 @@ import { activate } from "./contracts";
 import {
   control,
   inspection,
+  turnInspection,
   type Investigation,
   type RuntimeState,
+  type TurnDetails,
 } from "./contracts";
 import { Controls } from "./controls";
 import { Inspector } from "./Inspector";
+import { TurnDetailsPanel } from "./TurnDetails";
 
 type Turn = { id: string; role: "user" | "assistant"; text: string };
 const acknowledgement = z.object({
@@ -32,6 +35,13 @@ export function App() {
   const microphoneAvailable =
     globalThis.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
   const [result, setResult] = useState<Investigation | null>(null);
+  const [details, setDetails] = useState<TurnDetails | null>(null);
+  const [thinkingSaving, setThinkingSaving] = useState(false);
+  const thinkingPending = useRef(false);
+  const messages = useRef<HTMLDivElement | null>(null);
+  const following = useRef(true);
+  const forceScroll = useRef(false);
+  const sending = useRef(false);
   const connection = useRef<CharacterConnection | TextConnection | null>(null);
   const outputId = useRef<string | null>(null);
   const investigationId = useRef<string | null>(null);
@@ -62,6 +72,47 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!connected) {
+      setDetails(null);
+      return;
+    }
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const inspect = async (): Promise<void> => {
+      try {
+        const value = await control(
+          "turn-details",
+          turnInspection,
+          undefined,
+          AbortSignal.any([abort.signal, AbortSignal.timeout(5000)]),
+        );
+        if (!abort.signal.aborted) setDetails(value.turn);
+      } catch {
+        if (!abort.signal.aborted) setDetails(null);
+      } finally {
+        if (!abort.signal.aborted)
+          timer = setTimeout(() => void inspect(), 500);
+      }
+    };
+    void inspect();
+    return () => {
+      abort.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [connected]);
+
+  useEffect(() => {
+    if (messages.current && (forceScroll.current || following.current)) {
+      messages.current.scrollTo({
+        top: messages.current.scrollHeight,
+        behavior: "auto",
+      });
+      following.current = true;
+    }
+    forceScroll.current = false;
+  }, [turns]);
+
   const report = (value: string): void => {
     if (mounted.current) setError(value);
   };
@@ -71,6 +122,7 @@ export function App() {
     role: "user" | "assistant",
   ): void => {
     if (!mounted.current) return;
+    if (role === "user") forceScroll.current = true;
     const id = segment;
     setTurns((old) => {
       const last = old.at(-1);
@@ -145,7 +197,17 @@ export function App() {
     }
   };
   const send = async (): Promise<void> => {
-    if (!connection.current || !connected || busy || !input.trim()) return;
+    if (
+      !connection.current ||
+      !connected ||
+      busy ||
+      sending.current ||
+      thinkingPending.current ||
+      !input.trim()
+    )
+      return;
+    sending.current = true;
+    forceScroll.current = true;
     const text = input.trim();
     setInput("");
     setError("");
@@ -160,7 +222,32 @@ export function App() {
     } catch (failure: unknown) {
       report(failure instanceof Error ? failure.message : "Turn unavailable.");
     } finally {
+      sending.current = false;
       setBusy(false);
+    }
+  };
+  const toggleThinking = async (enabled: boolean): Promise<void> => {
+    if (!state || thinkingPending.current) return;
+    const previous = state.thinking_enabled;
+    thinkingPending.current = true;
+    setThinkingSaving(true);
+    setState((old) => (old ? { ...old, thinking_enabled: enabled } : old));
+    try {
+      const value = await control(
+        "thinking",
+        z.object({ enabled: z.boolean() }),
+        { enabled },
+      );
+      setState((old) =>
+        old ? { ...old, thinking_enabled: value.enabled } : old,
+      );
+    } catch {
+      if (mounted.current)
+        setState((old) => (old ? { ...old, thinking_enabled: previous } : old));
+      report("Thinking is unavailable for this runtime.");
+    } finally {
+      thinkingPending.current = false;
+      if (mounted.current) setThinkingSaving(false);
     }
   };
   const poll = async (id: string): Promise<void> => {
@@ -302,7 +389,19 @@ export function App() {
       )}
       <div className="layout">
         <section className="conversation" aria-label="Conversation">
-          <div className="messages" aria-live="polite">
+          <div
+            className="messages"
+            aria-live="polite"
+            ref={messages}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              following.current =
+                element.scrollHeight -
+                  element.scrollTop -
+                  element.clientHeight <
+                80;
+            }}
+          >
             {turns.length === 0 && (
               <div className="welcome">
                 <div className="glow" />
@@ -320,6 +419,7 @@ export function App() {
               </article>
             ))}
           </div>
+          <TurnDetailsPanel details={details} />
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -334,15 +434,39 @@ export function App() {
               maxLength={1600}
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing &&
+                  event.nativeEvent.keyCode !== 229
+                ) {
+                  event.preventDefault();
+                  if (!event.repeat) void send();
+                }
+              }}
               placeholder="Ask about your NAS, Milo, or memories from summer 2026…"
             />
             <div className="actions">
               <button
                 type="submit"
-                disabled={!connected || busy || !input.trim()}
+                disabled={!connected || busy || thinkingSaving || !input.trim()}
               >
                 Send
               </button>
+              <label className="thinking-toggle">
+                <input
+                  type="checkbox"
+                  checked={state?.thinking_enabled ?? false}
+                  disabled={
+                    !state?.thinking_available || busy || thinkingSaving
+                  }
+                  onChange={(event) =>
+                    void toggleThinking(event.target.checked)
+                  }
+                />
+                Thinking
+              </label>
               <button
                 type="button"
                 disabled={
@@ -367,6 +491,14 @@ export function App() {
                 {microphone ? "Mute microphone" : "Use microphone"}
               </button>
             </div>
+            <p className="composer-hint">
+              Enter to send · Shift+Enter for a new line
+            </p>
+            {thinkingSaving && (
+              <p className="quiet" role="status">
+                Updating Thinking…
+              </p>
+            )}
             {deepStatus && (
               <p className="coverage" role="status">
                 Deep recall: {deepStatus}

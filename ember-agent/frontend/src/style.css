@@ -117,6 +117,73 @@ h2 {
   border-radius: 12px;
   background: #2b2a25;
 }
+.turn-details {
+  border-top: 1px solid #383630;
+  padding: 14px 20px;
+}
+.turn-details > p {
+  margin-bottom: 8px;
+}
+.turn-details details {
+  border-top: 1px solid #302e29;
+}
+.turn-details summary {
+  cursor: pointer;
+  padding: 10px 0;
+  color: #d4b396;
+  font-size: 13px;
+}
+.details-body {
+  padding: 4px 0 12px;
+}
+.thinking-text {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 13px;
+  color: #bcb5a8;
+  margin: 0;
+}
+.memory-values {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.memory-value {
+  padding: 10px 0;
+  border-bottom: 1px solid #302e29;
+  font-size: 14px;
+}
+.memory-value:last-child {
+  border-bottom: 0;
+}
+.memory-category,
+.memory-qualifier {
+  font-size: 11px;
+  color: #9c9992;
+}
+.memory-predicate {
+  font-size: 12px;
+  color: #d4b396;
+  margin-bottom: 3px;
+}
+.thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: #c9bba8;
+  cursor: pointer;
+}
+.thinking-toggle input {
+  accent-color: #de9e73;
+}
+.composer-hint {
+  color: #9c9992;
+  font-size: 11px;
+  margin-top: 10px;
+}
 form {
   padding: 20px;
   border-top: 1px solid #383630;

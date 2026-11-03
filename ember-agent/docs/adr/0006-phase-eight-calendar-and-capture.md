@@ -238,3 +238,38 @@ report 32,768 context. No new startup/transport code was needed for this activat
 the transient busy report was not reproduced. See Root ADR 0015 and the activation
 section in the phase validation record, including the diagnostic client's SDK cleanup
 warning and the remaining physical audio/quality gates.
+
+## Ephemeral browser turn details: 2026-10-16
+
+The [UI design](../../../docs/phase-8-turn-details-ui.md) adds optional thinking,
+selected-value expansions and composer controls before Phase 9. Core preparation
+records exact final profile/ordinary/deep values with their delivery dependencies
+in a single RAM view. Inspection rechecks access, returns no-store data and clears
+revoked content. Stale events cannot update another turn. There is no new memory
+lookup or persistent store.
+
+Gateway wire 0.4.0 exposes the explicit native thinking channel only for opt-in plain
+P0 text, under `live_thinking_v1` and the configured output reserve. Old/default
+requests preserve their output bound. Native serialization, SDK speech/transcripts,
+visible-only durable dialogue and subsequent prompts exclude thinking. The view's
+100-value / 64 KiB memory / 32 KiB thinking / 128 KiB total bounds include JSON
+escaping, with labelled truncation. The browser polls serially at 500 ms, aborts on
+teardown and uses no persistent browser storage for these details.
+
+The UI uses escaped, collapsed panels. Enter submits once, Shift+Enter adds a newline,
+and IME/repeat keys cannot submit. Sent/final transcribed user messages force viewport
+scrolling; assistant updates follow only near the bottom. Existing UI transports and
+the single character core/gateway remain shared. Root ADR 0015 records the passing
+673 Python / 18 frontend / 3 browser checks and the pending activation: automatic
+approval review rejected the restart as outside the earlier 32k rollout authorization.
+
+## JSON-safe plan inspection: 2026-10-21
+
+The shared recall-value projection converts PlanPayload.steps from its immutable
+tuple to a JSON array. This preserves existing prompt serialization and plan
+qualifiers while satisfying the ephemeral view's JsonValue contract. Previously
+validation failed before generation whenever a selected plan reached inspection,
+including a plan with no steps. No new abstraction or per-turn lookup is required.
+Real-engine regressions cover empty/populated steps and repeated completed turns;
+27 focused tests and strict types pass. Root ADR 0015 and the phase validation
+record document the isolated large-set reproduction and restart requirement.

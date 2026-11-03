@@ -35,6 +35,12 @@ class Bootstrap(RuntimeModel):
     token: str = Field(min_length=32, max_length=128, repr=False)
 
 
+class ThinkingSetting(RuntimeModel):
+    """A display/generation choice for subsequent turns; never stored as a memory."""
+
+    enabled: bool
+
+
 class InvestigationInput(RuntimeModel):
     request_id: Annotated[UUID4, Field(strict=False)]
     text: str = Field(min_length=1, max_length=1600, repr=False)
@@ -122,6 +128,7 @@ class BrowserControl:
         self._statuses.clear()
         self.activation = ""
         self._session = ""
+        self.core.turn_view.clear()
 
     def _app(self) -> FastAPI:
         app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -212,7 +219,31 @@ class BrowserControl:
                 "voice_status": self.voice_status,
                 "transport": "http" if self.text_session is not None else "livekit",
                 "text_available": self.text_session.model_available if self.text_session else True,
+                "thinking_available": self.core.thinking_available,
+                "thinking_enabled": self.core.thinking_enabled,
             }
+
+        @app.post("/api/thinking")
+        async def thinking(value: ThinkingSetting) -> dict[str, bool]:
+            if value.enabled and not self.core.thinking_available:
+                raise GatewayError("thinking_unavailable")
+            self.core.thinking_enabled = value.enabled
+            return {"enabled": value.enabled}
+
+        @app.get("/api/turn-details")
+        async def turn_details() -> JSONResponse:
+            entry = self.core.turn_view.entry
+            if entry is None:
+                response = JSONResponse({"turn": None})
+            else:
+                if not await self.core.current(entry.dependencies, entry.certificate):
+                    self.core.turn_view.invalidate(entry.value.request_id)
+                current = self.core.turn_view.entry
+                response = JSONResponse(
+                    {"turn": entry.value.model_dump(mode="json") if current is entry else None}
+                )
+            response.headers["Cache-Control"] = "no-store"
+            return response
 
         @app.post("/api/room-token")
         async def token(request: Request) -> dict[str, str]:

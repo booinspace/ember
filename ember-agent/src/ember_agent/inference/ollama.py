@@ -12,7 +12,7 @@ from .frames import bounded_lines
 
 
 class BackendModel(BaseModel):
-    """Narrow external response immediately; hidden thinking fields are deliberately discarded."""
+    """Narrow external response immediately; stream-only thinking never becomes a prompt."""
 
     model_config = ConfigDict(strict=True, extra="ignore", frozen=True)
 
@@ -30,6 +30,7 @@ class NativeTool(BackendModel):
 class NativeMessage(BackendModel):
     role: Literal["assistant"] = "assistant"
     content: str = Field(default="", repr=False)
+    thinking: str = Field(default="", repr=False, exclude=True)
     tool_calls: list[NativeTool] = Field(default_factory=list[NativeTool])
 
 
@@ -98,12 +99,12 @@ class OllamaUpstream:
             raise GatewayError("upstream_unavailable") from error
 
     async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
-        """Use native chat streaming with explicit 8K runner settings and no reasoning exposure."""
+        """Use configured runner bounds; thinking is an explicit foreground display option."""
         body: dict[str, JsonValue] = {
             "model": self.config.model_tag,
             "messages": [{"role": item.role, "content": item.content} for item in request.messages],
             "stream": True,
-            "think": False,
+            "think": request.thinking,
             "keep_alive": "5m",
             "options": {
                 "num_ctx": self.config.context_tokens,
@@ -134,6 +135,10 @@ class OllamaUpstream:
                         raise GatewayError("upstream_generation_failed")
                     if frame.model is not None and frame.model != self.config.model_tag:
                         raise GatewayError("upstream_model_mismatch")
+                    if not request.thinking and frame.message.thinking:
+                        frame = frame.model_copy(
+                            update={"message": frame.message.model_copy(update={"thinking": ""})}
+                        )
                     yield frame
         except httpx.HTTPError as error:
             raise GatewayError("upstream_transport_failed") from error

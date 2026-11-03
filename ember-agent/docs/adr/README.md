@@ -44,3 +44,6 @@ The 2026-10-16 review corrections are recorded in the component Phase 8 ADR and
 The same records include the user-directed
 [ordinary word-recall correction](../../../docs/phase-8-word-recall.md): compact
 extracted values with a bounded share of the configured input allowance.
+
+Agent ADR 0006 also records ephemeral thinking/selected-recall UI, experimental
+gateway 0.4.0, keyboard/scroll controls and pending UI deployment authorization.

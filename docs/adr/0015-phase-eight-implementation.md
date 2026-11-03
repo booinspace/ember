@@ -339,3 +339,53 @@ ready, a healthy journal and 32,768 context; the active model reports the same c
 The reported transient Connect-busy error was not reproduced during inspection.
 No schema migration, index rebuild or imported-claim approval was required. See
 the [activation evidence](../phase-8-validation.md) for scope and limitations.
+
+## Browser turn details and composer: 2026-10-16
+
+The user's [UI amendment](../phase-8-turn-details-ui.md) adds a Thinking toggle,
+collapsed current-turn thinking/recall expansions, Enter/Shift+Enter behavior and
+user-message scrolling before Phase 9. CharacterCore owns one ephemeral selected
+view; the existing authenticated control API serves both LiveKit and HTTP clients.
+It retains the final delivery certificate privately, validates current access on
+every read and clears invalidated content. No additional search, model generation,
+database or Phase 9 event infrastructure is introduced.
+
+Experimental gateway wire 0.4.0 negotiates `live_thinking_v1` for plain P0 text only.
+The configured reserve bounds output (maximum 8,192 tokens); default/older requests
+retain their previous output bounds. Unrequested native thinking is discarded, and
+native frame serialization always excludes it. Opted-in thinking reaches only the
+ephemeral browser view, never speech, archives, history, prompts or diagnostics.
+Memory ABI/schema/index versions and source activation are unchanged.
+
+The view is bounded by 100 values, 64 KiB memory data, 32 KiB thinking and 128 KiB
+serialized data including escaping. Browser reads are serialized at 500 ms while
+connected and cancel on teardown. React escapes expansions. Keyboard handling
+respects IME, repeat keys and duplicate sends; assistant updates follow only when
+the reader remains near the bottom.
+
+The installed full gate passes 673 Python tests (10 skipped), Ruff and strict types;
+18 frontend tests, build/formatting and three isolated browser checks pass. Three
+guarded live cases skip without their configured fixtures. Only synthetic display
+markers appear in layout artifacts. The model declares thinking support via local
+metadata; no real thinking was retained. Automatic approval review rejected the
+proposed active restart because the earlier 32k approval covered a separate rollout.
+Activation and live feature verification await new explicit authorization.
+
+## Recalled plan display correction: 2026-10-21
+
+Plan payloads store steps as an immutable Python tuple. The shared compact recall
+projection now emits those steps as a JSON array before the ephemeral turn view
+validates them. Previously even an empty tuple raised a validation error during
+preparation; LiveKit surfaced it as an application error before generation. This
+was more visible with the enlarged input budget admitting additional plan memories.
+The change reuses the existing projection; the serialized model prompt is identical
+and there is no new lookup, model call, persistence, migration or permission path.
+
+Real-engine synthetic regressions cover empty and populated steps across two
+completed turns, including identical prompt/display values and preserved proposed
+state and PLAN modality. The exact reported query also reproduced the failure on
+the existing isolated large-set snapshot at the deployed input budget. After the
+fix it prepared twice with 20 recalled memories, including four plans, and valid
+turn-view JSON. No private values are recorded here and no model generation or
+live character mutation was needed. The 27 focused tests, Ruff and strict Pyright
+pass. The active process must be restarted to load the correction.

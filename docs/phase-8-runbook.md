@@ -331,3 +331,22 @@ The operator subsequently authorized and activated these 32k settings on
 text recall were verified; voice readiness reports ready. See the activation section
 in validation for the exact scope. After a runtime restart, use its newly published
 private activation link so the page refreshes its authentication and transport state.
+
+## Reply details and composer controls
+
+The requested UI build adds Thinking and Recalled memories expansions for the
+current/latest reply. Thinking defaults off; the toggle affects the next observed
+turn and confirms its setting before Send is enabled. Its output is ephemeral and
+never saved into conversation or memory. The updated gateway and a sufficient
+output reserve are required; the current 32k/4k-reserve config meets that bound.
+
+The memory panel shows values actually selected for the reply, including selected
+profile/pinned and deep values. It does not list all search candidates or raw source
+quotes. Access changes invalidate it. The view resets for each new turn and does
+not survive a runtime restart. Enter sends, Shift+Enter adds a newline, and IME/repeat
+events do not submit. Sending scrolls down; reading older messages pauses following
+of assistant updates.
+
+The build passed synthetic backend/browser checks. Activation awaits new explicit
+deployment approval after automatic review rejected reuse of the earlier 32k approval.
+Reopen the new activation page after deployment.

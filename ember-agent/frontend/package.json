@@ -9,7 +9,7 @@
     "test": "vitest run",
     "format": "prettier --write src browser-tests *.json *.ts index.html",
     "check": "prettier --check src browser-tests *.json *.ts index.html",
-    "test:browser": "tsc --project tsconfig.browser.json && playwright test"
+    "test:browser": "pnpm build && tsc --project tsconfig.browser.json && playwright test"
   },
   "dependencies": {
     "livekit-client": "^2.22.0",

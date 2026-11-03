@@ -48,8 +48,40 @@ export const runtimeState = z.object({
   voice_status: z.string().default("disabled"),
   transport: z.enum(["livekit", "http"]).default("livekit"),
   text_available: z.boolean().default(true),
+  thinking_available: z.boolean().default(false),
+  thinking_enabled: z.boolean().default(false),
 });
 export type RuntimeState = z.infer<typeof runtimeState>;
+
+export const turnDetails = z.object({
+  request_id: z.string().uuid(),
+  context_id: z.string().uuid(),
+  stage: z.enum([
+    "preparing",
+    "generating",
+    "thinking",
+    "answering",
+    "awaiting_delivery",
+    "complete",
+    "interrupted",
+    "failed",
+    "invalidated",
+  ]),
+  thinking_enabled: z.boolean(),
+  thinking: z.string().max(32768),
+  thinking_truncated: z.boolean(),
+  memories: z
+    .array(
+      z.object({
+        category: z.enum(["profile", "recall", "deep"]),
+        data: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .max(100),
+  memories_truncated: z.boolean(),
+});
+export type TurnDetails = z.infer<typeof turnDetails>;
+export const turnInspection = z.object({ turn: turnDetails.nullable() });
 
 export const roomAccess = z.object({
   token: z.string(),

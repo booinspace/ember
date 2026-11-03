@@ -150,6 +150,8 @@ class P0Gateway:
         if deadline <= datetime.now(UTC):
             raise GatewayError("deadline_exceeded")
         reserve = max(1192, self.config.output_reserve_tokens)
+        if request.max_output_tokens > reserve:
+            raise GatewayError("output_budget_exceeded")
         ceiling = min(self.config.max_input_tokens, self.config.context_tokens - reserve)
         if self.input_cost(request) > ceiling or request.max_output_tokens > reserve:
             raise GatewayError("prompt_overflow")
@@ -377,6 +379,8 @@ class P0Gateway:
             )
             async with asyncio.timeout(min(remaining, 180)):
                 async for frame in self.upstream.generate(request):
+                    if request.thinking and frame.message.thinking:
+                        job.emit("thinking", text=frame.message.thinking)
                     text = filtered.feed(frame.message.content)
                     if text:
                         if first is None:
@@ -470,7 +474,8 @@ class P0Gateway:
                     else None,
                     load_seconds=frame.load_duration / 1e9,
                     prefill_seconds=frame.prompt_eval_duration / 1e9
-                    if request.version == "0.3.0" and frame.prompt_eval_duration is not None
+                    if request.version in {"0.3.0", "0.4.0"}
+                    and frame.prompt_eval_duration is not None
                     else None,
                 )
                 if self.record:
@@ -554,6 +559,7 @@ class P0Gateway:
             queued_p3=len(self.pending["P3"]),
             queued_p4=len(self.pending["P4"]),
             realtime_sessions=tuple(sorted(self.sessions, key=str)),
+            features=("live_thinking_v1",),
         )
 
     async def aclose(self) -> None:

@@ -4712,6 +4712,37 @@ report ready. The saved-name question returned the expected accepted information
 using 20 recalled memories. See the operator-activation record in
 `docs/phase-8-validation.md`; this bounded check does not close broader Phase 8 gates.
 
+### Phase 8 browser turn details: 2026-10-16
+
+Before Phase 9, the user requested live thinking, expandable selected memory facts,
+Enter-to-send and scrolling. The [design](docs/phase-8-turn-details-ui.md) records
+ownership and bounds. Thinking is an opt-in primary-model P0 display channel; it
+never enters prompts, speech, history, archives, extraction, logs or diagnostics.
+The existing prohibition on persisting hidden reasoning remains. One bounded
+current-turn RAM view exposes final selected values under their delivery certificate;
+authenticated inspection revalidates access and clears invalidated content.
+
+Experimental gateway wire 0.4.0 / `live_thinking_v1` uses the configured output
+reserve, capped at 8,192 tokens. The UI requires at least a 4,096-token reserve;
+old/default requests retain their previous bounds and omit the false option.
+Memory ABI/schema/index versions and the sole gateway ownership remain unchanged.
+The collapsed panels render escaped data and poll serially at 500 ms while connected.
+Enter sends, Shift+Enter inserts a newline, IME/repeat keys do not submit, and sent
+messages scroll into view without forcing a reader down during assistant updates.
+
+The installed gate passes 673 Python tests (10 skipped), 18 frontend tests and
+three isolated browser cases (three guarded live cases skipped). The layout was
+checked with synthetic data. Automatic approval review rejected activation because
+the earlier 32k approval did not authorize this separate UI deployment. Explicit
+restart approval and live feature verification remain pending; Phase 9 has not begun.
+
+
+The 2026-10-21 turn-preparation correction makes plan steps JSON arrays in the
+shared recall projection, preventing selected plans from failing the ephemeral
+display before generation. Empty/populated-step and repeated-turn regressions pass;
+the isolated large-set reproduction prepares successfully after the fix. Root
+ADR 0015 and the validation record retain the evidence and restart requirement.
+
 ## Engineering language and code-quality standards
 
 ### Languages

@@ -345,3 +345,45 @@ rebuild was needed. The diagnostic RoomClient interpreter emitted third-party FF
 destructor assertions after its completed disconnect; the runtime remained healthy.
 This is a bounded text recall/connect check, not physical microphone/playback or
 broad model-quality/performance acceptance. Phase 8 remains experimental.
+
+## Browser thinking and selected recall: 2026-10-16
+
+The [UI design](phase-8-turn-details-ui.md) and Root ADR 0015 record the change.
+Synthetic display markers exercise opt-in gateway thinking, scope/output limits,
+native non-serialization, visible-only archive/history, exact selected values,
+authenticated controls, revocation and UTF-8/JSON bounds. The installed full gate
+passes **673 Python tests, 10 skipped**, Ruff and strict Pyright. Focused temporal/view
+tests also pass after the final historical-qualifier and display-bound adjustment.
+
+Frontend formatting, TypeScript, production build and **18 unit tests** pass.
+**Three isolated installed-Edge browser cases pass** for Enter/Shift+Enter, IME/repeat
+handling, safe live expansions, teardown and scrolling. Three guarded LAN/speech
+integration cases remain skipped without fixtures. The synthetic layout screenshot
+was visually inspected; it contains no real thinking, personal source or credential.
+Existing third-party warning categories remain.
+
+The pinned model declares thinking capability through local metadata inspection;
+no model generation was needed for that probe. Activation requires runtime/gateway
+reload. Automatic approval review rejected the proposed graceful restart because
+the earlier authorization covered the separate 32k rollout. The active process
+remains unchanged. Explicit UI deployment approval and live feature verification
+are pending; Phase 9 has not started and broader Phase 8 gates remain open.
+
+## Plan-memory turn preparation regression: 2026-10-21
+
+The reported application error reproduced on the existing isolated memory snapshot
+with the deployed 28,000-unit input guard. Preparation failed in the current-turn
+view with invalid-json-value at steps; no generation had started. A selected plan's
+Python tuple violated the display's JSON contract. Converting the shared projection
+to an array fixes both empty and populated step lists without altering the JSON
+model prompt or canonical records.
+
+After correction, the reported query prepared twice with 20 selected memories and
+four displayed plans; view JSON validated. This used the isolated snapshot, no
+model generation and no writes to the active character. Synthetic regressions
+complete two turns for each plan shape and verify matching prompt/display values,
+proposed state and PLAN modality. The turn-details, word-recall, character and deep
+routing suites pass 27 tests. Ruff formatting/lint and strict Pyright pass.
+The running app was inspected without interruption and still needs a normal
+Ctrl+C / start.ps1 restart to load the source fix. This is a preparation regression
+check, not a new real-model quality or performance measurement.

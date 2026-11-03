@@ -78,7 +78,7 @@ def recall_value(memory: Memory, *, historical: bool = False) -> dict[str, objec
         if payload.participants:
             row["participants"] = [str(ref.entity_id) for ref in payload.participants]
     elif isinstance(payload, PlanPayload):
-        row = {"plan": payload.description, "state": payload.state, "steps": payload.steps}
+        row = {"plan": payload.description, "state": payload.state, "steps": list(payload.steps)}
     elif isinstance(payload, GoalPayload):
         row = {"goal": payload.description, "state": payload.state}
     else:

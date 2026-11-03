@@ -72,6 +72,7 @@ class RuntimeServices:
         self.children: list[OwnedProcess] = []
         self.credentials: LiveKitCredentials | None = None
         self.gateway_owned = False
+        self.thinking_available = False
 
     async def start(self) -> LiveKitCredentials:
         """Authenticate LiveKit and the pinned gateway before exposing a room session."""
@@ -191,6 +192,7 @@ class RuntimeServices:
                             raise ConfigurationError("Existing gateway model pin does not match.")
                         if health.context_tokens != self.config.context_tokens:
                             raise ConfigurationError("Existing gateway context does not match.")
+                        self.thinking_available = "live_thinking_v1" in health.features
                         if (
                             health.status not in {"ready", "busy"}
                             or health.journal_status != "available"
@@ -350,7 +352,12 @@ async def run_runtime(
                 value = None
             else:
                 cleanup.push_async_callback(reservation.session, services.instance, connected=False)
-        runtime = await asyncio.to_thread(LocalRuntime, config, gateway_available=gateway_available)
+        runtime = await asyncio.to_thread(
+            LocalRuntime,
+            config,
+            gateway_available=gateway_available,
+            thinking_available=services.thinking_available,
+        )
         cleanup.push_async_callback(asyncio.to_thread, runtime.close_workers)
         cleanup.push_async_callback(runtime.aclose)
         binding = RoomBinding(

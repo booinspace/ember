@@ -47,7 +47,13 @@ class CharacterBinding(RuntimeModel):
 class LocalRuntime:
     """Construct off-loop; drain clients and close their engine off-loop."""
 
-    def __init__(self, config: DeploymentConfig, *, gateway_available: bool = True) -> None:
+    def __init__(
+        self,
+        config: DeploymentConfig,
+        *,
+        gateway_available: bool = True,
+        thinking_available: bool = False,
+    ) -> None:
         self.config = config
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ember-runtime-owner")
         encoder = None
@@ -103,6 +109,8 @@ class LocalRuntime:
                 self.model,
                 model_tag=config.model_tag,
                 input_ceiling=ceiling,
+                thinking_available=thinking_available,
+                output_ceiling=config.output_reserve_tokens,
                 personality=self.personality,
                 sink=self.sink,
                 timezone=config.recall_timezone,
@@ -266,6 +274,7 @@ class LocalRuntime:
 
     async def aclose(self) -> None:
         """Drain native writes before closing their engine owner; never stop external services."""
+        self.core.turn_view.clear()
 
         async def close_engine() -> None:
             await asyncio.wrap_future(self.pool.submit(self.engine.close))

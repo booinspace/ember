@@ -43,6 +43,7 @@ from .prompt_budget import (
     recalled_message,
 )
 from .temporal import CalendarResolver, CalendarScope
+from .turn_view import CurrentTurnView, MemoryCategory
 
 
 class Personality(RuntimeModel):
@@ -139,12 +140,18 @@ class CharacterCore:
         timezone: str = "Europe/London",
         reference_clock: Callable[[], datetime] | None = None,
         interpreter: CalendarInterpreter | None = None,
+        thinking_available: bool = False,
+        output_ceiling: int = 1192,
     ) -> None:
         self.memory = memory
         self.model = model
         self.model_tag = model_tag
         self.input_ceiling = input_ceiling
         self.memory_ceiling = min(6144, input_ceiling // 4)
+        self.output_ceiling = min(8192, output_ceiling)
+        self.thinking_available = thinking_available and self.output_ceiling >= 4096
+        self.thinking_enabled = False
+        self.turn_view = CurrentTurnView()
         self.personality = personality or Personality()
         self.sink = sink
         self.calendar = CalendarResolver(timezone)
@@ -201,6 +208,11 @@ class CharacterCore:
             text,
             reference_at,
             timestamp_from_datetime(reference_at),
+        )
+        self.turn_view.begin(
+            value.request_id,
+            value.context_id,
+            thinking=self.thinking_available and self.thinking_enabled,
         )
         if isinstance(self.sink, ObservedDialogueSink):
             await self.sink.begin_input(
@@ -616,14 +628,18 @@ class CharacterCore:
                 raise GatewayError("context_invalidated")
             messages = compose()
         self.history = history
+        thinking = self.turn_view.thinking_for(identity)
         request = GatewayRequest(
+            version="0.4.0" if thinking else "0.3.0",
             request_id=identity,
             context_id=self.context_id,
             model=self.model_tag,
             messages=messages,
+            thinking=thinking,
+            max_output_tokens=self.output_ceiling if thinking else 512,
             deadline_at=timestamp_from_datetime(datetime.now(UTC) + timedelta(seconds=180)),
         )
-        return PreparedTurn(
+        prepared = PreparedTurn(
             request=request,
             user=text,
             observed_at=observed_at,
@@ -658,6 +674,19 @@ class CharacterCore:
                 serialized_total=prompt_cost(messages),
             ),
         )
+        view_rows: list[tuple[MemoryCategory, Memory]] = [
+            *(("profile", m) for m in pins),
+            *(("recall", m) for m in memories),
+        ]
+        if deep_context is not None and investigation is not None:
+            selected_deep = {(ref.memory_id, ref.revision) for ref in deep_context.memories}
+            view_rows.extend(
+                ("deep", item.memory)
+                for item in investigation.memories
+                if (item.memory.memory_id, item.memory.revision) in selected_deep
+            )
+        self.turn_view.prepared(identity, view_rows, references, certificate, historical=historical)
+        return prepared
 
     def _clarification(
         self, text: str, identity: UUID, observed_at: str, reasons: tuple[str, ...]
@@ -754,6 +783,7 @@ class CharacterCore:
         complete = False
         try:
             if not await self.current(turn.dependencies, turn.certificate):
+                self.turn_view.invalidate(turn.request.request_id)
                 raise GatewayError("context_invalidated")
             response = (
                 self._local_response(turn)
@@ -762,11 +792,20 @@ class CharacterCore:
             )
             async with aclosing(response) as events:
                 async for event in events:
-                    if event.kind in {"text", "tools", "end"} and not await self.current(
-                        turn.dependencies, turn.certificate
-                    ):
+                    if event.kind in {
+                        "thinking",
+                        "text",
+                        "tools",
+                        "end",
+                    } and not await self.current(turn.dependencies, turn.certificate):
+                        self.turn_view.invalidate(turn.request.request_id)
                         raise GatewayError("context_invalidated")
+                    if event.kind == "thinking":
+                        if not turn.request.thinking:
+                            raise GatewayError("unexpected_thinking_stream")
+                        self.turn_view.append_thinking(event.request_id, event.text)
                     if event.kind == "text":
+                        self.turn_view.stage(event.request_id, "answering")
                         delivered.append(event.text)
                     if event.kind == "end":
                         complete = True
@@ -776,6 +815,9 @@ class CharacterCore:
             try:
                 if defer_delivery:
                     self.pending_delivery = (turn, text, complete)
+                    self.turn_view.stage(
+                        turn.request.request_id, "awaiting_delivery" if complete else "failed"
+                    )
                 else:
                     await self._delivered(turn, text, complete)
             finally:
@@ -804,3 +846,4 @@ class CharacterCore:
         if complete:
             self.history.append(CompletedTurn(turn.user, text, turn.dependencies, turn.certificate))
             self.history = self.history[-24:]
+        self.turn_view.stage(turn.request.request_id, "complete" if complete else "interrupted")

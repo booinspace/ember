@@ -44,17 +44,32 @@ class ToolDefinition(RuntimeModel):
 class GatewayRequest(RuntimeModel):
     """Bounded immutable generation request; authenticated P0 scope is server-owned."""
 
-    version: Literal["0.1.0", "0.2.0", "0.3.0"] = "0.3.0"
+    version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0"] = "0.3.0"
     request_id: UUID4
     context_id: UUID4
     workload: Literal["P0", "P1", "P2", "P3", "P4"] = "P0"
     model: str
     messages: Annotated[tuple[PromptMessage, ...], Field(min_length=1, max_length=64)]
-    max_output_tokens: Annotated[int, Field(gt=0, le=1192)] = 512
+    max_output_tokens: Annotated[int, Field(gt=0, le=8192)] = 512
     deadline_at: UtcTimestamp
     output: Literal["text", "json"] = "text"
     output_schema: dict[str, JsonValue] | None = None
     tools: Annotated[tuple[ToolDefinition, ...], Field(max_length=16)] = ()
+    thinking: bool = Field(default=False, exclude_if=lambda value: not value)
+
+    @model_validator(mode="after")
+    def _thinking_scope(self) -> Self:
+        if self.thinking:
+            if (
+                self.version != "0.4.0"
+                or self.workload != "P0"
+                or self.output != "text"
+                or self.tools
+            ):
+                raise ValueError("Live thinking requires a version 0.4.0 plain P0 text request.")
+        elif self.max_output_tokens > 1192:
+            raise ValueError("Non-thinking requests retain the existing output limit.")
+        return self
 
 
 class ToolCall(RuntimeModel):
@@ -90,7 +105,7 @@ class GatewayEvent(RuntimeModel):
     request_id: UUID4
     context_id: UUID4
     sequence: Annotated[int, Field(ge=0)]
-    kind: Literal["start", "progress", "text", "tools", "end", "error"]
+    kind: Literal["start", "progress", "thinking", "text", "tools", "end", "error"]
     text: str = Field(default="", repr=False)
     calls: tuple[ToolCall, ...] = ()
     usage: GenerationUsage | None = None
@@ -102,8 +117,8 @@ class GatewayEvent(RuntimeModel):
             raise ValueError("A completed generation requires counters.")
         if self.kind == "error" and self.code is None:
             raise ValueError("A failed generation requires a safe code.")
-        if self.kind != "text" and self.text:
-            raise ValueError("Only text events carry visible text.")
+        if self.kind not in {"text", "thinking"} and self.text:
+            raise ValueError("Only text and opt-in thinking events carry stream text.")
         if self.kind != "tools" and self.calls:
             raise ValueError("Only complete tool events carry calls.")
         if self.kind != "end" and self.usage is not None:
@@ -128,6 +143,7 @@ class GatewayHealth(RuntimeModel):
     queued_p4: int = 0
     realtime_sessions: tuple[UUID, ...] = ()
     scheduling: Literal["conservative"] = "conservative"
+    features: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
 
 
 class ModelClient(Protocol):
