@@ -13,6 +13,7 @@ import {
   type TurnDetails,
 } from "./contracts";
 import { Controls } from "./controls";
+import { Tasks } from "./Tasks";
 import { Inspector } from "./Inspector";
 import { TurnDetailsPanel } from "./TurnDetails";
 
@@ -386,6 +387,13 @@ export function App() {
         <div role="alert" className="error">
           {error}
         </div>
+      )}
+      {state?.tasks_available && (
+        <Tasks
+          summaries={state.summary_tasks_available}
+          recall={state.recall_tasks_available}
+          connected={connected}
+        />
       )}
       <div className="layout">
         <section className="conversation" aria-label="Conversation">

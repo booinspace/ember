@@ -26,6 +26,9 @@ from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
 from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, RuntimeControls
+from .task_artifacts import TaskArtifact
+from .task_router import TaskNotifications, TaskRouter
+from .task_store import TaskConflict, TaskHandle, TaskOperation, TaskSnapshot
 from .text_session import DirectTextSession, TextReply
 
 COOKIE = "ember_session"
@@ -65,6 +68,14 @@ class TextTurnInput(TextAcknowledgement):
     investigation_id: Annotated[UUID4, Field(strict=False)] | None = None
 
 
+class TaskInput(RuntimeModel):
+    """Bound an authenticated operator task submission."""
+
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=1, max_length=8192, repr=False)
+    operation: TaskOperation = "inspect"
+
+
 class BrowserControl:
     """One character/session-bound local operator surface and bounded task owner.
 
@@ -89,6 +100,7 @@ class BrowserControl:
         capture_changed: Callable[[], None] | None = None,
         lan_origin: str | None = None,
         text_session: DirectTextSession | None = None,
+        task_router: TaskRouter | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
         self.lan_origin = lan_origin
@@ -106,6 +118,7 @@ class BrowserControl:
         self.voice_status = voice_status
         self.capture_changed = capture_changed
         self.text_session = text_session
+        self.task_router = task_router
         self.activation = secrets.token_urlsafe(48)
         self._session = secrets.token_urlsafe(48)
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
@@ -163,6 +176,8 @@ class BrowserControl:
                 ):
                     return JSONResponse({"error": "operator_session_required"}, status_code=401)
             response = await next_handler(request)
+            if request.url.path.startswith(("/api/tasks", "/api/task-notifications")):
+                response.headers["Cache-Control"] = "no-store"
             return response
 
         @app.exception_handler(RequestValidationError)
@@ -176,6 +191,70 @@ class BrowserControl:
         @app.exception_handler(GatewayError)
         async def inference_failure(_: Request, error: GatewayError) -> JSONResponse:
             return JSONResponse({"error": error.code}, status_code=409)
+
+        @app.exception_handler(TaskConflict)
+        async def task_failure(_: Request, error: TaskConflict) -> JSONResponse:
+            return JSONResponse({"error": str(error)}, status_code=409)
+
+        if self.task_router is not None:
+            router = self.task_router
+
+            @app.post("/api/tasks", status_code=202)
+            async def submit_task(value: TaskInput) -> TaskHandle:
+                return await router.submit(
+                    value.idempotency_key, value.text, operation=value.operation
+                )
+
+            @app.get("/api/task-notifications")
+            async def task_notifications(revision: int | None = None) -> TaskNotifications:
+                return await router.notifications(revision)
+
+            @app.post("/api/tasks/{task_id}/acknowledge")
+            async def acknowledge_task(task_id: UUID) -> dict[str, bool]:
+                await router.acknowledge(task_id)
+                return {"accepted": True}
+
+            @app.get("/api/tasks/{task_id}")
+            async def task_status(task_id: UUID) -> TaskSnapshot:
+                value = await router.status(task_id)
+                if value is None:
+                    raise HTTPException(status_code=404, detail="task_not_found")
+                return value
+
+            @app.post("/api/tasks/{task_id}/artifact")
+            async def save_task_artifact(task_id: UUID) -> TaskArtifact:
+                return await router.save_artifact(task_id)
+
+            @app.get("/api/tasks/{task_id}/artifact")
+            async def read_task_artifact(task_id: UUID) -> Response:
+                return Response(
+                    await router.read_artifact(task_id),
+                    media_type="text/plain",
+                    headers={
+                        "Content-Disposition": "attachment; filename=ember-task.txt",
+                        "Cache-Control": "no-store",
+                    },
+                )
+
+            @app.get("/api/tasks/{task_id}/recall")
+            async def task_recall(task_id: UUID) -> dict[str, object]:
+                snapshot = await router.status(task_id)
+                if (
+                    snapshot is None
+                    or snapshot.operation != "recall"
+                    or snapshot.state != "succeeded"
+                ):
+                    raise HTTPException(status_code=404, detail="task_recall_not_found")
+                result = await self.deep.inspect(task_id, task_id)
+                return {
+                    "status": result.outcome if result else "expired_or_unavailable",
+                    "result": result.model_dump(mode="json") if result else None,
+                }
+
+            @app.post("/api/tasks/{task_id}/cancel")
+            async def cancel_task(task_id: UUID) -> dict[str, bool]:
+                await router.cancel(task_id)
+                return {"accepted": True}
 
         @app.post("/api/bootstrap")
         async def bootstrap(value: Bootstrap) -> JSONResponse:
@@ -207,6 +286,9 @@ class BrowserControl:
             return {
                 "binding": browser_binding(request).model_dump(mode="json"),
                 "lan_available": self.lan_origin is not None,
+                "tasks_available": self.task_router is not None,
+                "summary_tasks_available": bool(self.task_router and self.task_router.summary),
+                "recall_tasks_available": bool(self.task_router and self.task_router.recall),
                 "context_id": str(self.core.context_id),
                 "recall": (await self.controls.recall_settings()).model_dump(mode="json"),
                 "capture": (await self.controls.capture_settings()).model_dump(mode="json"),

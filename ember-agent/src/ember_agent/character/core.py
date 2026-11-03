@@ -1,9 +1,9 @@
 """One character core for text and LiveKit; canonical memory stays behind the async ABI."""
 
 import json
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Protocol
 from uuid import UUID, uuid4
@@ -159,6 +159,7 @@ class CharacterCore:
         self.interpreter = interpreter
         self.last_scope: CalendarScope | None = None
         self.context_id = uuid4()
+        self.submit_task: Callable[[str, UUID], Awaitable[str]] | None = None
         self.history: list[CompletedTurn] = []
         self.busy = False
         self.batch_validation = False
@@ -254,6 +255,29 @@ class CharacterCore:
             return self._clarification(
                 text, identity, observed_at, ("deep_recall_" + investigation.outcome,)
             )
+        stripped = text.strip()
+        if self.submit_task is not None:
+            prefix = next(
+                (
+                    item
+                    for item in ("/task ", "count the words in ")
+                    if stripped.casefold().startswith(item)
+                ),
+                None,
+            )
+            if prefix is not None:
+                goal = stripped[len(prefix) :].strip()
+                local = self._local_turn(
+                    text,
+                    identity,
+                    observed_at,
+                    "Give me a short piece of text to inspect.",
+                    ("task_submission",),
+                )
+                if goal:
+                    return replace(local, local_reply=await self.submit_task(goal, identity))
+                return local
+
         resolved = self.calendar.resolve(text, reference_at, self.last_scope)
         if (
             resolved.status == "clarification"
@@ -691,16 +715,6 @@ class CharacterCore:
     def _clarification(
         self, text: str, identity: UUID, observed_at: str, reasons: tuple[str, ...]
     ) -> PreparedTurn:
-        messages = (
-            PromptMessage(role="system", content=self.personality.instructions),
-            PromptMessage(role="user", content=text),
-        )
-        if (
-            message_bytes(messages[0]) > 1024
-            or message_bytes(messages[1]) > 2304
-            or prompt_cost(messages) > self.input_ceiling
-        ):
-            raise GatewayError("prompt_overflow")
         reply = (
             "Which earlier period should I use?"
             if "missing_temporal_antecedent" in reasons
@@ -720,6 +734,21 @@ class CharacterCore:
         reply = next(
             (deep_outcomes[reason] for reason in reasons if reason in deep_outcomes), reply
         )
+        return self._local_turn(text, identity, observed_at, reply, reasons)
+
+    def _local_turn(
+        self, text: str, identity: UUID, observed_at: str, reply: str, reasons: tuple[str, ...]
+    ) -> PreparedTurn:
+        messages = (
+            PromptMessage(role="system", content=self.personality.instructions),
+            PromptMessage(role="user", content=text),
+        )
+        if (
+            message_bytes(messages[0]) > 1024
+            or message_bytes(messages[1]) > 2304
+            or prompt_cost(messages) > self.input_ceiling
+        ):
+            raise GatewayError("prompt_overflow")
         return PreparedTurn(
             request=GatewayRequest(
                 request_id=identity,

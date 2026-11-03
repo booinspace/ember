@@ -32,6 +32,7 @@ class Generation:
 
     request: GatewayRequest
     queue: asyncio.Queue[GatewayEvent] = field(default_factory=lambda: asyncio.Queue(maxsize=32))
+    admitted_at: float = field(default_factory=monotonic)
     detached: bool = False
     task: asyncio.Task[None] | None = None
     sequence: int = 0
@@ -109,9 +110,12 @@ class P0Gateway:
         self._session_guard = asyncio.Lock()
         self.record_sessions = record_sessions
         self.background_queue_limit = background_queue_limit
-        self.pending: dict[str, deque[Generation]] = {"P3": deque(), "P4": deque()}
+        self.pending: dict[str, deque[Generation]] = {
+            name: deque() for name in ("P1", "P2", "P3", "P4")
+        }
         self.dispatcher: asyncio.Task[None] | None = None
-        self._next_background = "P3"
+        self._schedule = ("P2", "P2", "P2", "P2", "P3", "P4")
+        self._schedule_cursor = 0
 
     def input_cost(self, request: GatewayRequest) -> int:
         """Conservative UTF-8 serialization plus role/template allowance until tokenizer pinning."""
@@ -129,14 +133,14 @@ class P0Gateway:
         request = GatewayRequest.model_validate_json(request.model_dump_json())
         if self.closed:
             raise GatewayError("draining")
-        if request.workload not in {"P0", "P3", "P4"}:
-            raise GatewayError("unsupported_workload")
         if request.model != self.config.model_tag:
             raise GatewayError("model_not_allowlisted")
         if self.journal_failed:
             raise GatewayError("journal_unavailable")
         if self.uncertain:
             raise GatewayError("quiescence_required")
+        if request.workload == "P1" and request.context_id not in self.sessions:
+            raise GatewayError("live_reservation_required")
         if request.workload == "P0" and self.active is not None:
             raise GatewayError("busy")
         if (
@@ -144,7 +148,7 @@ class P0Gateway:
             and len(self.pending[request.workload]) >= self.background_queue_limit
         ):
             raise GatewayError("background_queue_full")
-        if request.workload != "P0" and (request.output != "json" or request.tools):
+        if request.workload in {"P3", "P4"} and (request.output != "json" or request.tools):
             raise GatewayError("background_requires_structured_output")
         deadline = datetime.fromisoformat(request.deadline_at.replace("Z", "+00:00"))
         if deadline <= datetime.now(UTC):
@@ -233,17 +237,13 @@ class P0Gateway:
         job.heartbeat = asyncio.get_running_loop().call_later(5, self._heartbeat, job)
 
     def _wake_background(self) -> None:
-        if (
-            self.closed
-            or self.uncertain
-            or self.journal_failed
-            or self.active is not None
-            or self.sessions
-        ):
+        if self.closed or self.uncertain or self.journal_failed or self.active is not None:
             return
         if self.dispatcher is not None and not self.dispatcher.done():
             return
-        if not any(self.pending.values()):
+        if self._live_job() is None and (
+            self.sessions or not any(self.pending[name] for name in ("P2", "P3", "P4"))
+        ):
             return
         self.dispatcher = asyncio.create_task(self._dispatch(), name="ember-background-dispatch")
 
@@ -275,21 +275,35 @@ class P0Gateway:
         )
         self._heartbeat(job)
 
+    def _eligible(self, job: Generation) -> bool:
+        if job.request.workload == "P1":
+            return job.request.context_id in self.sessions
+        return not self.sessions
+
+    def _live_job(self) -> Generation | None:
+        return next(
+            (job for job in self.pending["P1"] if job.request.context_id in self.sessions),
+            None,
+        )
+
     async def _dispatch(self) -> None:
-        if (
-            self.active is not None
-            or self.sessions
-            or self.closed
-            or self.uncertain
-            or self.journal_failed
-        ):
+        if self.active is not None or self.closed or self.uncertain or self.journal_failed:
             return
-        choices = (self._next_background, "P4" if self._next_background == "P3" else "P3")
-        queue = next((self.pending[name] for name in choices if self.pending[name]), None)
-        if queue is None:
+        job = self._live_job()
+        if job is not None:
+            self.pending["P1"].remove(job)
+        elif self.sessions:
             return
-        job = queue.popleft()
-        self._next_background = "P4" if job.request.workload == "P3" else "P3"
+        else:
+            for offset in range(len(self._schedule)):
+                index = (self._schedule_cursor + offset) % len(self._schedule)
+                queue = self.pending[self._schedule[index]]
+                if queue:
+                    job = queue.popleft()
+                    self._schedule_cursor = (index + 1) % len(self._schedule)
+                    break
+            else:
+                return
         if job.expiry is not None:
             job.expiry.cancel()
         if job.heartbeat is not None:
@@ -300,12 +314,12 @@ class P0Gateway:
             if deadline <= datetime.now(UTC):
                 raise GatewayError("deadline_exceeded")
             await self.upstream.verify()
-            if self.sessions or job.detached:
+            if not self._eligible(job) or job.detached:
                 self._park(job)
                 return
             if self.record:
                 await self.record("running", job.request)
-            if self.sessions or job.detached:
+            if not self._eligible(job) or job.detached:
                 if self.record:
                     await self.record("complete", job.request)
                 self._park(job)
@@ -345,12 +359,20 @@ class P0Gateway:
             if not connected:
                 # Keep admission blocked until durable disconnection succeeds.
                 self.sessions.discard(identity)
+                for job in tuple(self.pending["P1"]):
+                    if job.request.context_id == identity:
+                        self._remove_pending(job, "live_reservation_released")
+
         if connected:
             # A dispatcher can be between journal admission and starting its pump.
             if self.dispatcher is not None and not self.dispatcher.done():
                 await asyncio.shield(self.dispatcher)
             active = self.active
-            if active is not None and active.request.workload != "P0" and active.task is not None:
+            if (
+                active is not None
+                and active.request.workload in {"P2", "P3", "P4"}
+                and active.task is not None
+            ):
                 await asyncio.shield(active.task)
             if self.uncertain:
                 raise GatewayError("quiescence_required")
@@ -385,7 +407,7 @@ class P0Gateway:
                     if text:
                         if first is None:
                             first = monotonic() - started
-                        if request.output == "json":
+                        if request.output == "json" or request.workload == "P2":
                             json_text.append(text)
                             json_size += len(text.encode("utf-8"))
                             if json_size > 1024 * 1024:
@@ -460,10 +482,7 @@ class P0Gateway:
                         validate = cast(Callable[[object], bool], validator.is_valid)  # pyright: ignore[reportUnknownMemberType]
                         if not validate(parsed):
                             raise GatewayError("structured_schema_mismatch")
-                    job.emit("text", text=raw)
                 calls = self._tools(request, tools)
-                if calls:
-                    job.emit("tools", calls=calls)
                 usage = GenerationUsage(
                     prompt_tokens=frame.prompt_eval_count,
                     output_tokens=frame.eval_count,
@@ -473,6 +492,9 @@ class P0Gateway:
                     if frame.eval_duration > 0
                     else None,
                     load_seconds=frame.load_duration / 1e9,
+                    queue_seconds=started - job.admitted_at
+                    if request.workload in {"P1", "P2"}
+                    else None,
                     prefill_seconds=frame.prompt_eval_duration / 1e9
                     if request.version in {"0.3.0", "0.4.0"}
                     and frame.prompt_eval_duration is not None
@@ -480,6 +502,10 @@ class P0Gateway:
                 )
                 if self.record:
                     await self.record("complete", request)
+                if request.output == "json" or request.workload == "P2":
+                    job.emit("text", text="".join(json_text))
+                if calls:
+                    job.emit("tools", calls=calls)
                 job.emit("end", usage=usage)
         except asyncio.CancelledError:
             self.uncertain = True
@@ -556,6 +582,9 @@ class P0Gateway:
             digest=self.config.model_digest,
             context_tokens=self.config.context_tokens,
             active_request_id=self.active.request.request_id if self.active else None,
+            supported_workloads=("P0", "P1", "P2", "P3", "P4"),
+            queued_p1=len(self.pending["P1"]),
+            queued_p2=len(self.pending["P2"]),
             queued_p3=len(self.pending["P3"]),
             queued_p4=len(self.pending["P4"]),
             realtime_sessions=tuple(sorted(self.sessions, key=str)),

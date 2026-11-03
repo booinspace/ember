@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { z } from "zod";
 import { type Investigation } from "./contracts";
 
@@ -54,9 +55,10 @@ export function Inspector({
   busy,
 }: {
   result: Investigation;
-  answer: () => void;
+  answer?: () => void;
   busy: boolean;
 }) {
+  const scope = useId();
   return (
     <section className="inspector">
       <div className="section-title">
@@ -118,7 +120,9 @@ export function Inspector({
                 <li key={memory.memory_id}>
                   <a
                     href={"#memory-" + memory.memory_id}
-                    onClick={() => openDetails("memory-" + memory.memory_id)}
+                    onClick={() =>
+                      openDetails(scope + "-memory-" + memory.memory_id)
+                    }
                   >
                     {eventStart(memory.temporal) ?? "Unknown event date"} ·
                     {memory.content.modality} ·{" "}
@@ -130,7 +134,10 @@ export function Inspector({
         </details>
       )}
       {result.memories.map(({ memory, score, ranking }) => (
-        <details key={memory.memory_id} id={"memory-" + memory.memory_id}>
+        <details
+          key={memory.memory_id}
+          id={scope + "-memory-" + memory.memory_id}
+        >
           <summary>
             {memory.content.kind} · confidence {memory.content.confidence} ·
             revision {memory.revision}
@@ -155,8 +162,8 @@ export function Inspector({
               ) ? (
               <p key={index}>
                 <a
-                  href={"#observation-" + index}
-                  onClick={() => openDetails("observation-" + index)}
+                  href={"#" + scope + "-observation-" + index}
+                  onClick={() => openDetails(scope + "-observation-" + index)}
                 >
                   Original source observation {index + 1}
                 </a>
@@ -178,22 +185,25 @@ export function Inspector({
         </details>
       ))}
       {result.observations.map((observation, index) => (
-        <details key={index} id={"observation-" + index}>
+        <details key={index} id={scope + "-observation-" + index}>
           <summary>Original source observation {index + 1}</summary>
           <pre>{JSON.stringify(observation, null, 2)}</pre>
         </details>
       ))}
-      <button
-        disabled={
-          busy ||
-          result.prompt_memories.length + result.prompt_observations.length ===
-            0 ||
-          !["complete_within_budget", "partial"].includes(result.outcome)
-        }
-        onClick={answer}
-      >
-        Answer using this recall
-      </button>
+      {answer && (
+        <button
+          disabled={
+            busy ||
+            result.prompt_memories.length +
+              result.prompt_observations.length ===
+              0 ||
+            !["complete_within_budget", "partial"].includes(result.outcome)
+          }
+          onClick={answer}
+        >
+          Answer using this recall
+        </button>
+      )}
       <p>
         These results are bounded and may omit relevant or undated records. No
         matches do not establish that an event never happened.

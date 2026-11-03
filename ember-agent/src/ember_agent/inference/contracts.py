@@ -94,6 +94,9 @@ class GenerationUsage(RuntimeModel):
     first_visible_seconds: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None
     tokens_per_second: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None
     load_seconds: Annotated[float, Field(ge=0, allow_inf_nan=False)] = 0.0
+    queue_seconds: Annotated[float | None, Field(ge=0, allow_inf_nan=False)] = Field(
+        default=None, exclude_if=missing_prefill
+    )
     prefill_seconds: Annotated[float | None, Field(ge=0, allow_inf_nan=False)] = Field(
         default=None, exclude_if=missing_prefill
     )
@@ -138,7 +141,9 @@ class GatewayHealth(RuntimeModel):
     context_tokens: int
     active_request_id: UUID | None = None
     journal_status: Literal["available", "failed"] = "available"
-    supported_workloads: tuple[Literal["P0", "P3", "P4"], ...] = ("P0", "P3", "P4")
+    supported_workloads: tuple[Literal["P0", "P1", "P2", "P3", "P4"], ...] = ("P0", "P3", "P4")
+    queued_p1: int = 0
+    queued_p2: int = 0
     queued_p3: int = 0
     queued_p4: int = 0
     realtime_sessions: tuple[UUID, ...] = ()
