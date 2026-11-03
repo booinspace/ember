@@ -51,7 +51,11 @@ mode = "disabled"
 
 [audio]
 enabled = false
-# Explicitly install local faster-whisper artifacts; startup never downloads.
+# Explicit CPU Phonon setup: scripts/setup_phonon_stt.ps1. Empty keeps Whisper selection.
+phonon_endpoint = ""
+phonon_executable = ""
+phonon_cache_directory = ""
+# Whisper is used only when phonon_endpoint is empty; startup never downloads.
 stt_model_directory = ""
 stt_threads = 2
 language = "en"

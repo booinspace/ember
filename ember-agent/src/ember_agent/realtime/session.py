@@ -85,7 +85,7 @@ class HostedRoom:
         self.permission_watch: asyncio.Task[None] | None = None
         self.permission_failure = False
         connection = SessionConnectOptions(
-            stt_conn_options=APIConnectOptions(max_retry=0, timeout=30),
+            stt_conn_options=APIConnectOptions(max_retry=0, timeout=180),
             llm_conn_options=APIConnectOptions(max_retry=0, timeout=190),
             tts_conn_options=APIConnectOptions(max_retry=0, timeout=10),
         )

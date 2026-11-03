@@ -401,3 +401,25 @@ route reached the service and returned 401 without a token. HTTPS was checked us
 the local CA; the Windows curl check disabled revocation checking because its status
 was unavailable. A WebSocket room join, client trust, microphone and actual media
 connectivity remain unverified.
+
+## Long speech correction
+
+Synthetic tests cover 30.5-second VAD padding, 75-second and maximum-length
+utterances, ordered chunk transcription, oversized input and native-worker
+cancellation. An isolated 75-second synthetic silent input completed with the
+installed CPU Whisper model in 2.77 seconds; it does not establish speech quality.
+The installed suite passed 689 tests with 10 skipped; Ruff and Pyright passed.
+Real microphone transcription quality and representative CPU latency remain open.
+See [the correction](phase-8-long-speech.md) for the five-minute VAD limitation.
+
+## Managed CPU Phonon-2 speech input
+
+Fermion 0.2.15 and CPU-only PyTorch 2.9.1 were installed separately; setup
+verified the published Phonon-2 fallback artifact SHA-256. An isolated test
+started the managed service offline, confirmed CPU model health, transcribed
+75 seconds of synthetic silence in ordered chunks, and stopped the owned child.
+The installed quality gate passed (691 passed, 10 skipped), and focused audio and
+runtime tests including cancelled startup passed (24 passed, 7 skipped). After
+activation, the live service reported Phonon-2, CPU and two threads; the HTTPS
+browser reported voice ready. These checks used no personal audio. Real microphone
+quality, latency and comparative accuracy remain open.

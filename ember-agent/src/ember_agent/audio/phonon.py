@@ -14,10 +14,15 @@ class _Transcript(BaseModel):
     text: str = Field(max_length=1600, repr=False)
 
 
+class _Decode(BaseModel):
+    engine: str
+
+
 class _Health(BaseModel):
     status: str
     model: str
     kind: str
+    decode: _Decode
 
 
 class PhononSTT(BoundedCpuSTT):
@@ -36,7 +41,7 @@ class PhononSTT(BoundedCpuSTT):
             "ok",
             "FermionResearch/Phonon-2",
             "speech",
-        ):
+        ) or health.decode.engine != "cpu":
             raise GatewayError("phonon_model_unavailable")
         return cls(endpoint)
 

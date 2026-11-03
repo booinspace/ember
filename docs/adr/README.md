@@ -114,3 +114,9 @@ In progress: [Phase 9 operational tasks](0017-phase-nine-operational-tasks.md).
 The [LAN HTTPS reverse-proxy extension](../phase-8-lan-https-design.md) uses
 explicit Nginx trust and direct operator admission. Isolated tests and live HTTPS
 control checks pass; room join, client microphone and media acceptance remain open.
+
+The [long-speech correction](../phase-8-long-speech.md) records the VAD padding
+fix, ordered CPU transcription chunks and remaining five-minute limit.
+
+The long-speech correction also records managed CPU Phonon-2 input setup and
+its remaining physical-microphone acceptance gate.

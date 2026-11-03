@@ -16,7 +16,12 @@ from ..inference.contracts import GatewayError
 from ..runtime.config import DeploymentConfig
 from ..runtime.speech_health import check_voice
 from .phonon import PhononSTT
-from .whisper import BoundedCpuSTT, CpuWhisperSTT
+from .whisper import (
+    MAX_SPEECH_SECONDS,
+    PREFIX_PADDING_SECONDS,
+    BoundedCpuSTT,
+    CpuWhisperSTT,
+)
 
 
 async def _installed_inputs(
@@ -42,7 +47,8 @@ async def _installed_inputs(
             silero.VAD.load,
             force_cpu=True,
             sample_rate=16000,
-            max_buffered_speech=30,
+            max_buffered_speech=MAX_SPEECH_SECONDS,
+            prefix_padding_duration=PREFIX_PADDING_SECONDS,
         )
     except BaseException:
         await recognizer.aclose()

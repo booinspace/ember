@@ -14,7 +14,13 @@ def test_phonon_checks_identity_and_encodes_audio(monkeypatch: pytest.MonkeyPatc
     def respond(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/health":
             return httpx.Response(
-                200, json={"status": "ok", "kind": "speech", "model": "FermionResearch/Phonon-2"}
+                200,
+                json={
+                    "status": "ok",
+                    "kind": "speech",
+                    "model": "FermionResearch/Phonon-2",
+                    "decode": {"engine": "cpu"},
+                },
             )
         assert request.url.path == "/v1/audio/transcriptions"
         assert b"RIFF" in request.read()
@@ -39,9 +45,26 @@ def test_phonon_rejects_bad_model_and_remote_endpoint(monkeypatch: pytest.Monkey
     monkeypatch.setattr(
         PhononSTT,
         "_request",
-        staticmethod(lambda *_: b'{"status":"ok","kind":"speech","model":"wrong"}'),
+        staticmethod(
+            lambda *_: b'{"status":"ok","kind":"speech","model":"wrong","decode":{"engine":"cpu"}}'
+        ),
     )
     with pytest.raises(GatewayError, match="phonon_model_unavailable"):
         PhononSTT.load("http://127.0.0.1:8010", language="en")
     with pytest.raises(GatewayError, match="phonon_configuration_invalid"):
         PhononSTT.load("http://example.com:8010", language="en")
+
+
+def test_phonon_rejects_non_cpu_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        PhononSTT,
+        "_request",
+        staticmethod(
+            lambda *_: (
+                b'{"status":"ok","kind":"speech","model":"FermionResearch/Phonon-2",'
+                b'"decode":{"engine":"cuda"}}'
+            )
+        ),
+    )
+    with pytest.raises(GatewayError, match="phonon_model_unavailable"):
+        PhononSTT.load("http://127.0.0.1:8010", language="en")

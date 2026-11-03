@@ -19,6 +19,13 @@ from livekit.agents.utils import AudioBuffer
 
 from ..inference.contracts import GatewayError
 
+SAMPLE_RATE = 16000
+CHUNK_SECONDS = 30
+MAX_SPEECH_SECONDS = 300
+PREFIX_PADDING_SECONDS = 0.5
+MAX_TRANSCRIPT_LENGTH = 16000
+STT_TIMEOUT_SECONDS = 180
+
 
 class _Segment(Protocol):
     text: str
@@ -92,24 +99,34 @@ class BoundedCpuSTT(stt.STT[object]):
         del conn_options
         if self.closed or (self.pending is not None and not self.pending.done()):
             raise GatewayError("stt_busy")
-        # Materialize only a bounded mono utterance. SDK VAD is configured for 16 kHz / 30 s.
+        # The VAD buffer includes its prefix padding in addition to the speech bound.
         frames = [buffer] if isinstance(buffer, rtc.AudioFrame) else buffer
         samples = sum(frame.samples_per_channel for frame in frames)
         if (
             not frames
             or samples <= 0
-            or any(frame.sample_rate != 16000 or frame.num_channels != 1 for frame in frames)
-            or samples > 16000 * 30
+            or any(frame.sample_rate != SAMPLE_RATE or frame.num_channels != 1 for frame in frames)
+            or samples > int(SAMPLE_RATE * (MAX_SPEECH_SECONDS + PREFIX_PADDING_SECONDS))
         ):
             raise GatewayError("stt_audio_bound")
         selected_language = language if isinstance(language, str) else self.language
 
         def transcribe() -> _Transcript:
             frame = rtc.combine_audio_frames(frames)
-            text = self.transcribe(bytes(frame.data), selected_language).strip()
-            if len(text) > 1600:
-                raise GatewayError("stt_transcript_bound")
-            return _Transcript(text, selected_language, samples / 16000)
+            pcm = bytes(frame.data)
+            chunk_bytes = SAMPLE_RATE * CHUNK_SECONDS * 2
+            parts: list[str] = []
+            total = 0
+            for offset in range(0, len(pcm), chunk_bytes):
+                part = self.transcribe(
+                    pcm[offset : offset + chunk_bytes], selected_language
+                ).strip()
+                if part:
+                    total += len(part) + bool(parts)
+                    if total > MAX_TRANSCRIPT_LENGTH:
+                        raise GatewayError("stt_transcript_bound")
+                    parts.append(part)
+            return _Transcript(" ".join(parts), selected_language, samples / SAMPLE_RATE)
 
         self.pending = self.pool.submit(transcribe)
         wrapped = asyncio.wrap_future(self.pending)
@@ -119,7 +136,7 @@ class BoundedCpuSTT(stt.STT[object]):
                 completed.exception()
 
         wrapped.add_done_callback(observed)
-        async with asyncio.timeout(30):
+        async with asyncio.timeout(STT_TIMEOUT_SECONDS):
             result = await asyncio.shield(wrapped)
         return stt.SpeechEvent(
             type=stt.SpeechEventType.FINAL_TRANSCRIPT,

@@ -416,3 +416,21 @@ actual LiveKit TTS adapter. See the phase runbook for the pin and rollback.
 ## Reverse-proxy LAN access
 
 The browser runtime can explicitly trust one private IPv4 Nginx peer and an HTTPS public origin. On that origin, loading the page issues the existing operator session without a copied activation link; access therefore grants full operator authority. Exact host, peer and HTTPS-forwarded checks precede admission, and state-changing requests retain exact Origin checks. Nginx owns TLS and secure LiveKit signalling, while the runtime and memory owners remain unchanged. The detailed configuration, network boundaries and open end-to-end gates are in [the LAN HTTPS design](../phase-8-lan-https-design.md).
+
+## Long speech correction
+
+The VAD's padding made its previous 30-second buffer exceed the recognizer's
+30-second limit. The agent now retains up to five minutes plus padding and runs
+bounded 30-second recognizer chunks in the existing owned worker. The installed
+VAD still discards speech beyond that buffer until a pause. See the
+[design and limits](../phase-8-long-speech.md); no model gateway or memory
+ownership changes.
+
+## Managed CPU Phonon speech input
+
+User-directed deployment selects Phonon-2 speech input on CPU. Explicit setup
+provisions the runtime and pinned model; startup uses an offline owned service,
+validates the model and CPU health, and degrades voice on failure. Existing
+Whisper remains available as an explicit rollback. The primary deployment was
+started with Phonon-2 CPU and two threads; the browser reports voice ready.
+See the [service design](../phase-8-long-speech.md) and validation record.

@@ -113,6 +113,8 @@ class AudioSettings(RuntimeModel):
     enabled: bool = False
     stt_model_directory: Path | None = None
     phonon_endpoint: Literal["", "http://127.0.0.1:8010"] = ""
+    phonon_executable: Path | None = None
+    phonon_cache_directory: Path | None = None
     stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
     language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
     tts_model: Literal["kokoro", "tts-1"] = "kokoro"
@@ -190,6 +192,8 @@ class _AudioSettings(RuntimeModel):
     enabled: bool = False
     stt_model_directory: str = ""
     phonon_endpoint: Literal["", "http://127.0.0.1:8010"] = ""
+    phonon_executable: str = ""
+    phonon_cache_directory: str = ""
     stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
     language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
 
@@ -362,6 +366,10 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     This blocking maintenance API must not run directly on a realtime event loop.
     """
     settings = _read_settings(path)
+    if bool(settings.audio.phonon_executable) != bool(settings.audio.phonon_cache_directory) or (
+        settings.audio.phonon_executable and not settings.audio.phonon_endpoint
+    ):
+        raise ConfigurationError("Managed Phonon requires an endpoint, executable and cache.")
     data_root, runtime_root = _resolve_roots(settings.paths, path.resolve().parent)
     tag, digest = _validate_model(settings.model, require_model_pin)
     _validate_endpoint(
@@ -430,6 +438,14 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             if settings.audio.stt_model_directory
             else None,
             phonon_endpoint=settings.audio.phonon_endpoint,
+            phonon_executable=(path.resolve().parent / settings.audio.phonon_executable).resolve()
+            if settings.audio.phonon_executable
+            else None,
+            phonon_cache_directory=(
+                path.resolve().parent / settings.audio.phonon_cache_directory
+            ).resolve()
+            if settings.audio.phonon_cache_directory
+            else None,
             stt_threads=settings.audio.stt_threads,
             language=settings.audio.language,
             tts_model=settings.audio.tts_model,

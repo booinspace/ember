@@ -277,3 +277,17 @@ record document the isolated large-set reproduction and restart requirement.
 ## LAN reverse proxy
 
 The runtime can be configured with an HTTPS public origin and one trusted Nginx peer. This uses the existing browser and LiveKit owners; the proxy handles TLS and forwards signalling. Direct public-origin admission grants the existing operator session, so network access to the proxy is the authorization boundary. See [the root design](../../../docs/phase-8-lan-https-design.md) for configuration and validation limits.
+
+## Long speech correction
+
+The existing CPU recognizer owns sequential 30-second transcription chunks for
+a VAD utterance of up to five minutes plus prefix padding, with one final result
+and bounded worker lifecycle. The SDK VAD drops further continuous audio until
+a pause. See the [root design](../../../docs/phase-8-long-speech.md).
+
+## Managed CPU Phonon input
+
+The agent starts the explicitly configured local Phonon-2 CPU process offline,
+checks model and CPU health, and owns its shutdown. A failed or unsupported
+service disables voice rather than selecting Whisper implicitly. See the
+[root design](../../../docs/phase-8-long-speech.md).

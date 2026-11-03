@@ -110,8 +110,11 @@ Build the frontend explicitly before enabling the browser:
 
 Runtime startup does not run pnpm, download models, build indexes or repair state.
 Install faster-whisper artifacts locally and configure audio.stt_model_directory.
-Audio uses CPU int8, at most four configured threads, one owned native utterance
-and a 30-second bound. Silero is CPU-only. Kokoro currently attaches to an installed
+Audio uses CPU int8, at most four configured threads, and one owned native utterance.
+Continuous speech is buffered for up to five minutes plus VAD prefix padding and
+transcribed in ordered 30-second chunks. The installed VAD drops speech beyond that
+buffer until a pause; see [the long-speech correction](phase-8-long-speech.md).
+Silero is CPU-only. Kokoro currently attaches to an installed
 local OpenAI-compatible server with /v1/audio/voices and /v1/audio/speech.
 For managed Kokoro, configure services.kokoro.mode = "managed", an installed
 executable, its argument list and optional working_directory. Startup launches
@@ -351,16 +354,29 @@ The build passed synthetic backend/browser checks. Activation awaits new explici
 deployment approval after automatic review rejected reuse of the earlier 32k approval.
 Reopen the new activation page after deployment.
 
-### Experimental Phonon-2 STT attachment
+### CPU Phonon-2 speech input
 
-Provision the pinned Fermion runtime and Phonon-2 weights separately. Start
-`fermion serve phonon-2 --host 127.0.0.1 --port 8010 --threads 2` on the Windows CPU
-backend. In the existing deployment's `[audio]` section set
-`phonon_endpoint = "http://127.0.0.1:8010"` and `language = "en"`, then restart Ember.
-The endpoint must report the Phonon-2 speech model. Ember sends only VAD-finalized
-audio; LiveKit and Kokoro remain unchanged. Remove the endpoint setting and
-restart to return to the configured Whisper model. Ember does not launch or
-download the attached service. Keep it on loopback.
+Run `scripts/setup_phonon_stt.ps1` explicitly to install Fermion 0.2.15,
+CPU-only PyTorch 2.9.1 and the SHA-256-verified Phonon-2 model in `.local`.
+The active deployment selects managed CPU Phonon with:
+
+```toml
+[audio]
+phonon_endpoint = "http://127.0.0.1:8010"
+phonon_executable = "../tools/phonon-stt/.venv/Scripts/fermion.exe"
+phonon_cache_directory = "../tools/phonon-stt/cache"
+stt_threads = 2
+language = "en"
+```
+
+The primary deployment was activated with this configuration and reported the
+Phonon-2 CPU engine with two threads; physical microphone acceptance remains open.
+At startup Ember launches the installed server offline with `--device cpu`, or
+attaches to an existing local server after validating the model and CPU engine.
+Missing or unhealthy Phonon degrades voice; it does not silently fall back to
+Whisper. Ember stops only the service process it owns. The configured Whisper
+model remains available as a rollback by clearing all three Phonon settings.
+Phonon speech input and Gradium Phonon speech output are separate providers.
 
 ### Gradium Phonon for spoken replies
 

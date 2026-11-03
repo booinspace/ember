@@ -764,3 +764,103 @@ def test_actual_room_includes_query_independent_profile_after_restart(
     """Actual LiveKit room transport exercises the same composer without GPU reservation."""
     path = room_config(tmp_path, livekit_executable, real=False)
     asyncio.run(exercise_room(path, real=False, profile=True))
+
+
+def test_managed_phonon_starts_offline_cpu_and_keeps_owned_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    from ember_agent.audio.phonon import PhononSTT
+
+    executable = tmp_path / "fermion.exe"
+    executable.touch()
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    path = tmp_path / "deployment.toml"
+    path.write_text(example_text(), encoding="utf-8")
+    config = load_config(path)
+    config = config.model_copy(
+        update={
+            "audio": config.audio.model_copy(
+                update={
+                    "phonon_endpoint": "http://127.0.0.1:8010",
+                    "phonon_executable": executable,
+                    "phonon_cache_directory": cache,
+                    "stt_threads": 2,
+                }
+            )
+        }
+    )
+    monkeypatch.setattr("ember_agent.runtime.livekit_runtime.port_open", lambda _: False)
+    child = Mock()
+    factory = Mock(return_value=child)
+    monkeypatch.setattr("ember_agent.runtime.livekit_runtime.OwnedProcess", factory)
+    probe = Mock()
+    probe.aclose = AsyncMock()
+    monkeypatch.setattr(PhononSTT, "load", Mock(return_value=probe))
+
+    async def exercise() -> None:
+        owner = RuntimeServices(config, path)
+        assert await owner.start_phonon()
+        args, kwargs = factory.call_args
+        assert args[0][-2:] == ["--device", "cpu"]
+        assert kwargs["environment"]["CUDA_VISIBLE_DEVICES"] == "-1"
+        assert kwargs["environment"]["HF_HUB_OFFLINE"] == "1"
+        assert kwargs["environment"]["FERMION_CACHE_DIR"] == str(cache)
+        assert owner.children == [child]
+        probe.aclose.assert_awaited_once()
+
+    asyncio.run(exercise())
+
+
+def test_cancelled_phonon_spawn_stops_child_before_return(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    from unittest.mock import Mock
+
+    executable = tmp_path / "fermion.exe"
+    executable.touch()
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    path = tmp_path / "deployment.toml"
+    path.write_text(example_text(), encoding="utf-8")
+    config = load_config(path)
+    config = config.model_copy(
+        update={
+            "audio": config.audio.model_copy(
+                update={
+                    "phonon_endpoint": "http://127.0.0.1:8010",
+                    "phonon_executable": executable,
+                    "phonon_cache_directory": cache,
+                }
+            )
+        }
+    )
+    entered, released = threading.Event(), threading.Event()
+    child = Mock()
+
+    def spawn(*args: object, **kwargs: object) -> object:
+        entered.set()
+        assert released.wait(5)
+        return child
+
+    monkeypatch.setattr("ember_agent.runtime.livekit_runtime.port_open", lambda _: False)
+    monkeypatch.setattr("ember_agent.runtime.livekit_runtime.OwnedProcess", spawn)
+
+    async def exercise() -> None:
+        owner = RuntimeServices(config, path)
+        task = asyncio.create_task(owner.start_phonon())
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            task.cancel()
+            released.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            child.stop.assert_called_once_with()
+            assert not owner.children
+        finally:
+            released.set()
+
+    asyncio.run(exercise())

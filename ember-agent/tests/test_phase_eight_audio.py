@@ -245,3 +245,69 @@ def test_missing_installed_stt_does_not_launch_managed_kokoro(tmp_path: Path) ->
     result, status = asyncio.run(VoiceComponents.create(config, start_speech=speech))
     assert result is None and status == "stt_artifacts_unavailable"
     speech.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "seconds, expected_seconds",
+    [(30.5, [30.0, 0.5]), (75.0, [30.0, 30.0, 15.0]), (300.5, [30.0] * 10 + [0.5])],
+)
+def test_long_speech_is_transcribed_in_order_without_losing_audio(
+    seconds: float, expected_seconds: list[float]
+) -> None:
+    from ember_agent.audio.whisper import BoundedCpuSTT
+
+    class Recorder(BoundedCpuSTT):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sizes: list[int] = []
+
+        def transcribe(self, pcm: bytes, language: str) -> str:
+            assert language == "en"
+            self.sizes.append(len(pcm))
+            return f"part{len(self.sizes)}"
+
+    async def exercise() -> None:
+        provider = Recorder()
+        samples = int(seconds * 16000)
+        frame = rtc.AudioFrame(
+            data=bytes(samples * 2),
+            sample_rate=16000,
+            num_channels=1,
+            samples_per_channel=samples,
+        )
+        try:
+            event = await provider._recognize_impl(frame, conn_options=APIConnectOptions())
+            assert provider.sizes == [int(value * 32000) for value in expected_seconds]
+            assert event.alternatives[0].text == " ".join(
+                f"part{index}" for index in range(1, len(expected_seconds) + 1)
+            )
+            assert event.alternatives[0].end_time == seconds
+        finally:
+            await provider.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_speech_audio_beyond_the_bounded_envelope_is_rejected() -> None:
+    from ember_agent.audio.whisper import BoundedCpuSTT
+
+    class Recorder(BoundedCpuSTT):
+        def transcribe(self, pcm: bytes, language: str) -> str:
+            raise AssertionError("oversized input must not reach the provider")
+
+    async def exercise() -> None:
+        provider = Recorder()
+        samples = int(300.5 * 16000) + 1
+        frame = rtc.AudioFrame(
+            data=bytes(samples * 2),
+            sample_rate=16000,
+            num_channels=1,
+            samples_per_channel=samples,
+        )
+        try:
+            with pytest.raises(GatewayError, match="stt_audio_bound"):
+                await provider._recognize_impl(frame, conn_options=APIConnectOptions())
+        finally:
+            await provider.aclose()
+
+    asyncio.run(exercise())

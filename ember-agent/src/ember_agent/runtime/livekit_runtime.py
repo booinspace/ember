@@ -254,6 +254,89 @@ class RuntimeServices:
                 "Gateway did not become authenticated-ready in time."
             ) from error
 
+    async def start_phonon(self) -> bool:
+        """Start configured CPU Phonon offline and verify its identity before use."""
+        settings = self.config.audio
+        if not settings.phonon_endpoint or settings.phonon_executable is None:
+            return True
+        from ..audio.phonon import PhononSTT
+
+        child: OwnedProcess | None = None
+        try:
+            occupied = await asyncio.to_thread(port_open, settings.phonon_endpoint)
+            if not occupied:
+                executable = settings.phonon_executable
+                cache = settings.phonon_cache_directory
+                if cache is None or not await asyncio.to_thread(executable.is_file):
+                    return False
+                if not await asyncio.to_thread(cache.is_dir):
+                    return False
+                spawn = asyncio.create_task(
+                    asyncio.to_thread(
+                        OwnedProcess,
+                        [
+                            str(executable),
+                            "serve",
+                            "phonon-2",
+                            "--host",
+                            "127.0.0.1",
+                            "--port",
+                            "8010",
+                            "--threads",
+                            str(settings.stt_threads),
+                            "--device",
+                            "cpu",
+                        ],
+                        root=self.config.runtime_root,
+                        component="phonon-stt",
+                        instance=self.instance,
+                        environment={
+                            "CUDA_VISIBLE_DEVICES": "-1",
+                            "HF_HUB_OFFLINE": "1",
+                            "TRANSFORMERS_OFFLINE": "1",
+                            "FERMION_CACHE_DIR": str(cache),
+                            "OMP_NUM_THREADS": str(settings.stt_threads),
+                            "MKL_NUM_THREADS": str(settings.stt_threads),
+                        },
+                    )
+                )
+                try:
+                    child = await asyncio.shield(spawn)
+                except asyncio.CancelledError:
+                    try:
+                        spawned = await asyncio.shield(spawn)
+                    except Exception:
+                        pass
+                    else:
+                        await asyncio.to_thread(spawned.stop)
+                    raise
+                assert child is not None
+                self.children.append(child)
+            async with asyncio.timeout(60):
+                while True:
+                    if child is not None:
+                        child.check()
+                    try:
+                        probe = await asyncio.to_thread(
+                            PhononSTT.load, settings.phonon_endpoint, language=settings.language
+                        )
+                        await probe.aclose()
+                        return True
+                    except (GatewayError, OSError, ValueError):
+                        if child is None:
+                            raise
+                        await asyncio.sleep(0.2)
+        except (ConfigurationError, GatewayError, OSError, ValueError, TimeoutError):
+            if child is not None:
+                await asyncio.to_thread(child.stop)
+                self.children.remove(child)
+            return False
+        except BaseException:
+            if child is not None:
+                await asyncio.to_thread(child.stop)
+                self.children.remove(child)
+            raise
+
     async def start_speech(self) -> str:
         """Start/attach installed Kokoro independently; provider failures leave text available."""
         settings = self.config.services.kokoro
@@ -465,9 +548,12 @@ async def _run_room(
             try:
                 from ..audio.components import VoiceComponents
 
-                voice, voice_status = await VoiceComponents.create(
-                    config, start_speech=services.start_speech
-                )
+                if await services.start_phonon():
+                    voice, voice_status = await VoiceComponents.create(
+                        config, start_speech=services.start_speech
+                    )
+                else:
+                    voice_status = "stt_artifacts_unavailable"
             except ImportError:
                 voice_status = "audio_dependencies_not_installed"
             if voice is not None:

@@ -5042,3 +5042,18 @@ The implementation supports an explicitly trusted Nginx proxy and direct operato
 admission on a configured HTTPS origin. Browser port 8787 remains fixed in this mode;
 LiveKit signalling uses WSS through Nginx. The [design and setup](docs/phase-8-lan-https-design.md)
 record the exposure, ownership and open live-validation gates. Phase 8 remains in progress.
+
+### Phase 8 long-speech correction
+
+The [speech correction](docs/phase-8-long-speech.md) aligns VAD padding and
+recognizer bounds, and transcribes longer utterances in ordered CPU chunks. The
+SDK VAD still drops speech beyond five minutes until a pause; physical-device
+quality and latency remain open. Phase 8 remains in progress.
+
+### User-directed CPU Phonon-2 input
+
+The configured deployment selects Phonon-2 speech recognition on CPU through
+the existing VAD and bounded worker. Setup installs the pinned runtime and model;
+startup launches it offline and fails voice closed if CPU/model health fails.
+The [design](docs/phase-8-long-speech.md) and validation record retain the
+physical microphone and comparative performance gates. Phase 8 remains open.
