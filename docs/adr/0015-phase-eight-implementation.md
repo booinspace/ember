@@ -434,3 +434,17 @@ validates the model and CPU health, and degrades voice on failure. Existing
 Whisper remains available as an explicit rollback. The primary deployment was
 started with Phonon-2 CPU and two threads; the browser reports voice ready.
 See the [service design](../phase-8-long-speech.md) and validation record.
+
+## Mobile browser layout
+
+The existing frontend reflows the header, conversation and controls for narrow and
+short screens and exposes semantic names and microphone state. The
+[mobile design](../phase-8-mobile-ui.md) records synthetic browser checks and the
+remaining real-device acceptance. Runtime, memory and provider boundaries are unchanged.
+
+## Voice delivery recovery
+
+The realtime owner reconciles a missing speech receipt only after fencing the
+retained LiveKit speech handle, its linked tasks and gateway generation. It records
+an empty incomplete delivery when no receipt exists. The [design](../phase-8-voice-delivery-recovery.md)
+records the private LiveKit 1.8.5 task-list coupling and remaining physical acceptance.

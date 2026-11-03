@@ -5057,3 +5057,16 @@ the existing VAD and bounded worker. Setup installs the pinned runtime and model
 startup launches it offline and fails voice closed if CPU/model health fails.
 The [design](docs/phase-8-long-speech.md) and validation record retain the
 physical microphone and comparative performance gates. Phase 8 remains open.
+
+### Phase 8 mobile browser layout
+
+The [mobile layout](docs/phase-8-mobile-ui.md) adapts existing conversation and
+memory controls to narrow and short screens without changing runtime contracts.
+Synthetic browser acceptance passes; physical mobile-device checks remain open.
+
+### Phase 8 voice delivery recovery
+
+The [delivery recovery](docs/phase-8-voice-delivery-recovery.md) fences the
+retained LiveKit speech handle and linked SDK tasks before resolving missing
+receipts. It preserves delivered-prefix semantics; physical interruption
+acceptance remains open. Phase 8 remains in progress.

@@ -766,6 +766,23 @@ def test_actual_room_includes_query_independent_profile_after_restart(
     asyncio.run(exercise_room(path, real=False, profile=True))
 
 
+@pytest.mark.integration
+def test_actual_room_retains_speech_handle_for_delivery_fencing(
+    tmp_path: Path, livekit_executable: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = HostedRoom._capture_speech
+    captures: list[bool] = []
+
+    def capture(host: HostedRoom) -> None:
+        original(host)
+        captures.append(host._turn_speech is not None)
+
+    monkeypatch.setattr(HostedRoom, "_capture_speech", capture)
+    path = room_config(tmp_path, livekit_executable, real=False)
+    asyncio.run(exercise_room(path, real=False))
+    assert captures and all(captures)
+
+
 def test_managed_phonon_starts_offline_cpu_and_keeps_owned_child(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

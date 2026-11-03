@@ -27,6 +27,7 @@ class GatewayLLM(llm.LLM[object]):
         self.prepared: tuple[str, PreparedTurn] | None = None
         self.defer_delivery = defer_delivery
         self.active_turn: PreparedTurn | None = None
+        self.on_generation_start: Callable[[], None] | None = None
         self.generation_done = asyncio.Event()
         self.generation_done.set()
 
@@ -60,6 +61,8 @@ class GatewayLLM(llm.LLM[object]):
             raise GatewayError("livekit_turn_changed")
         self.prepared = None
         self.active_turn = turn
+        if self.on_generation_start is not None:
+            self.on_generation_start()
         self.generation_done.clear()
         return GatewayStream(
             self,

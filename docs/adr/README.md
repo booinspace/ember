@@ -120,3 +120,9 @@ fix, ordered CPU transcription chunks and remaining five-minute limit.
 
 The long-speech correction also records managed CPU Phonon-2 input setup and
 its remaining physical-microphone acceptance gate.
+
+The [mobile browser layout](../phase-8-mobile-ui.md) records responsive and semantic
+frontend changes and the outstanding real-device checks.
+
+The [voice delivery recovery](../phase-8-voice-delivery-recovery.md) records the
+missing-receipt fix and LiveKit handle/task coupling.

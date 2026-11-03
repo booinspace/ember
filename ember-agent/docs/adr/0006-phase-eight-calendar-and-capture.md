@@ -291,3 +291,16 @@ The agent starts the explicitly configured local Phonon-2 CPU process offline,
 checks model and CPU health, and owns its shutdown. A failed or unsupported
 service disables voice rather than selecting Whisper implicitly. See the
 [root design](../../../docs/phase-8-long-speech.md).
+
+## Mobile browser layout
+
+The browser adapts its existing controls and conversation to narrow and short
+viewports, with accessible names and larger touch targets. It uses existing runtime
+contracts; see the [root design](../../../docs/phase-8-mobile-ui.md).
+
+## Voice delivery recovery
+
+The hosted room retains and fences the LiveKit speech handle and its linked tasks
+before reconciling missing delivery receipts or admitting a new turn. An absent
+receipt is never treated as delivered speech. See the
+[root design](../../../docs/phase-8-voice-delivery-recovery.md) for SDK coupling.

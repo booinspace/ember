@@ -423,3 +423,22 @@ runtime tests including cancelled startup passed (24 passed, 7 skipped). After
 activation, the live service reported Phonon-2, CPU and two threads; the HTTPS
 browser reported voice ready. These checks used no personal audio. Real microphone
 quality, latency and comparative accuracy remain open.
+
+## Mobile browser layout
+
+The isolated frontend build passed TypeScript and all 18 frontend unit tests.
+Synthetic Playwright checks passed at five phone, landscape, tablet and desktop
+viewports, alongside three existing interaction checks; three live-service browser
+checks were skipped. The layout was inspected visually with synthetic data. Real
+mobile devices, soft keyboards and physical audio remain unverified.
+The installed workspace quality gate passed with 692 tests passed and 10 skipped.
+
+## Voice delivery recovery
+
+Synthetic regressions reproduce the missing receipt and verify delayed complete
+and interrupted receipts, generation and playout fencing, forced SDK completion,
+and fail-closed handling when the speech handle is unavailable. The installed
+workspace gate passed 698 tests with 10 skipped. Focused delivery/routing tests
+passed 28 tests, including the added handle-capture regression. Three isolated
+LiveKit room checks passed with synthetic data, including actual handle capture.
+Physical microphone, playout and interruption behavior remain unverified.

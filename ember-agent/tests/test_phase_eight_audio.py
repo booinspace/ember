@@ -119,6 +119,322 @@ def test_sdk_receipt_archives_only_played_prefix_without_sdk_id_assumptions(tmp_
         asyncio.run(exercise())
 
 
+def test_voice_turn_recovers_when_completed_speech_has_no_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        client = InProcessAsyncMemoryClient(engine.character(character))
+
+        async def remember(_: RememberInput) -> str:
+            return "unused"
+
+        async def exercise() -> None:
+            core = CharacterCore(client, FakeModel(), model_tag="synthetic")
+            host = HostedRoom(
+                core,
+                RoomBinding(
+                    instance_id=uuid4(),
+                    character_id=character,
+                    room="ember-" + uuid4().hex,
+                    endpoint="ws://127.0.0.1:7880",
+                ),
+                remember,
+            )
+            first = await core.prepare("Synthetic first voice question.")
+            host.agent.gateway_llm.active_turn = first
+            _ = [event async for event in core.stream(first, defer_delivery=True)]
+            assert core.pending_delivery is not None
+
+            class Speech:
+                _tasks: list[asyncio.Task[object]] = []
+
+                async def wait_for_playout(self) -> None:
+                    pass
+
+            monkeypatch.setattr(type(host.session), "current_speech", property(lambda _: Speech()))
+            context = llm.ChatContext()
+            message = context.add_message(role="user", content="Synthetic next question.")
+            await host.agent.on_user_turn_completed(context, message)
+            assert core.pending_delivery is None
+            assert not core.history
+            assert host.agent.gateway_llm.prepared is not None
+            assert host.agent.gateway_llm.prepared[1].user == "Synthetic next question."
+            await client.aclose()
+
+        asyncio.run(exercise())
+
+
+def test_generation_retains_the_current_livekit_speech_handle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from livekit.agents.voice.speech_handle import SpeechHandle
+
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        client = InProcessAsyncMemoryClient(engine.character(character))
+
+        async def remember(_: RememberInput) -> str:
+            return "unused"
+
+        async def exercise() -> None:
+            core = CharacterCore(client, FakeModel(), model_tag="synthetic")
+            host = HostedRoom(
+                core,
+                RoomBinding(
+                    instance_id=uuid4(),
+                    character_id=character,
+                    room="ember-" + uuid4().hex,
+                    endpoint="ws://127.0.0.1:7880",
+                ),
+                remember,
+            )
+            speech = SpeechHandle.create()
+            monkeypatch.setattr(type(host.session), "current_speech", property(lambda _: speech))
+            context = llm.ChatContext()
+            message = context.add_message(role="user", content="Synthetic voice question.")
+            await host.agent.prepare_turn(message)
+            stream = host.agent.gateway_llm.chat(chat_ctx=context)
+            try:
+                assert host._turn_speech is speech
+            finally:
+                await stream.aclose()
+                await client.aclose()
+
+        asyncio.run(exercise())
+
+
+def test_voice_turn_does_not_discard_without_a_speech_completion_fence(tmp_path: Path) -> None:
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        client = InProcessAsyncMemoryClient(engine.character(character))
+
+        async def remember(_: RememberInput) -> str:
+            return "unused"
+
+        async def exercise() -> None:
+            core = CharacterCore(client, FakeModel(), model_tag="synthetic")
+            host = HostedRoom(
+                core,
+                RoomBinding(
+                    instance_id=uuid4(),
+                    character_id=character,
+                    room="ember-" + uuid4().hex,
+                    endpoint="ws://127.0.0.1:7880",
+                ),
+                remember,
+            )
+            first = await core.prepare("Synthetic first voice question.")
+            host.agent.gateway_llm.active_turn = first
+            _ = [event async for event in core.stream(first, defer_delivery=True)]
+            with pytest.raises(GatewayError, match="livekit_delivery_unavailable"):
+                await host._before_turn()
+            assert core.pending_delivery is not None
+            assert host.agent.gateway_llm.active_turn is first
+            assert not core.history
+            await client.aclose()
+
+        asyncio.run(exercise())
+
+
+def test_forced_speech_completion_waits_for_linked_sdk_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from livekit.agents.voice.speech_handle import SpeechHandle
+
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        client = InProcessAsyncMemoryClient(engine.character(character))
+
+        async def remember(_: RememberInput) -> str:
+            return "unused"
+
+        async def exercise() -> None:
+            core = CharacterCore(client, FakeModel(), model_tag="synthetic")
+            host = HostedRoom(
+                core,
+                RoomBinding(
+                    instance_id=uuid4(),
+                    character_id=character,
+                    room="ember-" + uuid4().hex,
+                    endpoint="ws://127.0.0.1:7880",
+                ),
+                remember,
+            )
+            first = await core.prepare("Synthetic first voice question.")
+            host.agent.gateway_llm.active_turn = first
+            output = "".join(
+                [event.text async for event in core.stream(first, defer_delivery=True)]
+            )
+            release = asyncio.Event()
+            speech = SpeechHandle.create()
+
+            async def sdk_task() -> None:
+                await release.wait()
+                host._conversation_item(
+                    ConversationItemAddedEvent(
+                        item=llm.ChatMessage(role="assistant", content=[output], interrupted=False)
+                    )
+                )
+
+            linked = asyncio.create_task(sdk_task())
+            speech._tasks.append(linked)
+            speech._mark_done()  # SDK timeout can do this before linked tasks terminate.
+            host._turn_speech = speech
+            monkeypatch.setattr(type(host.session), "current_speech", property(lambda _: None))
+            context = llm.ChatContext()
+            message = context.add_message(role="user", content="Synthetic next question.")
+            pending = asyncio.create_task(host.agent.on_user_turn_completed(context, message))
+            await asyncio.sleep(0.01)
+            assert not pending.done() and core.pending_delivery is not None
+            release.set()
+            await pending
+            assert len(core.history) == 1 and core.history[0].assistant == output
+            assert core.pending_delivery is None
+            await client.aclose()
+
+        asyncio.run(exercise())
+
+
+def test_receipt_does_not_release_unfinished_sdk_speech_task(tmp_path: Path) -> None:
+    from livekit.agents.voice.speech_handle import SpeechHandle
+
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        client = InProcessAsyncMemoryClient(engine.character(character))
+
+        async def remember(_: RememberInput) -> str:
+            return "unused"
+
+        async def exercise() -> None:
+            core = CharacterCore(client, FakeModel(), model_tag="synthetic")
+            host = HostedRoom(
+                core,
+                RoomBinding(
+                    instance_id=uuid4(),
+                    character_id=character,
+                    room="ember-" + uuid4().hex,
+                    endpoint="ws://127.0.0.1:7880",
+                ),
+                remember,
+            )
+            first = await core.prepare("Synthetic first voice question.")
+            host.agent.gateway_llm.active_turn = first
+            output = "".join(
+                [event.text async for event in core.stream(first, defer_delivery=True)]
+            )
+            release = asyncio.Event()
+            speech = SpeechHandle.create()
+            linked = asyncio.create_task(release.wait())
+            speech._tasks.append(linked)
+            speech._mark_done()
+            host._turn_speech = speech
+            host._conversation_item(
+                ConversationItemAddedEvent(
+                    item=llm.ChatMessage(role="assistant", content=[output], interrupted=False)
+                )
+            )
+            await host._drain_delivery()
+            assert core.pending_delivery is None and host.agent.gateway_llm.active_turn is None
+            context = llm.ChatContext()
+            message = context.add_message(role="user", content="Synthetic next question.")
+            pending = asyncio.create_task(host.agent.on_user_turn_completed(context, message))
+            await asyncio.sleep(0.01)
+            assert not pending.done()
+            release.set()
+            await pending
+            assert host._turn_speech is None
+            assert len(core.history) == 1 and core.history[0].assistant == output
+            await client.aclose()
+
+        asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_new_voice_turn_waits_for_playout_and_preserves_late_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool
+) -> None:
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        client = InProcessAsyncMemoryClient(engine.character(character))
+
+        async def remember(_: RememberInput) -> str:
+            return "unused"
+
+        async def exercise() -> None:
+            class Sink:
+                def __init__(self) -> None:
+                    self.deliveries: list[tuple[str, bool]] = []
+
+                async def begin_input(
+                    self, context_id: object, request_id: object, observed_at: str, user: str
+                ) -> None:
+                    pass
+
+                async def commit_delivery(
+                    self,
+                    context_id: object,
+                    request_id: object,
+                    observed_at: str,
+                    delivered: str,
+                    complete: bool,
+                ) -> None:
+                    self.deliveries.append((delivered, complete))
+
+            sink = Sink()
+            core = CharacterCore(client, FakeModel(), model_tag="synthetic", sink=sink)
+            host = HostedRoom(
+                core,
+                RoomBinding(
+                    instance_id=uuid4(),
+                    character_id=character,
+                    room="ember-" + uuid4().hex,
+                    endpoint="ws://127.0.0.1:7880",
+                ),
+                remember,
+            )
+            first = await core.prepare("Synthetic first voice question.")
+            host.agent.gateway_llm.active_turn = first
+            output = "".join(
+                [event.text async for event in core.stream(first, defer_delivery=True)]
+            )
+            host.agent.gateway_llm.generation_done.clear()
+            release = asyncio.Event()
+            entered = asyncio.Event()
+
+            class Speech:
+                _tasks: list[asyncio.Task[object]] = []
+
+                async def wait_for_playout(self) -> None:
+                    entered.set()
+                    await release.wait()
+
+            monkeypatch.setattr(type(host.session), "current_speech", property(lambda _: Speech()))
+            context = llm.ChatContext()
+            message = context.add_message(role="user", content="Synthetic next question.")
+            pending = asyncio.create_task(host.agent.on_user_turn_completed(context, message))
+            await asyncio.wait_for(entered.wait(), 1)
+            assert not pending.done() and core.pending_delivery is not None
+            heard = output[:9] if interrupted else output
+            host._conversation_item(
+                ConversationItemAddedEvent(
+                    item=llm.ChatMessage(role="assistant", content=[heard], interrupted=interrupted)
+                )
+            )
+            release.set()
+            await asyncio.sleep(0)
+            assert not pending.done() and core.pending_delivery is not None
+            host.agent.gateway_llm.generation_done.set()
+            await pending
+            assert core.pending_delivery is None
+            assert sink.deliveries == [(heard, not interrupted)]
+            assert len(core.history) == (0 if interrupted else 1)
+            assert host.agent.gateway_llm.prepared is not None
+            await client.aclose()
+
+        asyncio.run(exercise())
+
+
 def test_permission_validator_failure_closes_output_and_rejects_new_turns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

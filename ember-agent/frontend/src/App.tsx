@@ -351,7 +351,7 @@ export function App() {
           <h1>Ember</h1>
           <p>A conversation with room to remember.</p>
         </div>
-        <span className="status">
+        <span className="status" role="status">
           {connected ? "Connected" : "Disconnected"}
         </span>
         <button
@@ -369,7 +369,7 @@ export function App() {
         </p>
       )}
       {state?.lan_available && (
-        <div>
+        <div className="lan-sharing">
           <button onClick={() => void shareLan()}>Copy LAN link</button>
           {lanLink && (
             <label>
@@ -429,6 +429,8 @@ export function App() {
           </div>
           <TurnDetailsPanel details={details} />
           <form
+            className="composer"
+            aria-label="Message Ember"
             onSubmit={(event) => {
               event.preventDefault();
               void send();
@@ -491,6 +493,7 @@ export function App() {
               )}
               <button
                 type="button"
+                aria-pressed={microphone}
                 disabled={
                   !connected || !state?.voice || !microphoneAvailable || busy
                 }

@@ -55,7 +55,7 @@ export function Controls({
     }
   };
   return (
-    <aside className="controls">
+    <aside className="controls" aria-label="Memory controls">
       <h2>Memory sources</h2>
       <p>
         Choose what Ember may recall. Changing sources does not approve imports.

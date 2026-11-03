@@ -3,7 +3,7 @@
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID, uuid4
 
 from livekit import rtc
@@ -19,6 +19,7 @@ from livekit.agents import (
 )
 from livekit.agents.types import NOT_GIVEN
 from livekit.agents.voice.agent_session import SessionConnectOptions
+from livekit.agents.voice.speech_handle import SpeechHandle
 from pydantic import ValidationError
 
 from ember_memory_abi.errors import MemoryError
@@ -101,6 +102,8 @@ class HostedRoom:
             },
             user_away_timeout=None,
         )
+        self._turn_speech: SpeechHandle | None = None
+        self.agent.gateway_llm.on_generation_start = self._capture_speech
         self.delivery_tasks: set[asyncio.Task[None]] = set()
         self.delivery_failed = False
         # SDK EventEmitter callback return annotations are unspecified.
@@ -199,11 +202,51 @@ class HostedRoom:
             await asyncio.shield(self.active)
 
     async def _before_turn(self) -> None:
+        previous = self.agent.gateway_llm.active_turn
+        speech = self._turn_speech
+        if previous is not None and speech is None:
+            speech = self.session.current_speech
+            if speech is None:
+                raise GatewayError("livekit_delivery_unavailable")
+        if speech is not None:
+            await self._settle_speech(speech)
         await self._drain_delivery()
+        if previous is not None and self.agent.gateway_llm.active_turn is previous:
+            pending = self.core.pending_delivery
+            if pending is not None:
+                if pending[0].request.request_id != previous.request.request_id:
+                    raise GatewayError("delivery_receipt_unknown")
+                await self.core.acknowledge(previous.request.request_id, "", complete=False)
+            self.agent.gateway_llm.active_turn = None
+        if self._turn_speech is speech:
+            self._turn_speech = None
         self.permission_failure = False
         if self.closing or self.delivery_failed:
             raise GatewayError("livekit_delivery_unavailable")
         self.busy = True
+
+    def _capture_speech(self) -> None:
+        """Retain the SDK handle even if its scheduler clears the current pointer."""
+        self._turn_speech = self.session.current_speech
+
+    async def _settle_speech(self, speech: SpeechHandle) -> None:
+        """Fence SDK playout, linked tasks and native generation before reconciliation."""
+        # LiveKit 1.8.5 can mark an interrupted handle done before its
+        # cancelled speech tasks finish. Fence those tasks as well as playout.
+        async with asyncio.timeout(190):
+            await speech.wait_for_playout()
+            while True:
+                # SDK 1.8's task list has an unparameterized Task annotation.
+                linked = cast(list[asyncio.Task[object]], speech._tasks)  # pyright: ignore[reportUnknownMemberType,reportPrivateUsage]
+                tasks = tuple(task for task in linked if not task.done())
+                if not tasks:
+                    break
+                if asyncio.current_task() in tasks:
+                    raise GatewayError("livekit_delivery_unavailable")
+                await asyncio.gather(
+                    *(asyncio.shield(task) for task in tasks), return_exceptions=True
+                )
+            await self.agent.gateway_llm.generation_done.wait()
 
     async def _reserve_generation(self) -> None:
         # Previous delivery is drained and original input is durable before gateway
@@ -250,11 +293,14 @@ class HostedRoom:
             raise GatewayError("livekit_delivery_unavailable")
 
     async def _discard_unheard(self) -> None:
+        if self._turn_speech is not None:
+            await self._settle_speech(self._turn_speech)
         await self._drain_delivery()
         pending = self.core.pending_delivery
         if pending is not None:
             await self.core.acknowledge(pending[0].request.request_id, "", complete=False)
         self.agent.gateway_llm.active_turn = None
+        self._turn_speech = None
 
     def _authorize(self, data: rtc.RpcInvocationData) -> None:
         if data.caller_identity != USER_IDENTITY or self.closing:

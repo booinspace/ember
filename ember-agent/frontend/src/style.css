@@ -11,6 +11,12 @@
 body {
   margin: 0;
 }
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+}
 main {
   max-width: 1400px;
   margin: auto;
@@ -55,6 +61,33 @@ h2 {
   color: #bdb6a8;
   font-size: 13px;
 }
+.lan-sharing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.lan-sharing label {
+  display: grid;
+  flex: 1 1 260px;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #bdb6a8;
+  font-size: 13px;
+}
+.lan-sharing input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #4a4439;
+  border-radius: 8px;
+  background: #24231f;
+  color: #efe9df;
+  padding: 9px 12px;
+  font: inherit;
+}
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 290px;
@@ -63,6 +96,7 @@ h2 {
 }
 .conversation,
 .controls {
+  min-width: 0;
   border: 1px solid #383630;
   border-radius: 16px;
   background: #1d1d1b;
@@ -204,6 +238,7 @@ textarea {
 }
 textarea:focus,
 select:focus,
+input:focus-visible,
 button:focus-visible {
   outline: 2px solid #dba075;
   outline-offset: 2px;
@@ -277,6 +312,7 @@ input[type="checkbox"] {
 .inspector {
   border-top: 1px solid #383630;
   padding: 22px;
+  overflow-wrap: anywhere;
 }
 .inspector p {
   margin: 12px 0;
@@ -321,10 +357,13 @@ summary {
 }
 @media (max-width: 850px) {
   main {
-    padding: 20px 16px;
+    padding: 20px max(16px, env(safe-area-inset-right))
+      max(20px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
   }
   .layout {
     grid-template-columns: 1fr;
+    gap: 20px;
   }
   header {
     gap: 12px;
@@ -337,5 +376,96 @@ summary {
   }
   .welcome {
     padding: 35px 10px;
+  }
+}
+@media (max-width: 520px) {
+  main {
+    padding-top: max(16px, env(safe-area-inset-top));
+  }
+  header {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 0 12px;
+    margin-bottom: 20px;
+  }
+  header .mark {
+    grid-row: span 2;
+    width: 44px;
+    height: 44px;
+    font-size: 29px;
+    line-height: 44px;
+  }
+  header > div:not(.mark) {
+    min-width: 0;
+  }
+  header h1 {
+    font-size: 25px;
+    line-height: 1.15;
+  }
+  header .status {
+    grid-column: 2;
+    margin-left: 0;
+  }
+  header > button {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+  .messages {
+    height: clamp(180px, 38svh, 320px);
+    min-height: 0;
+    max-height: none;
+    padding: 18px;
+    overscroll-behavior: contain;
+  }
+  .welcome {
+    padding: 20px 4px;
+  }
+  .welcome h2 {
+    font-size: 24px;
+  }
+  .turn.user {
+    margin-left: 5%;
+  }
+  .composer,
+  .inspector,
+  .controls {
+    padding: 16px;
+  }
+  textarea,
+  select,
+  .lan-sharing input,
+  .controls textarea,
+  .controls select {
+    font-size: 16px;
+  }
+  .composer textarea {
+    min-height: 72px;
+  }
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .actions > * {
+    min-width: 0;
+  }
+  .actions button,
+  .thinking-toggle {
+    min-height: 44px;
+  }
+  .thinking-toggle {
+    padding: 0 8px;
+  }
+}
+@media (pointer: coarse) {
+  button,
+  summary {
+    min-height: 44px;
+  }
+}
+@media (max-width: 850px) and (max-height: 500px) {
+  .messages {
+    height: 42svh;
+    min-height: 140px;
+    max-height: none;
   }
 }
