@@ -99,11 +99,13 @@ class BrowserControl:
         voice_status: str = "disabled",
         capture_changed: Callable[[], None] | None = None,
         lan_origin: str | None = None,
+        trusted_proxy: str = "",
         text_session: DirectTextSession | None = None,
         task_router: TaskRouter | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
         self.lan_origin = lan_origin
+        self.trusted_proxy = trusted_proxy
         self._origins = {
             urlsplit(value).netloc: value for value in (self.origin, lan_origin) if value
         }
@@ -154,6 +156,13 @@ class BrowserControl:
             request_origin = self._origins.get(host)
             if request_origin is None:
                 return JSONResponse({"error": "invalid_host"}, status_code=403)
+            if self.trusted_proxy and request_origin == self.lan_origin:
+                if (
+                    request.client is None
+                    or request.client.host != self.trusted_proxy
+                    or request.headers.get("x-forwarded-proto") != "https"
+                ):
+                    return JSONResponse({"error": "trusted_proxy_required"}, status_code=403)
             if self.lan_origin and request.client is not None:
                 try:
                     peer = ip_address(request.client.host)
@@ -176,6 +185,24 @@ class BrowserControl:
                 ):
                     return JSONResponse({"error": "operator_session_required"}, status_code=401)
             response = await next_handler(request)
+            if (
+                self.trusted_proxy
+                and request_origin == self.lan_origin
+                and request.method == "GET"
+                and response.status_code == 200
+                and request.url.path == "/"
+                and not self._closed
+            ):
+                response.set_cookie(
+                    COOKIE,
+                    self._session,
+                    httponly=True,
+                    secure=True,
+                    samesite="strict",
+                    max_age=28800,
+                    path="/api/",
+                )
+                response.headers["Cache-Control"] = "no-store"
             if request.url.path.startswith(("/api/tasks", "/api/task-notifications")):
                 response.headers["Cache-Control"] = "no-store"
             return response
@@ -278,7 +305,13 @@ class BrowserControl:
             address = urlsplit(self.lan_origin or "")
             endpoint = urlsplit(self.binding.endpoint)
             return self.binding.model_copy(
-                update={"endpoint": f"ws://{address.hostname}:{endpoint.port}"}
+                update={
+                    "endpoint": (
+                        "wss://" + address.netloc
+                        if self.trusted_proxy
+                        else f"ws://{address.hostname}:{endpoint.port}"
+                    )
+                }
             )
 
         @app.get("/api/state")

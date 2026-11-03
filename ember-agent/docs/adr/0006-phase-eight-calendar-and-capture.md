@@ -273,3 +273,7 @@ including a plan with no steps. No new abstraction or per-turn lookup is require
 Real-engine regressions cover empty/populated steps and repeated completed turns;
 27 focused tests and strict types pass. Root ADR 0015 and the phase validation
 record document the isolated large-set reproduction and restart requirement.
+
+## LAN reverse proxy
+
+The runtime can be configured with an HTTPS public origin and one trusted Nginx peer. This uses the existing browser and LiveKit owners; the proxy handles TLS and forwards signalling. Direct public-origin admission grants the existing operator session, so network access to the proxy is the authorization boundary. See [the root design](../../../docs/phase-8-lan-https-design.md) for configuration and validation limits.

@@ -389,3 +389,8 @@ startup_timeout_seconds = 20.0
 Set tts_model to "tts-1" and tts_voice to "default" in the existing audio
 section. Start normally. Restore deployment.non-mtp.toml.before-phonon-tts
 to return to Kokoro on this workstation.
+
+## LAN HTTPS through Nginx
+
+See [the LAN HTTPS design and configuration](phase-8-lan-https-design.md). Direct
+access grants operator authority to clients able to reach the configured proxy.

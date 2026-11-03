@@ -515,9 +515,11 @@ async def _run_room(
             control = BrowserControl(
                 task_router=task_router,
                 origin=config.browser.endpoint,
-                lan_origin=f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
+                lan_origin=config.browser.public_origin
+                or f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
                 if config.browser.lan_address
                 else None,
+                trusted_proxy=config.browser.trusted_proxy,
                 assets=config.browser.assets,
                 binding=binding,
                 core=runtime.core,
@@ -539,7 +541,11 @@ async def _run_room(
                 print(
                     "LAN browser: "
                     + control.lan_origin
-                    + ". Use Copy LAN link in the local browser."
+                    + (
+                        ". Open this address directly."
+                        if config.browser.trusted_proxy
+                        else ". Use Copy LAN link in the local browser."
+                    )
                 )
             if open_browser and not await browser.open_browser():
                 print("Browser launch unavailable; open the private activation file URL manually.")
@@ -587,9 +593,11 @@ async def _run_text_browser(
         control = BrowserControl(
             task_router=task_router,
             origin=config.browser.endpoint,
-            lan_origin=f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
+            lan_origin=config.browser.public_origin
+            or f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
             if config.browser.lan_address
             else None,
+            trusted_proxy=config.browser.trusted_proxy,
             assets=config.browser.assets,
             binding=binding,
             core=runtime.core,

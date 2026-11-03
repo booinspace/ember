@@ -91,6 +91,8 @@ class BrowserSettings(RuntimeModel):
     enabled: bool = False
     endpoint: str = "http://127.0.0.1:8787"
     lan_address: str | None = None
+    public_origin: str = ""
+    trusted_proxy: str = ""
     assets: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parents[3] / "frontend/dist"
     )
@@ -101,6 +103,8 @@ class _BrowserSettings(RuntimeModel):
     endpoint: str = "http://127.0.0.1:8787"
     assets: str = ""
     lan_address: str = ""
+    public_origin: str = ""
+    trusted_proxy: str = ""
 
 
 class AudioSettings(RuntimeModel):
@@ -366,6 +370,33 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     lan_address = (
         private_lan_address(settings.browser.lan_address) if settings.browser.lan_address else None
     )
+    public_origin = settings.browser.public_origin.rstrip("/")
+    proxy = settings.browser.trusted_proxy
+    if bool(public_origin) != bool(proxy) or (public_origin and not lan_address):
+        raise ConfigurationError(
+            "Reverse proxy requires a LAN address, public origin and trusted proxy."
+        )
+    if public_origin:
+        try:
+            address = urlsplit(public_origin)
+            public_port = address.port
+        except ValueError as error:
+            raise ConfigurationError("browser.public_origin is invalid.") from error
+        if (
+            address.scheme != "https"
+            or not address.hostname
+            or address.username
+            or address.password
+            or address.path
+            or address.query
+            or address.fragment
+            or public_port == 0
+            or address.netloc == urlsplit(settings.browser.endpoint).netloc
+        ):
+            raise ConfigurationError("browser.public_origin must be a distinct HTTPS origin.")
+        private_lan_address(proxy)
+        if urlsplit(settings.browser.endpoint).port != 8787:
+            raise ConfigurationError("Reverse proxy requires browser port 8787.")
     if lan_address and (
         not settings.browser.enabled
         or urlsplit(settings.browser.endpoint).hostname == "::1"
@@ -408,6 +439,8 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             enabled=settings.browser.enabled,
             endpoint=settings.browser.endpoint,
             lan_address=lan_address,
+            public_origin=public_origin,
+            trusted_proxy=proxy,
             assets=(path.resolve().parent / settings.browser.assets).resolve()
             if settings.browser.assets
             else BrowserSettings().assets,

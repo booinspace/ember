@@ -5035,3 +5035,10 @@ Optimize first for:
 7. measured performance
 
 Do not optimize based solely on hypothetical performance concerns.
+
+### LAN HTTPS reverse-proxy extension
+
+The implementation supports an explicitly trusted Nginx proxy and direct operator
+admission on a configured HTTPS origin. Browser port 8787 remains fixed in this mode;
+LiveKit signalling uses WSS through Nginx. The [design and setup](docs/phase-8-lan-https-design.md)
+record the exposure, ownership and open live-validation gates. Phase 8 remains in progress.

@@ -387,3 +387,17 @@ routing suites pass 27 tests. Ruff formatting/lint and strict Pyright pass.
 The running app was inspected without interruption and still needs a normal
 Ctrl+C / start.ps1 restart to load the source fix. This is a preparation regression
 check, not a new real-model quality or performance measurement.
+
+## LAN HTTPS reverse proxy
+
+Isolated tests cover the configured trusted peer, forwarded HTTPS indication, direct
+session cookie, origin checks and WSS endpoint. The installed suite passed 685 tests,
+with 10 skipped; Ruff and Pyright passed.
+
+On 2026-11-03, the active deployment was configured and restarted with the trusted
+Nginx proxy. A local client verified the HTTPS page, session state and room-token
+endpoint returned 200 and advertised `wss://ember.example.test`. The LiveKit validation
+route reached the service and returned 401 without a token. HTTPS was checked using
+the local CA; the Windows curl check disabled revocation checking because its status
+was unavailable. A WebSocket room join, client trust, microphone and actual media
+connectivity remain unverified.

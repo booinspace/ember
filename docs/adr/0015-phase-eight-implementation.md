@@ -412,3 +412,7 @@ through the existing LiveKit TTS adapter. The legacy service key retains
 configuration compatibility. Startup uses provisioned local weights.
 An isolated managed service check generated 55,920 samples through the
 actual LiveKit TTS adapter. See the phase runbook for the pin and rollback.
+
+## Reverse-proxy LAN access
+
+The browser runtime can explicitly trust one private IPv4 Nginx peer and an HTTPS public origin. On that origin, loading the page issues the existing operator session without a copied activation link; access therefore grants full operator authority. Exact host, peer and HTTPS-forwarded checks precede admission, and state-changing requests retain exact Origin checks. Nginx owns TLS and secure LiveKit signalling, while the runtime and memory owners remain unchanged. The detailed configuration, network boundaries and open end-to-end gates are in [the LAN HTTPS design](../phase-8-lan-https-design.md).

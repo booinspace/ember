@@ -230,3 +230,94 @@ def test_lan_browser_binds_wildcard_and_retains_private_activation_file(tmp_path
             assert not server.activation_file.exists()
 
         asyncio.run(exercise())
+
+
+def test_https_proxy_requires_exact_peer_and_grants_direct_session(tmp_path: Path) -> None:
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("synthetic", encoding="utf-8")
+    with CanonicalEngine(tmp_path / "canonical") as engine:
+        identity = engine.create_character().store_id
+        memory = InProcessAsyncMemoryClient(engine.character(identity))
+        deep = DeepRecallService(identity, lambda _: memory, validation=memory)
+        owner = BrowserControl(
+            origin="http://127.0.0.1:8787",
+            lan_origin="https://ember.example.test",
+            trusted_proxy="10.254.254.10",
+            assets=tmp_path,
+            binding=RoomBinding(
+                instance_id=uuid4(),
+                character_id=identity,
+                room="ember-" + uuid4().hex,
+                endpoint="ws://127.0.0.1:7880",
+            ),
+            core=CharacterCore(memory, FakeModel(), model_tag="synthetic"),
+            deep=deep,
+            controls=controls(),
+            room_token=lambda: "synthetic_room",
+            answer=AsyncMock(return_value="receipt"),
+        )
+
+        async def exercise() -> None:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=owner.app, client=("192.168.10.3", 3000)),
+                base_url="http://ember.example.test",
+                headers={"x-forwarded-proto": "https"},
+            ) as attacker:
+                assert (await attacker.get("/")).status_code == 403
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=owner.app, client=("10.254.254.10", 3000)),
+                base_url="https://ember.example.test",
+            ) as client:
+                assert (await client.get("/")).status_code == 403
+                client.headers["x-forwarded-proto"] = "https"
+                assert (await client.get("/api/state")).status_code == 401
+                response = await client.get("/")
+                assert response.status_code == 200
+                assert "Secure" in response.headers["set-cookie"]
+                state = (await client.get("/api/state")).json()
+                assert state["binding"]["endpoint"] == "wss://ember.example.test"
+                assert (
+                    await client.post(
+                        "/api/room-token", json={}, headers={"origin": "https://attacker.invalid"}
+                    )
+                ).status_code == 403
+                assert (
+                    await client.post(
+                        "/api/room-token", json={}, headers={"origin": "https://ember.example.test"}
+                    )
+                ).status_code == 200
+            await owner.aclose()
+            await deep.aclose()
+            await memory.aclose()
+
+        asyncio.run(exercise())
+
+
+def test_proxy_configuration_requires_explicit_https_origin_and_private_peer(
+    tmp_path: Path,
+) -> None:
+    template = (
+        EXAMPLE.read_text(encoding="utf-8")
+        .replace(
+            'endpoint = "ws://127.0.0.1:7880"\nmode = "attach"',
+            'endpoint = "ws://127.0.0.1:7880"\nmode = "managed"',
+        )
+        .replace("[browser]\nenabled = false", "[browser]\nenabled = true")
+        .replace('lan_address = ""', 'lan_address = "10.254.254.11"')
+        .replace('public_origin = ""', 'public_origin = "https://ember.example.test"')
+        .replace('trusted_proxy = ""', 'trusted_proxy = "10.254.254.10"')
+    )
+    path = tmp_path / "deployment.toml"
+    path.write_text(template, encoding="utf-8")
+    config = load_config(path)
+    assert config.browser.public_origin == "https://ember.example.test"
+    assert config.browser.trusted_proxy == "10.254.254.10"
+    for bad in (
+        template.replace("https://ember.example.test", "http://ember.example.test"),
+        template.replace("10.254.254.10", "8.8.8.8"),
+        template.replace('trusted_proxy = "10.254.254.10"', 'trusted_proxy = ""'),
+        template.replace("http://127.0.0.1:8787", "http://127.0.0.1:8788"),
+    ):
+        path.write_text(bad, encoding="utf-8")
+        with pytest.raises(ConfigurationError):
+            load_config(path)

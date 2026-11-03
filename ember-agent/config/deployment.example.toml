@@ -73,6 +73,9 @@ enabled = false
 # start.ps1 ensures application-scoped Private/Domain LocalSubnet firewall rules.
 # Microphone capture from another device requires HTTPS; HTTP LAN supports text/playback.
 lan_address = ""
+# Optional HTTPS reverse proxy; granting direct access gives LAN users operator authority.
+public_origin = ""
+trusted_proxy = ""
 endpoint = "http://127.0.0.1:8787"
 # Build ember-agent/frontend during setup, then point to its production dist directory.
 assets = "../frontend/dist"
