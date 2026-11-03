@@ -117,9 +117,10 @@ describe("authorized recall inspection", () => {
     expect(html).toContain("FACTUAL_ASSERTION");
     expect(html).toContain("authorized_related_scope");
     expect(html).toContain("recall score 0 (not confidence)");
-    expect(html).toContain('href="#observation-0"');
+    const link = html.match(/href="#([^"]+-observation-0)"/)?.[1];
+    expect(link).toBeDefined();
     expect(html).not.toContain('href="#observation-1"');
-    expect(html).toContain('id="observation-0"');
+    expect(html).toContain('id="' + link + '"');
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>");
   });

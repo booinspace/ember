@@ -4,6 +4,7 @@ import asyncio
 import os
 import shutil
 import socket
+import sqlite3
 import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -34,7 +35,48 @@ from .console import read_line
 from .livekit_config import LiveKitCredentials, credentials, server_yaml
 from .processes import OwnedProcess, RuntimeLease
 from .speech_health import check_voice
+from .task_router import (
+    RecallTask,
+    SummaryTask,
+    TaskRouter,
+    TextInspectionProvider,
+    TextInspectionTask,
+    ToolRouter,
+)
 from .text_session import DirectTextSession
+
+
+async def _start_tasks(
+    runtime: LocalRuntime, binding: RoomBinding, cleanup: AsyncExitStack
+) -> TaskRouter | None:
+    token_path = runtime.config.runtime_root / "gateway-agent.token"
+    try:
+        token = (await asyncio.to_thread(token_path.read_text, encoding="utf-8")).strip()
+    except OSError:
+        token = ""
+    summary = None
+    if 32 <= len(token) <= 128:
+        client = HttpGatewayClient(runtime.config.services.gateway.endpoint, token)
+        cleanup.push_async_callback(client.aclose)
+        summary = SummaryTask(client, runtime.config.model_tag)
+    router = TaskRouter(
+        runtime.config.runtime_root,
+        binding.character_id,
+        binding.instance_id,
+        TextInspectionTask(ToolRouter(TextInspectionProvider(), binding.character_id)),
+        summary=summary,
+        recall=RecallTask(
+            runtime.deep, runtime.core.reference_clock, runtime.core.calendar.timezone
+        ),
+    )
+    try:
+        await router.start()
+    except (OSError, sqlite3.Error):
+        print("Tasks unavailable: operational storage could not start.")
+        return None
+    runtime.core.submit_task = router.submit_turn
+    cleanup.push_async_callback(router.aclose)
+    return router
 
 
 def port_open(endpoint: str) -> bool:
@@ -469,7 +511,9 @@ async def _run_room(
         if config.browser.enabled:
             if await asyncio.to_thread(port_open, config.browser.endpoint):
                 raise ConfigurationError("Browser control port is already occupied.")
+            task_router = await _start_tasks(runtime, binding, cleanup)
             control = BrowserControl(
+                task_router=task_router,
                 origin=config.browser.endpoint,
                 lan_origin=f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
                 if config.browser.lan_address
@@ -539,7 +583,9 @@ async def _run_text_browser(
         async def room_answer(_: DeepRecallResult) -> str:
             raise GatewayError("use_browser_text_transport")
 
+        task_router = await _start_tasks(runtime, binding, cleanup)
         control = BrowserControl(
+            task_router=task_router,
             origin=config.browser.endpoint,
             lan_origin=f"http://{config.browser.lan_address}:{urlsplit(config.browser.endpoint).port}"
             if config.browser.lan_address

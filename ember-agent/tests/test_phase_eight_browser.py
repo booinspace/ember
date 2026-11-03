@@ -262,3 +262,138 @@ def test_status_history_remains_bounded_while_older_work_is_active(tmp_path: Pat
             client.portal.call(owner.aclose)
         asyncio.run(deep.aclose())
         asyncio.run(memory.aclose())
+
+
+def test_authenticated_operator_task_round_trip(tmp_path: Path) -> None:
+    import httpx
+
+    from ember_agent.runtime.task_router import (
+        RecallTask,
+        TaskRouter,
+        TextInspectionProvider,
+        TextInspectionTask,
+        ToolRouter,
+    )
+    from ember_memory_engine.deep_profile import DeepSources
+    from ember_memory_engine.read_budget import ReadBudget
+
+    async def exercise() -> None:
+        with CanonicalEngine(tmp_path / "canonical") as engine:
+            identity = engine.create_character().store_id
+            memory = InProcessAsyncMemoryClient(engine.character(identity))
+            core = CharacterCore(memory, FakeModel(), model_tag="synthetic")
+
+            def deep_client(deadline: float) -> InProcessAsyncMemoryClient:
+                budget = ReadBudget(deadline=deadline)
+                return InProcessAsyncMemoryClient(
+                    engine.character(identity),
+                    deep_sources=DeepSources(engine, budget),
+                    read_budget=budget,
+                )
+
+            deep = DeepRecallService(identity, deep_client, validation=memory)
+            session = uuid4()
+            router = TaskRouter(
+                tmp_path / "runtime",
+                identity,
+                session,
+                TextInspectionTask(ToolRouter(TextInspectionProvider(), identity)),
+                recall=RecallTask(deep, core.reference_clock, core.calendar.timezone),
+            )
+
+            async def answer(_: object) -> str:
+                return "receipt"
+
+            owner = BrowserControl(
+                origin=ORIGIN,
+                assets=tmp_path / "unbuilt",
+                binding=RoomBinding(
+                    instance_id=session,
+                    character_id=identity,
+                    room="ember-" + uuid4().hex,
+                    endpoint="ws://127.0.0.1:7880",
+                ),
+                core=core,
+                deep=deep,
+                controls=Controls(),
+                room_token=lambda: "test",
+                answer=answer,
+                task_router=router,
+            )
+            await router.start()
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=owner.app),
+                    base_url=ORIGIN,
+                    headers={"origin": ORIGIN},
+                ) as client:
+                    payload = {"idempotency_key": "same", "text": "two words"}
+                    assert (await client.post("/api/tasks", json=payload)).status_code == 401
+                    assert (
+                        await client.post("/api/bootstrap", json={"token": owner.activation})
+                    ).status_code == 200
+                    response = await client.post("/api/tasks", json=payload)
+                    assert response.status_code == 202
+                    task = response.json()["task_id"]
+                    retry = await client.post("/api/tasks", json=payload)
+                    assert retry.json()["task_id"] == task
+                    async with asyncio.timeout(3):
+                        while True:
+                            status = (await client.get("/api/tasks/" + task)).json()
+                            if status["state"] == "succeeded":
+                                break
+                            await asyncio.sleep(0.01)
+                    assert status["result"] == "2 words, 9 characters."
+                    artifact_route = "/api/tasks/" + task + "/artifact"
+                    assert (await client.get(artifact_route)).status_code == 409
+                    artifact = await client.post(artifact_route, json={})
+                    assert artifact.status_code == 200
+                    assert artifact.json()["size_bytes"] == len(status["result"].encode())
+                    assert (await client.get(artifact_route)).text == status["result"]
+                    artifact_path = tmp_path / "runtime" / "artifacts" / (task + ".txt")
+                    artifact_path.write_text("changed", encoding="utf-8")
+                    assert (await client.get(artifact_route)).status_code == 409
+
+                    delivery = (await client.get("/api/task-notifications")).json()
+                    assert [item["task_id"] for item in delivery["items"]] == [task]
+                    for _ in range(2):
+                        receipt = await client.post("/api/tasks/" + task + "/acknowledge", json={})
+                        assert receipt.status_code == 200
+                    assert (await client.get("/api/task-notifications")).json()["items"] == []
+
+                    recall = await client.post(
+                        "/api/tasks",
+                        json={
+                            "idempotency_key": "recall",
+                            "text": "synthetic",
+                            "operation": "recall",
+                        },
+                    )
+                    assert recall.status_code == 202
+                    recall_id = recall.json()["task_id"]
+                    async with asyncio.timeout(3):
+                        while True:
+                            status = (await client.get("/api/tasks/" + recall_id)).json()
+                            if status["state"] in {"succeeded", "failed"}:
+                                break
+                            await asyncio.sleep(0.01)
+                    assert status["state"] == "succeeded"
+                    response = await client.get("/api/tasks/" + recall_id + "/recall")
+                    assert response.json()["result"]["context_id"] == recall_id
+                    ordinary_view = await client.get("/api/deep/" + recall_id)
+                    assert ordinary_view.json()["result"] is None
+
+                    core.submit_task = router.submit_turn
+                    turn = await core.prepare("Count the words in a synthetic example")
+                    assert turn.local_reply and "queued" in turn.local_reply
+                    assert turn.retained_memories == 0
+                    events = [event async for event in core.stream(turn)]
+                    assert [event.kind for event in events] == ["start", "text", "end"]
+
+            finally:
+                await owner.aclose()
+                await router.aclose()
+                await deep.aclose()
+                await memory.aclose()
+
+    asyncio.run(exercise())

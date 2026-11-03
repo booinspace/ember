@@ -107,14 +107,29 @@ def test_stream_strips_split_reasoning_and_has_terminal_usage(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("workload", ["P1", "P2"])
-def test_future_workloads_rejected_before_upstream(tmp_path: Path, workload: str) -> None:
+def test_agent_workload_requires_scoped_token(tmp_path: Path, workload: str) -> None:
     async def run() -> None:
         config = configuration(tmp_path)
         upstream = FakeUpstream()
         gateway = P0Gateway(config, upstream)
-        with pytest.raises(GatewayError, match="unsupported_workload"):
-            await gateway.admit(request(config, workload=workload))
-        assert upstream.count == 0
+        app = create_app(gateway, "foreground", background_token="bulk", agent_token="agent")
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            identity = uuid4()
+            if workload == "P1":
+                await gateway.session(identity, connected=True)
+            payload = request(config, workload=workload, context_id=identity).model_dump_json()
+            for token in ("foreground", "bulk"):
+                response = await client.post(
+                    "/v1/generate", content=payload, headers={"Authorization": f"Bearer {token}"}
+                )
+                assert response.status_code == 403
+            response = await client.post(
+                "/v1/generate", content=payload, headers={"Authorization": "Bearer agent"}
+            )
+            assert response.status_code == 200
+            assert json.loads(response.text.splitlines()[-1])["kind"] == "end"
+            assert upstream.count == 1
         await gateway.aclose()
 
     asyncio.run(run())
@@ -372,5 +387,49 @@ def test_prefill_counter_is_opt_in_and_legacy_completion_json_is_unchanged(
         assert usage.prefill_seconds == (0.25 if version == "0.3.0" else None)
         assert ("prefill_seconds" in usage.model_dump()) == (version == "0.3.0")
         await gateway.aclose()
+
+    asyncio.run(run())
+
+
+def test_live_p1_runs_while_p2_waits_for_reservation(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        upstream = FakeUpstream()
+        gateway = P0Gateway(config, upstream)
+        identity = uuid4()
+        await gateway.session(identity, connected=True)
+        try:
+            with pytest.raises(GatewayError, match="live_reservation_required"):
+                await gateway.admit(request(config, workload="P1"))
+            background = await gateway.admit(request(config, workload="P2"))
+            live = await gateway.admit(request(config, workload="P1", context_id=identity))
+            async with asyncio.timeout(3):
+                assert [event.kind async for event in live.events()][-1] == "end"
+                assert upstream.count == 1
+                assert (await gateway.health()).queued_p2 == 1
+                await gateway.session(identity, connected=False)
+                assert [event.kind async for event in background.events()][-1] == "end"
+                assert upstream.count == 2
+        finally:
+            await gateway.aclose()
+
+    asyncio.run(run())
+
+
+def test_incomplete_p2_never_publishes_partial_text(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        upstream = FakeUpstream((NativeFrame(message=NativeMessage(content="partial")),))
+        gateway = P0Gateway(config, upstream)
+        try:
+            job = await gateway.admit(request(config, workload="P2"))
+            async with asyncio.timeout(3):
+                events = [event async for event in job.events()]
+            assert [event.kind for event in events if event.kind != "progress"] == [
+                "start",
+                "error",
+            ]
+        finally:
+            await gateway.aclose()
 
     asyncio.run(run())

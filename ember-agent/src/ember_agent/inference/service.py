@@ -75,11 +75,22 @@ class ServiceOwner:
                 with token_path.open("x", encoding="utf-8") as stream:
                     stream.write(secrets.token_urlsafe(32))
             self.token = token_path.read_text(encoding="utf-8").strip()
+            agent_path = root / "gateway-agent.token"
+            if not agent_path.exists():
+                with agent_path.open("x", encoding="utf-8") as stream:
+                    stream.write(secrets.token_urlsafe(32))
+            self.agent_token = agent_path.read_text(encoding="utf-8").strip()
             background_path = root / "gateway-background.token"
             if not background_path.exists():
                 with background_path.open("x", encoding="utf-8") as stream:
                     stream.write(secrets.token_urlsafe(32))
             self.background_token = background_path.read_text(encoding="utf-8").strip()
+            if not 32 <= len(self.agent_token) <= 128 or self.agent_token in {
+                self.token,
+                self.background_token,
+            }:
+                raise GatewayError("invalid_agent_gateway_token")
+
             if not 32 <= len(self.background_token) <= 128 or self.background_token == self.token:
                 raise GatewayError("invalid_gateway_credentials")
             sessions_path = root / "gateway-sessions.json"
@@ -161,6 +172,7 @@ def create_app(
     shutdown: Callable[[], None] | None = None,
     *,
     background_token: str | None = None,
+    agent_token: str | None = None,
 ) -> FastAPI:
     """Expose authenticated metadata/NDJSON; reject invalid requests without echoing their body."""
 
@@ -178,6 +190,11 @@ def create_app(
     def background_authorized(request: Request) -> bool:
         return background_token is not None and hmac.compare_digest(
             request.headers.get("authorization", ""), "Bearer " + background_token
+        )
+
+    def agent_authorized(request: Request) -> bool:
+        return agent_token is not None and hmac.compare_digest(
+            request.headers.get("authorization", ""), "Bearer " + agent_token
         )
 
     @app.put("/v1/realtime/{session_id}")
@@ -210,13 +227,13 @@ def create_app(
 
     @app.get("/health")
     async def health(request: Request) -> JSONResponse:
-        if not (authorized(request) or background_authorized(request)):
+        if not (authorized(request) or background_authorized(request) or agent_authorized(request)):
             return JSONResponse({"code": "unauthorized"}, status_code=401)
         return JSONResponse((await gateway.health()).model_dump(mode="json"))
 
     @app.post("/v1/generate", response_model=None)
     async def generate(request: Request) -> JSONResponse | StreamingResponse:
-        if not (authorized(request) or background_authorized(request)):
+        if not (authorized(request) or background_authorized(request) or agent_authorized(request)):
             return JSONResponse({"code": "unauthorized"}, status_code=401)
         body = bytearray()
         async for chunk in request.stream():
@@ -226,7 +243,9 @@ def create_app(
         try:
             value = GatewayRequest.model_validate_json(body)
             permitted = (
-                value.workload == "P0" if authorized(request) else value.workload in {"P3", "P4"}
+                (authorized(request) and value.workload == "P0")
+                or (background_authorized(request) and value.workload in {"P3", "P4"})
+                or (agent_authorized(request) and value.workload in {"P1", "P2"})
             )
             if not permitted:
                 return JSONResponse({"code": "workload_not_authorized"}, status_code=403)
@@ -267,7 +286,13 @@ def serve(config: DeploymentConfig, *, acknowledge_quiescence: bool = False) -> 
 
         server = uvicorn.Server(
             uvicorn.Config(
-                create_app(gateway, owner.token, shutdown, background_token=owner.background_token),
+                create_app(
+                    gateway,
+                    owner.token,
+                    shutdown,
+                    background_token=owner.background_token,
+                    agent_token=owner.agent_token,
+                ),
                 host=origin.hostname or "127.0.0.1",
                 port=origin.port or 11435,
                 access_log=False,

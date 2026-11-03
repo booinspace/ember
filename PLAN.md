@@ -4126,7 +4126,7 @@ References: [Hermes quickstart](https://hermes-agent.nousresearch.com/docs/getti
 [Ollama tuning](https://docs.ollama.com/faq), [llama.cpp](https://github.com/ggml-org/llama.cpp),
 [speculative decoding](https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md),
 and [vLLM GPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/).
-See [Root ADR 0016](docs/adr/0016-planned-hermes-and-runner-evaluation.md).
+See [Root ADR 0017](docs/adr/0016-planned-hermes-and-runner-evaluation.md).
 
 ### Phase 9 acceptance criteria: generic agent foundations
 
@@ -4875,6 +4875,18 @@ shared recall projection, preventing selected plans from failing the ephemeral
 display before generation. Empty/populated-step and repeated-turn regressions pass;
 the isolated large-set reproduction prepares successfully after the fix. Root
 ADR 0015 and the validation record retain the evidence and restart requirement.
+
+## Phase 9 implementation status
+
+The isolated checkout based on a15f238 includes durable operator tasks, a
+native read-only tool, P2 summarization, and task-bound Deep Associative Recall.
+Its existing inference gateway owns scoped P1/P2 admission and keeps the
+single-runner reservation. Browser notifications and managed artifact export
+use the operational store. Canonical memory remains independent.
+
+[Root ADR 0017](docs/adr/0017-phase-nine-operational-tasks.md) records the
+criterion-by-criterion evidence, benchmark limits and remaining gates.
+Phase 9 remains in progress. Phase 8A remains parked.
 
 ## Engineering language and code-quality standards
 
