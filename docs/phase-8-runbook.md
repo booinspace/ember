@@ -361,3 +361,31 @@ The endpoint must report the Phonon-2 speech model. Ember sends only VAD-finaliz
 audio; LiveKit and Kokoro remain unchanged. Remove the endpoint setting and
 restart to return to the configured Whisper model. Ember does not launch or
 download the attached service. Keep it on loopback.
+
+### Gradium Phonon for spoken replies
+
+Gradium Phonon TTS generates spoken replies. Fermion Phonon-2 transcribes
+microphone input. The Windows deployment uses native ptts 0.6.0, CPU q8,
+the default voice, and the Apache-2.0 gradium/phonon-31m-en checkpoint pinned at
+92741c5b07d085ff840e26fea8ce43110b87852f.
+
+Provision a Python 3.12 virtual environment at .local/tools/phonon-tts/.venv
+with ptts==0.6.0, fastapi==0.142.3, uvicorn==0.54.0 and numpy==2.5.3.
+Download the pinned config, tokenizer, q8 GGUF and default voice into
+.local/models/phonon-31m-en before starting Ember.
+
+Keep the existing service key for deployment compatibility:
+
+```toml
+[services.kokoro]
+endpoint = "http://127.0.0.1:8880"
+mode = "managed"
+executable = "../tools/phonon-tts/.venv/Scripts/python.exe"
+arguments = ["scripts/phonon_tts.py", ".local/models/phonon-31m-en"]
+working_directory = "../.."
+startup_timeout_seconds = 20.0
+```
+
+Set tts_model to "tts-1" and tts_voice to "default" in the existing audio
+section. Start normally. Restore deployment.non-mtp.toml.before-phonon-tts
+to return to Kokoro on this workstation.

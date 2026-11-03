@@ -111,6 +111,7 @@ class AudioSettings(RuntimeModel):
     phonon_endpoint: Literal["", "http://127.0.0.1:8010"] = ""
     stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
     language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
+    tts_model: Literal["kokoro", "tts-1"] = "kokoro"
     tts_voice: Annotated[str, Field(min_length=1)] = "af_heart"
 
 
@@ -180,6 +181,7 @@ class _Providers(RuntimeModel):
 
 class _AudioSettings(RuntimeModel):
     stt_device: Literal["cpu"]
+    tts_model: Literal["kokoro", "tts-1"] = "kokoro"
     tts_voice: Annotated[str, Field(min_length=1)]
     enabled: bool = False
     stt_model_directory: str = ""
@@ -399,6 +401,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             phonon_endpoint=settings.audio.phonon_endpoint,
             stt_threads=settings.audio.stt_threads,
             language=settings.audio.language,
+            tts_model=settings.audio.tts_model,
             tts_voice=settings.audio.tts_voice,
         ),
         browser=BrowserSettings(

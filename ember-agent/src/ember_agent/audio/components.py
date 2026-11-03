@@ -111,7 +111,7 @@ class VoiceComponents:
                         )
                         cleanup.push_async_callback(transport.close)
                         provider = openai.TTS(
-                            model="kokoro",
+                            model=settings.tts_model,
                             voice=settings.tts_voice,
                             response_format="pcm",
                             base_url=config.services.kokoro.endpoint.rstrip("/") + "/v1",

@@ -56,6 +56,8 @@ stt_model_directory = ""
 stt_threads = 2
 language = "en"
 stt_device = "cpu"
+# Use "tts-1" with Gradium Phonon TTS.
+tts_model = "kokoro"
 tts_voice = "af_alloy"
 
 # Explicit setup only: python scripts/setup_embeddings.py --help

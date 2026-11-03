@@ -403,3 +403,12 @@ isolated generation verified the runner context and 100% GPU placement. An
 isolated startup with installed LiveKit, Whisper and Kokoro reported voice ready.
 These checks establish startup and short generation. Long-prompt and physical
 microphone performance were outside this run.
+
+### Gradium Phonon spoken output
+
+The workstation's default TTS uses the Apache-licensed Phonon 31M English
+q8 checkpoint on Windows CPU. A loopback server streams 24 kHz mono PCM
+through the existing LiveKit TTS adapter. The legacy service key retains
+configuration compatibility. Startup uses provisioned local weights.
+An isolated managed service check generated 55,920 samples through the
+actual LiveKit TTS adapter. See the phase runbook for the pin and rollback.
