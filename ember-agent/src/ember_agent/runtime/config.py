@@ -108,6 +108,7 @@ class AudioSettings(RuntimeModel):
 
     enabled: bool = False
     stt_model_directory: Path | None = None
+    phonon_endpoint: Literal["", "http://127.0.0.1:8010"] = ""
     stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
     language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
     tts_voice: Annotated[str, Field(min_length=1)] = "af_heart"
@@ -182,6 +183,7 @@ class _AudioSettings(RuntimeModel):
     tts_voice: Annotated[str, Field(min_length=1)]
     enabled: bool = False
     stt_model_directory: str = ""
+    phonon_endpoint: Literal["", "http://127.0.0.1:8010"] = ""
     stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
     language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
 
@@ -394,6 +396,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             ).resolve()
             if settings.audio.stt_model_directory
             else None,
+            phonon_endpoint=settings.audio.phonon_endpoint,
             stt_threads=settings.audio.stt_threads,
             language=settings.audio.language,
             tts_voice=settings.audio.tts_voice,

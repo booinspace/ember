@@ -15,21 +15,28 @@ from pydantic import ValidationError
 from ..inference.contracts import GatewayError
 from ..runtime.config import DeploymentConfig
 from ..runtime.speech_health import check_voice
-from .whisper import CpuWhisperSTT
+from .phonon import PhononSTT
+from .whisper import BoundedCpuSTT, CpuWhisperSTT
 
 
 async def _installed_inputs(
     config: DeploymentConfig,
-) -> tuple[CpuWhisperSTT, vad_models.VAD]:
+) -> tuple[BoundedCpuSTT, vad_models.VAD]:
     """One owned startup task retains loaded STT until VAD succeeds or cleanup drains."""
     settings = config.audio
-    assert settings.stt_model_directory is not None
-    recognizer = await asyncio.to_thread(
-        CpuWhisperSTT.load,
-        settings.stt_model_directory,
-        threads=settings.stt_threads,
-        language=settings.language,
-    )
+    recognizer: BoundedCpuSTT
+    if settings.phonon_endpoint:
+        recognizer = await asyncio.to_thread(
+            PhononSTT.load, settings.phonon_endpoint, language=settings.language
+        )
+    else:
+        assert settings.stt_model_directory is not None
+        recognizer = await asyncio.to_thread(
+            CpuWhisperSTT.load,
+            settings.stt_model_directory,
+            threads=settings.stt_threads,
+            language=settings.language,
+        )
     try:
         detector = await asyncio.to_thread(
             silero.VAD.load,
@@ -47,7 +54,7 @@ async def _installed_inputs(
 class VoiceComponents:
     """CPU STT/VAD and a configured local TTS adapter, with explicit provider lifecycle."""
 
-    recognizer: CpuWhisperSTT
+    recognizer: BoundedCpuSTT
     streaming_stt: stt.StreamAdapter
     vad: vad_models.VAD
     tts: openai.TTS | None
@@ -65,7 +72,7 @@ class VoiceComponents:
         settings = config.audio
         if not settings.enabled:
             return None, "disabled"
-        if settings.stt_model_directory is None:
+        if settings.stt_model_directory is None and not settings.phonon_endpoint:
             return None, "stt_artifacts_not_configured"
         loading = asyncio.create_task(_installed_inputs(config), name="ember-speech-input-startup")
         try:

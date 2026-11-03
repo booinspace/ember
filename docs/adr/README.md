@@ -107,3 +107,5 @@ checks are recorded in Root ADR 0015 and the phase validation record.
 The [browser turn-details amendment](../phase-8-turn-details-ui.md) adds ephemeral
 thinking/selected-recall expansions and keyboard/scroll controls. Root ADR 0015 and
 Agent ADR 0006 record its passing checks and pending UI deployment authorization.
+
+Planned: [Root ADR 0016 — Hermes and Windows runner evaluation](0016-planned-hermes-and-runner-evaluation.md).

@@ -9,7 +9,7 @@ Build one local character application from two first-party repositories:
 
 The character’s identity, personality, conversation continuity, and memories remain independent of external agent frameworks.
 
-**Odysseus is the first optional agentic provider.** It executes delegated work through an adapter and isolated worker profile. Removing it leaves ordinary conversation, memory, native tools, and independently configured MCP tools functional.
+**Hermes Agent is the preferred agentic harness, subject to Phase 8A acceptance.** It is the proposed home for agentic chat, tool loops and messaging integrations, with production delegation through an isolated adapter. Removing it leaves ordinary conversation, memory, native tools, and independently configured MCP tools functional.
 
 All primary-Qwen generation uses **one inference gateway**, implemented incrementally. Ollama owns the loaded model weights; the gateway owns request admission and scheduling.
 
@@ -24,7 +24,7 @@ The remaining model unknowns are:
 - Cancellation and preemption.
 - Context-switching cost.
 - GPU/VRAM characteristics.
-- Odysseus compatibility through the gateway.
+- Hermes compatibility through the gateway, including the effective 64K context gate.
 
 ### Initial deployment choices
 
@@ -42,7 +42,7 @@ The remaining model unknowns are:
 | Memory deployment | In-process engine behind dependency injection |
 | Gateway deployment | Launcher-owned local child process by default |
 | Concurrency | One speaking character and one active delegated workflow initially |
-| External harness | Optional isolated Odysseus worker |
+| External harness | Preferred isolated Hermes Agent profile; Odysseus retained as a historical alternative |
 | Cloud AI dependency | None |
 
 ---
@@ -131,16 +131,16 @@ flowchart TD
 
     Core --> Tasks["TaskRouter"]
     Tasks --> Provider["AgenticTaskProvider"]
-    Provider --> Odysseus["Optional Odysseus worker"]
+    Provider --> Hermes["Optional Hermes Agent worker"]
     Provider --> Future["Future provider adapters"]
 
-    Odysseus --> WorkerTools["Authorized tools / MCP"]
+    Hermes --> WorkerTools["Authorized tools / MCP"]
     Provider --> Events["EventBus"]
     Events --> Attention["AttentionPolicy"]
     Attention --> Core
 
     Core --> Gateway["One inference gateway"]
-    Odysseus --> Gateway
+    Hermes --> Gateway
     Memory --> ExtractionClient["Injected extraction ModelClient"]
     ExtractionClient --> Gateway
     Gateway --> Ollama["Ollama"]
@@ -2288,7 +2288,10 @@ Worker prompts are functional. The character remains the social interface.
 
 ---
 
-## 18. Odysseus adapter and empirical gateway compatibility
+## 18. External harness adapter and empirical gateway compatibility
+
+The Odysseus design below is retained as prior research. Phase 8A evaluates Hermes
+first; the Phase 11 transport mapping must follow the selected pinned harness.
 
 ### Inspected reference
 
@@ -3481,9 +3484,10 @@ Each phase leaves working, tested behavior.
 | **6 — Full extraction** | Structured model extraction, resumable jobs, policies/summary import; **same gateway gains P3/P4 queues and conservative admission** |
 | **7 — Consolidation/time + user profile** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance, bounded source-backed profile pins in terminal/LiveKit text, origin preservation and bounded relationship/temporal prerequisites for Phase 8 |
 | **8 — Stable application integration** | Browser/audio/memory, automatic native capture and source controls, **ordinary conversational temporal recall** with supported event dates, reviewed existing-memory enrichment and historical delivery validation; **Deep Associative Recall** with explicit invocation/inspection/cancellation and measured fast-path isolation, prompt budgets, **single-command composition/startup/shutdown**, health and portability |
+| **8A — Hermes and local runner evaluation** | Isolated Hermes chat/UI and app integration, tool and memory boundary proof, RTX 3090 runner comparison, go/no-go ADR |
 | **9 — Generic agent foundations** | Events/attention, ToolProvider/TaskRouter foundations, operational store; **same gateway gains P1/P2, reservation, fairness/accounting** |
 | **10 — Direct MCP** | Discovery, normalization, credentials, scoped authority, UI |
-| **11 — Odysseus delegation** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
+| **11 — Harness delegation (Hermes preferred)** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
 | **12 — Portable skills** | Loader, requirements/resources, provider metadata/translation |
 | **13 — Preemption hardening** | Actual cancellation/runner/GPU/context-switch contention testing; enable live preemption only after acceptance |
 
@@ -3995,6 +3999,135 @@ dates, reviewed enrichment and historical delivery; they are distinct from deep 
   evidence of interpreter performance. The section 31 temporal fixtures, including
   cancellation and mid-response permission changes, pass with zero unauthorized output.
 
+### Phase 8A acceptance criteria: Hermes and Windows runner evaluation
+
+**Status: planned.** Run after the current Phase 8 work as an isolated feasibility
+phase. Preserve Phase 8 acceptance and Phase 9/10 ownership. Phase 11 ships the
+production adapter only after this gate and the relevant task/tool foundations.
+Start with synthetic data and a separate Hermes profile. Do not switch the live
+runner or enable a real messaging account as part of the evaluation.
+
+**Architecture.** Hermes Agent (Nous Research) owns agentic text sessions, its
+existing chat UI, tool loops and messaging adapters. Ember retains its character
+identity and personality, canonical memory, LiveKit voice path and sole inference
+gateway. The Hermes dashboard Chat tab is the first UI to try; use the separate
+Hermes API server for OpenAI-compatible clients and a native messaging adapter
+for a messaging platform. Do not fork the dashboard or assume Chat Completions
+exposes Hermes approvals and session controls. Use the documented run/event
+interface for production delegation only if the pinned release passes conformance.
+
+    Hermes UI / app adapter -> Hermes Agent -> Ember model ingress -> selected runner
+                                    |
+                                    +-> scoped Ember recall / approved tool broker
+
+Reuse the existing gateway admission and Memory ABI. Add a narrow authenticated
+OpenAI-compatible model ingress only where Hermes requires it; it maps roles,
+tool calls/results, streaming, stop and errors to existing contracts and rejects
+unsupported fields. The server assigns model, priority, caller and budgets.
+Hermes' public agent API and Ember's private model ingress are different endpoints;
+prevent recursive routing. The spike uses an exclusive test slot with no realtime
+competition; production tool loops require bounded Phase 9 P2 admission and must
+yield to P0. Disable or route auxiliary inference through that same gateway.
+
+Start with explicit read-only recall via a scoped tool. Test whether a supported
+hook can inject bounded personality and authorized recall for ordinary agentic
+chat without another model turn; measure the tool route separately. Validate
+character/session binding and current authorization before recall and disclosure.
+Hermes session history is operational state, not Ember memory. Verify transcript
+retention and revocation: if the pinned build persists recalled private context
+without enforceable retention/purge, keep private recall disabled. Do not promise
+cross-UI chat continuity until explicitly implemented and tested. No raw database,
+capture/approval authority, archive files or host shell access for Hermes. Start
+with one allowlisted read-only synthetic tool. Keep dashboard/model ports private;
+test app authentication, pairing, tool denial and cross-session isolation.
+
+**Client split and local speech.** Make Hermes Desktop the preferred everyday text
+and tool client after acceptance. Freeze general chat UI expansion in Ember. Keep
+the existing browser client as a minimal LiveKit voice and operator surface;
+retire its chat composer only after Hermes text passes acceptance and voice still
+works independently. LiveKit is a separate service; a browser, native client, or
+future Hermes extension must actually join the room to use its audio path. Do not
+assume Hermes Desktop joins an Ember room, or that Hermes text and LiveKit voice
+share session history. Keep room credentials and memory controls owned by Ember.
+
+    Hermes Desktop -> Hermes Agent -> Ember gateway -> local Qwen
+    Voice client <-> LiveKit room <-> Ember voice worker
+      -> VAD / Phonon-2 STT -> CharacterCore + recall -> Ember gateway
+      -> Kokoro TTS -> LiveKit room
+
+Qualify Fermion Research Phonon-2 as the replacement for faster-whisper for English
+voice. It replaces only STT. Keep existing VAD, LiveKit transport, Kokoro, and
+turn/capture semantics. Start with the Windows CPU backend so Qwen keeps the GPU.
+Pin runtime and weights, record checksums and CC BY 4.0 attribution, and provision
+explicitly outside startup. Prefer the existing STT adapter and bounded off-loop
+execution. If the dependency cannot share Ember's Python environment, evaluate a
+private local process using the documented transcription interface. Begin with VAD
+endpointed utterances; evaluate streaming separately only if supported by the
+pinned backend and useful in measured conversation. Vendor batch throughput does
+not establish live turn latency. Keep faster-whisper selectable for rollback and
+unsupported languages; no automatic cloud fallback.
+
+- **P8A-AC-06:** Hermes text works without the Ember browser open; independently,
+  an authenticated voice client joins LiveKit, captures speech and plays Kokoro
+  replies with Hermes stopped. Validate LAN room access, final transcript ownership,
+  interruption, and voice-only UI usability before retiring any chat controls.
+- **P8A-AC-07:** Compare Phonon-2 CPU against the existing faster-whisper CPU setup
+  on matched English clips and physical microphone turns on Windows. Report p50/p95
+  speech-end to final transcript and first audible reply, WER and proper-name/date
+  accuracy, false turns on silence/playback, CPU/RAM, and Qwen latency under load.
+  Exercise long speech, noise, reconnect, cancellation and missing model/runtime.
+  Only a final transcript may start a turn or enter capture; reject late and
+  duplicate finals. Promote Phonon-2 only with a measured latency or accuracy gain
+  and no material regression in the other measures or existing voice gates.
+  Otherwise retain Whisper as default. No live switch is part of this plan edit.
+
+Sources: [Phonon-2 model](https://www.fermionresearch.com/models/phonon-2/),
+[Windows and speech setup](https://www.fermionresearch.com/docs/speech/).
+
+**Runner shortlist.**
+
+| Option | Decision |
+|---|---|
+| Native Windows Ollama | Baseline and default until beaten. Measure existing non-MTP and MTP variants; sweep Flash Attention, supported KV precision and single-request residency. |
+| Native CUDA llama.cpp | First challenger. Use the existing GGUF and compare explicit GPU offload, cache precision and context controls. Test MTP only after verifying the exact architecture, draft weights and build support. Include server/gateway latency in addition to llama-bench. |
+| vLLM under WSL2/Linux | Defer unless a supported checkpoint fits and concurrency becomes a goal. A different weight format/quantization is a separate experiment, not a matched GGUF comparison. |
+
+- **P8A-AC-01:** Pin Hermes and document tested Windows/WSL launch, dashboard chat,
+  API streaming and one test-only app adapter. Verify identity, session isolation,
+  reconnect, stop and safe failure. Keep Ember voice usable with Hermes disabled.
+- **P8A-AC-02:** Demonstrate scoped recall and one tool round trip with sanitized
+  fixtures. Test revoked access, denied tools, model overrides, forbidden outbound
+  routes and cancellation. No automatic promotion of transcripts or task output.
+- **P8A-AC-03:** Check the pinned Hermes release's documented minimum (64,000
+  tokens at design time). Test 65,536 configured context with near-limit input and
+  output reserve, actual context telemetry, no silent truncation and measured
+  GPU/CPU residency. Keep 32K as an Ember baseline; do not spoof Hermes context
+  metadata. If 27B cannot pass, retain Ember on 27B and evaluate a smaller local
+  model for a separately scheduled agentic profile without dual GPU residency.
+- **P8A-AC-04:** Record driver, runner/build, GGUF/model digest, tokenizer/template,
+  sampling, context, KV type, GPU offload and competing VRAM use. Compare matched
+  cold/warm, short and long prompts at 8K/32K/64K where supported, alternating
+  runner order and repeating each case. Compare MTP separately from runner changes.
+  Report p50/p95 time to first visible token, prompt/decode throughput, peak
+  dedicated VRAM, CPU spill, tool/JSON accuracy and cancellation-to-capacity-release.
+  Use synthetic fixtures, one resident runner and no live workload.
+- **P8A-AC-05:** Publish sanitized raw samples and a decision ADR. Change the default
+  only if the candidate meets existing realtime targets and improves the declared
+  primary metric (warm p95 time to first visible token) by at least 15% on the
+  matched interactive suite, with no material tool, structured-output, cancellation,
+  or voice regression. Report unsupported combinations and failures. Otherwise keep
+  Ollama. A failed Hermes gate defers production integration; it does not block
+  ordinary Ember chat. Any production switch requires a documented rollback.
+
+References: [Hermes quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart/),
+[programmatic integration](https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration),
+[dashboard chat](https://hermes-agent.nousresearch.com/docs/user-guide/tui),
+[custom providers](https://hermes-agent.nousresearch.com/docs/developer-guide/adding-providers/),
+[Ollama tuning](https://docs.ollama.com/faq), [llama.cpp](https://github.com/ggml-org/llama.cpp),
+[speculative decoding](https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md),
+and [vLLM GPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/).
+See [Root ADR 0016](docs/adr/0016-planned-hermes-and-runner-evaluation.md).
+
 ### Phase 9 acceptance criteria: generic agent foundations
 
 Owner: ember-agent; memory remains behind the injected ABI.
@@ -4043,7 +4176,7 @@ Owner: ember-agent tool adapters; MCP services retain their natural boundaries.
   receipts safely. Actual server conformance covers malicious output, cross-character
   denial and no canonical memory/policy/credential bypass.
 
-### Phase 11 acceptance criteria: Odysseus delegation
+### Phase 11 acceptance criteria: harness delegation
 
 Owner: ember-agent provider adapter and isolated bridge; provider never owns memory.
 
@@ -4499,7 +4632,7 @@ PLAN remains authoritative for design and engineering standards.
 
 ### V1 includes
 
-All established memory/character capabilities, startup/shutdown, degraded operation, explicit prompt composition, native/direct MCP tools, generic delegation, one Odysseus adapter, shared gateway, structured results, events/attention, portable skills, and security boundaries.
+All established memory/character capabilities, startup/shutdown, degraded operation, explicit prompt composition, native/direct MCP tools, generic delegation, one accepted harness adapter, shared gateway, structured results, events/attention, portable skills, and security boundaries.
 
 Deep Associative Recall is a planned Phase 8 v1 capability: explicit bounded
 investigation, temporal/evidence-aware context, authorized inspection/cancellation and

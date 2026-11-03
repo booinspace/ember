@@ -350,3 +350,14 @@ of assistant updates.
 The build passed synthetic backend/browser checks. Activation awaits new explicit
 deployment approval after automatic review rejected reuse of the earlier 32k approval.
 Reopen the new activation page after deployment.
+
+### Experimental Phonon-2 STT attachment
+
+Provision the pinned Fermion runtime and Phonon-2 weights separately. Start
+`fermion serve phonon-2 --host 127.0.0.1 --port 8010 --threads 2` on the Windows CPU
+backend. In the existing deployment's `[audio]` section set
+`phonon_endpoint = "http://127.0.0.1:8010"` and `language = "en"`, then restart Ember.
+The endpoint must report the Phonon-2 speech model. Ember sends only VAD-finalized
+audio; LiveKit and Kokoro remain unchanged. Remove the endpoint setting and
+restart to return to the configured Whisper model. Ember does not launch or
+download the attached service. Keep it on loopback.

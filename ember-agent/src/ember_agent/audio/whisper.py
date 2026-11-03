@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib
+from abc import abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -63,37 +64,23 @@ class _Transcript:
     duration: float
 
 
-class CpuWhisperSTT(stt.STT[object]):
+class BoundedCpuSTT(stt.STT[object]):
     """At most one native utterance; caller cancellation does not release CPU admission.
 
     The caller loads a local model during explicit runtime composition off-loop.
     No download, CUDA selection, previous-turn prompt or hidden reasoning is used.
     """
 
-    def __init__(self, model: WhisperModel, *, language: str = "en") -> None:
+    def __init__(self, language: str = "en") -> None:
         super().__init__(capabilities=stt.STTCapabilities(streaming=False, interim_results=False))
-        self._model = model
         self.language = language
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ember-cpu-stt")
         self.pending: Future[_Transcript] | None = None
         self.closed = False
 
-    @classmethod
-    def load(cls, directory: Path, *, threads: int = 2, language: str = "en") -> "CpuWhisperSTT":
-        """Composition calls off-loop; missing artifacts degrade speech rather than download."""
-        if not directory.is_dir() or not (directory / "model.bin").is_file():
-            raise GatewayError("stt_artifacts_unavailable")
-        # Narrow the optional provider's untyped constructor at this boundary.
-        factory = cast(_ProviderFactory, importlib.import_module("faster_whisper").WhisperModel)
-        model = factory(
-            str(directory),
-            device="cpu",
-            compute_type="int8",
-            cpu_threads=threads,
-            num_workers=1,
-            local_files_only=True,
-        )
-        return cls(model, language=language)
+    @abstractmethod
+    def transcribe(self, pcm: bytes, language: str) -> str:
+        """Decode one bounded 16 kHz mono PCM utterance on the owned worker."""
 
     async def _recognize_impl(
         self,
@@ -119,24 +106,10 @@ class CpuWhisperSTT(stt.STT[object]):
 
         def transcribe() -> _Transcript:
             frame = rtc.combine_audio_frames(frames)
-            values = np.frombuffer(frame.data, dtype=np.int16).astype(np.float32) / np.float32(
-                32768
-            )
-            segments, information = self._model.transcribe(
-                values,
-                language=selected_language,
-                beam_size=1,
-                vad_filter=False,
-                condition_on_previous_text=False,
-            )
-            parts: list[str] = []
-            size = 0
-            for segment in segments:
-                size += len(segment.text)
-                if size > 1600:
-                    raise GatewayError("stt_transcript_bound")
-                parts.append(segment.text)
-            return _Transcript("".join(parts).strip(), information.language, samples / 16000)
+            text = self.transcribe(bytes(frame.data), selected_language).strip()
+            if len(text) > 1600:
+                raise GatewayError("stt_transcript_bound")
+            return _Transcript(text, selected_language, samples / 16000)
 
         self.pending = self.pool.submit(transcribe)
         wrapped = asyncio.wrap_future(self.pending)
@@ -169,3 +142,47 @@ class CpuWhisperSTT(stt.STT[object]):
             await asyncio.gather(asyncio.wrap_future(self.pending), return_exceptions=True)
         await asyncio.to_thread(self.pool.shutdown, wait=True)
         await super().aclose()
+
+
+class CpuWhisperSTT(BoundedCpuSTT):
+    """Local faster-whisper provider."""
+
+    def __init__(self, model: WhisperModel, *, language: str = "en") -> None:
+        super().__init__(language=language)
+        self._model = model
+
+    @classmethod
+    def load(cls, directory: Path, *, threads: int = 2, language: str = "en") -> "CpuWhisperSTT":
+        """Composition calls off-loop; missing artifacts degrade speech rather than download."""
+        if not directory.is_dir() or not (directory / "model.bin").is_file():
+            raise GatewayError("stt_artifacts_unavailable")
+        # Narrow the optional provider's untyped constructor at this boundary.
+        factory = cast(_ProviderFactory, importlib.import_module("faster_whisper").WhisperModel)
+        model = factory(
+            str(directory),
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=threads,
+            num_workers=1,
+            local_files_only=True,
+        )
+        return cls(model, language=language)
+
+    def transcribe(self, pcm: bytes, language: str) -> str:
+        """Decode with the explicitly provisioned CPU Whisper model."""
+        values = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / np.float32(32768)
+        segments, _ = self._model.transcribe(
+            values,
+            language=language,
+            beam_size=1,
+            vad_filter=False,
+            condition_on_previous_text=False,
+        )
+        parts: list[str] = []
+        size = 0
+        for segment in segments:
+            size += len(segment.text)
+            if size > 1600:
+                raise GatewayError("stt_transcript_bound")
+            parts.append(segment.text)
+        return "".join(parts)
