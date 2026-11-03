@@ -413,16 +413,6 @@ async def _run_room(
             failover=False,
         )
         cleanup.push_async_callback(service.aclose)
-        async with asyncio.timeout(5):
-            await service.room.create_room(
-                api.CreateRoomRequest(name=binding.room, max_participants=2, empty_timeout=30)
-            )
-
-        async def delete_room() -> None:
-            async with asyncio.timeout(5):
-                await service.room.delete_room(api.DeleteRoomRequest(room=binding.room))
-
-        cleanup.push_async_callback(delete_room)
 
         async def remember(request: RememberInput) -> str:
             return await runtime.remember(request.key, request.text)
@@ -441,6 +431,18 @@ async def _run_room(
             if voice is not None:
                 cleanup.push_async_callback(voice.aclose)
                 voice_status = voice.output_status
+        # Load speech before creating a room with an empty-room timeout.
+        async with asyncio.timeout(5):
+            await service.room.create_room(
+                api.CreateRoomRequest(name=binding.room, max_participants=2, empty_timeout=30)
+            )
+
+        async def delete_room() -> None:
+            async with asyncio.timeout(5):
+                await service.room.delete_room(api.DeleteRoomRequest(room=binding.room))
+
+        cleanup.push_async_callback(delete_room)
+
         host = HostedRoom(
             runtime.core, binding, remember, voice=voice, investigate=runtime.investigate
         )

@@ -389,3 +389,17 @@ fix it prepared twice with 20 recalled memories, including four plans, and valid
 turn-view JSON. No private values are recorded here and no model generation or
 live character mutation was needed. The 27 focused tests, Ruff and strict Pyright
 pass. The active process must be restarted to load the correction.
+
+## Voice room startup and RVN context, 2026-11-03
+
+LiveKit rooms have a 30-second empty timeout. Prepare local speech providers
+before creating the room, then join with the owned host immediately. Previously
+the room could disappear during speech startup and both signalling paths returned
+404. The fallback browser text transport remains available when voice cannot start.
+
+The local launcher configuration requests 131,072 context tokens for the pinned
+RVN IQ3_S MTP model, with 126,976 input units and 4,096 output reserve. A short
+isolated generation verified the runner context and 100% GPU placement. An
+isolated startup with installed LiveKit, Whisper and Kokoro reported voice ready.
+These checks establish startup and short generation. Long-prompt and physical
+microphone performance were outside this run.
