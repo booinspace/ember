@@ -493,3 +493,31 @@ summary {
 .voice-controls select {
   max-width: 100%;
 }
+
+.prompt-editor {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border, #384040);
+  border-radius: 0.8rem;
+  min-width: 0;
+}
+.prompt-editor [role="tablist"],
+.prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.prompt-editor textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.5rem 0;
+  font-family: monospace;
+}
+.prompt-editor pre,
+.prompt-editor p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

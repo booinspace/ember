@@ -470,7 +470,12 @@ class BundleService:
             (target / "config").mkdir(exist_ok=True)
             _copy_file(source, target / "config" / "subject.json")
         # Personality is character-owned; provider deployment config is elsewhere.
-        for name in ("personality.json", "personality.toml"):
+        for name in (
+            "personality.json",
+            "personality.toml",
+            "personality.md",
+            "personality-migration.json",
+        ):
             source = original / "config" / name
             if source.is_file():
                 (target / "config").mkdir(exist_ok=True)

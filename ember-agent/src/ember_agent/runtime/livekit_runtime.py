@@ -611,6 +611,7 @@ async def _run_room(
                 core=runtime.core,
                 deep=runtime.deep,
                 controls=runtime,
+                prompt_controls=runtime,
                 room_token=lambda: value.token(
                     binding.room, USER_IDENTITY, audio=voice is not None
                 ),
@@ -619,6 +620,7 @@ async def _run_room(
                 voice_status=voice_status,
                 speech_options=lambda: voice.speech_options if voice is not None else None,
                 configure_speech=host.configure_speech,
+                prompt_idle=host.prompt_idle,
                 capture_changed=lifecycle.policy_changed,
             )
             browser = BrowserServer(control, config.runtime_root)
@@ -691,6 +693,7 @@ async def _run_text_browser(
             core=runtime.core,
             deep=runtime.deep,
             controls=runtime,
+            prompt_controls=runtime,
             room_token=room_token,
             answer=room_answer,
             text_session=text,

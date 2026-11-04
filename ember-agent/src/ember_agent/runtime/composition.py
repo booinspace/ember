@@ -28,6 +28,7 @@ from ember_memory_engine.read_budget import ReadBudget
 
 from ..character.core import CharacterCore, Personality, TurnObservation
 from ..character.interpretation import CalendarInterpreter
+from ..character.prompts import PromptDocuments, PromptEdit, PromptSnapshot
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
 from ..memory.backends.dialogue import ArchiveDialogueSink
@@ -36,6 +37,7 @@ from ..memory.deep_recall import DeepRecallService
 from .config import DeploymentConfig, RuntimeModel
 from .console import read_line
 from .controls import CaptureControl, LibraryChoice, ProcessingStatus
+from .prompt_files import PromptFiles
 
 
 class CharacterBinding(RuntimeModel):
@@ -82,7 +84,10 @@ class LocalRuntime:
                 self.engine, self.subject, authority=MutationAuthority(mode="confirmed_user")
             )
             personality_path = config.runtime_root / (config.active_profile + "-personality.json")
-            self.personality = self._personality(personality_path)
+            legacy_exists = personality_path.is_file()
+            self.personality = (
+                self._personality(personality_path) if legacy_exists else Personality()
+            )
             token = (
                 (config.runtime_root / "gateway.token").read_text(encoding="utf-8").strip()
                 if gateway_available
@@ -104,6 +109,16 @@ class LocalRuntime:
                 config.max_input_tokens,
                 config.context_tokens - max(1192, config.output_reserve_tokens),
             )
+            self.prompt_files = PromptFiles(
+                config.system_prompt_file or config.runtime_root / "prompts/system.md",
+                config.data_root / "characters" / str(binding.character_id) / "config",
+                binding.character_id,
+                config.active_profile,
+                self.personality,
+                legacy_exists,
+                ceiling,
+            )
+            self.personality = self.personality.model_copy(update={"name": self.prompt_files.name})
             self.core = CharacterCore(
                 self.memory,
                 self.model,
@@ -122,10 +137,41 @@ class LocalRuntime:
                 if config.interpretation.enabled
                 else None,
             )
+            self.core.load_prompts = self.load_prompt_snapshot
         except Exception:
             self.engine.close()
             self.pool.shutdown(wait=True)
             raise
+
+    async def load_prompt_snapshot(self) -> PromptSnapshot:
+        """Pin one bounded file pair using the existing off-loop runtime worker."""
+        return await asyncio.wrap_future(self.pool.submit(self.prompt_files.load))
+
+    async def read_prompts(self) -> PromptDocuments:
+        value = await asyncio.wrap_future(self.pool.submit(self.prompt_files.read))
+        return value.model_copy(
+            update={
+                "applied_revision": self.core.applied_prompts.revision
+                if self.core.applied_prompts
+                else None
+            }
+        )
+
+    async def edit_prompt(self, value: PromptEdit, *, save: bool) -> PromptDocuments:
+        future = asyncio.wrap_future(self.pool.submit(self.prompt_files.edit, value, save=save))
+        try:
+            result = await asyncio.shield(future)
+        except asyncio.CancelledError:
+            # Keep admission fenced until an accepted write has finished.
+            await asyncio.shield(future)
+            raise
+        return result.model_copy(
+            update={
+                "applied_revision": self.core.applied_prompts.revision
+                if self.core.applied_prompts
+                else None
+            }
+        )
 
     @staticmethod
     def _personality(path: Path) -> Personality:

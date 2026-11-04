@@ -36,6 +36,7 @@ def test_degraded_startup_selects_browser_without_starting_room(
         update={
             "data_root": tmp_path / "data",
             "runtime_root": tmp_path / "runtime",
+            "system_prompt_file": tmp_path / "prompts/system.md",
             "browser": load_config(EXAMPLE).browser.model_copy(update={"enabled": True}),
         }
     )
@@ -266,6 +267,7 @@ def test_real_browser_control_listener_survives_unavailable_livekit_and_gateway(
             update={
                 "data_root": tmp_path / "data",
                 "runtime_root": tmp_path / "runtime",
+                "system_prompt_file": tmp_path / "prompts/system.md",
                 "browser": original.browser.model_copy(
                     update={
                         "enabled": True,

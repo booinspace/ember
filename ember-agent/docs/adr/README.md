@@ -49,3 +49,6 @@ Agent ADR 0006 also records ephemeral thinking/selected-recall UI, experimental
 gateway 0.4.0, keyboard/scroll controls and pending UI deployment authorization.
 
 In progress: [Agent ADR 0007 — Operational dispatch and agent inference admission](0007-task-runtime-and-agent-admission.md).
+
+[Agent ADR 0008 — Shared system and character Markdown prompts](0008-character-prompts.md)
+records operator editing, bounded composition and per-turn snapshots alongside Phase 9.

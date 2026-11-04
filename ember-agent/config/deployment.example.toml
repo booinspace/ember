@@ -88,3 +88,8 @@ assets = "../frontend/dist"
 # Independent of deep recall. Common calendar queries always resolve locally.
 enabled = false
 timeout_seconds = 8.0
+
+# Shared across every character/profile pointing to the same file.
+# Relative paths resolve from this deployment TOML's directory.
+[prompts]
+system_file = "prompts/system.md"

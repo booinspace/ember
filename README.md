@@ -206,3 +206,9 @@ Conversation continuity uses a [bounded session transcript](docs/conversation-co
 user input survives interrupted speech, recent dialogue stays within fixed prompt limits,
 and first-message/literal topic questions can retrieve earlier session passages. Restarting
 Ember begins a new session. The full conversation is never appended to every prompt.
+
+
+The **Prompts** browser panel edits shared system rules and character-specific personality
+as Markdown, with an effective instruction preview. Saves apply to the next message.
+See the [prompt editing runbook](docs/personality-prompts-proposal.md#operator-use) for
+file locations, budgets, migration and recovery.

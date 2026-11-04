@@ -149,6 +149,7 @@ def test_missing_background_credentials_block_without_repeated_idle_drains(tmp_p
         update={
             "data_root": tmp_path / "data",
             "runtime_root": tmp_path / "runtime",
+            "system_prompt_file": tmp_path / "prompts/system.md",
         }
     )
     config.runtime_root.mkdir()

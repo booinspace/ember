@@ -6,6 +6,7 @@ from pydantic import UUID4, Field
 
 from ember_memory_abi.selection import RecallSelection
 
+from ..character.prompts import PromptDocuments, PromptEdit
 from .config import RuntimeModel
 
 
@@ -58,3 +59,11 @@ class RuntimeControls(Protocol):
     async def configure_recall(self, value: RecallSelection) -> RecallSelection:
         """Persist a confirmed-user selection revision; no automatic grant creation."""
         ...
+
+
+class PromptControls(Protocol):
+    """Bound operator edits; no browser paths or model mutation authority."""
+
+    async def read_prompts(self) -> PromptDocuments: ...
+
+    async def edit_prompt(self, value: PromptEdit, *, save: bool) -> PromptDocuments: ...

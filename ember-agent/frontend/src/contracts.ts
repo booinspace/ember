@@ -62,6 +62,7 @@ export const runtimeState = z.object({
   voice: z.boolean().default(false),
   voice_status: z.string().default("disabled"),
   speech: speechOptions.nullable().default(null),
+  prompts_available: z.boolean().default(false),
   transport: z.enum(["livekit", "http"]).default("livekit"),
   text_available: z.boolean().default(true),
   thinking_available: z.boolean().default(false),
@@ -193,9 +194,10 @@ export async function control<T>(
   schema: z.ZodType<T>,
   body?: unknown,
   signal?: AbortSignal,
+  method?: "PUT",
 ): Promise<T> {
   const response = await fetch("/api/" + path, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     credentials: "same-origin",
     ...(signal ? { signal } : {}),
     ...(body === undefined
@@ -237,3 +239,26 @@ export async function activate(): Promise<RuntimeState> {
     await control("bootstrap", z.object({ ready: z.boolean() }), { token });
   return control("state", runtimeState);
 }
+
+const promptDocument = z.object({
+  markdown: z.string().max(8192),
+  revision: z.string().regex(/^[0-9a-f]{64}$/),
+  error: z.string().nullable(),
+});
+export const promptDocuments = z.object({
+  character_id: z.string().uuid(),
+  system: promptDocument,
+  personality: promptDocument,
+  snapshot: z
+    .object({
+      instructions: z.string(),
+      revision: z.string(),
+      cost: z.number(),
+      limit: z.number(),
+    })
+    .nullable(),
+  error: z.string().nullable(),
+  applied_revision: z.string().nullable(),
+  instruction_limit: z.number(),
+});
+export type PromptDocuments = z.infer<typeof promptDocuments>;

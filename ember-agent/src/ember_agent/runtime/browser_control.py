@@ -20,12 +20,13 @@ from ember_memory_abi.errors import MemoryError
 from ember_memory_abi.selection import RecallSelection
 
 from ..character.core import CharacterCore
+from ..character.prompts import PromptEdit, PromptKind
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
 from .config import RuntimeModel, private_lan_address
-from .controls import CaptureControl, RuntimeControls
+from .controls import CaptureControl, PromptControls, RuntimeControls
 from .speech_settings import SpeechOptions, SpeechSelection
 from .task_artifacts import TaskArtifact
 from .task_router import TaskNotifications, TaskRouter
@@ -105,6 +106,8 @@ class BrowserControl:
         task_router: TaskRouter | None = None,
         speech_options: Callable[[], SpeechOptions | None] | None = None,
         configure_speech: Callable[[SpeechSelection], SpeechOptions] | None = None,
+        prompt_controls: PromptControls | None = None,
+        prompt_idle: Callable[[], None] | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
         self.lan_origin = lan_origin
@@ -126,6 +129,8 @@ class BrowserControl:
         self.task_router = task_router
         self.speech_options = speech_options
         self.configure_speech = configure_speech
+        self.prompt_controls = prompt_controls
+        self.prompt_idle = prompt_idle
         self.activation = secrets.token_urlsafe(48)
         self._session = secrets.token_urlsafe(48)
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
@@ -329,6 +334,7 @@ class BrowserControl:
                 "summary_tasks_available": bool(self.task_router and self.task_router.summary),
                 "recall_tasks_available": bool(self.task_router and self.task_router.recall),
                 "context_id": str(self.core.context_id),
+                "prompts_available": self.prompt_controls is not None,
                 "recall": (await self.controls.recall_settings()).model_dump(mode="json"),
                 "capture": (await self.controls.capture_settings()).model_dump(mode="json"),
                 "libraries": [
@@ -350,6 +356,48 @@ class BrowserControl:
             if self.configure_speech is None:
                 raise GatewayError("speech_controls_unavailable")
             return self.configure_speech(value)
+
+        def prompt_owner() -> PromptControls:
+            if self.prompt_controls is None:
+                raise GatewayError("prompt_controls_unavailable")
+            return self.prompt_controls
+
+        @app.get("/api/prompts")
+        async def prompts() -> JSONResponse:
+            value = await prompt_owner().read_prompts()
+            return JSONResponse(
+                value.model_dump(mode="json"), headers={"Cache-Control": "no-store"}
+            )
+
+        @app.post("/api/prompts/preview")
+        async def prompt_preview(value: PromptEdit) -> JSONResponse:
+            result = await prompt_owner().edit_prompt(value, save=False)
+            return JSONResponse(
+                result.model_dump(mode="json"), headers={"Cache-Control": "no-store"}
+            )
+
+        @app.put("/api/prompts/{kind}")
+        async def prompt_save(kind: PromptKind, value: PromptEdit) -> JSONResponse:
+            if kind != value.kind:
+                raise GatewayError("prompt_scope_mismatch")
+            controls = prompt_owner()
+            if (
+                self.core.prompt_editing
+                or self.core.busy
+                or self.core.pending_delivery is not None
+                or (self.text_session is not None and self.text_session.active is not None)
+            ):
+                raise GatewayError("prompt_settings_busy")
+            if self.prompt_idle is not None:
+                self.prompt_idle()
+            self.core.prompt_editing = True
+            try:
+                result = await controls.edit_prompt(value, save=True)
+            finally:
+                self.core.prompt_editing = False
+            return JSONResponse(
+                result.model_dump(mode="json"), headers={"Cache-Control": "no-store"}
+            )
 
         @app.post("/api/thinking")
         async def thinking(value: ThinkingSetting) -> dict[str, bool]:

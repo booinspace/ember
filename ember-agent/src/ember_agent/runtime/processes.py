@@ -17,9 +17,9 @@ from .config import ConfigurationError
 class RuntimeLease:
     """Hold a profile lock; stale files never authorize adoption or PID-based termination."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, name: str = "runtime.lock") -> None:
         root.mkdir(parents=True, exist_ok=True)
-        self.stream: BinaryIO = (root / "runtime.lock").open("a+b")
+        self.stream: BinaryIO = (root / name).open("a+b")
         try:
             if self.stream.seek(0, os.SEEK_END) == 0:
                 self.stream.write(b"0")

@@ -120,3 +120,12 @@ linked from Root ADR 0007 and PLAN.
 Windows storage/actual-room tests are distinct from future Linux/large-scale gates.
 No new extraction rule, personal memory activation, search projection, audio pipeline
 or model priority is included. Stop for user architecture review before Phase 5.
+
+## Character Markdown configuration amendment — 2026-11-04
+
+[Root ADR 0018](../../../docs/adr/0018-shared-character-prompts.md) adds application-owned
+`personality.md` and `personality-migration.json` to selective character configuration
+copying. Linked exports already copy the character config tree. These remain opaque
+files: the engine neither constructs prompts nor bundles shared deployment system rules.
+The existing bundle format, memory ABI and canonical schema are unchanged. Synthetic
+linked/selective restore tests verify the character file and display metadata survive.

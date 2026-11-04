@@ -18,6 +18,7 @@ import { Controls } from "./controls";
 import { Tasks } from "./Tasks";
 import { Inspector } from "./Inspector";
 import { TurnDetailsPanel } from "./TurnDetails";
+import { PromptEditor } from "./PromptEditor";
 import { VoiceControls } from "./VoiceControls";
 
 type Turn = { id: string; role: "user" | "assistant"; text: string };
@@ -405,6 +406,23 @@ export function App() {
           summaries={state.summary_tasks_available}
           recall={state.recall_tasks_available}
           connected={connected}
+        />
+      )}
+      {state?.prompts_available && (
+        <PromptEditor
+          busy={
+            busy ||
+            Boolean(
+              details &&
+              [
+                "preparing",
+                "generating",
+                "thinking",
+                "answering",
+                "awaiting_delivery",
+              ].includes(details.stage),
+            )
+          }
         />
       )}
       <div className="layout">

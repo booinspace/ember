@@ -132,6 +132,7 @@ class DeploymentConfig(RuntimeModel):
     """Resolved deployment configuration, distinct from verified service/model health."""
 
     active_profile: str
+    system_prompt_file: Path | None = None
     data_root: Path
     runtime_root: Path
     model_tag: str
@@ -203,6 +204,10 @@ class _SearchSettings(RuntimeModel):
     timezone: str = "Europe/London"
 
 
+class _PromptSettings(RuntimeModel):
+    system_file: Annotated[str, Field(min_length=1)] = "prompts/system.md"
+
+
 class _DeploymentSettings(RuntimeModel):
     config_version: Annotated[int, Field(ge=1, le=1)]
     active_profile: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]
@@ -215,6 +220,7 @@ class _DeploymentSettings(RuntimeModel):
     search: _SearchSettings = _SearchSettings()
     browser: _BrowserSettings = _BrowserSettings()
     interpretation: InterpretationSettings = InterpretationSettings()
+    prompts: _PromptSettings = _PromptSettings()
 
 
 def _read_settings(path: Path) -> _DeploymentSettings:
@@ -420,6 +426,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         raise ConfigurationError("Configured recall timezone is unavailable; run setup.") from error
     return DeploymentConfig(
         active_profile=settings.active_profile,
+        system_prompt_file=(path.resolve().parent / settings.prompts.system_file).absolute(),
         data_root=data_root,
         runtime_root=runtime_root,
         model_tag=tag,

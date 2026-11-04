@@ -43,6 +43,7 @@ from .prompt_budget import (
     recall_value,
     recalled_message,
 )
+from .prompts import PromptSnapshot
 from .temporal import CalendarResolver, CalendarScope
 from .turn_view import CurrentTurnView, MemoryCategory
 
@@ -75,6 +76,7 @@ class TurnObservation:
     text: str
     reference_at: datetime
     observed_at: str
+    prompts: PromptSnapshot | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ class PreparedTurn:
     accounting: PromptAccounting | None = None
     observed_at: str = ""
     local_reply: str | None = None
+    prompts: PromptSnapshot | None = None
 
 
 def prompt_cost(messages: tuple[PromptMessage, ...]) -> int:
@@ -147,6 +150,9 @@ class CharacterCore:
         self.thinking_enabled = False
         self.turn_view = CurrentTurnView()
         self.personality = personality or Personality()
+        self.load_prompts: Callable[[], Awaitable[PromptSnapshot]] | None = None
+        self.applied_prompts: PromptSnapshot | None = None
+        self.prompt_editing = False
         self.sink = sink
         self.calendar = CalendarResolver(timezone)
         self.reference_clock = reference_clock or (lambda: datetime.now(UTC))
@@ -194,6 +200,8 @@ class CharacterCore:
         """Persist original input before recall; cancellation never archives invented output."""
         if not text.strip() or len(text) > 16000:
             raise GatewayError("invalid_user_turn")
+        if self.prompt_editing:
+            raise GatewayError("prompt_settings_busy")
         if self.pending_delivery is not None or self.busy:
             raise GatewayError("character_awaiting_delivery")
         reference_at = self.reference_clock()
@@ -219,6 +227,14 @@ class CharacterCore:
                 CompletedTurn(text, "", (), request_id=value.request_id, complete=False)
             )
             self.history = self.history[-64:]
+        if self.load_prompts is not None:
+            try:
+                snapshot = await self.load_prompts()
+            except GatewayError:
+                self.turn_view.stage(value.request_id, "failed")
+                raise
+            self.applied_prompts = snapshot
+            value = replace(value, prompts=snapshot)
         return value
 
     async def prepare(
@@ -245,6 +261,12 @@ class CharacterCore:
         identity = observation.request_id
         reference_at = observation.reference_at
         observed_at = observation.observed_at
+        instructions = (
+            observation.prompts.instructions
+            if observation.prompts
+            else self.personality.instructions
+        )
+        instruction_limit = observation.prompts.limit if observation.prompts else 1024
         if investigation is not None and investigation.context_id != self.context_id:
             raise GatewayError("deep_context_invalidated")
         if investigation is not None and investigation.outcome in {
@@ -253,7 +275,11 @@ class CharacterCore:
             "cancelled",
         }:
             return self._clarification(
-                text, identity, observed_at, ("deep_recall_" + investigation.outcome,)
+                text,
+                identity,
+                observed_at,
+                ("deep_recall_" + investigation.outcome,),
+                observation.prompts,
             )
         stripped = text.strip()
         if self.submit_task is not None:
@@ -273,6 +299,7 @@ class CharacterCore:
                     observed_at,
                     "Give me a short piece of text to inspect.",
                     ("task_submission",),
+                    observation.prompts,
                 )
                 if goal:
                     return replace(local, local_reply=await self.submit_task(goal, identity))
@@ -289,7 +316,9 @@ class CharacterCore:
             )
         if resolved.status == "clarification":
             self.last_scope = None
-            return self._clarification(text, identity, observed_at, resolved.reasons)
+            return self._clarification(
+                text, identity, observed_at, resolved.reasons, observation.prompts
+            )
         deep_context = condense(investigation) if investigation is not None else None
         if investigation is not None and (
             investigation.context_id != self.context_id or investigation.dependencies is None
@@ -433,10 +462,7 @@ class CharacterCore:
         memories = selected_values
         history = live_history
         trimmed = max(0, len(previous) - len(history))
-        if (
-            message_bytes(PromptMessage(role="system", content=self.personality.instructions))
-            > 1024
-        ):
+        if message_bytes(PromptMessage(role="system", content=instructions)) > instruction_limit:
             raise GatewayError("prompt_overflow")
         current_cost = message_bytes(PromptMessage(role="user", content=text))
         while history and sum(self._history_cost(turn) for turn in history) > self.history_ceiling:
@@ -577,7 +603,7 @@ class CharacterCore:
                     raise GatewayError("context_dependency_overflow") from None
 
         def compose() -> tuple[PromptMessage, ...]:
-            messages = [PromptMessage(role="system", content=self.personality.instructions)]
+            messages = [PromptMessage(role="system", content=instructions)]
             framing = recall_frame(resolved.scope, investigation.outcome if investigation else None)
             if framing is not None:
                 if message_bytes(framing) > 216:
@@ -672,6 +698,7 @@ class CharacterCore:
             request=request,
             user=text,
             observed_at=observed_at,
+            prompts=observation.prompts,
             retained_memories=len(memories) + (len(deep_context.memories) if deep_context else 0),
             trimmed_turns=trimmed,
             dependencies=references,
@@ -733,7 +760,12 @@ class CharacterCore:
         return sum(message_bytes(message) for message in cls._history_messages(turn))
 
     def _clarification(
-        self, text: str, identity: UUID, observed_at: str, reasons: tuple[str, ...]
+        self,
+        text: str,
+        identity: UUID,
+        observed_at: str,
+        reasons: tuple[str, ...],
+        prompts: PromptSnapshot | None = None,
     ) -> PreparedTurn:
         reply = (
             "Which earlier period should I use?"
@@ -754,16 +786,26 @@ class CharacterCore:
         reply = next(
             (deep_outcomes[reason] for reason in reasons if reason in deep_outcomes), reply
         )
-        return self._local_turn(text, identity, observed_at, reply, reasons)
+        return self._local_turn(text, identity, observed_at, reply, reasons, prompts)
 
     def _local_turn(
-        self, text: str, identity: UUID, observed_at: str, reply: str, reasons: tuple[str, ...]
+        self,
+        text: str,
+        identity: UUID,
+        observed_at: str,
+        reply: str,
+        reasons: tuple[str, ...],
+        prompts: PromptSnapshot | None = None,
     ) -> PreparedTurn:
+        instructions = prompts.instructions if prompts else self.personality.instructions
         messages = (
-            PromptMessage(role="system", content=self.personality.instructions),
+            PromptMessage(role="system", content=instructions),
             PromptMessage(role="user", content=text),
         )
-        if message_bytes(messages[0]) > 1024 or prompt_cost(messages) > self.input_ceiling:
+        if (
+            message_bytes(messages[0]) > (prompts.limit if prompts else 1024)
+            or prompt_cost(messages) > self.input_ceiling
+        ):
             raise GatewayError("prompt_overflow")
         return PreparedTurn(
             request=GatewayRequest(
@@ -779,6 +821,7 @@ class CharacterCore:
             trimmed_turns=0,
             observed_at=observed_at,
             local_reply=reply,
+            prompts=prompts,
             omissions=reasons,
             accounting=PromptAccounting(
                 identity=message_bytes(messages[0]),

@@ -187,6 +187,8 @@ class EmberAgent(Agent):
             turn = await self.core.prepare(
                 text, investigation=investigation, observation=observation
             )
+            if turn.prompts is not None:
+                await self.update_instructions(turn.prompts.instructions)
         except (GatewayError, MemoryError, asyncio.CancelledError):
             if self.prepare_failed is not None:
                 self.prepare_failed()

@@ -5088,3 +5088,14 @@ references support bounded first-message and literal topic lookup. A fixed 24,57
 serialized prompt guard includes current input, memories and all dialogue, with smaller
 category caps; the 128K model window never enables whole-transcript prompting.
 Restart/resume controls and semantic transcript summaries remain separate work.
+
+## Shared system and character personality editor
+
+The [prompt-editor design/runbook](docs/personality-prompts-proposal.md) implements the
+sections 25/28/29 character-core, Markdown personality and browser-control requirements
+as an independent amendment alongside Phase 9. [Root ADR 0018](docs/adr/0018-shared-character-prompts.md)
+records shared system Markdown, character-UUID-bound personality Markdown, authenticated
+editing/preview and per-turn snapshots that preserve conversation history. Instructions
+use at most 4,096 conservative units and a quarter of usable input within the existing
+24,576-unit total. Legacy JSON migration, conflict-safe saves and character bundle copying
+retain existing ownership. Phase 9 task, memory policy and gateway contracts are unchanged.

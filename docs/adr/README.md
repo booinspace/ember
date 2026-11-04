@@ -134,3 +134,7 @@ text while Phase 9 continues. The [design and validation](../voice-controls-and-
 retain synchronized played-prefix receipts, installed-only voice choices and the
 existing room/audio owner. This adds no memory/schema, task or inference-scheduler
 contract and does not reopen Phase 8 or advance a future phase.
+
+Implemented: [Root ADR 0018 — Shared system and character Markdown prompts](0018-shared-character-prompts.md).
+The [design/runbook](../personality-prompts-proposal.md) records the independent editor amendment;
+Phase 9 task, memory and inference authority remain unchanged.

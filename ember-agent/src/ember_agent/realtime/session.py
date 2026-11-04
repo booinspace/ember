@@ -155,6 +155,19 @@ class HostedRoom:
         )
         self._start_permission_watch()
 
+    def prompt_idle(self) -> None:
+        """Fence preparation, authorized generation and verified speech delivery together."""
+        if (
+            self.closing
+            or self.busy
+            or self.core.busy
+            or self.core.pending_delivery is not None
+            or self.agent.gateway_llm.prepared is not None
+            or self.agent.gateway_llm.active_turn is not None
+            or self.session.current_speech is not None
+        ):
+            raise GatewayError("prompt_settings_busy")
+
     def configure_speech(self, selection: SpeechSelection) -> SpeechOptions:
         """Keep every sentence of a reply on one voice/pace, including buffered playout."""
         if self.closing or self.voice is None:
