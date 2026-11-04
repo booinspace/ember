@@ -1,0 +1,255 @@
+{
+  "schema": "ember-native-desktop-gateway-qualification-1",
+  "package": {
+    "name": "NousResearchInc.HermesAgent",
+    "version": "2026.7363.3271.0",
+    "sdk_revision": "b200f5bc60e31588ba2cb60e288029c4a54ba5fa"
+  },
+  "method": {
+    "normal_production_desktop_launch": true,
+    "existing_native_backend_api": true,
+    "session_source": "cli",
+    "physical_renderer_visibility_verified": false,
+    "actual_core_p0_model_calls": true,
+    "direct_runner_generation": false,
+    "scoped_native_searxng_tool": true,
+    "qa_client_processes_remaining": 0
+  },
+  "final_fresh_v2": {
+    "input_report_sha256": "0f1498f85640c41bbca3a88b942cf239ebb6db47ca2f77669ea72dfa202f16c2",
+    "success": true,
+    "turns": [
+      {
+        "index": 1,
+        "kind": "marker",
+        "outcome": "completed",
+        "elapsed_seconds": 3.411,
+        "tool_calls": 0,
+        "tool_completions": 0,
+        "marker_present": true
+      },
+      {
+        "index": 2,
+        "kind": "history",
+        "outcome": "completed",
+        "elapsed_seconds": 1.54,
+        "tool_calls": 0,
+        "tool_completions": 0,
+        "marker_present": true
+      },
+      {
+        "index": 3,
+        "kind": "public_search",
+        "outcome": "completed",
+        "elapsed_seconds": 6.245,
+        "tool_calls": 1,
+        "tool_completions": 1,
+        "marker_present": false,
+        "tool_static_error_markers": {
+          "no issued preflight grant": false,
+          "Ember did not issue this public search": false,
+          "The native public search result is unavailable": false
+        }
+      }
+    ],
+    "source_hashes": {
+      "installed-plugin/__init__.py": "7221f9542ed7d1af885db28cca34f99bb1b6e76e1dc63bf1d553efa1c93870a7",
+      "installed-plugin/hermes_client_transport.py": "abcb4b4bf584b8e46513f63f3670a966e91decd2558ba88374c3f21b01403ea6",
+      "primary-runtime/hermes_chat.py": "1072073830292cd76a848c7f6415e43437c305252d66ac6cc6fee64cd41de007",
+      "primary-runtime/livekit_runtime.py": "5641210eb6ed31cefbde09ac445ad0ebf7dd1402a179fae4c659137cddd133cd"
+    },
+    "own_profile_endpoint_verified": true,
+    "owned_core_contexts_released": true
+  },
+  "historical_failed_attempts": [
+    {
+      "attempt": "initial-v1",
+      "input_report_sha256": "e2553ee0957412c9652c4c902d6a3cff91cadd352d7c2cefeb6df95e773fd642",
+      "success": false,
+      "turns": [
+        {
+          "index": 1,
+          "kind": "marker",
+          "outcome": "completed",
+          "elapsed_seconds": 7.295,
+          "tool_calls": 0,
+          "tool_completions": 0,
+          "marker_present": true
+        },
+        {
+          "index": 2,
+          "kind": "history",
+          "outcome": "completed",
+          "elapsed_seconds": 1.552,
+          "tool_calls": 0,
+          "tool_completions": 0,
+          "marker_present": true
+        },
+        {
+          "index": 3,
+          "kind": "public_search",
+          "outcome": "failed",
+          "elapsed_seconds": 0.249,
+          "tool_calls": 1,
+          "tool_completions": 1,
+          "marker_present": false
+        }
+      ],
+      "source_hashes": {
+        "installed-plugin/__init__.py": "ae777d5c4cf769ea4f91e835f84a41208a757d4dc3e38064405b3f19e94b6967",
+        "installed-plugin/hermes_client_transport.py": "abcb4b4bf584b8e46513f63f3670a966e91decd2558ba88374c3f21b01403ea6",
+        "primary-runtime/hermes_chat.py": "1072073830292cd76a848c7f6415e43437c305252d66ac6cc6fee64cd41de007",
+        "primary-runtime/livekit_runtime.py": "5641210eb6ed31cefbde09ac445ad0ebf7dd1402a179fae4c659137cddd133cd"
+      },
+      "own_profile_endpoint_verified": true,
+      "owned_core_contexts_released": false,
+      "error_type": "RuntimeError",
+      "error_code": "native_turn_failed"
+    },
+    {
+      "attempt": "v1-after-scoped-reload",
+      "input_report_sha256": "383d9440063fd2cd29fedb7ea2a88c114c0e1878fc675bfe7845f1359bf9d10d",
+      "success": false,
+      "turns": [
+        {
+          "index": 1,
+          "kind": "marker",
+          "outcome": "completed",
+          "elapsed_seconds": 6.599,
+          "tool_calls": 0,
+          "tool_completions": 0,
+          "marker_present": true
+        },
+        {
+          "index": 2,
+          "kind": "history",
+          "outcome": "completed",
+          "elapsed_seconds": 1.504,
+          "tool_calls": 0,
+          "tool_completions": 0,
+          "marker_present": true
+        },
+        {
+          "index": 3,
+          "kind": "public_search",
+          "outcome": "failed",
+          "elapsed_seconds": 0.203,
+          "tool_calls": 1,
+          "tool_completions": 1,
+          "marker_present": false,
+          "tool_static_error_markers": {
+            "no issued preflight grant": true,
+            "Ember did not issue this public search": false,
+            "The native public search result is unavailable": false
+          }
+        }
+      ],
+      "source_hashes": {
+        "installed-plugin/__init__.py": "72470b70a961ae01ea665bd145416174f3b32a6b9937e4b5c585691c5478b4ec",
+        "installed-plugin/hermes_client_transport.py": "abcb4b4bf584b8e46513f63f3670a966e91decd2558ba88374c3f21b01403ea6",
+        "primary-runtime/hermes_chat.py": "1072073830292cd76a848c7f6415e43437c305252d66ac6cc6fee64cd41de007",
+        "primary-runtime/livekit_runtime.py": "5641210eb6ed31cefbde09ac445ad0ebf7dd1402a179fae4c659137cddd133cd"
+      },
+      "own_profile_endpoint_verified": true,
+      "owned_core_contexts_released": true,
+      "error_type": "RuntimeError",
+      "error_code": "native_turn_failed",
+      "plugin_reload": [
+        {
+          "enabled": false,
+          "ok": true,
+          "gateway_reloaded": false,
+          "restart_required": true
+        },
+        {
+          "enabled": true,
+          "ok": true,
+          "gateway_reloaded": true,
+          "restart_required": false
+        }
+      ]
+    },
+    {
+      "attempt": "v1-temporary-hook-instrumentation",
+      "input_report_sha256": "cb50bb16593525627b050a513c668af38fbe7a5542c98b4e1b546702200f88ac",
+      "success": false,
+      "turns": [
+        {
+          "index": 1,
+          "kind": "public_search",
+          "outcome": "failed",
+          "elapsed_seconds": 0.233,
+          "tool_calls": 1,
+          "tool_completions": 1,
+          "marker_present": false,
+          "tool_static_error_markers": {
+            "no issued preflight grant": true,
+            "Ember did not issue this public search": false,
+            "The native public search result is unavailable": false
+          }
+        }
+      ],
+      "source_hashes": {
+        "installed-plugin/__init__.py": "72470b70a961ae01ea665bd145416174f3b32a6b9937e4b5c585691c5478b4ec",
+        "installed-plugin/hermes_client_transport.py": "abcb4b4bf584b8e46513f63f3670a966e91decd2558ba88374c3f21b01403ea6",
+        "primary-runtime/hermes_chat.py": "1072073830292cd76a848c7f6415e43437c305252d66ac6cc6fee64cd41de007",
+        "primary-runtime/livekit_runtime.py": "5641210eb6ed31cefbde09ac445ad0ebf7dd1402a179fae4c659137cddd133cd"
+      },
+      "own_profile_endpoint_verified": true,
+      "owned_core_contexts_released": true,
+      "error_type": "RuntimeError",
+      "error_code": "native_turn_failed",
+      "plugin_reload": [
+        {
+          "enabled": false,
+          "ok": true,
+          "gateway_reloaded": false,
+          "restart_required": true
+        },
+        {
+          "enabled": true,
+          "ok": true,
+          "gateway_reloaded": true,
+          "restart_required": false
+        }
+      ],
+      "plugin_exact_restored": true,
+      "restored_reload_complete": true,
+      "hook_trace": [
+        {
+          "before_owner": "f78950c0071a",
+          "consume_owner": "f78950c0071a",
+          "event": "register",
+          "sdk_plugins_sha256": "0da0ebe88da76f4a73d77fcc6942ef549154abbc573d52d74c1608bcb61efce4"
+        },
+        {
+          "before_owner": "f78950c0071a",
+          "consume_owner": "f78950c0071a",
+          "event": "register",
+          "sdk_plugins_sha256": "0da0ebe88da76f4a73d77fcc6942ef549154abbc573d52d74c1608bcb61efce4"
+        },
+        {
+          "event": "pre_called",
+          "kw_names": [
+            "api_request_id",
+            "args",
+            "middleware_trace",
+            "session_id",
+            "task_id",
+            "telemetry_schema_version",
+            "tool_call_id",
+            "tool_name",
+            "turn_id"
+          ],
+          "owner": "f78950c0071a",
+          "pos_count": 0
+        },
+        {
+          "action": null,
+          "event": "pre_returned",
+          "owner": "f78950c0071a"
+        }
+      ]
+    }
+  ]
+}

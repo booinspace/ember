@@ -2,7 +2,8 @@
 
 import asyncio
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, cast
 from uuid import UUID, uuid4
 
@@ -24,17 +25,25 @@ from pydantic import ValidationError
 
 from ember_memory_abi.errors import MemoryError
 
-from ..character.core import CharacterCore, TurnObservation
+from ..character.core import CharacterCore, PreparedTurn, TurnObservation
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
 from ..runtime.speech_settings import SpeechOptions, SpeechSelection
+from ..runtime.worker_process import settled
 from .contracts import (
     READY_METHOD,
     REMEMBER_METHOD,
+    REPLY_STARTED_METHOD,
+    SPEECH_FINISHED_METHOD,
+    STOP_SPEAKING_METHOD,
+    TASK_NOTICE_TEXT,
     TURN_METHOD,
     USER_IDENTITY,
+    ReadyInput,
     RememberInput,
     RoomBinding,
+    SpeechTarget,
+    StopSpeakingResult,
     TurnInput,
     TurnResult,
 )
@@ -42,6 +51,15 @@ from .livekit import EmberAgent
 
 if TYPE_CHECKING:
     from ..runtime.task_router import TaskRouter
+
+
+@dataclass(frozen=True)
+class _Announcement:
+    """One fixed notice has independent speech ownership and no conversation delivery."""
+
+    identity: UUID
+    speech: SpeechHandle
+    finished: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class VoiceProviders(Protocol):
@@ -113,6 +131,11 @@ class HostedRoom:
         )
         self._turn_speech: SpeechHandle | None = None
         self.agent.gateway_llm.on_generation_start = self._capture_speech
+        self.agent.gateway_llm.before_reply = self._announce_reply
+        self.agent.current_notice = self._current_notice
+        self._speech_control_peer = False
+        self._stops: dict[UUID, asyncio.Task[str]] = {}
+        self._announcement: _Announcement | None = None
         self.task_announcer: asyncio.Task[None] | None = None
         self.delivery_tasks: set[asyncio.Task[None]] = set()
         self.delivery_failed = False
@@ -134,6 +157,7 @@ class HostedRoom:
         participant.register_rpc_method(READY_METHOD, self._ready)
         participant.register_rpc_method(TURN_METHOD, self._turn)
         participant.register_rpc_method(REMEMBER_METHOD, self._remember)
+        participant.register_rpc_method(STOP_SPEAKING_METHOD, self._stop_speaking)
         # SDK capture_run=True overload omits its result generic; this call returns None.
         await self.session.start(  # pyright: ignore[reportUnknownMemberType]
             self.agent,
@@ -169,6 +193,7 @@ class HostedRoom:
             or self.agent.gateway_llm.prepared is not None
             or self.agent.gateway_llm.active_turn is not None
             or self.session.current_speech is not None
+            or self._announcement is not None
         ):
             raise GatewayError("prompt_settings_busy")
 
@@ -181,6 +206,7 @@ class HostedRoom:
             or self.core.busy
             or self.core.pending_delivery is not None
             or self.session.current_speech is not None
+            or self._announcement is not None
         ):
             raise GatewayError("speech_settings_busy")
         return self.voice.configure_speech(selection)
@@ -193,6 +219,9 @@ class HostedRoom:
             self.task_announcer = asyncio.create_task(
                 self._announce_tasks(router), name="ember-task-announcements"
             )
+            self.task_announcer.add_done_callback(
+                lambda done: None if done.cancelled() else done.exception()
+            )
 
     def _can_announce_tasks(self) -> bool:
         return (
@@ -203,6 +232,8 @@ class HostedRoom:
             and self.agent.gateway_llm.prepared is None
             and self.agent.gateway_llm.active_turn is None
             and self.session.current_speech is None
+            and self._announcement is None
+            and not any(not stop.done() for stop in self._stops.values())
             and self.session.agent_state == "listening"
             and self.session.user_state == "listening"
             and any(p.identity == USER_IDENTITY for p in self.room.remote_participants.values())
@@ -222,6 +253,7 @@ class HostedRoom:
             if identity is None:
                 continue
             completed = False
+            announcement: _Announcement | None = None
             try:
                 current = self.core.history[-1].request_id if self.core.history else None
                 if (
@@ -232,11 +264,14 @@ class HostedRoom:
                     current = self.core.history[-1].request_id if self.core.history else None
                     if not self._can_announce_tasks() or current != turn:
                         continue
+                    speech_id = uuid4()
                     speech = self.session.say(
-                        "A task result is ready in Tasks.",
+                        self._notice_text(speech_id),
                         allow_interruptions=True,
                         add_to_chat_ctx=False,
                     )
+                    announcement = _Announcement(speech_id, speech)
+                    self._announcement = announcement
                     try:
                         await speech.wait_for_playout()
                     except asyncio.CancelledError:
@@ -244,9 +279,59 @@ class HostedRoom:
                         raise
                     completed = not speech.interrupted and speech.exception() is None
             finally:
-                await asyncio.shield(
-                    router.store.finish_speech(identity, router.session_id, completed=completed)
+                # A disconnected/stopped announcer still owns its exact delivery receipt.
+                await settled(
+                    asyncio.create_task(
+                        self._finish_announcement(router, identity, completed, announcement)
+                    )
                 )
+
+    async def _notice_text(self, identity: UUID) -> AsyncGenerator[str, None]:
+        await self._announce_speech(identity)
+        current = self._announcement
+        if current is not None and current.identity == identity and not current.speech.interrupted:
+            yield TASK_NOTICE_TEXT
+
+    def _current_notice(self) -> UUID | None:
+        notice = self._announcement
+        if (
+            notice is not None
+            and self.agent.gateway_llm.active_turn is None
+            and self.session.current_speech is notice.speech
+            and not notice.speech.interrupted
+        ):
+            return notice.identity
+        return None
+
+    async def _finish_announcement(
+        self,
+        router: "TaskRouter",
+        task_id: UUID,
+        completed: bool,
+        announcement: _Announcement | None,
+    ) -> None:
+        verified = False
+        try:
+            if announcement is not None:
+                await self._settle_speech(announcement.speech, native_generation=False)
+            verified = completed
+        except Exception:
+            self.delivery_failed = True
+            raise
+        finally:
+            try:
+                await router.store.finish_speech(task_id, router.session_id, completed=verified)
+            except Exception:
+                self.delivery_failed = True
+                raise
+            finally:
+                if announcement is not None:
+                    try:
+                        if self._announcement is announcement:
+                            self._announcement = None
+                        await self._speech_finished(announcement.identity)
+                    finally:
+                        announcement.finished.set()
 
     async def stop_task_announcements(self) -> None:
         """Stop the owned worker and retain uncertain delivery after interruption."""
@@ -297,8 +382,10 @@ class HostedRoom:
                 self.session.input.set_audio_enabled(True)
 
     def _participant_left(self, participant: rtc.RemoteParticipant) -> None:
-        if participant.identity == USER_IDENTITY and self.connection_changed is not None:
-            self.connection_changed(False)
+        if participant.identity == USER_IDENTITY:
+            self._speech_control_peer = False
+            if self.connection_changed is not None:
+                self.connection_changed(False)
 
     async def quiesce(self) -> None:
         """Drain speech and generation before any realtime reservation is released."""
@@ -310,6 +397,12 @@ class HostedRoom:
             await asyncio.shield(self.active)
 
     async def _before_turn(self) -> None:
+        await self._drain_stops()
+        announcement = self._announcement
+        if announcement is not None:
+            announcement.speech.interrupt(force=True)
+            await self._settle_speech(announcement.speech, native_generation=False)
+            await announcement.finished.wait()
         previous = self.agent.gateway_llm.active_turn
         speech = self._turn_speech
         if previous is not None and speech is None:
@@ -319,6 +412,9 @@ class HostedRoom:
         if speech is not None:
             await self._settle_speech(speech)
         await self._drain_delivery()
+        # A stop can arrive while the previous playout fence is being awaited.
+        # Finish that exact operation before authorizing a successor reply.
+        await self._drain_stops()
         if previous is not None and self.agent.gateway_llm.active_turn is previous:
             pending = self.core.pending_delivery
             if pending is not None:
@@ -337,7 +433,7 @@ class HostedRoom:
         """Retain the SDK handle even if its scheduler clears the current pointer."""
         self._turn_speech = self.session.current_speech
 
-    async def _settle_speech(self, speech: SpeechHandle) -> None:
+    async def _settle_speech(self, speech: SpeechHandle, *, native_generation: bool = True) -> None:
         """Fence SDK playout, linked tasks and native generation before reconciliation."""
         # LiveKit 1.8.5 can mark an interrupted handle done before its
         # cancelled speech tasks finish. Fence those tasks as well as playout.
@@ -354,7 +450,8 @@ class HostedRoom:
                 await asyncio.gather(
                     *(asyncio.shield(task) for task in tasks), return_exceptions=True
                 )
-            await self.agent.gateway_llm.generation_done.wait()
+            if native_generation:
+                await self.agent.gateway_llm.generation_done.wait()
 
     async def _reserve_generation(self) -> None:
         # Previous delivery is drained and original input is durable before gateway
@@ -392,6 +489,7 @@ class HostedRoom:
         self.agent.gateway_llm.active_turn = None
         if self.active is None:
             self.busy = False
+        await self._speech_finished(identity)
 
     async def _drain_delivery(self) -> None:
         tasks = tuple(self.delivery_tasks)
@@ -414,8 +512,142 @@ class HostedRoom:
         if data.caller_identity != USER_IDENTITY or self.closing:
             raise rtc.RpcError(1500, "Ember participant is unavailable.")
 
+    async def _announce_reply(self, turn: PreparedTurn) -> None:
+        """Give the scoped browser its target before admitting generation or emitting PCM."""
+        await self._announce_speech(turn.request.request_id)
+
+    def _speech_target(self, identity: UUID) -> SpeechTarget:
+        return SpeechTarget(
+            instance_id=self.binding.instance_id,
+            character_id=self.binding.character_id,
+            context_id=self.core.context_id,
+            request_id=identity,
+        )
+
+    async def _announce_speech(self, identity: UUID) -> None:
+        if not self._speech_control_peer:
+            return
+        target = self._speech_target(identity)
+        try:
+            receipt = await self.room.local_participant.perform_rpc(
+                destination_identity=USER_IDENTITY,
+                method=REPLY_STARTED_METHOD,
+                payload=target.model_dump_json(),
+                response_timeout=5,
+            )
+            if receipt != str(target.request_id):
+                raise GatewayError("livekit_delivery_unavailable")
+        except rtc.RpcError as error:
+            raise GatewayError("livekit_delivery_unavailable") from error
+
+    async def _speech_finished(self, identity: UUID) -> None:
+        if not self._speech_control_peer:
+            return
+        try:
+            await self.room.local_participant.perform_rpc(
+                destination_identity=USER_IDENTITY,
+                method=SPEECH_FINISHED_METHOD,
+                payload=self._speech_target(identity).model_dump_json(),
+                response_timeout=5,
+            )
+        except rtc.RpcError:
+            # The exact notice has ended even when the participant has left.
+            pass
+
+    async def _drain_stops(self) -> None:
+        pending = tuple(task for task in self._stops.values() if not task.done())
+        if pending:
+            await asyncio.gather(*(asyncio.shield(task) for task in pending))
+
+    async def _stop_speaking(self, data: rtc.RpcInvocationData) -> str:
+        self._authorize(data)
+        try:
+            target = SpeechTarget.model_validate_json(data.payload)
+        except ValidationError as error:
+            raise rtc.RpcError(1502, "Invalid speech target.") from error
+        if (
+            target.instance_id != self.binding.instance_id
+            or target.character_id != self.binding.character_id
+            or target.context_id != self.core.context_id
+            or not self._speech_control_peer
+        ):
+            raise rtc.RpcError(1500, "Speech target is unavailable.")
+        previous = self._stops.get(target.request_id)
+        if previous is not None:
+            return await asyncio.shield(previous)
+        announcement = self._announcement
+        turn = self.agent.gateway_llm.active_turn
+        is_announcement = announcement is not None and announcement.identity == target.request_id
+        if not is_announcement and (turn is None or turn.request.request_id != target.request_id):
+            return StopSpeakingResult(
+                request_id=target.request_id, outcome="not_current"
+            ).model_dump_json()
+        speech = announcement.speech if is_announcement and announcement else self._turn_speech
+        if speech is None:
+            raise rtc.RpcError(1503, "Speech interruption could not be verified.")
+        # Interrupt the retained exact handle. Session.interrupt also cancels queued
+        # speeches, which could belong to a newer microphone utterance.
+        # No await separates the identity check from the targeted SDK interruption.
+        speech.interrupt(force=True)
+        finishing = (
+            self._finish_announcement_stop(announcement)
+            if is_announcement and announcement is not None
+            else self._finish_stop(target.request_id, speech)
+        )
+        task = asyncio.create_task(finishing, name="ember-stop-speaking")
+        self._stops[target.request_id] = task
+        # The RPC caller may disconnect; the owned fence still runs and its
+        # exception must remain observed even before shutdown joins it.
+        task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        # Keep bounded idempotence receipts; never evict a live owned operation.
+        for identity in tuple(self._stops):
+            if len(self._stops) <= 128:
+                break
+            if self._stops[identity].done():
+                del self._stops[identity]
+        return await asyncio.shield(task)
+
+    async def _finish_announcement_stop(self, announcement: _Announcement) -> str:
+        try:
+            async with asyncio.timeout(190):
+                await self._settle_speech(announcement.speech, native_generation=False)
+                await announcement.finished.wait()
+            return StopSpeakingResult(
+                request_id=announcement.identity, outcome="stopped"
+            ).model_dump_json()
+        except Exception as error:
+            self.delivery_failed = True
+            raise rtc.RpcError(1503, "Speech interruption could not be verified.") from error
+
+    async def _finish_stop(self, identity: UUID, speech: SpeechHandle) -> str:
+        try:
+            await self._settle_speech(speech)
+            await self.agent.gateway_llm.generation_done.wait()
+            await self._drain_delivery()
+            turn = self.agent.gateway_llm.active_turn
+            if turn is not None and turn.request.request_id == identity:
+                pending = self.core.pending_delivery
+                if pending is not None and pending[0].request.request_id == identity:
+                    await self.core.acknowledge(identity, "", complete=False)
+                self.core.turn_view.stage(identity, "interrupted")
+                self.agent.gateway_llm.active_turn = None
+            if self._turn_speech is speech:
+                self._turn_speech = None
+            if self.active is None:
+                self.busy = False
+            return StopSpeakingResult(request_id=identity, outcome="stopped").model_dump_json()
+        except Exception as error:
+            self.delivery_failed = True
+            raise rtc.RpcError(1503, "Speech interruption could not be verified.") from error
+
     async def _ready(self, data: rtc.RpcInvocationData) -> str:
         self._authorize(data)
+        if data.payload:
+            try:
+                ReadyInput.model_validate_json(data.payload)
+            except ValidationError as error:
+                raise rtc.RpcError(1502, "Invalid room readiness input.") from error
+        self._speech_control_peer = bool(data.payload)
         async with asyncio.timeout(5):
             await self.session.room_io.wait_for_ready()
         return self.binding.model_dump_json()
@@ -491,6 +723,8 @@ class HostedRoom:
                 handle.interrupted
                 or self.agent.gateway_llm.completed_request_id != prepared[1].request.request_id
             ):
+                if request.request_id in self._stops:
+                    raise GatewayError("speech_stopped")
                 raise GatewayError("livekit_delivery_incomplete")
             return TurnResult(
                 request_id=request.request_id, outcome="complete", retained_memories=retained
@@ -511,6 +745,7 @@ class HostedRoom:
         self.closing = True
         await self.stop_task_announcements()
         try:
+            await self._drain_stops()
             if self.permission_watch is not None:
                 await asyncio.shield(self.permission_watch)
                 self.permission_watch = None

@@ -15,7 +15,7 @@ from ember_memory_abi.errors import MemoryError
 from ..character.core import CharacterCore, PreparedTurn, TurnObservation
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
-from .contracts import USER_IDENTITY
+from .contracts import TASK_NOTICE_TEXT, USER_IDENTITY
 
 
 class GatewayLLM(llm.LLM[object]):
@@ -29,6 +29,7 @@ class GatewayLLM(llm.LLM[object]):
         self.defer_delivery = defer_delivery
         self.active_turn: PreparedTurn | None = None
         self.on_generation_start: Callable[[], None] | None = None
+        self.before_reply: Callable[[PreparedTurn], Awaitable[None]] | None = None
         self.generation_done = asyncio.Event()
         self.generation_done.set()
 
@@ -99,6 +100,8 @@ class GatewayStream(llm.LLMStream):
 
     async def _run(self) -> None:
         try:
+            if self.model.before_reply is not None:
+                await self.model.before_reply(self.turn)
             await self._generate()
         finally:
             self.model.generation_done.set()
@@ -148,6 +151,7 @@ class EmberAgent(Agent):
         self.prepare_failed: Callable[[], None] | None = None
         self.gateway_llm = GatewayLLM(core, defer_delivery=defer_delivery)
         self.reply_participant: rtc.LocalParticipant | None = None
+        self.current_notice: Callable[[], UUID | None] | None = None
         # SDK constructor annotations omit generic parameters for optional plugins.
         super().__init__(instructions=core.personality.instructions, llm=self.gateway_llm, tools=[])  # pyright: ignore[reportUnknownMemberType]
 
@@ -202,6 +206,10 @@ class EmberAgent(Agent):
         del model_settings
         participant = self.reply_participant
         turn = self.gateway_llm.active_turn
+        notice = self.current_notice() if self.current_notice else None
+        if turn is None and notice is not None:
+            yield await self._fixed_notice(text, notice)
+            return
         if participant is None or turn is None:
             raise GatewayError("livekit_delivery_unavailable")
         writer = await participant.stream_text(
@@ -222,11 +230,47 @@ class EmberAgent(Agent):
         self, text: AsyncIterable[str], model_settings: ModelSettings
     ) -> AsyncGenerator[rtc.AudioFrame, None]:
         """Revalidate synthesized frames; queued transport audio also needs runtime fencing."""
-        async for frame in Agent.default.tts_node(self, text, model_settings):
-            turn = self.gateway_llm.active_turn
-            if turn is None or not await self.core.current(turn.dependencies, turn.certificate):
-                raise GatewayError("context_invalidated")
-            yield frame
+        turn = self.gateway_llm.active_turn
+        notice = self.current_notice() if self.current_notice else None
+        if turn is None:
+            if notice is None:
+                raise GatewayError("livekit_delivery_unavailable")
+            fixed = await self._fixed_notice(text, notice)
+
+            async def source() -> AsyncGenerator[str, None]:
+                yield fixed
+
+            text = source()
+        async with aclosing(Agent.default.tts_node(self, text, model_settings)) as audio:
+            async for frame in audio:
+                if turn is not None:
+                    if self.gateway_llm.active_turn is not turn or not await self.core.current(
+                        turn.dependencies, turn.certificate
+                    ):
+                        raise GatewayError("context_invalidated")
+                elif (
+                    self.gateway_llm.active_turn is not None
+                    or self.current_notice is None
+                    or self.current_notice() != notice
+                ):
+                    raise GatewayError("livekit_delivery_unavailable")
+                yield frame
+
+    async def _fixed_notice(self, text: AsyncIterable[str], identity: UUID) -> str:
+        """Only the owned fixed status sentence can bypass canonical reply validation."""
+        value = ""
+        async for chunk in text:
+            value += chunk
+            if (
+                not TASK_NOTICE_TEXT.startswith(value)
+                or self.current_notice is None
+                or self.current_notice() != identity
+                or self.gateway_llm.active_turn is not None
+            ):
+                raise GatewayError("livekit_delivery_unavailable")
+        if value != TASK_NOTICE_TEXT:
+            raise GatewayError("livekit_delivery_unavailable")
+        return value
 
     async def on_user_turn_exceeded(self, ev: UserTurnExceededEvent) -> None:
         """Suppress the SDK's automatic auxiliary reply; only completed user turns are P0."""

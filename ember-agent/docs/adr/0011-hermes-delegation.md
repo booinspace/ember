@@ -25,3 +25,17 @@ unverified cleanup cannot publish task success.
 See [runbook](../../../docs/phase-11-runbook.md) and
 [acceptance record](../../../docs/phase-11-validation.md) for the tested configuration,
 independent review, actual task evidence and supported limits.
+
+The [native-client amendment](../../../docs/adr/0021-hermes-delegation.md#ordinary-native-client-amendment--4-november-2026)
+adds an independent paired ordinary-chat ingress. `HermesChats` creates bounded
+server-owned CharacterCore contexts through composition, shares the existing ABI,
+prompts and sink, and routes one final generation through P0. Supported native SDK
+request hooks preserve exact session/turn/request and tool-result identity. Search
+is an explicit public preflight before recall; private context never enters a search
+query. Response retries and delivery receipts revalidate dependencies. The operator
+may opt into shared recall under the user's explicit deferred Desktop-copy purge
+policy. The isolated one-shot P2 worker contracts above remain unchanged.
+
+Stop speaking uses room-bound RPC ownership and each retained LiveKit SpeechHandle,
+including task notices. Browser playback is silenced immediately; subsequent turns
+have their own speech identity. Native model abort is still Phase 13 work.

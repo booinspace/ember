@@ -195,6 +195,22 @@ class HermesSettings(RuntimeModel):
         return self
 
 
+class HermesClientSettings(RuntimeModel):
+    """Optional paired native client; recalled replies remain in its separate local history."""
+
+    private_recall: bool = False
+    search_command: Annotated[tuple[str, ...], Field(max_length=32)] = ()
+    input_ceiling: Annotated[int, Field(ge=4096, le=24576)] = 16384
+
+    @model_validator(mode="after")
+    def installed_command(self) -> Self:
+        if any(not part or len(part) > 4096 for part in self.search_command):
+            raise ValueError("The native search adapter requires explicit installed arguments.")
+        if self.search_command and not Path(self.search_command[0]).is_absolute():
+            raise ValueError("The native search adapter executable must be absolute.")
+        return self
+
+
 class DeploymentConfig(RuntimeModel):
     """Resolved deployment configuration, distinct from verified service/model health."""
 
@@ -216,6 +232,7 @@ class DeploymentConfig(RuntimeModel):
     mcp_servers: tuple[MCPServerSettings, ...] = ()
     inference: InferenceSettings = InferenceSettings()
     hermes: HermesSettings | None = None
+    hermes_client: HermesClientSettings | None = None
 
     @property
     def model_pin_configured(self) -> bool:
@@ -294,6 +311,7 @@ class _DeploymentSettings(RuntimeModel):
     prompts: _PromptSettings = _PromptSettings()
     inference: InferenceSettings = InferenceSettings()
     hermes: dict[str, JsonValue] | None = None
+    hermes_client: dict[str, JsonValue] | None = None
     mcp_servers: list[dict[str, JsonValue]] = Field(
         default_factory=list[dict[str, JsonValue]], max_length=8
     )
@@ -532,10 +550,18 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             if settings.hermes is not None
             else None
         )
+        hermes_client = (
+            HermesClientSettings.model_validate_json(json.dumps(settings.hermes_client))
+            if settings.hermes_client is not None
+            else None
+        )
+        if hermes_client is not None and not settings.browser.enabled:
+            raise ValueError("The Hermes client requires the application control listener.")
     except (ValidationError, ValueError) as error:
         raise ConfigurationError("Hermes configuration is invalid.") from error
     return DeploymentConfig(
         hermes=hermes,
+        hermes_client=hermes_client,
         mcp_servers=mcp_servers,
         inference=settings.inference,
         active_profile=settings.active_profile,

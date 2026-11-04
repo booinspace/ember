@@ -12,6 +12,32 @@ USER_IDENTITY = "ember-user"
 TURN_METHOD = "ember.turn"
 REMEMBER_METHOD = "ember.remember"
 READY_METHOD = "ember.ready"
+REPLY_STARTED_METHOD = "ember.reply_started"
+SPEECH_FINISHED_METHOD = "ember.speech_finished"
+STOP_SPEAKING_METHOD = "ember.stop_speaking"
+TASK_NOTICE_TEXT = "A task result is ready in Tasks."
+
+
+class ReadyInput(RuntimeModel):
+    """Opt into acknowledged reply identities without changing older text participants."""
+
+    speech_control: Literal[True]
+
+
+class SpeechTarget(RuntimeModel):
+    """An interruption capability scoped to one actor, session and reply."""
+
+    instance_id: UUID
+    character_id: UUID
+    context_id: UUID
+    request_id: UUID
+
+
+class StopSpeakingResult(RuntimeModel):
+    """A content-free receipt after the targeted speech and generation have drained."""
+
+    request_id: UUID
+    outcome: Literal["stopped", "not_current"]
 
 
 class RoomBinding(RuntimeModel):

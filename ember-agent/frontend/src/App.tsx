@@ -33,6 +33,8 @@ export function App() {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [microphone, setMicrophone] = useState(false);
+  const [speechTarget, setSpeechTarget] = useState<string | null>(null);
+  const [stoppingSpeech, setStoppingSpeech] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [error, setError] = useState("");
@@ -109,6 +111,14 @@ export function App() {
   }, [connected]);
 
   useEffect(() => {
+    if (
+      details?.request_id === speechTarget &&
+      (details.stage === "complete" || details.stage === "interrupted")
+    )
+      setSpeechTarget(null);
+  }, [details, speechTarget]);
+
+  useEffect(() => {
     if (messages.current && (forceScroll.current || following.current)) {
       messages.current.scrollTo({
         top: messages.current.scrollHeight,
@@ -162,24 +172,32 @@ export function App() {
         connection.current = null;
         setConnected(false);
         setMicrophone(false);
+        setSpeechTarget(null);
       } else {
-        const Connection =
-          state.transport === "http"
-            ? (await import("./text_connection")).TextConnection
-            : (await import("./connection")).CharacterConnection;
         if (!mounted.current) return;
-        const client = new Connection(
+        const callbacks = [
           append,
-          (message) => report(message ?? "Reply delivery was interrupted."),
+          (message?: string) =>
+            report(message ?? "Reply delivery was interrupted."),
           () => {
             if (!mounted.current) return;
             connection.current = null;
             setConnected(false);
             setMicrophone(false);
+            setSpeechTarget(null);
             setBusy(false);
             report("Conversation disconnected; reconnect to continue.");
           },
-        );
+        ] as const;
+        const client =
+          state.transport === "http"
+            ? new (await import("./text_connection")).TextConnection(
+                ...callbacks,
+              )
+            : new (await import("./connection")).CharacterConnection(
+                ...callbacks,
+                setSpeechTarget,
+              );
         connection.current = client;
         await client.connect(state);
         if (!mounted.current) {
@@ -353,6 +371,28 @@ export function App() {
       report(
         "Microphone or speech recognition is unavailable; text chat remains available.",
       );
+    }
+  };
+  const stopSpeaking = async (): Promise<void> => {
+    const client = connection.current;
+    if (
+      !client ||
+      !("stopSpeaking" in client) ||
+      !speechTarget ||
+      stoppingSpeech === speechTarget
+    )
+      return;
+    const target = speechTarget;
+    setStoppingSpeech(target);
+    try {
+      await client.stopSpeaking();
+    } catch {
+      report(
+        "Audio is stopped locally. Server interruption could not be verified.",
+      );
+    } finally {
+      if (mounted.current)
+        setStoppingSpeech((old) => (old === target ? null : old));
     }
   };
   return (
@@ -553,6 +593,21 @@ export function App() {
               >
                 {microphone ? "Mute microphone" : "Use microphone"}
               </button>
+              {state?.voice && state.transport === "livekit" && (
+                <button
+                  type="button"
+                  disabled={
+                    !connected ||
+                    !speechTarget ||
+                    stoppingSpeech === speechTarget
+                  }
+                  onClick={() => void stopSpeaking()}
+                >
+                  {stoppingSpeech === speechTarget && speechTarget
+                    ? "Stopping speech…"
+                    : "Stop speaking"}
+                </button>
+              )}
             </div>
             <p className="composer-hint">
               Enter to send · Shift+Enter for a new line

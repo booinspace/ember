@@ -5185,3 +5185,36 @@ and shutdown limitations are retained in the acceptance record and benchmark
 reports. The original Phase 8A Desktop/dashboard/app-pairing/near-limit/physical
 voice adoption prerequisite remains open; delegation stays default-off. Messaging
 and autonomous memory/skill learning are separate future integrations.
+
+### Phase 11 native client amendment — 4 November 2026
+
+The user authorized ordinary Hermes Desktop integration now, separate history per
+chat with shared Ember character and canonical memory, and explicitly deferred
+automatic deletion of affected Hermes chat copies. This overrides the private-recall
+purge prerequisite above **for the explicitly paired native client only**. The
+isolated task worker's ephemeral-context purge contract is unchanged. The pinned
+Desktop build's selected renderer can still display deleted chat content; the
+sanitized retention canary records that gap. Do not mark affected-chat purge complete.
+
+The native client uses supported request-only context, middleware and tool-result
+hooks to bind each original user turn to a server-owned CharacterCore context.
+Composition shares the existing prompt files, ABI and capture owner. Native private
+memory/learning, cloud fallback, compression and auxiliary model calls are disabled.
+All final generations use the sole P0 gateway, with a 16 KiB input guard and 512-token
+output limit despite truthful 128K model capacity metadata. Cached and streamed
+replies must revalidate current recall dependencies before new disclosure.
+
+Explicit public search is a host preflight before recall, using only literal user
+terms and Hermes' native SearXNG provider at the configured NAS. Complete public
+reference rows share the existing prompt budget; no later search may use recalled
+context. Voice uses the same provider without waiting on its own blocked P2 queue.
+Stop speaking interrupts the exact owned LiveKit reply or task announcement and
+silences browser playback while preserving the room, microphone and visible text.
+Model draining and scheduling remain Phase 13 work.
+
+The dedicated Desktop profile is opt-in. Separate histories do not imply cross-UI
+or cross-restart continuity; the current bounded controller requires new native
+chats after restart. Messaging providers, autonomous learning, durable client-session
+restoration, affected-chat deletion and remaining Phase 8A adoption measurements
+remain follow-up work. The [runbook](docs/phase-11-runbook.md) and
+[validation](docs/phase-11-validation.md) describe exact setup and observed checks.

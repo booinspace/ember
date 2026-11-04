@@ -2,7 +2,7 @@
 
 import asyncio
 import sqlite3
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
@@ -436,26 +436,45 @@ def test_speech_worker_records_interrupted_playout_without_replay(tmp_path: Path
         interrupted = asyncio.Event()
 
         class Speech:
+            _tasks: list[asyncio.Task[object]] = []
+
+            def __init__(self, text: AsyncIterable[str]) -> None:
+                self.text = text
+                self.consumed = False
+
             async def wait_for_playout(self) -> None:
+                if not self.consumed:
+                    assert [chunk async for chunk in self.text] == [
+                        "A task result is ready in Tasks."
+                    ]
+                    self.consumed = True
                 entered.set()
-                await asyncio.Event().wait()
+                await interrupted.wait()
 
             def interrupt(self, *, force: bool) -> None:
                 assert force
                 interrupted.set()
 
         class Session:
-            def say(self, text: str, **settings: object) -> Speech:
-                assert text == "A task result is ready in Tasks."
+            def say(self, text: AsyncIterable[str], **settings: object) -> Speech:
                 assert settings == {"allow_interruptions": True, "add_to_chat_ctx": False}
-                return Speech()
+                return Speech(text)
 
         host = SimpleNamespace(
             closing=False,
             core=SimpleNamespace(history=[]),
             session=Session(),
             _can_announce_tasks=lambda: True,
+            _notice_text=lambda _: notice(),
+            _finish_announcement=lambda *args: HostedRoom._finish_announcement(host, *args),
+            _settle_speech=lambda *args, **kwargs: HostedRoom._settle_speech(host, *args, **kwargs),
+            _speech_finished=lambda _: asyncio.sleep(0),
+            _announcement=None,
         )
+
+        async def notice() -> AsyncIterator[str]:
+            yield "A task result is ready in Tasks."
+
         worker = asyncio.create_task(HostedRoom._announce_tasks(host, router))
         try:
             handle = await router.submit("speech-worker", "Synthetic input")
@@ -508,6 +527,8 @@ def test_task_announcements_respect_full_turn_and_speech_fence(blocked: str) -> 
         session=session,
         agent=SimpleNamespace(gateway_llm=gateway),
         room=SimpleNamespace(remote_participants={"user": SimpleNamespace(identity="ember-user")}),
+        _announcement=None,
+        _stops={},
     )
     assert HostedRoom._can_announce_tasks(host)
     if blocked == "core_busy":

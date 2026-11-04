@@ -106,3 +106,102 @@ consistent with the open adoption prerequisite. The one-time test gateway and
 speech controllers stopped normally before the primary app started. No real
 messaging account or private conversation was used for qualification. See the
 [content-free restoration record](benchmarks/2026-11-04-phase11-qualification/primary-restoration.json).
+
+## Native Desktop client and speech-stop amendment — 4 November 2026
+
+The user authorized separate native chat histories sharing Ember's character,
+prompts and canonical memory, then explicitly deferred affected-chat deletion to
+prioritize integration. The existing pinned Desktop build's delete API removed its
+synthetic database rows, but selected renderer text and its sidebar title remained
+visible after ten seconds. The [retention canary](benchmarks/2026-11-04-phase11-qualification/desktop-retention-canary.json)
+records that failure. Private recall is an explicit deployment opt-in under this
+amended policy; automatic removal of copies already retained by Hermes is unfinished.
+This does not change the isolated worker's purge contract or Memory ABI schemas.
+
+The new ingress verifies a separate paired loopback credential and required session,
+turn and request bindings. It allocates independent bounded Core histories sharing
+the existing composition owner. Core applies the actual shared Markdown prompts and
+canonical recall. The native extension projects the original user text and exact
+delivery echo, without allowing client system/history scaffolding to become prompt
+authority. Reconnect after a Core restart returns an explicit expired-chat error;
+new native chats receive fresh contexts. Four live chats and 64 turns per chat are
+current explicit controller limits, not an unlimited or durable session service.
+
+Explicit search is a host preflight before recall, not a second LLM planning step.
+The installed SDK SearXNG provider owns search implementation. The native pre-tool
+hook and final HTTP seam require one exact signed host preflight, bind it to the
+paired chat/turn/query, and consume its grant before the request. Forged, cross-chat,
+changed-query, repeated and malformed Unicode IDs are denied. Plain final model text
+cannot create a new search grant. Search results are bounded before JSON parsing and
+again when copying complete public rows into the existing input budget.
+
+Independent reviews found and fixed stale cached-response disclosure, certificate-only
+NoRecall history leakage, quadratic explicit-query parsing, unsigned native search
+execution, and a malformed-ID exception in the SDK's fail-open hook path. Regression
+tests cover real canonical memory/forget, late and midstream SSE disclosure, delivery
+receipts, reservation draining, exact host-to-plugin grants and native transport bounds.
+No test assertions were weakened. The private-memory watcher is scoped to the owning
+turn, and response caches revalidate before further disclosure.
+
+Full installed backend gates passed on macOS and native Windows: **1,143 passed /
+18 skipped** per platform, Ruff formatting/lint and strict Pyright zero errors.
+The final installer receipt-hash and malformed-grant fixes also passed all **54**
+affected native regressions; the final local plugin/installer set passed **22**.
+Frontend checks passed on both platforms: **25** unit tests, production
+TypeScript/Vite build, formatting and **14** browser tests / three explicit optional
+live-fixture skips. Existing skipped real-model/platform cases are not counted as
+successful runtime evidence.
+
+Actual native-provider smoke returned three public NAS results in **1.922 s**,
+copying 918 UTF-8 bytes, with no model call and no temporary search home left behind.
+The [native Desktop conformance report](benchmarks/2026-11-04-phase11-qualification/native-desktop-public-conformance.json)
+records three visible turns and four exact request envelopes from the installed
+b200f5bc Desktop/SDK with fake completions, before the final signed-grant addition.
+It is historical request-shape/UI evidence; it does not itself prove the final live
+model path. The [normal launch proof](benchmarks/2026-11-04-phase11-qualification/native-desktop-normal-launch.json)
+verifies the official MSIX execution alias and separate home/Desktop data without
+production DevTools or a debug port.
+
+The [real LiveKit Stop proof](benchmarks/2026-11-04-phase11-qualification/native-live-stop.json)
+used the rebuilt UI, installed Edge, real room RPC and CPU Phonon task announcements.
+Browser playback detached in **16 ms** after clicking Stop; microphone sender IDs and
+peer IDs remained unchanged. A second task notice resumed audio and natural completion
+cleared Stop. The test received 30,119 audio bytes and made no model request. The mic
+was synthetic and silent; 16 ms is browser detachment timing, not physical acoustic or
+native model-abort latency. Ordinary P0 reply stop/drain races are separately covered
+by the SDK/backend regression tests.
+
+The primary PC was configured with a backed-up explicit `[hermes_client]` table,
+`private_recall = true`, 16 KiB input and installed CPU provider command. Native
+`start.ps1 -NoBrowser` restored the application; paired `/models` and HTTPS UI returned
+200, and Ember's speech health contract verified `gradium/phonon-31m-en`, Juniper,
+1.1x ready. Ollama remains the selected inference backend. A dedicated private native
+Hermes profile and **Ember (Hermes)** Windows desktop shortcut preserve existing
+Hermes profiles. No gateway credential was copied into the SDK profile.
+
+The final fresh-profile **real native gateway test passed all three turns**: first
+marker 3.411 s, same-chat history 1.540 s, and native NAS search plus Core/model
+follow-up 6.245 s. It used the normal installed app's authenticated gateway API and
+actual model, not fake completions. One native search started and completed; the
+terminal outcome was completed, no grant-error marker remained, and the exact
+synthetic chat's Core context was released. The [final report](benchmarks/2026-11-04-phase11-qualification/native-desktop-gateway.json)
+records exact installed hashes. API completion is proved; physical renderer/headset
+validation is left to the user.
+
+Two earlier live search attempts failed closed even though ordinary chat/history
+passed. A metadata-only probe confirmed the signed pre-tool hook accepted the call,
+but an older native HTTP closure remained active after the SDK reported reload
+success. The final extension anchors the shared pre/post/request callbacks and
+one-shot grants on the stable SDK plugin owner, with atomic initialization. Tests
+cover sequential and concurrent managers plus provider-module eviction. A fresh
+native process/profile qualified the final source; hot reload alone is not claimed
+as a reliable upgrade procedure.
+
+The final local full suite passed **1,145 / 18 skipped** before the two additional
+provider-eviction cases, and the final affected native suite passed **58** tests,
+including all **12** extension cases, after that addition. Ruff and strict Pyright
+remain clean. The latest staged checkouts and fresh Desktop profile have identical
+plugin hash `7221f9542ed7d1af885db28cca34f99bb1b6e76e1dc63bf1d553efa1c93870a7`.
+The working private home is `%LOCALAPPDATA%\ember-hermes\desktop-ember-v2-20261104`;
+its desktop data is separate. The **Ember (Hermes)** shortcut selects that home.
+Earlier canary homes are not the supported launch target.

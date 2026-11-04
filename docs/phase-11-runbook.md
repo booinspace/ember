@@ -99,3 +99,91 @@ and prove context purge; process IDs in diagnostics are never restart authority.
 Remove `[hermes]` to disable delegation. Existing character prompts, history,
 ordinary/deep recall, native/MCP tools and voice keep their owners. Hermes messaging
 and Desktop chat are not automatically connected to Ember's conversation capture.
+
+## Native Desktop chat and voice search amendment
+
+The ordinary-chat client is separate from the isolated P2 worker above. It uses the
+installed native Windows Hermes Desktop app, a dedicated Ember profile, and the
+paired loopback endpoint `http://127.0.0.1:8787/hermes/v1`. This endpoint calls
+CharacterCore before the sole gateway; the generic gateway model endpoint alone
+cannot supply Ember's prompts or memory. Hermes has no Ollama/vLLM credentials.
+
+Add an explicit deployment table:
+
+```toml
+[hermes_client]
+private_recall = true
+input_ceiling = 16384
+search_command = [
+  "C:/path/to/hermes/.venv/Scripts/python.exe", "-B",
+  "C:/path/to/ember/scripts/hermes_search.py",
+  "--source", "C:/path/to/hermes/source",
+  "--packages", "C:/path/to/hermes/.venv/Lib/site-packages",
+  "--endpoint", "http://your-installed-searxng:8095",
+]
+```
+
+Paths are explicit installation settings. Core remains Python 3.12; the installed
+Hermes provider runs in its own Python 3.14 environment. Restart Ember after changing
+this table. It creates a separate `hermes-client.token` in the private runtime root;
+this is not a gateway credential. Startup downloads nothing.
+
+Use `scripts/hermes_client_setup.py --help` to create a **new dedicated** Hermes home
+and Desktop data directory with the paired token, installed client extension, real
+model context capacity and search origin. Existing directories are never replaced.
+Launch its generated `start-hermes.ps1`, or a Windows shortcut to that script. It
+uses the installed app's official `hermes.exe desktop` command. Ordinary Start-menu
+launches of another Hermes profile are independent. No debug browser port is needed.
+
+Each native chat has its own server-allocated Core/history, sharing Ember's current
+system/personality Markdown, character, canonical memory and dialogue capture.
+Client system prompts and old client transcript text cannot replace that context.
+The 128K model capacity is advertised truthfully, while each turn still has the
+16 KiB input guard and at most 512 output tokens. A live controller allows four chat
+contexts, 64 turns per context and bounded retries; restart/deletion requires a new
+native chat instead of silently importing an old transcript. Conversation continuity
+across app/runtime restarts is not implemented. The browser voice room has separate
+conversation history.
+
+Only the native `search` toolset is enabled. Explicit requests such as “Can you search
+Google for the SearXNG API?” issue one `web_search` preflight before any private recall
+or model call. Queries use only the user's literal terms. Hermes' installed SearXNG
+provider calls the configured NAS, with redirects, proxy inheritance and oversized
+wire responses rejected. At most three complete public rows / 2 KiB are copied into
+the existing prompt budget. Ember then performs one ordinary character generation;
+no second search is allowed after recalled context is disclosed. “Google” describes
+the request; the actual search service is the configured SearXNG instance.
+
+The web voice path uses that same installed Hermes search provider directly for the
+explicit preflight, so it does not queue behind a P2 task blocked by its own live voice
+session. The old `searx_tools.py` adapter remains the isolated worker's broker and public
+URL validator; ordinary Desktop and voice search use the native Hermes provider.
+
+Private recall is an explicit operator opt-in. On 4 November the user deferred deletion
+of copied Hermes chats to prioritize the harness. The pinned Desktop build can retain
+selected chat text after its delete API reports success; see the sanitized retention
+canary in the validation record. Forgetting still invalidates future Ember prompts,
+new cached deliveries and stream retries. It does **not** erase copies already stored
+or visible in Hermes. Automatic affected-chat purge remains deferred work, not a
+completed adoption criterion. Disable `private_recall` to use public-only chat.
+
+Hermes' own memory, profile learning, compression, title generation, background review,
+cloud fallback and other tools are disabled in this dedicated profile. Messaging
+accounts and automatic skill learning are not configured by this amendment.
+
+The browser's **Stop speaking** button interrupts the exact current reply or task
+announcement and immediately silences its playback. It keeps the room, microphone,
+visible text and later turns usable. The gateway still drains an already-running model
+generation under its current cancellation contract; Phase 13 owns native abort/release.
+
+The upstream [Desktop guide](https://hermes-agent.nousresearch.com/docs/user-guide/desktop)
+explains the official native app/CLI relationship. This amendment qualifies the
+installed build and its concrete request hooks separately from upstream main.
+
+For plugin upgrades, use a fresh qualified native process. The SDK can preserve an
+older registered provider after reporting a successful plugin reload. The extension
+therefore shares its one-shot grants and result/request hooks through the stable SDK
+plugin owner; module eviction and concurrent registration are regression tested.
+The PC's qualified launch target is the dedicated `desktop-ember-v2-20261104` home,
+selected by **Ember (Hermes)**. Existing ordinary Hermes shortcuts select independent
+profiles and do not establish the Ember connection.

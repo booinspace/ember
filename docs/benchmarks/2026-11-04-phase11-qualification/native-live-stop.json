@@ -1,0 +1,23 @@
+{
+  "schema": "ember-live-stop-smoke-1",
+  "model_requests": 0,
+  "physical_microphone_tested": false,
+  "transport": "real LiveKit; CPU Phonon; silent browser microphone",
+  "browser_silenced_ms": 16,
+  "same_microphone_and_peer_ids": true,
+  "fresh_notice_audio_resumed": true,
+  "natural_finish_cleared_stop": true,
+  "inbound_audio_bytes": 30119,
+  "success": true,
+  "checked_at": "2026-11-04",
+  "scope": "Actual installed Edge browser, real LiveKit room/RPC, fixed task announcements and installed CPU Phonon. Synthetic silent microphone; no primary-model requests. The independent browser unit/regression cases also cover ordinary reply button state.",
+  "source_sha256": {
+    "ember-agent/src/ember_agent/realtime/session.py": "07dfdccd6ba66dc03aecfb45e4075a644ecd372efb2c31773c939802c9731241",
+    "ember-agent/src/ember_agent/realtime/livekit.py": "93af8e0065c394cdbb8caa4ce7dc1f43a9c77e70fe5ca05cff7538c2c45214c1",
+    "ember-agent/frontend/src/connection.ts": "039693871bff3ce53e03cd38cabafe10aaab7ebb6014d261d70fbaca22c5d374",
+    "ember-agent/frontend/src/App.tsx": "2ae36a815680e27da4b0061dcb3a364de875e51a7d9cce540903664e4441b369"
+  },
+  "historical_test_setup_failures": [
+    "Restricted QA environment omitted ProgramFiles, so Playwright could not discover installed Edge. Selecting its existing executable fixed the harness; no product or browser installation change."
+  ]
+}

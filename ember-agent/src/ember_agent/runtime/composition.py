@@ -147,6 +147,22 @@ class LocalRuntime:
         """Pin one bounded file pair using the existing off-loop runtime worker."""
         return await asyncio.wrap_future(self.pool.submit(self.prompt_files.load))
 
+    def new_text_core(self, *, input_ceiling: int, recall_enabled: bool) -> CharacterCore:
+        """Share the character and ABI owner while giving a client its own bounded dialogue."""
+        core = CharacterCore(
+            self.memory,
+            self.model,
+            model_tag=self.config.model_tag,
+            input_ceiling=min(input_ceiling, self.core.input_ceiling),
+            personality=self.personality,
+            sink=self.sink,
+            timezone=self.config.recall_timezone,
+            recall_enabled=recall_enabled,
+        )
+        core.load_prompts = self.load_prompt_snapshot
+        core.public_search_available = True
+        return core
+
     async def read_prompts(self) -> PromptDocuments:
         value = await asyncio.wrap_future(self.pool.submit(self.prompt_files.read))
         return value.model_copy(

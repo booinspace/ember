@@ -28,7 +28,7 @@ _OBJECT = TypeAdapter(dict[str, JsonValue])
 _LIMIT = 1024 * 1024
 
 
-def _cheap_schema(schema: dict[str, JsonValue]) -> None:
+def validate_model_schema(schema: dict[str, JsonValue]) -> None:
     """External workers may supply only bounded schemas without executable regex or references."""
     if len(json.dumps(schema, allow_nan=False).encode()) > 16384:
         raise GatewayError("unsupported_model_schema")
@@ -198,7 +198,7 @@ class OpenAIModelBridge:
             for tool in value.tools or ():
                 if tool.function.parameters.get("type") != "object":
                     raise GatewayError("unsupported_model_schema")
-                _cheap_schema(tool.function.parameters)
+                validate_model_schema(tool.function.parameters)
             output_limit = min(self.config.output_reserve_tokens, 1192)
             maximum = value.max_completion_tokens or value.max_tokens or output_limit
             if maximum > output_limit:
@@ -238,7 +238,7 @@ class OpenAIModelBridge:
                     schema = {"type": "object"}
                 output = "text" if format_.type == "text" else "json"
             if schema is not None:
-                _cheap_schema(schema)
+                validate_model_schema(schema)
             deadline = min(self.deadline, datetime.now(UTC) + timedelta(seconds=180))
             request = GatewayRequest(
                 version="0.3.0",

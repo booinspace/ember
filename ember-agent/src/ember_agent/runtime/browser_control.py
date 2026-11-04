@@ -27,6 +27,7 @@ from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
 from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, PromptControls, RuntimeControls
+from .hermes_chat import HermesChats
 from .mcp_contracts import MCPDiscovery
 from .speech_settings import SpeechOptions, SpeechSelection
 from .task_artifacts import TaskArtifact
@@ -130,6 +131,7 @@ class BrowserControl:
         configure_speech: Callable[[SpeechSelection], SpeechOptions] | None = None,
         prompt_controls: PromptControls | None = None,
         prompt_idle: Callable[[], None] | None = None,
+        hermes_chat: HermesChats | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
         self.lan_origin = lan_origin
@@ -153,6 +155,7 @@ class BrowserControl:
         self.configure_speech = configure_speech
         self.prompt_controls = prompt_controls
         self.prompt_idle = prompt_idle
+        self.hermes_chat = hermes_chat
         self.activation = secrets.token_urlsafe(48)
         self._session = secrets.token_urlsafe(48)
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
@@ -164,6 +167,8 @@ class BrowserControl:
     async def aclose(self) -> None:
         """Stop admission, cancel owned requests and drain before the runtime engine closes."""
         self._closed = True
+        if self.hermes_chat is not None:
+            await self.hermes_chat.aclose()
         if self.text_session is not None:
             await self.text_session.aclose()
         tasks = tuple(self._tasks.values())
@@ -216,6 +221,8 @@ class BrowserControl:
                     request.cookies.get(COOKIE, ""), self._session
                 ):
                     return JSONResponse({"error": "operator_session_required"}, status_code=401)
+            if request.url.path.startswith("/hermes/") and self._closed:
+                return JSONResponse({"error": "runtime_closing"}, status_code=503)
             response = await next_handler(request)
             if (
                 self.trusted_proxy
@@ -256,6 +263,9 @@ class BrowserControl:
         @app.exception_handler(TaskConflict)
         async def task_failure(_: Request, error: TaskConflict) -> JSONResponse:
             return JSONResponse({"error": str(error)}, status_code=409)
+
+        if self.hermes_chat is not None:
+            app.include_router(self.hermes_chat.router)
 
         if self.task_router is not None:
             router = self.task_router
@@ -382,6 +392,10 @@ class BrowserControl:
                 "summary_tasks_available": bool(self.task_router and self.task_router.summary),
                 "recall_tasks_available": bool(self.task_router and self.task_router.recall),
                 "delegation_available": bool(self.task_router and self.task_router.delegate),
+                "hermes_chat_available": self.hermes_chat is not None,
+                "hermes_private_recall": self.hermes_chat is not None
+                and self.hermes_chat.private_recall,
+                "public_search_available": self.core.public_search is not None,
                 "context_id": str(self.core.context_id),
                 "prompts_available": self.prompt_controls is not None,
                 "recall": (await self.controls.recall_settings()).model_dump(mode="json"),

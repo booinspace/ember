@@ -57,3 +57,30 @@ Ember's CharacterCore prompts, recall or capture automatically. Future channels 
 bind sender/session identity to that owner rather than create a second personality
 or personal-memory authority. Phase 12 may add reviewed skill proposals; session
 review/checkpoints are future memory amendments, not automatic writes from this worker.
+
+## Ordinary native client amendment — 4 November 2026
+
+A separately paired Hermes Desktop profile now maps normal chat to CharacterCore,
+then the existing P0 gateway. Server-owned per-chat contexts share the character,
+prompt files, ABI and capture owner; client transcript/system text is not prompt
+authority. Native supported context/middleware/tool-result hooks project only the
+current original user input, an exact previous-delivery echo and complete current
+search IDs. Input remains 16 KiB and output at most 512 tokens. Native context
+capacity metadata is truthful and does not enlarge the prompt budget.
+
+Explicit public search runs before recall, through the installed SDK SearXNG
+provider. A bound public result precedes one character generation; no private-derived
+query or later search is permitted. The browser voice path reuses that provider
+without depending on P2 admission during its own realtime session. Stop speaking
+adds a retained exact-handle interrupt to the existing LiveKit owner, including fixed
+task notices; it does not change model cancellation/draining contracts.
+
+The user explicitly deferred copied-chat deletion after the actual Desktop retention
+canary failed to clear its selected renderer. Optional private recall may therefore
+be enabled with that known local-copy gap. Current ABI authorization is still checked
+for generated content, buffered deliveries, stream deltas/retries and next-turn
+receipts. Hermes' independent memory/learning remains disabled. Automatic deletion
+of affected Desktop chats, durable cross-restart chat continuity, messaging and the
+remaining Phase 8A adoption/performance criteria remain open. This authorization
+amends the prior private-recall/purge gate for the dedicated client only; it does not
+weaken the isolated worker's purge receipt or tool authority.

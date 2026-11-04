@@ -1,0 +1,23 @@
+"""Recognize an explicit public search request without a model or personal recall."""
+
+import re
+
+from ..inference.contracts import GatewayError
+
+_REQUEST = re.compile(
+    r"^\s*(?:(?:please|can you|could you|would you|will you)\s+)*"
+    r"(?:search(?:\s+(?:google|the web|online|the internet))?|google|look\s+up)"
+    r"\s+(?:for\s+)?(?P<query>.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def public_search_query(text: str) -> str | None:
+    """Return only a literal user-supplied query; never derive terms from private context."""
+    match = _REQUEST.fullmatch(text)
+    if match is None:
+        return None
+    query = match.group("query").rstrip()
+    if not query or len(query) > 400:
+        raise GatewayError("public_search_query_bound")
+    return query

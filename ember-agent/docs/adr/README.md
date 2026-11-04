@@ -60,4 +60,5 @@ existing task/confirmation ownership and Phase 10 acceptance evidence.
 selection, stable profile identity, transport semantics and qualification.
 
 [Agent ADR 0011 — Hermes task delegation](0011-hermes-delegation.md) records the
-optional provider, task-local model mapping and original Phase 11 acceptance.
+optional provider, task-local model mapping, paired native-client amendment and
+original Phase 11 acceptance.

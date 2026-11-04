@@ -235,3 +235,11 @@ It uses the existing Tasks UI, brokered SearXNG search and P2 gateway, with no s
 owner. It stays default-off while the original adoption gates remain open. See
 the [setup/runbook](docs/phase-11-runbook.md) and
 [acceptance record](docs/phase-11-validation.md) for tested capabilities and limits.
+
+A separately paired native Hermes Desktop profile can now send ordinary chat through
+Ember's CharacterCore and sole gateway, with separate bounded history per chat and
+shared prompt files and optional canonical recall. Explicit public search uses the
+installed Hermes SearXNG provider. The web voice UI also supports explicit search and
+**Stop speaking** for replies and task notices. See the [native-client runbook](docs/phase-11-runbook.md#native-desktop-chat-and-voice-search-amendment)
+for setup, restart/new-chat behavior and the user-authorized deferred deletion of
+Hermes transcript copies. Hermes messaging accounts are not connected by this setup.

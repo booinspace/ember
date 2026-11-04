@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import secrets
 import shutil
 import socket
 import sqlite3
@@ -36,6 +37,7 @@ from .capture_lifecycle import CaptureLifecycle
 from .composition import LocalRuntime
 from .config import ConfigurationError, DeploymentConfig
 from .console import read_line
+from .hermes_chat import HermesChats
 from .livekit_config import LiveKitCredentials, credentials, server_yaml
 from .processes import OwnedProcess, RuntimeLease
 from .speech_health import check_voice
@@ -49,6 +51,43 @@ from .task_router import (
     ToolRouter,
 )
 from .text_session import DirectTextSession
+
+
+async def _start_hermes_client(runtime: LocalRuntime) -> HermesChats | None:
+    """Bind one optional local client to the existing character, gateway and ABI owner."""
+    settings = runtime.config.hermes_client
+    if settings is None:
+        return None
+
+    def client_token() -> str:
+        path = runtime.config.runtime_root / "hermes-client.token"
+        if not path.exists():
+            with path.open("x", encoding="utf-8") as output:
+                output.write(secrets.token_urlsafe(32))
+            path.chmod(0o600)
+        return read_token(path)
+
+    if settings.search_command:
+        from .native_search import NativeSearch
+
+        runtime.core.public_search = NativeSearch(
+            settings.search_command, runtime.config.runtime_root / "hermes-search-homes"
+        )
+
+    async def reserve(identity: UUID, connected: bool) -> None:
+        await runtime.model.session(identity, connected=connected)
+
+    return HermesChats(
+        lambda: runtime.new_text_core(
+            input_ceiling=settings.input_ceiling, recall_enabled=settings.private_recall
+        ),
+        runtime.model,
+        client_token=await asyncio.to_thread(client_token),
+        model_context_tokens=runtime.config.context_tokens,
+        private_recall=settings.private_recall,
+        state_root=runtime.config.runtime_root / "hermes-client",
+        reserve=reserve,
+    )
 
 
 async def _start_tasks(
@@ -699,6 +738,7 @@ async def _run_room(
                 host.start_task_announcements(task_router)
                 cleanup.push_async_callback(host.stop_task_announcements)
             control = BrowserControl(
+                hermes_chat=await _start_hermes_client(runtime),
                 task_router=task_router,
                 origin=config.browser.endpoint,
                 lan_origin=config.browser.public_origin
@@ -781,6 +821,7 @@ async def _run_text_browser(
 
         task_router = await _start_tasks(runtime, binding, cleanup)
         control = BrowserControl(
+            hermes_chat=await _start_hermes_client(runtime),
             task_router=task_router,
             origin=config.browser.endpoint,
             lan_origin=config.browser.public_origin

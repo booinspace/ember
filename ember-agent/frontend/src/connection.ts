@@ -1,5 +1,5 @@
 import { createRequestId, enableLanIds } from "./ids";
-import { Room, RoomEvent, Track } from "livekit-client";
+import { Room, RoomEvent, Track, type RemoteTrack } from "livekit-client";
 import { z } from "zod";
 import {
   control,
@@ -9,10 +9,22 @@ import {
   type RuntimeState,
 } from "./contracts";
 
+const speechTarget = z.strictObject({
+  instance_id: z.string().uuid(),
+  character_id: z.string().uuid(),
+  context_id: z.string().uuid(),
+  request_id: z.string().uuid(),
+});
+
 export class CharacterConnection {
   readonly room: Room;
   private reads = new Set<Promise<void>>();
   private audio = new Set<HTMLMediaElement>();
+  private audioTracks = new Set<RemoteTrack>();
+  private state: RuntimeState | null = null;
+  private activeRequest: string | null = null;
+  private silencedRequest: string | null = null;
+  private stop: { requestId: string; promise: Promise<void> } | null = null;
   private readonly abort = new AbortController();
   private closed = false;
   private closing: Promise<void> | null = null;
@@ -25,9 +37,39 @@ export class CharacterConnection {
     ) => void,
     private failure: (message?: string) => void,
     private disconnected: () => void = () => undefined,
+    private speechChanged: (requestId: string | null) => void = () => undefined,
   ) {
     enableLanIds();
     this.room = new Room({ adaptiveStream: true });
+    for (const method of ["ember.reply_started", "ember.speech_finished"]) {
+      this.room.localParticipant.registerRpcMethod(method, async (data) => {
+        const value: unknown = JSON.parse(data.payload);
+        const target = speechTarget.parse(value);
+        if (
+          this.closed ||
+          data.callerIdentity !== "ember-agent" ||
+          !this.state ||
+          target.instance_id !== this.state.binding.instance_id ||
+          target.character_id !== this.state.binding.character_id ||
+          target.context_id !== this.state.context_id
+        )
+          throw new Error("Reply identity changed.");
+        if (method === "ember.speech_finished") {
+          if (this.activeRequest === target.request_id) {
+            this.activeRequest = null;
+            this.speechChanged(null);
+          }
+          return target.request_id;
+        }
+        this.activeRequest = target.request_id;
+        this.speechChanged(target.request_id);
+        if (target.request_id !== this.silencedRequest) {
+          this.silencedRequest = null;
+          for (const track of this.audioTracks) this.attachAudio(track);
+        }
+        return target.request_id;
+      });
+    }
     for (const topic of ["lk.transcription", "ember.reply"]) {
       this.room.registerTextStreamHandler(topic, (reader, sender) => {
         if (
@@ -88,12 +130,12 @@ export class CharacterConnection {
         participant.identity === "ember-agent" &&
         track.kind === Track.Kind.Audio
       ) {
-        const element = track.attach();
-        this.audio.add(element);
-        document.body.appendChild(element);
+        this.audioTracks.add(track);
+        if (!this.silencedRequest) this.attachAudio(track);
       }
     });
     this.room.on(RoomEvent.TrackUnsubscribed, (track) => {
+      this.audioTracks.delete(track);
       for (const element of track.detach()) {
         this.audio.delete(element);
         element.remove();
@@ -104,6 +146,7 @@ export class CharacterConnection {
       this.closed = true;
       this.abort.abort();
       this.removeAudio();
+      this.audioTracks.clear();
       if (unexpected) this.disconnected();
     });
   }
@@ -120,10 +163,11 @@ export class CharacterConnection {
         throw new Error("Connection closed.");
       }
       stage = "readiness";
+      this.state = state;
       const reply = await this.room.localParticipant.performRpc({
         destinationIdentity: "ember-agent",
         method: "ember.ready",
-        payload: "",
+        payload: state.voice ? JSON.stringify({ speech_control: true }) : "",
       });
       const value: unknown = JSON.parse(reply);
       const binding = runtimeState.shape.binding.parse(value);
@@ -165,10 +209,62 @@ export class CharacterConnection {
     });
     const value: unknown = JSON.parse(reply);
     const result = turnReceipt.parse(value);
-    if (result.request_id !== requestId || result.outcome !== "complete") {
+    if (!this.closed && this.activeRequest === requestId) {
+      this.activeRequest = null;
+      this.speechChanged(null);
+    }
+    if (
+      result.request_id !== requestId ||
+      (result.outcome !== "complete" && result.code !== "speech_stopped")
+    ) {
       throw new Error(result.message ?? result.code ?? "Turn unavailable.");
     }
     return result.retained_memories;
+  }
+
+  /** Stop one acknowledged reply while retaining microphone, room and visible text. */
+  stopSpeaking(): Promise<void> {
+    const requestId = this.activeRequest;
+    if (this.closed || !this.state || !requestId) return Promise.resolve();
+    if (this.stop?.requestId === requestId) return this.stop.promise;
+    this.silencedRequest = requestId;
+    // Detach the owned playback sink immediately. The microphone, subscribed
+    // tracks and visible read-ahead stream remain live; old audio is never replayed.
+    this.removeAudio();
+    const target = {
+      instance_id: this.state.binding.instance_id,
+      character_id: this.state.binding.character_id,
+      context_id: this.state.context_id,
+      request_id: requestId,
+    };
+    const operation = (async () => {
+      const reply = await this.room.localParticipant.performRpc({
+        destinationIdentity: "ember-agent",
+        method: "ember.stop_speaking",
+        payload: JSON.stringify(target),
+        responseTimeout: 190000,
+      });
+      const value: unknown = JSON.parse(reply);
+      const result = z
+        .strictObject({
+          request_id: z.string().uuid(),
+          outcome: z.enum(["stopped", "not_current"]),
+        })
+        .parse(value);
+      if (result.request_id !== requestId)
+        throw new Error("Speech interruption could not be verified.");
+      if (!this.closed && this.activeRequest === requestId) {
+        this.activeRequest = null;
+        this.speechChanged(null);
+      }
+    })();
+    this.stop = { requestId, promise: operation };
+    void operation
+      .finally(() => {
+        if (this.stop?.promise === operation) this.stop = null;
+      })
+      .catch(() => undefined);
+    return operation;
   }
 
   async microphone(enabled: boolean): Promise<void> {
@@ -184,8 +280,28 @@ export class CharacterConnection {
     );
   }
 
+  private attachAudio(track: RemoteTrack): void {
+    if (track.attachedElements.some((element) => this.audio.has(element)))
+      return;
+    const element = track.attach();
+    this.audio.add(element);
+    document.body.appendChild(element);
+  }
+
   private removeAudio(): void {
-    for (const element of this.audio) element.remove();
+    for (const track of this.audioTracks) {
+      for (const element of track.detach()) {
+        element.pause();
+        element.srcObject = null;
+        element.remove();
+        this.audio.delete(element);
+      }
+    }
+    for (const element of this.audio) {
+      element.pause();
+      element.srcObject = null;
+      element.remove();
+    }
     this.audio.clear();
   }
 
@@ -194,6 +310,7 @@ export class CharacterConnection {
     this.closed = true;
     this.abort.abort();
     this.removeAudio();
+    this.audioTracks.clear();
     this.closing = (async () => {
       try {
         await this.room.disconnect();

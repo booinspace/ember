@@ -1,0 +1,36 @@
+{
+  "schema": "ember-hermes-desktop-retention-canary-1",
+  "date": "2026-11-04",
+  "package_name": "NousResearchInc.HermesAgent",
+  "package_version": "2026.7363.3271.0",
+  "bundled_release": "v0.22.7",
+  "bundled_revision": "b200f5bc60e31588ba2cb60e288029c4a54ba5fa",
+  "bundled_python": "3.14.9",
+  "scope": "New isolated synthetic Hermes home and actual packaged Electron user-data directory; no existing user chat, credential, model generation, or primary service was accessed.",
+  "method": "A retained-job controller launched the bundled backend and packaged Desktop under Windows package identity. The actual selected synthetic chat was deleted through Desktop's authenticated hermesDesktop.api bridge using its mutation snapshot and a fresh request ID. DevTools was used only to observe this isolated qualification renderer, not as a proposed production adapter.",
+  "before": {
+    "synthetic_answer_visible": true
+  },
+  "native_delete": {
+    "ok": true,
+    "deleted_exactly_bound_session": true,
+    "subsequent_detail_request": "not_found",
+    "remaining_session_rows": 0,
+    "remaining_message_rows": 0,
+    "remaining_known_session_payload_paths": 0,
+    "limitation": "This synthetic SessionDB case created no session payload files. It does not prove deletion of every optional transcript, trajectory, debug dump, branch, or compacted descendant artifact. Source inspection separately found best-effort payload unlink that suppresses OSError."
+  },
+  "renderer_after_delete": {
+    "observation_seconds": 10,
+    "synthetic_answer_still_visible": true,
+    "sidebar_title_still_visible": true,
+    "same_session_still_selected": true
+  },
+  "cleanup": {
+    "owned_jobs_drained": true,
+    "owned_backend_and_debug_ports_closed": true,
+    "all_four_owned_attempt_homes_and_desktop_cache_roots_removed": true,
+    "temporary_remote_controller_removed": true
+  },
+  "decision": "Private recall remains disabled. Native backend deletion alone did not retire the actual selected Desktop renderer's copied answer and title. A supported verified cache-retirement integration, plus complete artifact and lineage purge verification, is required before enabling private recall."
+}

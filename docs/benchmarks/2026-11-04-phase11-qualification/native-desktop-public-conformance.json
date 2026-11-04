@@ -1,0 +1,492 @@
+{
+  "schema": "ember-hermes-desktop-public-conformance-1",
+  "date": "2026-11-04",
+  "package_name": "NousResearchInc.HermesAgent",
+  "package_version": "2026.7363.3271.0",
+  "bundled_release": "v0.22.7",
+  "bundled_revision": "b200f5bc60e31588ba2cb60e288029c4a54ba5fa",
+  "bundled_python": "3.14.9",
+  "scope": "Actual packaged Desktop renderer and bundled backend in a fresh isolated synthetic profile. All model responses were deterministic fixtures from an owned loopback HTTP server; one native web_search invocation used configured self-hosted SearXNG and a public query. No real model generation, existing user chat, private recall, primary service restart, dependency installation or SDK mutation.",
+  "method": "The exact first-party plugin and transport were installed only in the canary profile. Supported ContextEngine and llm_request/post_tool_call hooks were exercised by actual Desktop messages. Windows package-identity activation and DevTools were used only for isolated qualification; they are not the production integration. HTTP envelopes were checked against the exported current _Body.model_json_schema().",
+  "source_hashes": {
+    "scripts/hermes_client_plugin.py": "804f728e77c7c647a5fdb752a828e63699d37485b01ac22af6626deb14a3f44c",
+    "scripts/hermes_client_transport.py": "25c5288795b178b858d28e3943fc4dc91ab85203ec5dbf772431bfee6b8a94b4",
+    "ember-agent/src/ember_agent/runtime/hermes_chat.py": "4f9ad0aa1876956bacb2d67da52c9b7d50c400a90c24549a3cd9f319150b8a86"
+  },
+  "profile": {
+    "model_alias": "ember",
+    "configured_context_tokens": 131072,
+    "max_output_tokens": 512,
+    "agent_reasoning_effort": "none",
+    "supports_reasoning": false,
+    "supports_vision": false,
+    "native_toolset": "search",
+    "native_tool_names": [
+      "web_search"
+    ],
+    "compression": false,
+    "native_memory": false,
+    "auxiliary_title_generation": false,
+    "auxiliary_background_review": false,
+    "fallback_providers": [],
+    "context_engine": "ember-client"
+  },
+  "result": {
+    "desktop_user_turns_completed": 3,
+    "model_http_rounds": 4,
+    "original_typed_user_content_exact_in_all_rounds": true,
+    "all_body_schema_validations_passed": true,
+    "only_native_web_search_tool_offered": true,
+    "all_required_headers_present_and_sha256_formatted": true,
+    "same_conversation_alias_all_rounds": true,
+    "same_turn_alias_on_search_followup": true,
+    "distinct_request_aliases_all_rounds": true,
+    "reasoning_effort_none_all_rounds": true,
+    "all_output_limits_512": true,
+    "all_temperatures_0_2": true,
+    "parallel_tool_calls_false_all_rounds": true,
+    "adjacent_user_turn_aliases_differ": true
+  },
+  "renderer": {
+    "renderer_rounds": [
+      {
+        "round": 1,
+        "final_visible": true
+      },
+      {
+        "round": 2,
+        "final_visible": true
+      },
+      {
+        "round": 3,
+        "final_visible": true
+      }
+    ],
+    "controls": {
+      "reasoning_controls": [],
+      "medium_visible": false,
+      "search_progress_visible": true,
+      "final_visible": true
+    }
+  },
+  "wire_samples": [
+    {
+      "serial": 1,
+      "top_fields": [
+        "max_tokens",
+        "messages",
+        "model",
+        "parallel_tool_calls",
+        "reasoning_effort",
+        "stream",
+        "stream_options",
+        "temperature",
+        "tools"
+      ],
+      "body_utf8_bytes": 1116,
+      "canonical_body_utf8_bytes": 1169,
+      "messages_utf8_bytes": 183,
+      "messages": [
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "system",
+          "content_type": "str",
+          "content_chars": 85,
+          "content_utf8_bytes": 85
+        },
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "user",
+          "content_type": "str",
+          "content_chars": 30,
+          "content_utf8_bytes": 30
+        }
+      ],
+      "tool_names": [
+        "web_search"
+      ],
+      "max_tokens": 512,
+      "temperature": 0.2,
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tool_choice": null,
+      "parallel_tool_calls": false,
+      "reasoning_effort": "none",
+      "original_user_matches_typed_fixture": true,
+      "binding_headers_are_sha256": true,
+      "required_header_presence": {
+        "x-ember-session": true,
+        "x-ember-turn": true,
+        "x-ember-request": true
+      },
+      "body_schema_errors": [],
+      "native_tool_result": null
+    },
+    {
+      "serial": 2,
+      "top_fields": [
+        "max_tokens",
+        "messages",
+        "model",
+        "parallel_tool_calls",
+        "reasoning_effort",
+        "stream",
+        "stream_options",
+        "temperature",
+        "tools"
+      ],
+      "body_utf8_bytes": 1173,
+      "canonical_body_utf8_bytes": 1230,
+      "messages_utf8_bytes": 244,
+      "messages": [
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "system",
+          "content_type": "str",
+          "content_chars": 85,
+          "content_utf8_bytes": 85
+        },
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "assistant",
+          "content_type": "str",
+          "content_chars": 22,
+          "content_utf8_bytes": 22
+        },
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "user",
+          "content_type": "str",
+          "content_chars": 31,
+          "content_utf8_bytes": 31
+        }
+      ],
+      "tool_names": [
+        "web_search"
+      ],
+      "max_tokens": 512,
+      "temperature": 0.2,
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tool_choice": null,
+      "parallel_tool_calls": false,
+      "reasoning_effort": "none",
+      "original_user_matches_typed_fixture": true,
+      "binding_headers_are_sha256": true,
+      "required_header_presence": {
+        "x-ember-session": true,
+        "x-ember-turn": true,
+        "x-ember-request": true
+      },
+      "body_schema_errors": [],
+      "native_tool_result": null
+    },
+    {
+      "serial": 3,
+      "top_fields": [
+        "max_tokens",
+        "messages",
+        "model",
+        "parallel_tool_calls",
+        "reasoning_effort",
+        "stream",
+        "stream_options",
+        "temperature",
+        "tools"
+      ],
+      "body_utf8_bytes": 1182,
+      "canonical_body_utf8_bytes": 1239,
+      "messages_utf8_bytes": 253,
+      "messages": [
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "system",
+          "content_type": "str",
+          "content_chars": 85,
+          "content_utf8_bytes": 85
+        },
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "assistant",
+          "content_type": "str",
+          "content_chars": 22,
+          "content_utf8_bytes": 22
+        },
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "user",
+          "content_type": "str",
+          "content_chars": 40,
+          "content_utf8_bytes": 40
+        }
+      ],
+      "tool_names": [
+        "web_search"
+      ],
+      "max_tokens": 512,
+      "temperature": 0.2,
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tool_choice": null,
+      "parallel_tool_calls": false,
+      "reasoning_effort": "none",
+      "original_user_matches_typed_fixture": true,
+      "binding_headers_are_sha256": true,
+      "required_header_presence": {
+        "x-ember-session": true,
+        "x-ember-turn": true,
+        "x-ember-request": true
+      },
+      "body_schema_errors": [],
+      "native_tool_result": null
+    },
+    {
+      "serial": 4,
+      "top_fields": [
+        "max_tokens",
+        "messages",
+        "model",
+        "parallel_tool_calls",
+        "reasoning_effort",
+        "stream",
+        "stream_options",
+        "temperature",
+        "tools"
+      ],
+      "body_utf8_bytes": 2463,
+      "canonical_body_utf8_bytes": 2540,
+      "messages_utf8_bytes": 1554,
+      "messages": [
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "system",
+          "content_type": "str",
+          "content_chars": 85,
+          "content_utf8_bytes": 85
+        },
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "assistant",
+          "content_type": "str",
+          "content_chars": 22,
+          "content_utf8_bytes": 22
+        },
+        {
+          "fields": [
+            "content",
+            "role"
+          ],
+          "role": "user",
+          "content_type": "str",
+          "content_chars": 40,
+          "content_utf8_bytes": 40
+        },
+        {
+          "fields": [
+            "content",
+            "role",
+            "tool_calls"
+          ],
+          "role": "assistant",
+          "content_type": "str",
+          "content_chars": 0,
+          "content_utf8_bytes": 0,
+          "tool_call_fields": [
+            {
+              "fields": [
+                "function",
+                "id",
+                "type"
+              ],
+              "function_fields": [
+                "arguments",
+                "name"
+              ]
+            }
+          ]
+        },
+        {
+          "fields": [
+            "content",
+            "role",
+            "tool_call_id"
+          ],
+          "role": "tool",
+          "content_type": "str",
+          "content_chars": 945,
+          "content_utf8_bytes": 947
+        }
+      ],
+      "tool_names": [
+        "web_search"
+      ],
+      "max_tokens": 512,
+      "temperature": 0.2,
+      "stream": true,
+      "stream_options": {
+        "include_usage": true
+      },
+      "tool_choice": null,
+      "parallel_tool_calls": false,
+      "reasoning_effort": "none",
+      "original_user_matches_typed_fixture": true,
+      "binding_headers_are_sha256": true,
+      "required_header_presence": {
+        "x-ember-session": true,
+        "x-ember-turn": true,
+        "x-ember-request": true
+      },
+      "body_schema_errors": [],
+      "native_tool_result": {
+        "root_fields": [
+          "data",
+          "success"
+        ],
+        "success": true,
+        "data_fields": [
+          "web"
+        ],
+        "row_count": 3,
+        "row_fields": [
+          [
+            "description",
+            "title",
+            "url"
+          ],
+          [
+            "description",
+            "title",
+            "url"
+          ],
+          [
+            "description",
+            "title",
+            "url"
+          ]
+        ],
+        "content_utf8_bytes": 947,
+        "url_schemes": [
+          "https",
+          "https",
+          "https"
+        ],
+        "description_utf8_bytes": [
+          165,
+          207,
+          200
+        ]
+      }
+    }
+  ],
+  "header_relations": [
+    {
+      "serial": 1,
+      "session_matches_first": true,
+      "turn_matches_previous": false,
+      "request_matches_any_previous": false
+    },
+    {
+      "serial": 2,
+      "session_matches_first": true,
+      "turn_matches_previous": false,
+      "request_matches_any_previous": false
+    },
+    {
+      "serial": 3,
+      "session_matches_first": true,
+      "turn_matches_previous": false,
+      "request_matches_any_previous": false
+    },
+    {
+      "serial": 4,
+      "session_matches_first": true,
+      "turn_matches_previous": true,
+      "request_matches_any_previous": false
+    }
+  ],
+  "model_metadata_get_routes": [
+    "/v1/models",
+    "/api/v1/models",
+    "/api/tags",
+    "/v1/props",
+    "/props",
+    "/version",
+    "/v1/models"
+  ],
+  "historical_diagnostics": [
+    {
+      "source_hashes": {
+        "scripts/hermes_client_plugin.py": "bbde50b5596e3bae2dffaacba3249986d71fa4dcce9b3a150970e6fa5152d41b",
+        "scripts/hermes_client_transport.py": "25c5288795b178b858d28e3943fc4dc91ab85203ec5dbf772431bfee6b8a94b4",
+        "ember-agent/src/ember_agent/runtime/hermes_chat.py": "179539229d33cf9f26cf7543401b401930c300b8f09eb29dad39036b5cd734ec"
+      },
+      "status": "Failed native tool follow-up was correctly denied by fake ingress for missing mandatory metadata.",
+      "findings": [
+        "Initial first-user wire content carried SDK api_content scaffold rather than exact human input.",
+        "Native default reasoning_effort was medium, unsupported by the strict ingress.",
+        "Native tool rows are stored after untrusted_tool_result wrapping; JSON parsing of those rows made the old context/middleware fail open."
+      ],
+      "resolution": "Use the supported incoming_message original content and raw post_tool_call result keyed to its complete owning session/turn/tool identity; require a successful context marker and explicit no-thinking profile."
+    },
+    {
+      "source_hashes": {
+        "scripts/hermes_client_plugin.py": "caf39ebdf65e772a543e1aa4146ff192ca39ee27afc2681abbaafbb4d3f24912",
+        "scripts/hermes_client_transport.py": "25c5288795b178b858d28e3943fc4dc91ab85203ec5dbf772431bfee6b8a94b4",
+        "ember-agent/src/ember_agent/runtime/hermes_chat.py": "4f9ad0aa1876956bacb2d67da52c9b7d50c400a90c24549a3cd9f319150b8a86"
+      },
+      "status": "Three actual Desktop turns and native search passed before the final selected-history validation optimization; final proof below was rerun using the final exact source."
+    }
+  ],
+  "owning_source_evidence": {
+    "original_user": "agent/turn_request_assembly.py142-146 passes messages[current_turn_user_idx] as incoming_message; agent/conversation_loop.py1362-1374 structurally clones it; agent/turn_context.py1350-1377 substitutes api_content only on the wire clone.",
+    "raw_tool": "model_tools.py687-709 emits post_tool_call with raw result and session_id/turn_id/tool_call_id; agent/tool_executor.py1815-1833 emits it before commit and agent/tool_dispatch_helpers.py460-469 wraps the subsequently stored tool content.",
+    "actual_capacity_metadata": "agent/agent_init.py1883-1895 resolves model context and invokes the custom ContextEngine.update_model; agent/context_engine.py233-250 maintains context_length and derived threshold. No hardcoded engine capacity is required."
+  },
+  "cleanup": {
+    "owned_children_drained": true,
+    "own_backend_fake_model_debug_ports_closed": true,
+    "all_three_owned_attempt_homes_and_desktop_caches_removed": true,
+    "temporary_remote_controller_plugin_schema_assets_removed": true
+  },
+  "limitations": [
+    "This is native client/protocol conformance with fake model completions, not end-to-end Ember Core/gateway/model acceptance or a model-performance measurement. Fixture usage counters are synthetic.",
+    "The unsupported reasoning selector was absent and no Med label was visible; this does not claim that the UI displayed a None label.",
+    "Private recall remains disabled: the separate actual Desktop deletion canary demonstrated retained selected-chat renderer content after native backend deletion."
+  ]
+}
