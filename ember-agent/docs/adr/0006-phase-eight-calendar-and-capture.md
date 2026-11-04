@@ -304,3 +304,11 @@ The hosted room retains and fences the LiveKit speech handle and its linked task
 before reconciling missing delivery receipts or admitting a new turn. An absent
 receipt is never treated as delivered speech. See the
 [root design](../../../docs/phase-8-voice-delivery-recovery.md) for SDK coupling.
+
+## Independent voice/UI amendment
+
+The operator requested CPU Phonon voice/speed controls and immediate browser reply
+text while Phase 9 continues. The [design and validation](../../../docs/voice-controls-and-read-ahead.md)
+retain synchronized played-prefix receipts, installed-only voice choices and the
+existing room/audio owner. This adds no memory/schema, task or inference-scheduler
+contract and does not reopen Phase 8 or advance a future phase.

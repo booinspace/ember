@@ -410,3 +410,11 @@ to return to Kokoro on this workstation.
 
 See [the LAN HTTPS design and configuration](phase-8-lan-https-design.md). Direct
 access grants operator authority to clients able to reach the configured proxy.
+
+## Voice controls and read-ahead text
+
+Run `scripts/setup_phonon_voices.ps1` once, then start Ember normally. Expand
+**Voice and speaking speed**, select an installed voice and pace, and choose
+**Apply voice** between replies. Settings last until Ember restarts. Reply text
+appears ahead of speech, while audio delivery remains tracked separately. See
+[design and validation](voice-controls-and-read-ahead.md).

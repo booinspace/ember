@@ -10,7 +10,7 @@ from typing import Literal, Protocol, cast
 
 import numpy as np
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -22,7 +22,14 @@ class _Speech(Protocol):
 
 
 class _Model(Protocol):
-    def stream(self, text: str) -> AbstractContextManager[_Speech]: ...
+    @property
+    def voices(self) -> list[str]: ...
+
+    def set_conditions(self, conditions: dict[str, str | float]) -> None: ...
+
+    def add_voice(self, name: str, path: str) -> None: ...
+
+    def stream(self, text: str, *, voice: str) -> AbstractContextManager[_Speech]: ...
 
 
 class _Factory(Protocol):
@@ -35,10 +42,10 @@ class SpeechRequest(BaseModel):
     """Accept only the bounded model, voice, and PCM format Ember uses."""
 
     model: Literal["tts-1"]
-    voice: Literal["default"]
+    voice: str = Field(min_length=1, max_length=128)
     response_format: Literal["pcm"]
     input: str = Field(min_length=1, max_length=4096, repr=False)
-    speed: float = Field(default=1.0, ge=1.0, le=1.0)
+    speed: float = Field(default=1.0, ge=0.75, le=1.5, allow_inf_nan=False)
 
 
 def create_app(model: _Model) -> FastAPI:
@@ -47,15 +54,25 @@ def create_app(model: _Model) -> FastAPI:
     slot = Lock()
 
     @app.get("/v1/audio/voices")
-    async def voices() -> dict[str, list[str]]:
-        return {"voices": ["default"]}
+    async def voices() -> dict[str, object]:
+        return {
+            "voices": model.voices,
+            "model": "gradium/phonon-31m-en",
+            "controls": "ember_voice_controls_v1",
+        }
 
     @app.post("/v1/audio/speech")
     async def speech(request: SpeechRequest) -> StreamingResponse:
+        if request.voice not in model.voices:
+            raise HTTPException(status_code=400, detail="voice_not_installed")
+
         def audio() -> Iterator[bytes]:
-            with slot, model.stream(request.input) as chunks:
-                for samples in chunks:
-                    yield np.rint(np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes()
+            with slot:
+                # Phonon's duration conditioning changes pace without changing PCM pitch/rate.
+                model.set_conditions({"duration_delta": 1 / request.speed - 1})
+                with model.stream(request.input, voice=request.voice) as chunks:
+                    for samples in chunks:
+                        yield np.rint(np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes()
 
         return StreamingResponse(audio(), media_type="application/octet-stream")
 
@@ -80,6 +97,8 @@ def main() -> None:
         parser.error("Provision the local Phonon model before starting Ember.")
     factory = cast(_Factory, importlib.import_module("ptts").TTS)
     tts = factory(str(model), lang="en", quant="q8", device="cpu", voice_catalog="")
+    for voice in sorted((model / "voices").glob("*.safetensors")):
+        tts.add_voice(voice.stem, str(voice))
     uvicorn.run(
         create_app(tts),
         host="127.0.0.1",

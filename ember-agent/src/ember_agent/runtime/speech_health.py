@@ -4,6 +4,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..inference.contracts import GatewayError
+from .speech_settings import SpeechOptions, SpeechSelection
 
 
 class _Voice(BaseModel):
@@ -14,9 +15,11 @@ class _Voice(BaseModel):
 class _Voices(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore", strict=True)
     voices: tuple[str | _Voice, ...] = Field(max_length=256)
+    model: str = Field(default="", max_length=128)
+    controls: str = ""
 
 
-async def check_voice(endpoint: str, voice: str) -> None:
+async def check_voice(endpoint: str, voice: str) -> SpeechOptions | None:
     """Validate configured voice over loopback without redirects, proxies or unbounded bodies."""
     async with httpx.AsyncClient(timeout=2, follow_redirects=False, trust_env=False) as client:
         async with client.stream("GET", endpoint.rstrip("/") + "/v1/audio/voices") as response:
@@ -34,3 +37,10 @@ async def check_voice(endpoint: str, voice: str) -> None:
             )
             if voice not in identifiers:
                 raise GatewayError("tts_voice_unavailable")
+            if voices.controls == "ember_voice_controls_v1" and voices.model:
+                return SpeechOptions(
+                    model=voices.model,
+                    voices=identifiers,
+                    selection=SpeechSelection(voice=voice),
+                )
+            return None

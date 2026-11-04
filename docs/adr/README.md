@@ -126,3 +126,11 @@ frontend changes and the outstanding real-device checks.
 
 The [voice delivery recovery](../phase-8-voice-delivery-recovery.md) records the
 missing-receipt fix and LiveKit handle/task coupling.
+
+## Independent voice/UI amendment
+
+The operator requested CPU Phonon voice/speed controls and immediate browser reply
+text while Phase 9 continues. The [design and validation](../voice-controls-and-read-ahead.md)
+retain synchronized played-prefix receipts, installed-only voice choices and the
+existing room/audio owner. This adds no memory/schema, task or inference-scheduler
+contract and does not reopen Phase 8 or advance a future phase.

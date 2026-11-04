@@ -15,6 +15,18 @@ export const captureControl = z.object({
 });
 export type CaptureControl = z.infer<typeof captureControl>;
 
+export const speechSelection = z.object({
+  voice: z.string().min(1).max(128),
+  speed: z.number().min(0.75).max(1.5),
+});
+export type SpeechSelection = z.infer<typeof speechSelection>;
+export const speechOptions = z.object({
+  model: z.string().min(1).max(128),
+  voices: z.array(z.string().min(1).max(128)).min(1).max(256),
+  selection: speechSelection,
+});
+export type SpeechOptions = z.infer<typeof speechOptions>;
+
 export const runtimeState = z.object({
   binding: z.object({
     character_id: z.string().uuid(),
@@ -49,6 +61,7 @@ export const runtimeState = z.object({
   recall_tasks_available: z.boolean().default(false),
   voice: z.boolean().default(false),
   voice_status: z.string().default("disabled"),
+  speech: speechOptions.nullable().default(null),
   transport: z.enum(["livekit", "http"]).default("livekit"),
   text_available: z.boolean().default(true),
   thinking_available: z.boolean().default(false),

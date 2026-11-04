@@ -5070,3 +5070,11 @@ The [delivery recovery](docs/phase-8-voice-delivery-recovery.md) fences the
 retained LiveKit speech handle and linked SDK tasks before resolving missing
 receipts. It preserves delivered-prefix semantics; physical interruption
 acceptance remains open. Phase 8 remains in progress.
+
+## Independent voice/UI amendment
+
+The operator requested CPU Phonon voice/speed controls and immediate browser reply
+text while Phase 9 continues. The [design and validation](docs/voice-controls-and-read-ahead.md)
+retain synchronized played-prefix receipts, installed-only voice choices and the
+existing room/audio owner. This adds no memory/schema, task or inference-scheduler
+contract and does not reopen Phase 8 or advance a future phase.

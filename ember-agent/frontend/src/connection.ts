@@ -28,9 +28,8 @@ export class CharacterConnection {
   ) {
     enableLanIds();
     this.room = new Room({ adaptiveStream: true });
-    this.room.registerTextStreamHandler(
-      "lk.transcription",
-      (reader, sender) => {
+    for (const topic of ["lk.transcription", "ember.reply"]) {
+      this.room.registerTextStreamHandler(topic, (reader, sender) => {
         if (
           this.closed ||
           !["ember-agent", "ember-user"].includes(sender.identity) ||
@@ -49,6 +48,12 @@ export class CharacterConnection {
             : "assistant";
         const segment =
           reader.info.attributes?.["lk.segment_id"] ?? reader.info.id;
+        if (
+          topic === "ember.reply" &&
+          (sender.identity !== "ember-agent" || localSpeech)
+        )
+          return;
+        if (topic === "lk.transcription" && role === "assistant") return;
         const finalUser =
           role === "user" &&
           reader.info.attributes?.["lk.transcription_final"] === "true";
@@ -75,8 +80,8 @@ export class CharacterConnection {
           () => this.reads.delete(task),
           () => this.reads.delete(task),
         );
-      },
-    );
+      });
+    }
     this.room.on(RoomEvent.TrackSubscribed, (track, _, participant) => {
       if (
         !this.closed &&

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from ..inference.contracts import GatewayError
 from ..runtime.config import DeploymentConfig
 from ..runtime.speech_health import check_voice
+from ..runtime.speech_settings import SpeechOptions, SpeechSelection
 from .phonon import PhononSTT
 from .whisper import (
     MAX_SPEECH_SECONDS,
@@ -66,6 +67,7 @@ class VoiceComponents:
     tts: openai.TTS | None
     output_status: str
     transport: SpeechTransport | None = None
+    speech_options: SpeechOptions | None = None
 
     @classmethod
     async def create(
@@ -97,13 +99,15 @@ class VoiceComponents:
             cleanup.push_async_callback(recognizer.aclose)
             provider = None
             transport = None
+            speech_options = None
             output_status = "tts_disabled"
             if config.services.kokoro.mode != "disabled":
                 try:
                     output_status = await start_speech() if start_speech else "ready"
                     if output_status == "ready":
-                        if start_speech is None:
-                            await check_voice(config.services.kokoro.endpoint, settings.tts_voice)
+                        speech_options = await check_voice(
+                            config.services.kokoro.endpoint, settings.tts_voice
+                        )
                         transport = SpeechTransport(
                             api_key="ember-local-kokoro",
                             base_url=config.services.kokoro.endpoint.rstrip("/") + "/v1",
@@ -131,9 +135,22 @@ class VoiceComponents:
                         transport = None
                     output_status = "tts_unavailable_text_output"
             adapter = stt.StreamAdapter(stt=recognizer, vad=detector)
-            result = cls(recognizer, adapter, detector, provider, output_status, transport)
+            result = cls(
+                recognizer, adapter, detector, provider, output_status, transport, speech_options
+            )
             cleanup.pop_all()
             return result, "ready"
+
+    def configure_speech(self, selection: SpeechSelection) -> SpeechOptions:
+        """Apply validated session preferences between turns without model loads or downloads."""
+        options = self.speech_options
+        if options is None or self.tts is None:
+            raise GatewayError("speech_controls_unavailable")
+        if selection.voice not in options.voices:
+            raise GatewayError("tts_voice_unavailable")
+        self.tts.update_options(voice=selection.voice, speed=selection.speed)
+        self.speech_options = options.model_copy(update={"selection": selection})
+        return self.speech_options
 
     async def aclose(self) -> None:
         """Drain CPU speech and close only adapters; attached provider processes remain external."""

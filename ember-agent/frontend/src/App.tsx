@@ -8,6 +8,8 @@ import {
   control,
   inspection,
   turnInspection,
+  speechOptions,
+  type SpeechSelection,
   type Investigation,
   type RuntimeState,
   type TurnDetails,
@@ -16,6 +18,7 @@ import { Controls } from "./controls";
 import { Tasks } from "./Tasks";
 import { Inspector } from "./Inspector";
 import { TurnDetailsPanel } from "./TurnDetails";
+import { VoiceControls } from "./VoiceControls";
 
 type Turn = { id: string; role: "user" | "assistant"; text: string };
 const acknowledgement = z.object({
@@ -251,6 +254,15 @@ export function App() {
       if (mounted.current) setThinkingSaving(false);
     }
   };
+  const changeSpeech = async (selection: SpeechSelection): Promise<void> => {
+    setBusy(true);
+    try {
+      const speech = await control("speech", speechOptions, selection);
+      if (mounted.current) setState((old) => (old ? { ...old, speech } : old));
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
   const poll = async (id: string): Promise<void> => {
     if (!mounted.current || investigationId.current !== id) return;
     try {
@@ -428,6 +440,25 @@ export function App() {
             ))}
           </div>
           <TurnDetailsPanel details={details} />
+          {state?.speech && (
+            <VoiceControls
+              options={state.speech}
+              busy={
+                busy ||
+                Boolean(
+                  details &&
+                  [
+                    "preparing",
+                    "generating",
+                    "thinking",
+                    "answering",
+                    "awaiting_delivery",
+                  ].includes(details.stage),
+                )
+              }
+              change={changeSpeech}
+            />
+          )}
           <form
             className="composer"
             aria-label="Message Ember"

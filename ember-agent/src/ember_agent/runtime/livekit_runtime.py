@@ -617,6 +617,8 @@ async def _run_room(
                 answer=host.answer_investigation,
                 voice_ready=voice is not None,
                 voice_status=voice_status,
+                speech_options=lambda: voice.speech_options if voice is not None else None,
+                configure_speech=host.configure_speech,
                 capture_changed=lifecycle.policy_changed,
             )
             browser = BrowserServer(control, config.runtime_root)

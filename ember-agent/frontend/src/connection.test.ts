@@ -11,8 +11,13 @@ const sdk = vi.hoisted(() => {
   class Room {
     callbacks = new Map<string, (...args: unknown[]) => void>();
     handler: ((reader: Reader, sender: Sender) => void) | null = null;
-    registerTextStreamHandler(_topic: string, handler: typeof this.handler) {
-      this.handler = handler;
+    handlers = new Map<string, NonNullable<typeof this.handler>>();
+    registerTextStreamHandler(
+      topic: string,
+      handler: NonNullable<typeof this.handler>,
+    ) {
+      this.handlers.set(topic, handler);
+      if (topic === "lk.transcription") this.handler = handler;
     }
     on(event: string, callback: (...args: unknown[]) => void) {
       this.callbacks.set(event, callback);
@@ -48,6 +53,30 @@ function roomOf(client: CharacterConnection): InstanceType<typeof sdk.Room> {
 }
 
 describe("connection ownership", () => {
+  it("shows immediate reply text once and rejects synchronized copies and other senders", async () => {
+    const text = vi.fn();
+    const client = new CharacterConnection(text, vi.fn());
+    const reader = {
+      info: { id: "answer" },
+      withAbortSignal: async function* () {
+        yield "Read ahead.";
+      },
+    };
+    const room = roomOf(client);
+    room.handlers.get("lk.transcription")?.(reader, {
+      identity: "ember-agent",
+    });
+    room.handlers.get("ember.reply")?.(reader, { identity: "ember-user" });
+    room.handlers.get("ember.reply")?.(reader, { identity: "ember-agent" });
+    await Promise.resolve();
+    await client.close();
+    expect(text).toHaveBeenCalledExactlyOnceWith(
+      "Read ahead.",
+      "answer",
+      "assistant",
+    );
+  });
+
   it("aborts and drains an incomplete stream without waiting for its publisher", async () => {
     const text = vi.fn();
     const failure = vi.fn();
@@ -72,7 +101,9 @@ describe("connection ownership", () => {
         })();
       },
     };
-    roomOf(client).handler?.(reader, { identity: "ember-agent" });
+    roomOf(client).handlers.get("ember.reply")?.(reader, {
+      identity: "ember-agent",
+    });
     await Promise.resolve();
     await client.close();
     expect(drained).toBe(true);

@@ -26,6 +26,7 @@ from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
 from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, RuntimeControls
+from .speech_settings import SpeechOptions, SpeechSelection
 from .task_artifacts import TaskArtifact
 from .task_router import TaskNotifications, TaskRouter
 from .task_store import TaskConflict, TaskHandle, TaskOperation, TaskSnapshot
@@ -102,6 +103,8 @@ class BrowserControl:
         trusted_proxy: str = "",
         text_session: DirectTextSession | None = None,
         task_router: TaskRouter | None = None,
+        speech_options: Callable[[], SpeechOptions | None] | None = None,
+        configure_speech: Callable[[SpeechSelection], SpeechOptions] | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
         self.lan_origin = lan_origin
@@ -121,6 +124,8 @@ class BrowserControl:
         self.capture_changed = capture_changed
         self.text_session = text_session
         self.task_router = task_router
+        self.speech_options = speech_options
+        self.configure_speech = configure_speech
         self.activation = secrets.token_urlsafe(48)
         self._session = secrets.token_urlsafe(48)
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
@@ -316,6 +321,7 @@ class BrowserControl:
 
         @app.get("/api/state")
         async def state(request: Request) -> dict[str, object]:
+            speech = self.speech_options() if self.speech_options is not None else None
             return {
                 "binding": browser_binding(request).model_dump(mode="json"),
                 "lan_available": self.lan_origin is not None,
@@ -332,11 +338,18 @@ class BrowserControl:
                 "deep": "available",
                 "voice": self.voice_ready,
                 "voice_status": self.voice_status,
+                "speech": speech.model_dump(mode="json") if speech is not None else None,
                 "transport": "http" if self.text_session is not None else "livekit",
                 "text_available": self.text_session.model_available if self.text_session else True,
                 "thinking_available": self.core.thinking_available,
                 "thinking_enabled": self.core.thinking_enabled,
             }
+
+        @app.post("/api/speech")
+        async def speech_settings(value: SpeechSelection) -> SpeechOptions:
+            if self.configure_speech is None:
+                raise GatewayError("speech_controls_unavailable")
+            return self.configure_speech(value)
 
         @app.post("/api/thinking")
         async def thinking(value: ThinkingSetting) -> dict[str, bool]:

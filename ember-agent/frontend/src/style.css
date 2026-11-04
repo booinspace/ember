@@ -469,3 +469,27 @@ summary {
     max-height: none;
   }
 }
+/* Keep voice controls in the conversation flow on narrow screens too. */
+.voice-controls {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--line, #333);
+}
+.voice-controls summary {
+  cursor: pointer;
+}
+.voice-controls p {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+.voice-controls fieldset {
+  border: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+.voice-controls select {
+  max-width: 100%;
+}

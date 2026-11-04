@@ -27,6 +27,7 @@ from ember_memory_abi.errors import MemoryError
 from ..character.core import CharacterCore, TurnObservation
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
+from ..runtime.speech_settings import SpeechOptions, SpeechSelection
 from .contracts import (
     READY_METHOD,
     REMEMBER_METHOD,
@@ -51,6 +52,11 @@ class VoiceProviders(Protocol):
 
     @property
     def tts(self) -> tts.TTS[object] | None: ...
+
+    @property
+    def speech_options(self) -> SpeechOptions | None: ...
+
+    def configure_speech(self, selection: SpeechSelection) -> SpeechOptions: ...
 
 
 class HostedRoom:
@@ -120,6 +126,7 @@ class HostedRoom:
         self.room.on("participant_disconnected", self._participant_left)  # pyright: ignore[reportUnknownMemberType]
         await self.room.connect(self.binding.endpoint, token)
         participant = self.room.local_participant
+        self.agent.reply_participant = participant
         participant.register_rpc_method(READY_METHOD, self._ready)
         participant.register_rpc_method(TURN_METHOD, self._turn)
         participant.register_rpc_method(REMEMBER_METHOD, self._remember)
@@ -138,6 +145,7 @@ class HostedRoom:
                 else False,
                 video_input=False,
                 text_input=False,
+                # Keep played-prefix receipts independent of browser read-ahead text.
                 text_output=room_io.TextOutputOptions(
                     sync_transcription=bool(self.voice and self.voice.tts)
                 ),
@@ -146,6 +154,19 @@ class HostedRoom:
             ),
         )
         self._start_permission_watch()
+
+    def configure_speech(self, selection: SpeechSelection) -> SpeechOptions:
+        """Keep every sentence of a reply on one voice/pace, including buffered playout."""
+        if self.closing or self.voice is None:
+            raise GatewayError("speech_controls_unavailable")
+        if (
+            self.busy
+            or self.core.busy
+            or self.core.pending_delivery is not None
+            or self.session.current_speech is not None
+        ):
+            raise GatewayError("speech_settings_busy")
+        return self.voice.configure_speech(selection)
 
     def _start_permission_watch(self) -> None:
         if self.permission_watch is None:

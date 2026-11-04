@@ -194,3 +194,10 @@ complete PowerShell settings/commands for your saved-memory text or documented J
 format and for the existing official-export library. It starts gateway-only inference
 while the canonical runtime is stopped, then reviews/seeds/indexes your chosen character.
 Import and extraction are local operations and do not use a hosted model API.
+
+## Current voice controls
+
+The browser supports immediate reply text ahead of speech and session controls for
+installed CPU Phonon voices and speaking speed. This independent amendment fits
+alongside Phase 9; the earlier sections retain historical phase records. See
+[voice controls and setup](docs/voice-controls-and-read-ahead.md).

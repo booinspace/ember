@@ -448,3 +448,11 @@ The realtime owner reconciles a missing speech receipt only after fencing the
 retained LiveKit speech handle, its linked tasks and gateway generation. It records
 an empty incomplete delivery when no receipt exists. The [design](../phase-8-voice-delivery-recovery.md)
 records the private LiveKit 1.8.5 task-list coupling and remaining physical acceptance.
+
+## Independent post-delivery voice/UI amendment
+
+The operator requested CPU Phonon voice/speed controls and immediate browser reply
+text while Phase 9 continues. The [design and validation](../voice-controls-and-read-ahead.md)
+retain synchronized played-prefix receipts, installed-only voice choices and the
+existing room/audio owner. This adds no memory/schema, task or inference-scheduler
+contract and does not reopen Phase 8 or advance a future phase.

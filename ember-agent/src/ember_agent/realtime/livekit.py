@@ -15,6 +15,7 @@ from ember_memory_abi.errors import MemoryError
 from ..character.core import CharacterCore, PreparedTurn, TurnObservation
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
+from .contracts import USER_IDENTITY
 
 
 class GatewayLLM(llm.LLM[object]):
@@ -146,6 +147,7 @@ class EmberAgent(Agent):
         self.before_generation: Callable[[], Awaitable[None]] | None = None
         self.prepare_failed: Callable[[], None] | None = None
         self.gateway_llm = GatewayLLM(core, defer_delivery=defer_delivery)
+        self.reply_participant: rtc.LocalParticipant | None = None
         # SDK constructor annotations omit generic parameters for optional plugins.
         super().__init__(instructions=core.personality.instructions, llm=self.gateway_llm, tools=[])  # pyright: ignore[reportUnknownMemberType]
 
@@ -190,6 +192,29 @@ class EmberAgent(Agent):
                 self.prepare_failed()
             raise
         self.gateway_llm.authorize(new_message.id, turn)
+
+    async def transcription_node(
+        self, text: AsyncIterable[str], model_settings: ModelSettings
+    ) -> AsyncGenerator[str, None]:
+        """Publish validated read-ahead text without changing SDK played-prefix receipts."""
+        del model_settings
+        participant = self.reply_participant
+        turn = self.gateway_llm.active_turn
+        if participant is None or turn is None:
+            raise GatewayError("livekit_delivery_unavailable")
+        writer = await participant.stream_text(
+            topic="ember.reply",
+            destination_identities=[USER_IDENTITY],
+            attributes={"lk.segment_id": str(turn.request.request_id)},
+        )
+        try:
+            async for chunk in text:
+                if not await self.core.current(turn.dependencies, turn.certificate):
+                    raise GatewayError("context_invalidated")
+                await writer.write(chunk)
+                yield chunk
+        finally:
+            await writer.aclose()
 
     async def tts_node(
         self, text: AsyncIterable[str], model_settings: ModelSettings
