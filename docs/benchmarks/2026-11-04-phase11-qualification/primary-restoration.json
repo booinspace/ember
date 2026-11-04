@@ -1,0 +1,37 @@
+{
+  "schema": "ember-phase11-primary-restoration-v1",
+  "observed_at_utc": "2026-11-04T10:53:49Z",
+  "implementation_commit": "3b0a274264ba3f2d32abf300aaf7a5bd5aeeac4e",
+  "native_windows_desktop_session": true,
+  "startup": "start.ps1 -NoBrowser",
+  "stdout_stderr": "native_file_handle_redirection",
+  "locked_environment_sync": true,
+  "frontend_build": true,
+  "https_status": 200,
+  "referenced_ui_assets_ok": 2,
+  "text_available": true,
+  "tasks_available": true,
+  "voice_status": "ready",
+  "speech_model": "gradium/phonon-31m-en",
+  "speech_voice": "Juniper",
+  "speech_speed": 1.1,
+  "gateway_backend": "ollama",
+  "gateway_status": "ready",
+  "context_tokens": 131072,
+  "hermes_configured": false,
+  "synthetic_p0": {
+    "outcome": "complete",
+    "first_visible_seconds": 3.7023336999991443,
+    "elapsed_seconds": 3.992440899994108,
+    "active_after": false,
+    "queued_after": 0,
+    "scope": "first post-startup gateway turn; excludes CharacterCore dialogue and physical audio"
+  },
+  "temporary_gateway_and_speech_controllers_exit_code": 0,
+  "readiness_probe_sha256": "de82626eb89c124c96813ff7f0694c89c43ade58d1bb09203d44ffdac7a8652b",
+  "open_gates": [
+    "physical_microphone_speaker",
+    "Phase8A_Desktop_dashboard_app_pairing_near_limit_adoption"
+  ],
+  "scope": "Content-free service readiness and synthetic public gateway request; no private chat/audio/credentials recorded."
+}

@@ -17,7 +17,7 @@ chat/voice controls or change the live inference backend.
 | P11-AC-04 | Actual native Windows AppContainer proofs pass: zero capabilities, nine filesystem/network denials, positive own-home/network controls, exact grant/profile/home removal, EOF and forced-controller-crash recovery. Linux reconnaissance is separate evidence. |
 | P11-AC-05 | Native task reconciliation/idempotency/effect fences retained. Process-creation/cancel/terminal races tested. A context watcher and per-step/final ABI validation stop revoked copies; no uncertain replay. |
 | P11-AC-06 | Actual public SearXNG research through broker + sole gateway passed on Ollama and vLLM, including structured completion, native notification, acknowledged outbox, unchanged canonical files and a distinct follow-up P0 context. |
-| P11-AC-07 | Disabled-provider/native task regression plus original core/MCP suites passed. Native post-qualification normal conversation and voice readiness are checked when restoring the primary app; physical microphone acceptance remains open. |
+| P11-AC-07 | Disabled-provider/native task regression plus original core/MCP suites passed. Restored primary HTTPS/UI assets, text availability, Phonon readiness and a synthetic gateway P0 turn passed; physical microphone acceptance remains open. |
 
 ## Review and corrections
 
@@ -89,3 +89,20 @@ and GPU usage returned to 239 MiB. The warning-only log does not identify the
 precise graceful-exit blocker; [cleanup evidence](benchmarks/2026-11-04-phase11-qualification/vllm/cleanup.json)
 records this unresolved operational limitation without calling it graceful cleanup.
 Gateway/service lifecycle code is unchanged by this phase.
+
+## Primary app restoration
+
+After commit `3b0a274`, both Windows checkouts were synchronized to the tested
+source, `uv sync --locked` passed, and the pinned frontend build passed. Ember
+was restarted natively with `start.ps1 -NoBrowser` in the desktop session using
+native file-handle stdout/stderr redirection. HTTPS returned 200, both referenced
+UI assets loaded, text/tasks were available and CPU Phonon reported Juniper at
+1.1x ready. A synthetic P0 gateway turn completed in 3.992 s (first visible text
+3.702 s), then no request or queue remained. This was the first post-startup turn,
+not a warm-latency comparison or a physical speech test.
+
+The optional Hermes configuration remains absent in the primary deployment,
+consistent with the open adoption prerequisite. The one-time test gateway and
+speech controllers stopped normally before the primary app started. No real
+messaging account or private conversation was used for qualification. See the
+[content-free restoration record](benchmarks/2026-11-04-phase11-qualification/primary-restoration.json).

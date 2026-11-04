@@ -10,7 +10,7 @@ Pin `NousResearch/hermes-agent` at
 `71736c9f32597bbca9d89cede5aa136e55946b2f` in a separate external checkout. Use its
 supported editable `uv sync --frozen` installation with a separate system Python
 3.14 interpreter, without provider/cloud credentials. Native Windows is the
-selected desktop deployment; its AppContainer launcher is being qualified. The
+selected desktop deployment; its AppContainer launcher passed the recorded native isolation and task proofs. The
 Linux reconnaissance profile uses bubblewrap and its own Linux filesystem.
 
 Copy the `scripts/hermes_*.py` boundary files into an explicit external bridge
