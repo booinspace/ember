@@ -5099,3 +5099,10 @@ editing/preview and per-turn snapshots that preserve conversation history. Instr
 use at most 4,096 conservative units and a quarter of usable input within the existing
 24,576-unit total. Legacy JSON migration, conflict-safe saves and character bundle copying
 retain existing ownership. Phase 9 task, memory policy and gateway contracts are unchanged.
+
+## Engine-neutral TTS configuration amendment
+
+[TTS configuration](docs/tts-configuration.md) uses generic service types and names,
+retains Kokoro through the existing compatible adapter and legacy TOML alias, and
+makes startup pace an explicit deployment value. Phonon deployment defaults select
+Juniper at 1.1×; engine-specific voice IDs do not enter character/memory logic.

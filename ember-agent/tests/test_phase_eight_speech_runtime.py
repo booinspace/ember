@@ -24,7 +24,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(b'{"voices":["af_alloy"]}')
+        self.wfile.write(b'{"voices":["Juniper"]}')
     def log_message(self, *args):
         pass
 if len(sys.argv) > 2:
@@ -44,7 +44,7 @@ def test_managed_speech_starts_and_stops_only_original_child(tmp_path: Path) -> 
             "audio": config.audio.model_copy(update={"enabled": True}),
             "services": config.services.model_copy(
                 update={
-                    "kokoro": config.services.kokoro.model_copy(
+                    "tts": config.services.tts.model_copy(
                         update={
                             "endpoint": f"http://127.0.0.1:{port}",
                             "mode": "managed",
@@ -65,13 +65,13 @@ def test_managed_speech_starts_and_stops_only_original_child(tmp_path: Path) -> 
             assert len(runtime.children) == 1
             assert (tmp_path / "device.txt").read_text(encoding="utf-8") == "-1"
             child = runtime.children[0]
-            assert child.component == "kokoro" and child.process.poll() is None
+            assert child.component == "tts" and child.process.poll() is None
         finally:
             await runtime.aclose()
         assert child.process.poll() is not None
         # The Windows job also owns the virtualenv launcher's native Python child.
         async with asyncio.timeout(2):
-            while await asyncio.to_thread(port_open, config.services.kokoro.endpoint):
+            while await asyncio.to_thread(port_open, config.services.tts.endpoint):
                 await asyncio.sleep(0.01)
         await runtime.aclose()
 
@@ -94,7 +94,7 @@ def test_verified_existing_speech_is_attached_and_not_stopped(tmp_path: Path) ->
             "audio": config.audio.model_copy(update={"enabled": True}),
             "services": config.services.model_copy(
                 update={
-                    "kokoro": config.services.kokoro.model_copy(
+                    "tts": config.services.tts.model_copy(
                         update={"endpoint": f"http://127.0.0.1:{port}", "mode": "managed"}
                     )
                 }
@@ -104,7 +104,7 @@ def test_verified_existing_speech_is_attached_and_not_stopped(tmp_path: Path) ->
 
     async def exercise() -> None:
         async with asyncio.timeout(5):
-            while not await asyncio.to_thread(port_open, config.services.kokoro.endpoint):
+            while not await asyncio.to_thread(port_open, config.services.tts.endpoint):
                 child.check()
                 await asyncio.sleep(0.01)
         runtime = RuntimeServices(config, EXAMPLE)
@@ -131,7 +131,7 @@ def test_disabled_audio_never_starts_managed_speech() -> None:
     config = config.model_copy(
         update={
             "services": config.services.model_copy(
-                update={"kokoro": config.services.kokoro.model_copy(update={"mode": "managed"})}
+                update={"tts": config.services.tts.model_copy(update={"mode": "managed"})}
             )
         }
     )

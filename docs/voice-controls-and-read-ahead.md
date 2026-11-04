@@ -91,3 +91,11 @@ operator listening check; synthetic audio is not physical-device acceptance.
 Physical microphone/headset, preferred voice quality and final HTTPS browser
 read-ahead/listening acceptance are left to the operator, as requested. No private
 source text, prompts, reasoning or audio was added to tracked reports or fixtures.
+
+## Engine-neutral service and startup defaults — 2026-11-04
+
+The [TTS configuration amendment](tts-configuration.md) makes `services.tts` and
+`TTSServiceSettings` canonical while retaining the old TOML section as a parsing alias.
+Juniper and 1.1× are now explicit Phonon deployment defaults; Kokoro remains available
+through the same compatible transport with its own model/voice. Startup speed is read
+from `audio.tts_speed` and reaches both synthesis and the browser selection.

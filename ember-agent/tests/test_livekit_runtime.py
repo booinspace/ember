@@ -45,7 +45,7 @@ EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
 def example_text() -> str:
     content = EXAMPLE.read_text()
     start = content.index("[services.livekit]")
-    end = content.index("[services.kokoro]", start)
+    end = content.index("[services.tts]", start)
     return (
         content[:start]
         + '[services.livekit]\nendpoint = "ws://127.0.0.1:7880"\nmode = "attach"\n\n'
@@ -130,8 +130,8 @@ def test_livekit_settings_resolve_paths_and_reject_port_collision(tmp_path: Path
     assert config.services.livekit.credentials_file == tmp_path / "private/keys.json"
     path.write_text(
         original.replace(
-            'mode = "attach"\n\n[services.kokoro]',
-            'mode = "attach"\ntcp_port = 7880\n\n[services.kokoro]',
+            'mode = "attach"\n\n[services.tts]',
+            'mode = "attach"\ntcp_port = 7880\n\n[services.tts]',
         )
     )
     with pytest.raises(ConfigurationError, match="ports"):

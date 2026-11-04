@@ -456,3 +456,11 @@ text while Phase 9 continues. The [design and validation](../voice-controls-and-
 retain synchronized played-prefix receipts, installed-only voice choices and the
 existing room/audio owner. This adds no memory/schema, task or inference-scheduler
 contract and does not reopen Phase 8 or advance a future phase.
+
+## TTS configuration amendment — 2026-11-04
+
+[Engine-neutral TTS settings](../tts-configuration.md) replace provider-branded shared
+service types and runtime identifiers. A legacy TOML alias preserves existing files;
+Kokoro and Phonon retain the existing OpenAI-compatible adapter. Deployment-level
+voice/pace defaults initialize the adapter and optional browser controls consistently.
+This introduces no character, memory, gateway or Phase 9 contract dependency.

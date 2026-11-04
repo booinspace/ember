@@ -31,7 +31,7 @@ udp_port = 7882
 startup_timeout_seconds = 20.0
 shutdown_timeout_seconds = 30.0
 
-[services.kokoro]
+[services.tts]
 endpoint = "http://127.0.0.1:8880"
 mode = "attach"
 # Managed mode launches an explicitly installed CPU server command; no shell or setup at startup.
@@ -60,9 +60,11 @@ stt_model_directory = ""
 stt_threads = 2
 language = "en"
 stt_device = "cpu"
-# Use "tts-1" with Gradium Phonon TTS.
-tts_model = "kokoro"
-tts_voice = "af_alloy"
+# Phonon deployment defaults. Kokoro uses tts_model="kokoro", e.g. tts_voice="af_alloy".
+# Voice IDs belong to the selected provider; Juniper is a Phonon voice.
+tts_model = "tts-1"
+tts_voice = "Juniper"
+tts_speed = 1.1
 
 # Explicit setup only: python scripts/setup_embeddings.py --help
 # CPU encoding; absent assets leave canonical/lexical recall available.

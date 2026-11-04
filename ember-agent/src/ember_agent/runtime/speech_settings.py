@@ -2,14 +2,14 @@
 
 from pydantic import Field
 
-from .config import RuntimeModel
+from .config import RuntimeModel, SpeechSpeed
 
 
 class SpeechSelection(RuntimeModel):
     """Select an installed voice and an approximate speaking pace for subsequent replies."""
 
     voice: str = Field(min_length=1, max_length=128)
-    speed: float = Field(default=1.0, ge=0.75, le=1.5, allow_inf_nan=False)
+    speed: SpeechSpeed = 1.0
 
 
 class SpeechOptions(RuntimeModel):

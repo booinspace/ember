@@ -312,3 +312,12 @@ text while Phase 9 continues. The [design and validation](../../../docs/voice-co
 retain synchronized played-prefix receipts, installed-only voice choices and the
 existing room/audio owner. This adds no memory/schema, task or inference-scheduler
 contract and does not reopen Phase 8 or advance a future phase.
+
+## TTS service configuration amendment — 2026-11-04
+
+`TTSServiceSettings` / `services.tts` own generic command/endpoint lifecycle settings.
+Only the wire-config parser retains the legacy `services.kokoro` alias. The existing
+OpenAI-compatible audio adapter receives configured model, voice and `tts_speed` at
+startup; optional browser selection reports that same pace. Kokoro-specific provisioning
+and model/voice IDs stay at the adapter/deployment boundary. See the
+[configuration runbook](../../../docs/tts-configuration.md) and Root ADR 0015.

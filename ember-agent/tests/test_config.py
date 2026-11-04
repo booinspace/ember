@@ -180,3 +180,41 @@ def test_doctor_reports_configured_speech_and_browser_without_runtime_probes(
     assert report.browser == "configured_unprobed"
     assert all(service.health == "not_probed" for service in report.services.values())
     assert not config.data_root.exists() and not config.runtime_root.exists()
+
+
+def test_tts_service_is_neutral_with_legacy_section_compatibility(config_path: Path) -> None:
+    original = config_path.read_text()
+    current = load_config(config_path)
+    assert current.audio.tts_voice == "Juniper" and current.audio.tts_speed == 1.1
+    assert "tts" in current.services.model_dump() and "kokoro" not in current.services.model_dump()
+    legacy = original.replace("[services.tts]", "[services.kokoro]")
+    config_path.write_text(legacy)
+    assert load_config(config_path).services.tts == current.services.tts
+    config_path.write_text(legacy.replace('tts_model = "tts-1"\n', ""))
+    assert load_config(config_path).audio.tts_model == "kokoro"
+    # Old Kokoro deployments keep their explicit model/voice and default to normal pace.
+    config_path.write_text(
+        legacy.replace('tts_model = "tts-1"', 'tts_model = "kokoro"')
+        .replace('tts_voice = "Juniper"', 'tts_voice = "af_alloy"')
+        .replace("tts_speed = 1.1", "")
+    )
+    old = load_config(config_path)
+    assert (old.audio.tts_model, old.audio.tts_voice, old.audio.tts_speed) == (
+        "kokoro",
+        "af_alloy",
+        1.0,
+    )
+    config_path.write_text(
+        original + '\n[services.kokoro]\nendpoint="http://127.0.0.1:8880"\nmode="attach"\n'
+    )
+    with pytest.raises(ConfigurationError):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize("value", ["0.5", "1.6", "nan", "inf", "true"])
+def test_tts_pace_rejects_invalid_configured_defaults(config_path: Path, value: str) -> None:
+    config_path.write_text(
+        config_path.read_text().replace("tts_speed = 1.1", "tts_speed = " + value)
+    )
+    with pytest.raises(ConfigurationError):
+        load_config(config_path)

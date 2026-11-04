@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 type ManagementMode = Literal["attach", "managed", "disabled"]
-type ServiceName = Literal["ollama", "livekit", "kokoro", "gateway"]
+type ServiceName = Literal["ollama", "livekit", "tts", "gateway"]
+type SpeechSpeed = Annotated[float, Field(ge=0.75, le=1.5, allow_inf_nan=False)]
 type PositiveInteger = Annotated[int, Field(gt=0)]
 
 
@@ -51,7 +52,7 @@ class _LiveKitSettings(ServiceSettings):
     shutdown_timeout_seconds: Annotated[float, Field(gt=0, le=200)] = 30.0
 
 
-class KokoroSettings(ServiceSettings):
+class TTSServiceSettings(ServiceSettings):
     """An installed local speech command; arguments are passed directly without a shell."""
 
     executable: str = ""
@@ -60,7 +61,7 @@ class KokoroSettings(ServiceSettings):
     startup_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 20.0
 
 
-class _KokoroSettings(ServiceSettings):
+class _TTSServiceSettings(ServiceSettings):
     executable: str = ""
     arguments: list[str] = Field(default_factory=list, max_length=32)
     working_directory: str = ""
@@ -72,7 +73,7 @@ class DeployedServices(RuntimeModel):
 
     ollama: ServiceSettings
     livekit: LiveKitSettings
-    kokoro: KokoroSettings
+    tts: TTSServiceSettings
     gateway: ServiceSettings
 
     def items(self) -> tuple[tuple[ServiceName, ServiceSettings], ...]:
@@ -80,7 +81,7 @@ class DeployedServices(RuntimeModel):
         return (
             ("ollama", self.ollama),
             ("livekit", self.livekit),
-            ("kokoro", self.kokoro),
+            ("tts", self.tts),
             ("gateway", self.gateway),
         )
 
@@ -117,8 +118,9 @@ class AudioSettings(RuntimeModel):
     phonon_cache_directory: Path | None = None
     stt_threads: Annotated[int, Field(ge=1, le=4)] = 2
     language: Annotated[str, Field(min_length=2, max_length=8)] = "en"
-    tts_model: Literal["kokoro", "tts-1"] = "kokoro"
-    tts_voice: Annotated[str, Field(min_length=1)] = "af_heart"
+    tts_model: Annotated[str, Field(min_length=1, max_length=128)] = "tts-1"
+    tts_voice: Annotated[str, Field(min_length=1, max_length=128)] = "default"
+    tts_speed: SpeechSpeed = 1.0
 
 
 class InterpretationSettings(RuntimeModel):
@@ -169,7 +171,7 @@ class _ModelSettings(RuntimeModel):
 class _SupportServices(RuntimeModel):
     ollama: ServiceSettings
     livekit: _LiveKitSettings
-    kokoro: _KokoroSettings
+    tts: _TTSServiceSettings = Field(validation_alias=AliasChoices("tts", "kokoro"))
 
 
 class _GatewaySettings(RuntimeModel):
@@ -188,8 +190,9 @@ class _Providers(RuntimeModel):
 
 class _AudioSettings(RuntimeModel):
     stt_device: Literal["cpu"]
-    tts_model: Literal["kokoro", "tts-1"] = "kokoro"
-    tts_voice: Annotated[str, Field(min_length=1)]
+    tts_model: Annotated[str, Field(min_length=1, max_length=128)] = "tts-1"
+    tts_voice: Annotated[str, Field(min_length=1, max_length=128)]
+    tts_speed: SpeechSpeed = 1.0
     enabled: bool = False
     stt_model_directory: str = ""
     phonon_endpoint: Literal["", "http://127.0.0.1:8010"] = ""
@@ -230,7 +233,18 @@ def _read_settings(path: Path) -> _DeploymentSettings:
     except (OSError, tomllib.TOMLDecodeError) as error:
         raise ConfigurationError("Cannot read a valid deployment TOML file.") from error
     try:
-        return _DeploymentSettings.model_validate(parsed)
+        settings = _DeploymentSettings.model_validate(parsed)
+        raw_services: object = parsed["services"]
+        if (
+            isinstance(raw_services, dict)
+            and "kokoro" in raw_services
+            and "tts_model" not in settings.audio.model_fields_set
+        ):
+            # Preserve the historical request model only at the legacy TOML boundary.
+            settings = settings.model_copy(
+                update={"audio": settings.audio.model_copy(update={"tts_model": "kokoro"})}
+            )
+        return settings
     except ValidationError as error:
         # Pydantic error strings include input values, potentially credentials or personal paths.
         raise ConfigurationError(
@@ -311,20 +325,20 @@ def _validate_services(
             startup_timeout_seconds=settings.services.livekit.startup_timeout_seconds,
             shutdown_timeout_seconds=settings.services.livekit.shutdown_timeout_seconds,
         ),
-        kokoro=KokoroSettings(
-            endpoint=settings.services.kokoro.endpoint,
-            mode=settings.services.kokoro.mode,
+        tts=TTSServiceSettings(
+            endpoint=settings.services.tts.endpoint,
+            mode=settings.services.tts.mode,
             executable=(
-                str((base / settings.services.kokoro.executable).resolve())
-                if "/" in settings.services.kokoro.executable
-                or "\\" in settings.services.kokoro.executable
-                else settings.services.kokoro.executable
+                str((base / settings.services.tts.executable).resolve())
+                if "/" in settings.services.tts.executable
+                or "\\" in settings.services.tts.executable
+                else settings.services.tts.executable
             ),
-            arguments=tuple(settings.services.kokoro.arguments),
-            working_directory=(base / settings.services.kokoro.working_directory).resolve()
-            if settings.services.kokoro.working_directory
+            arguments=tuple(settings.services.tts.arguments),
+            working_directory=(base / settings.services.tts.working_directory).resolve()
+            if settings.services.tts.working_directory
             else None,
-            startup_timeout_seconds=settings.services.kokoro.startup_timeout_seconds,
+            startup_timeout_seconds=settings.services.tts.startup_timeout_seconds,
         ),
         gateway=ServiceSettings(endpoint=settings.gateway.endpoint, mode=settings.gateway.mode),
     )
@@ -457,6 +471,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             language=settings.audio.language,
             tts_model=settings.audio.tts_model,
             tts_voice=settings.audio.tts_voice,
+            tts_speed=settings.audio.tts_speed,
         ),
         browser=BrowserSettings(
             enabled=settings.browser.enabled,

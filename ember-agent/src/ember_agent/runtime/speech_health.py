@@ -19,7 +19,7 @@ class _Voices(BaseModel):
     controls: str = ""
 
 
-async def check_voice(endpoint: str, voice: str) -> SpeechOptions | None:
+async def check_voice(endpoint: str, voice: str, *, speed: float = 1.0) -> SpeechOptions | None:
     """Validate configured voice over loopback without redirects, proxies or unbounded bodies."""
     async with httpx.AsyncClient(timeout=2, follow_redirects=False, trust_env=False) as client:
         async with client.stream("GET", endpoint.rstrip("/") + "/v1/audio/voices") as response:
@@ -41,6 +41,6 @@ async def check_voice(endpoint: str, voice: str) -> SpeechOptions | None:
                 return SpeechOptions(
                     model=voices.model,
                     voices=identifiers,
-                    selection=SpeechSelection(voice=voice),
+                    selection=SpeechSelection(voice=voice, speed=speed),
                 )
             return None

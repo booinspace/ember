@@ -212,3 +212,7 @@ The **Prompts** browser panel edits shared system rules and character-specific p
 as Markdown, with an effective instruction preview. Saves apply to the next message.
 See the [prompt editing runbook](docs/personality-prompts-proposal.md#operator-use) for
 file locations, budgets, migration and recovery.
+
+Speech service settings use `[services.tts]`. The Phonon example defaults to Juniper
+at 1.1× through `[audio]` settings; Kokoro uses the same adapter with its own voice.
+See [TTS configuration](docs/tts-configuration.md) for defaults and legacy compatibility.

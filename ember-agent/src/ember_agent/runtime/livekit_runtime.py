@@ -338,8 +338,8 @@ class RuntimeServices:
             raise
 
     async def start_speech(self) -> str:
-        """Start/attach installed Kokoro independently; provider failures leave text available."""
-        settings = self.config.services.kokoro
+        """Start/attach installed TTS independently; provider failures leave text available."""
+        settings = self.config.services.tts
         if not self.config.audio.enabled or settings.mode == "disabled":
             return "disabled"
         child = None
@@ -357,7 +357,7 @@ class RuntimeServices:
                     OwnedProcess,
                     [executable, *settings.arguments],
                     root=self.config.runtime_root,
-                    component="kokoro",
+                    component="tts",
                     instance=self.instance,
                     working_directory=settings.working_directory,
                     environment={

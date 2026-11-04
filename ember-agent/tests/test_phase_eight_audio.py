@@ -538,7 +538,7 @@ def test_cancelled_speech_startup_drains_loaded_cpu_worker(
     asyncio.run(exercise())
 
 
-def test_missing_installed_stt_does_not_launch_managed_kokoro(tmp_path: Path) -> None:
+def test_missing_installed_stt_does_not_launch_managed_tts(tmp_path: Path) -> None:
     from unittest.mock import AsyncMock
 
     from ember_agent.audio.components import VoiceComponents
@@ -557,7 +557,7 @@ def test_missing_installed_stt_does_not_launch_managed_kokoro(tmp_path: Path) ->
             ),
             "services": config.services.model_copy(
                 update={
-                    "kokoro": config.services.kokoro.model_copy(update={"mode": "managed"}),
+                    "tts": config.services.tts.model_copy(update={"mode": "managed"}),
                 }
             ),
         }

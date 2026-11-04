@@ -101,16 +101,18 @@ class VoiceComponents:
             transport = None
             speech_options = None
             output_status = "tts_disabled"
-            if config.services.kokoro.mode != "disabled":
+            if config.services.tts.mode != "disabled":
                 try:
                     output_status = await start_speech() if start_speech else "ready"
                     if output_status == "ready":
                         speech_options = await check_voice(
-                            config.services.kokoro.endpoint, settings.tts_voice
+                            config.services.tts.endpoint,
+                            settings.tts_voice,
+                            speed=settings.tts_speed,
                         )
                         transport = SpeechTransport(
-                            api_key="ember-local-kokoro",
-                            base_url=config.services.kokoro.endpoint.rstrip("/") + "/v1",
+                            api_key="ember-local-tts",
+                            base_url=config.services.tts.endpoint.rstrip("/") + "/v1",
                             max_retries=0,
                             http_client=httpx.AsyncClient(
                                 timeout=10,
@@ -123,9 +125,10 @@ class VoiceComponents:
                         provider = openai.TTS(
                             model=settings.tts_model,
                             voice=settings.tts_voice,
+                            speed=settings.tts_speed,
                             response_format="pcm",
-                            base_url=config.services.kokoro.endpoint.rstrip("/") + "/v1",
-                            api_key="ember-local-kokoro",
+                            base_url=config.services.tts.endpoint.rstrip("/") + "/v1",
+                            api_key="ember-local-tts",
                             client=transport,
                         )
                         cleanup.push_async_callback(provider.aclose)
