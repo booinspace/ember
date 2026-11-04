@@ -149,3 +149,6 @@ scoped atomic tools, operator UI and [acceptance evidence](../phase-10-validatio
 
 [Root ADR 0020 — Selectable vLLM](0020-vllm-upstream.md) records the operator-superseded
 adoption gate, stable processing identity and [native qualification](../vllm-implementation.md).
+
+[Root ADR 0021 — Isolated Hermes task delegation](0021-hermes-delegation.md)
+records Phase 11 implementation and its current qualification evidence.

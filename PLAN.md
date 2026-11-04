@@ -5158,3 +5158,30 @@ Native conformance, unchanged real Phase6/7 acceptance, both full gateway benchm
 suites and same-profile restart verification passed. The measured current GGUF
 profile remains faster and lower in sampled VRAM on Ollama, which stays default;
 vLLM is an explicit available backend, with results and limits in the runbook.
+
+## Phase 11 implementation status
+
+Hermes is the selected provider. The implementation/qualification is recorded in
+[Root ADR 0021](docs/adr/0021-hermes-delegation.md), its
+[runbook](docs/phase-11-runbook.md) and
+[acceptance record](docs/phase-11-validation.md). Original P11-AC-01–07 remain the
+gate; an installed interface or synthetic fixture does not itself prove acceptance.
+The initial supported profile is isolated, read-only and one-shot with bounded
+optional personal context. Interactive input/update/execution-resume are not
+advertised. Character identity, canonical memory, capture and sole gateway remain
+Ember-owned. Desktop/messaging ordinary-chat integration needs explicit sender,
+character/session, prompt/recall and transcript ownership; a shared model endpoint
+does not imply shared conversation memory. Future learning amendments should reuse
+bounded P3 candidate extraction, pre-compression source checkpoints and reviewed
+Phase 12 skills without enlarging ordinary context or granting autonomous belief writes.
+
+
+The selected **native Windows** one-shot implementation is qualified: actual
+SearXNG tasks through both gateway backends, native AppContainer isolation/crash
+recovery, bounded 1/2/4-step SDK histories, full Windows/macOS quality gates and
+210 warm gateway trials plus seven cancellation/drain probes per backend passed.
+Exact configuration/source hashes, failed attempts, independent review corrections
+and shutdown limitations are retained in the acceptance record and benchmark
+reports. The original Phase 8A Desktop/dashboard/app-pairing/near-limit/physical
+voice adoption prerequisite remains open; delegation stays default-off. Messaging
+and autonomous memory/skill learning are separate future integrations.

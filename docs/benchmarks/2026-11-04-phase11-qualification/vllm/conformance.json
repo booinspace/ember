@@ -1,0 +1,261 @@
+{
+  "cases": [
+    {
+      "calls": [],
+      "case": "plain",
+      "event_kinds": [
+        "start",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 0.5940000000045984,
+        "load_seconds": 0.0,
+        "output_tokens": 3,
+        "prefill_seconds": 0.444074748,
+        "prompt_tokens": 17,
+        "tokens_per_second": 38.35127191692914,
+        "total_seconds": 0.6090000000040163
+      },
+      "visible_chars": 5
+    },
+    {
+      "calls": [],
+      "case": "unicode-json",
+      "event_kinds": [
+        "start",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 0.7969999999986612,
+        "load_seconds": 0.0,
+        "output_tokens": 15,
+        "prefill_seconds": 0.196036089,
+        "prompt_tokens": 22,
+        "tokens_per_second": 38.54565174504687,
+        "total_seconds": 1.0630000000019209
+      },
+      "visible_chars": 24
+    },
+    {
+      "calls": [],
+      "case": "thinking",
+      "event_kinds": [
+        "start",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 92,
+      "usage": {
+        "first_visible_seconds": 1.139999999999418,
+        "load_seconds": 0.0,
+        "output_tokens": 30,
+        "prefill_seconds": 0.235875997,
+        "prompt_tokens": 65,
+        "tokens_per_second": 37.677115605716565,
+        "total_seconds": 1.139999999999418
+      },
+      "visible_chars": 3
+    },
+    {
+      "calls": [
+        {
+          "name": "record_weather"
+        }
+      ],
+      "case": "tool",
+      "event_kinds": [
+        "start",
+        "tools",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": null,
+        "load_seconds": 0.0,
+        "output_tokens": 27,
+        "prefill_seconds": 0.448424719,
+        "prompt_tokens": 289,
+        "tokens_per_second": 34.166435923848,
+        "total_seconds": 1.2660000000032596
+      },
+      "visible_chars": 0
+    },
+    {
+      "calls": [],
+      "case": "p1-json",
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 0.43699999999807915,
+        "load_seconds": 0.0,
+        "output_tokens": 12,
+        "prefill_seconds": 0.218891374,
+        "prompt_tokens": 20,
+        "queue_seconds": 0.01600000000325963,
+        "tokens_per_second": 34.27362995572845,
+        "total_seconds": 0.625
+      },
+      "visible_chars": 22
+    },
+    {
+      "calls": [],
+      "case": "p2-schema",
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 0.43800000000192085,
+        "load_seconds": 0.0,
+        "output_tokens": 12,
+        "prefill_seconds": 0.215358708,
+        "prompt_tokens": 23,
+        "queue_seconds": 0.0,
+        "tokens_per_second": 32.750334798496105,
+        "total_seconds": 0.6100000000005821
+      },
+      "visible_chars": 22
+    },
+    {
+      "calls": [],
+      "case": "p3-schema",
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 0.4059999999954016,
+        "load_seconds": 0.0,
+        "output_tokens": 12,
+        "prefill_seconds": 0.218054542,
+        "prompt_tokens": 23,
+        "tokens_per_second": 34.601426000883,
+        "total_seconds": 0.5939999999973224
+      },
+      "visible_chars": 22
+    },
+    {
+      "calls": [],
+      "case": "p4-schema",
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 0.40600000000267755,
+        "load_seconds": 0.0,
+        "output_tokens": 12,
+        "prefill_seconds": 0.215050703,
+        "prompt_tokens": 23,
+        "tokens_per_second": 36.655162321801974,
+        "total_seconds": 0.5939999999973224
+      },
+      "visible_chars": 22
+    },
+    {
+      "calls": [],
+      "case": "full-claim",
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 1.8130000000019209,
+        "load_seconds": 0.0,
+        "output_tokens": 10,
+        "prefill_seconds": 0.197158919,
+        "prompt_tokens": 27,
+        "tokens_per_second": 37.44681974290182,
+        "total_seconds": 1.9380000000019209
+      },
+      "visible_chars": 18
+    },
+    {
+      "calls": [],
+      "case": "full-dated-claim",
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "passed": true,
+      "reasoning_chars": 0,
+      "usage": {
+        "first_visible_seconds": 0.5160000000032596,
+        "load_seconds": 0.0,
+        "output_tokens": 10,
+        "prefill_seconds": 0.196897608,
+        "prompt_tokens": 27,
+        "tokens_per_second": 38.15793954446668,
+        "total_seconds": 0.6410000000032596
+      },
+      "visible_chars": 18
+    }
+  ],
+  "guard": {
+    "GET /ember/profile auth=False": 401,
+    "GET /server_info?config_format=json auth=False": 401,
+    "GET /version auth=False": 401,
+    "GET /version auth=True": 200,
+    "POST /collective_rpc auth=True": 404,
+    "POST /sleep?level=invalid auth=True": 404
+  },
+  "model_digest": "00f5c81940e6baa4fcde25c9a14610966c754da18a5f792cbf2aa18d99b2bfca",
+  "source_report_sha256": "d34ea1197acbb0e3e47eb936071cd7a60b00b7f4a581f2342336f80919b0230c"
+}

@@ -1,0 +1,213 @@
+{
+  "format": "ember-hermes-native-boundary-qualification-v1",
+  "date": "2026-11-04",
+  "status": "native_boundary_and_final_host_policy_synthetic_passed",
+  "hermes_revision": "71736c9f32597bbca9d89cede5aa136e55946b2f",
+  "profile_sha256": "380bb9daab09cb406221bde1a34b2c0d85d8d3c5863ee100ec7848d027370d93",
+  "profile_receipt_bytes": 6372545,
+  "sealed_assets": 31195,
+  "launcher_python": "3.12.15",
+  "sdk_python": "3.14.4",
+  "openai_sdk": "2.54.0",
+  "source_sha256": {
+    "scripts/hermes_setup.py": "6d13e66a2d715e0cfa46e9a2573d3dd574f9417a529b1ac8a0ff5633e22dfbe1",
+    "scripts/hermes_worker.py": "da18ebd362cede791a2fd7df04242fa7dd7ab3e73027b21055b1cf92bd354258",
+    "scripts/hermes_transport.py": "95dfb487c9f22744c964448915e6c8e18fbb536532ce0f7662e6766e2b8fe956",
+    "scripts/hermes_windows.py": "71223a6a2a4c44e103e3188eaa14a7daf16277225cabcb082023b0d201a7f548",
+    "ember-agent/src/ember_agent/runtime/windows_job.py": "5d2abcfef1f1e56a7d38edc4765d1b22e4022b4fd3499d95550e5c17cb2efd45",
+    "ember-agent/src/ember_agent/runtime/config.py": "3611dab7df3090abfa3ab447a6a067e49093ab776a5c1871e40147fb48bc143f"
+  },
+  "profile_coverage": {
+    "checkout": "pinned clean Git revision plus all regular installed source files, including untracked optional modules and data; root .git excluded",
+    "runtime": "all files in native SDK venv and separate base Python installation",
+    "first_party": "four boundary scripts, launcher/interpreter/Git binaries, Core WindowsJob and runtime config"
+  },
+  "boundary": {
+    "kind": "ordinary Windows AppContainer",
+    "capabilities": 0,
+    "identity": "fresh unique SID per task",
+    "writable_home": "protected per-task sibling of SDK installation roots",
+    "model_transport": "socket-free stdio JSON RPC using a private httpx transport",
+    "process_ownership": "suspended child assigned to private global named kill-on-close job before resume",
+    "recovery": "protected per-task byte-locked ledger; only unlocked validated identities confer named-job cleanup authority; no saved PID is killed"
+  },
+  "canary_proof": {
+    "private_inputs": false,
+    "normal_token_verified": true,
+    "denied": [
+      "synthetic canonical read",
+      "synthetic canonical write",
+      "synthetic credential read",
+      "synthetic credential write",
+      "other-task home read",
+      "other-task home write",
+      "SDK file creation",
+      "live loopback connection",
+      "reachable NAS connection"
+    ],
+    "positive_controls": [
+      "own task home write/read",
+      "host loopback listener reachable",
+      "NAS endpoint reachable from host"
+    ],
+    "live_locked_lease_skipped": true
+  },
+  "shutdown_proof": [
+    {
+      "mode": "parent_stdin_eof",
+      "seconds": 1.5940000000045984,
+      "retained_child_handle_signalled": true,
+      "task_home_and_lease_absent": true,
+      "known_profile_folder_absent": true,
+      "exact_sid_installation_grants_absent": true
+    },
+    {
+      "mode": "forced_controller_crash_then_orphan_recovery",
+      "seconds": 1.5940000000045984,
+      "retained_child_handle_signalled": true,
+      "task_home_and_lease_absent": true,
+      "known_profile_folder_absent": true,
+      "exact_sid_installation_grants_absent": true
+    }
+  ],
+  "sdk_synthetic": {
+    "uses_actual_pinned_AIAgent": true,
+    "real_model_requests": 0,
+    "structured_finish_validated": true,
+    "purged_acknowledged": true,
+    "native_process_exit": 0,
+    "system_prompt_characters": 4217,
+    "rpc_ids": "strict increasing integers",
+    "tool_call_ids": "UUID36",
+    "one_round": {
+      "request_body_bytes": [
+        5212
+      ],
+      "bridge_input_cost_bytes": [
+        5806
+      ]
+    },
+    "two_rounds": {
+      "request_body_bytes": [
+        5212,
+        5660
+      ],
+      "bridge_input_cost_bytes": [
+        5806,
+        6368
+      ],
+      "copied_search_context_bytes": [
+        149
+      ]
+    },
+    "four_rounds": {
+      "native_search_receipt_bytes": [
+        4096,
+        4096,
+        4096
+      ],
+      "request_body_bytes": [
+        5212,
+        7244,
+        9276,
+        11308
+      ],
+      "bridge_input_cost_bytes": [
+        5806,
+        7952,
+        10098,
+        12244
+      ],
+      "copied_search_context_bytes": [
+        1733,
+        1733,
+        1733
+      ],
+      "host_projected_input_cost_bytes": [
+        5454,
+        8459,
+        10614,
+        12411
+      ]
+    },
+    "prompt_guard_bytes": 16384,
+    "output_reserve_tokens": 1192,
+    "complete_history_retained": true,
+    "oversized_unicode_goal_rejected_before_dispatch": true,
+    "metadata_http_calls": 0,
+    "host_policy_proof": {
+      "status": "passed",
+      "elapsed_seconds": 19.26,
+      "model_rounds": 4,
+      "original_sdk_schema_and_body_validated": true,
+      "actual_available_model_tools_projection_used": true,
+      "projected_schema_and_body_revalidated": true,
+      "same_complete_history_context_model_workload_and_output_limit": true,
+      "host_projected_input_cost_bytes": [
+        5454,
+        8459,
+        10614,
+        12411
+      ],
+      "gateway_input_guard_bytes": 16384,
+      "output_reserve_tokens": 1192,
+      "no_real_model_dispatch": true,
+      "source_hashes_checked_before_execution": true,
+      "worker_processes_after_run": 0,
+      "task_homes_after_run": 0,
+      "lease_records_after_run": 0,
+      "task_profile_folders_after_run": 0,
+      "profile_receipt_sha256_after_run": "380bb9daab09cb406221bde1a34b2c0d85d8d3c5863ee100ec7848d027370d93"
+    },
+    "earlier_one_two_rounds_note": "Retained pre-host-policy synthetic measurements. The final four-round case above separately validates both original SDK and actual host-projected schemas against the final bridge/helper hashes."
+  },
+  "checks": {
+    "native_ruff": "passed",
+    "native_strict_pyright": "0 errors",
+    "local_setup_boundary_tests": 34,
+    "native_os_cases": 2,
+    "native_sdk_cases": 3,
+    "native_sdk_cases_seconds": 56.36,
+    "native_test_path": "ember-agent/tests/test_hermes_windows_native.py",
+    "execution": "Original OS cleanup proof remains 1.594 seconds per case on the unchanged profile7. Earlier one/two-round SDK measurements are retained; final four-round SDK proof was rerun on the exact final host-policy bridge/helper/test sources with both original and projected schemas.",
+    "final_host_policy_native_cases": 1,
+    "final_host_policy_native_seconds": 19.26
+  },
+  "reproduce": {
+    "environment": "EMBER_HERMES_PROFILE=<explicit installed receipt path>",
+    "command": "<Ember Python 3.12> -B -m pytest -c pyproject.toml -q -s ember-agent/tests/test_hermes_windows_native.py"
+  },
+  "scope": "Synthetic OS canaries and SDK replies only; the final four-round host-policy proof made no model requests. Actual delegated search-task acceptance is recorded separately in the Phase11 acceptance record. The original same-profile OS timings are preserved. No model-performance inference is made from these CPU tests.",
+  "core_composition_sha256": {
+    "ember-agent/src/ember_agent/inference/openai_bridge.py": "00d446f76edac677d9d5190df8ed8bfcc1103250ba2c3c95ce4492da37e69923",
+    "ember-agent/src/ember_agent/runtime/hermes_tasks.py": "17d9579e9621c55a61f9dc14c498a11c6e0234167aa8924f463d894fcb61c7fe"
+  },
+  "qualification_test_sha256": "e4de326fda36e56870dacedbcdcaf23b2b531146bc0dee061653c4063260485a",
+  "search_context": {
+    "native_tool_receipt_limit_bytes": 4096,
+    "copied_model_context_limit_bytes": 2048,
+    "selection": "whole verified rows only; original receipt unchanged; only forwarded IDs issued"
+  },
+  "diagnostics": [
+    {
+      "profile": "5",
+      "status": "historical boundary+SDK proof; actual task prompt_overflow",
+      "report": "native-boundary.profile5.json"
+    },
+    {
+      "profile": "6",
+      "status": "correctly rejected three new bytecode caches generated by a source-inspection SDK invocation without -B",
+      "resolution": "all existing bytecode retained and sealed in profile7; diagnostics use Core3.12 or -B"
+    },
+    {
+      "profile": "7",
+      "status": "4217-character SDK scaffold exceeded an arbitrary early test target; production prompt guard never changed",
+      "resolution": "parent now copies at most2048 UTF-8 JSON bytes of whole search rows; actual mapper proof passes three4096-byte receipts"
+    }
+  ],
+  "actual_gateway_acceptance": {
+    "ollama": "hermes-ollama/final.json",
+    "vllm": "vllm/hermes.json",
+    "both_passed": true
+  }
+}

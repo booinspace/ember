@@ -370,9 +370,27 @@ class VLLMUpstream:
         if self._instance_id is None:
             await self.verify()
         self._generation_instance_id = self._instance_id
+        messages: list[JsonValue] = []
+        for item in request.messages:
+            message: dict[str, JsonValue] = {"role": item.role, "content": item.content}
+            if item.tool_calls:
+                message["tool_calls"] = [
+                    {
+                        "id": call.call_id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, allow_nan=False),
+                        },
+                    }
+                    for call in item.tool_calls
+                ]
+            if item.tool_call_id is not None:
+                message["tool_call_id"] = item.tool_call_id
+            messages.append(message)
         body: dict[str, JsonValue] = {
             "model": self.config.model_tag,
-            "messages": [{"role": item.role, "content": item.content} for item in request.messages],
+            "messages": messages,
             "temperature": 0.2,
             "max_completion_tokens": request.max_output_tokens,
             "stream": True,

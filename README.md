@@ -229,3 +229,9 @@ panel. No external service is enabled by default. The [runbook](docs/phase-10-ru
 describes installed-service configuration, exact write approvals and supported
 bounds; the [validation record](docs/phase-10-validation.md) includes acceptance
 evidence and gateway performance measurements.
+
+Optional Hermes delegation runs natively on Windows through an isolated worker.
+It uses the existing Tasks UI, brokered SearXNG search and P2 gateway, with no second memory
+owner. It stays default-off while the original adoption gates remain open. See
+the [setup/runbook](docs/phase-11-runbook.md) and
+[acceptance record](docs/phase-11-validation.md) for tested capabilities and limits.

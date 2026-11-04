@@ -1,0 +1,48 @@
+{
+  "schema": "ember-phase11-actual-task-attempts-v1",
+  "failures_retained": true,
+  "attempts": [
+    {
+      "profile_sha256": "f89ea76b3dacfd6415774b47a091fc2df49ec5a573d9fb83cfd6bb81ed0d6396",
+      "backend": "ollama",
+      "task_terminal_state": "failed",
+      "safe_failure_code": null,
+      "pytest_elapsed_seconds": 41.5,
+      "test_source_sha256": "64fd7d003c136848bc0de6f606f510f9d36909b01516091b468fff406053f87d",
+      "note": "Original test retained all assertions; provider error code was not observed."
+    },
+    {
+      "profile_sha256": "2fafd09a00c1077cd51458feea5e51affdd0d1f42852079cf05354579331cb5e",
+      "backend": "ollama",
+      "task_terminal_state": "failed",
+      "safe_failure_code": "prompt_overflow",
+      "model_calls": 3,
+      "search_receipts": 3,
+      "pytest_elapsed_seconds": 25.08,
+      "test_source_sha256": "e769ce1b6139d57f76029bed16019b28fe023e7a7c1925d32041e9e5393f76cf",
+      "input_guard_bytes": 16384,
+      "note": "The task failed closed before another model dispatch; input guard and complete history were retained."
+    },
+    {
+      "profile_sha256": "380bb9daab09cb406221bde1a34b2c0d85d8d3c5863ee100ec7848d027370d93",
+      "backend": "ollama",
+      "task_terminal_state": "failed",
+      "safe_failure_code": "hermes_unverified_citations",
+      "model_calls": 4,
+      "search_receipts": 3,
+      "pytest_elapsed_seconds": 26.46,
+      "note": "Bounded copied context fit. Strict citation validation rejected the proposed report; exact subcondition was not captured."
+    },
+    {
+      "profile_sha256": "380bb9daab09cb406221bde1a34b2c0d85d8d3c5863ee100ec7848d027370d93",
+      "backend": "ollama",
+      "task_terminal_state": "failed",
+      "safe_failure_code": "hermes_search_scope_denied",
+      "model_calls": 4,
+      "search_receipts": 3,
+      "pytest_elapsed_seconds": 22.47,
+      "note": "A fourth search was denied without dispatch. Host model-tool metadata was subsequently narrowed by remaining authority, with issued-only citation enums."
+    }
+  ],
+  "resolution": "Search-copy budget and host-owned tool/citation projection fixed the implementation; the prompt guard, tool quotas, history, reference validation and test assertions were retained."
+}

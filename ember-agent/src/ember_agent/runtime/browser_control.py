@@ -381,6 +381,7 @@ class BrowserControl:
                 "tasks_available": self.task_router is not None,
                 "summary_tasks_available": bool(self.task_router and self.task_router.summary),
                 "recall_tasks_available": bool(self.task_router and self.task_router.recall),
+                "delegation_available": bool(self.task_router and self.task_router.delegate),
                 "context_id": str(self.core.context_id),
                 "prompts_available": self.prompt_controls is not None,
                 "recall": (await self.controls.recall_settings()).model_dump(mode="json"),

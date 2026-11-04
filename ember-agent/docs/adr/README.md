@@ -58,3 +58,6 @@ existing task/confirmation ownership and Phase 10 acceptance evidence.
 
 [Agent ADR 0010 — vLLM upstream](0010-vllm-upstream.md) records explicit backend
 selection, stable profile identity, transport semantics and qualification.
+
+[Agent ADR 0011 — Hermes task delegation](0011-hermes-delegation.md) records the
+optional provider, task-local model mapping and original Phase 11 acceptance.

@@ -169,6 +169,32 @@ class InterpretationSettings(RuntimeModel):
     timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 8.0
 
 
+class HermesSettings(RuntimeModel):
+    """Explicit installed isolated worker; its launcher never receives runner credentials."""
+
+    command: Annotated[tuple[str, ...], Field(min_length=1, max_length=32)]
+    revision: Literal["71736c9f32597bbca9d89cede5aa136e55946b2f"]
+    profile_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    search_endpoint: str
+    private_recall: bool = False
+
+    @model_validator(mode="after")
+    def installed_origin(self) -> Self:
+        endpoint = urlsplit(self.search_endpoint)
+        if (
+            endpoint.scheme not in {"http", "https"}
+            or not endpoint.hostname
+            or endpoint.username is not None
+            or endpoint.password is not None
+            or endpoint.path not in {"", "/"}
+            or endpoint.query
+            or endpoint.fragment
+            or any(not argument or len(argument) > 4096 for argument in self.command)
+        ):
+            raise ValueError("Hermes requires an explicit search origin and installed command.")
+        return self
+
+
 class DeploymentConfig(RuntimeModel):
     """Resolved deployment configuration, distinct from verified service/model health."""
 
@@ -189,6 +215,7 @@ class DeploymentConfig(RuntimeModel):
     interpretation: InterpretationSettings = Field(default_factory=InterpretationSettings)
     mcp_servers: tuple[MCPServerSettings, ...] = ()
     inference: InferenceSettings = InferenceSettings()
+    hermes: HermesSettings | None = None
 
     @property
     def model_pin_configured(self) -> bool:
@@ -266,6 +293,7 @@ class _DeploymentSettings(RuntimeModel):
     interpretation: InterpretationSettings = InterpretationSettings()
     prompts: _PromptSettings = _PromptSettings()
     inference: InferenceSettings = InferenceSettings()
+    hermes: dict[str, JsonValue] | None = None
     mcp_servers: list[dict[str, JsonValue]] = Field(
         default_factory=list[dict[str, JsonValue]], max_length=8
     )
@@ -498,7 +526,16 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             raise ConfigurationError("MCP server identities must be unique.")
     except (ValidationError, ValueError) as error:
         raise ConfigurationError("MCP server configuration is invalid.") from error
+    try:
+        hermes = (
+            HermesSettings.model_validate_json(json.dumps(settings.hermes))
+            if settings.hermes is not None
+            else None
+        )
+    except (ValidationError, ValueError) as error:
+        raise ConfigurationError("Hermes configuration is invalid.") from error
     return DeploymentConfig(
+        hermes=hermes,
         mcp_servers=mcp_servers,
         inference=settings.inference,
         active_profile=settings.active_profile,

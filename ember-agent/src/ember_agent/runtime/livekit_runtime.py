@@ -15,11 +15,13 @@ import httpx
 from livekit import api, rtc
 from pydantic import ValidationError
 
-from ember_memory_abi.related import ContextDependencies
+from ember_memory_abi.common import timestamp_from_datetime
+from ember_memory_abi.related import ContextDependencies, RelatedRequest
 
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
-from ..memory.deep_contracts import DeepRecallResult
+from ..memory.deep_contracts import DeepRecallBudget, DeepRecallRequest, DeepRecallResult
+from ..memory.deep_prompt import condense
 from ..realtime.client import RoomClient
 from ..realtime.contracts import (
     AGENT_IDENTITY,
@@ -43,6 +45,7 @@ from .task_router import (
     TaskRouter,
     TextInspectionProvider,
     TextInspectionTask,
+    ToolContext,
     ToolRouter,
 )
 from .text_session import DirectTextSession
@@ -64,13 +67,58 @@ async def _start_tasks(
     except OSError:
         token = ""
     summary = None
+    delegate = None
+
+    async def validate_task_dependencies(dependencies: ContextDependencies) -> bool:
+        checked = await runtime.memory.lookup_related(
+            RelatedRequest(
+                intent="validate", dependencies=dependencies, row_budget=512, call_budget=8
+            )
+        )
+        return checked.valid is True
+
     if 32 <= len(token) <= 128:
         client = HttpGatewayClient(runtime.config.services.gateway.endpoint, token)
         cleanup.push_async_callback(client.aclose)
         summary = SummaryTask(client, runtime.config.model_tag)
+        if runtime.config.hermes is not None:
+            from .hermes_tasks import HermesTask, PersonalContext
+            from .searx_tools import SearXNGTools
 
-    async def validate_task_dependencies(dependencies: ContextDependencies) -> bool:
-        return await runtime.core.current((), dependencies)
+            search = SearXNGTools(runtime.config.hermes.search_endpoint)
+            cleanup.push_async_callback(search.aclose)
+
+            async def recall_context(query: str, context: ToolContext) -> PersonalContext | None:
+                result = await runtime.deep.investigate(
+                    DeepRecallRequest(
+                        request_id=context.task_id,
+                        context_id=context.task_id,
+                        character_id=context.character_id,
+                        query=query,
+                        reference_at=timestamp_from_datetime(runtime.core.reference_clock()),
+                        timezone=runtime.config.recall_timezone,
+                        budget=DeepRecallBudget(
+                            hops=0,
+                            memories=6,
+                            archive_chunks=0,
+                            excerpts=0,
+                            result_bytes=16384,
+                        ),
+                    )
+                )
+                selected = condense(result)
+                if not selected.memories or result.dependencies is None:
+                    return None
+                text = "\n".join(message.content for message in selected.messages)
+                return PersonalContext(text, result.dependencies, selected.memory_sources)
+
+            delegate = HermesTask(
+                runtime.config,
+                client,
+                ToolRouter(search, binding.character_id),
+                recall=recall_context,
+                validate=validate_task_dependencies,
+            )
 
     router = TaskRouter(
         runtime.config.runtime_root,
@@ -83,6 +131,7 @@ async def _start_tasks(
         recall=RecallTask(
             runtime.deep, runtime.core.reference_clock, runtime.core.calendar.timezone
         ),
+        delegate=delegate,
     )
     try:
         await router.start()
@@ -111,6 +160,16 @@ async def _start_tasks(
         runtime.core.task_tools["summarize_user_text"] = (
             "When the user requests a summary, queue text quoted exactly by the user.",
             summarize,
+        )
+    if delegate is not None:
+
+        async def delegate_task(text: str, turn_id: UUID) -> str:
+            return await router.submit_turn(text, turn_id, operation="delegate")
+
+        runtime.core.task_tools["delegate_hermes_task"] = (
+            "Queue an explicit research request with Hermes using approved search tools. "
+            "Quote the user's goal exactly. Model steps wait while voice is connected.",
+            delegate_task,
         )
     runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)

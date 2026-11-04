@@ -14,7 +14,7 @@ from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
 from .config import RuntimeModel
 
-type TaskOperation = Literal["inspect", "summarize", "recall", "review", "tool"]
+type TaskOperation = Literal["inspect", "summarize", "recall", "review", "tool", "delegate"]
 type TerminalState = Literal["succeeded", "failed", "cancelled", "timed_out", "uncertain"]
 type TaskState = Literal[
     "queued",

@@ -1,0 +1,35 @@
+{
+  "default_ollama_configuration_changed": false,
+  "diagnostics": {
+    "gateway_log_level": "warning",
+    "logged_error": "asyncio_Proactor_pipe_connection_lost_WinError_10054",
+    "precise_graceful_exit_blocker": "unknown_without_additional_instrumentation",
+    "production_gateway_and_service_unchanged_by_phase11": true,
+    "uvicorn_lifecycle_info_markers_available": false
+  },
+  "gateway": {
+    "authenticated_shutdown_requested": true,
+    "exit_code": 1,
+    "graceful_exit_timed_out": true,
+    "listener_11436_absent": true,
+    "owned_windows_job_terminated_and_drained": true,
+    "process_exit_wait_seconds": 30,
+    "retained_process_pid_absent": true
+  },
+  "gpu_after_stop": {
+    "free_mib": 24084,
+    "used_mib": 239,
+    "vllm_or_python_model_process_listed": false
+  },
+  "other_services": {
+    "primary_application_untouched": true,
+    "root_owned_tts_untouched": true
+  },
+  "runner": {
+    "controller_exit_code": 0,
+    "listener_8000_absent": true,
+    "owned_stop_marker_requested_after_gateway_closed": true
+  },
+  "schema": "ember-phase11-vllm-owned-cleanup-v1",
+  "scope": "Observed post-qualification cleanup; separate from per-request benchmark cleanup metrics."
+}

@@ -1,0 +1,63 @@
+{
+  "schema": "ember-phase11-quality-gates-v1",
+  "date_utc": "2026-11-04",
+  "base_commit": "502a5ad79322c9de6384d29c72da793f794b3cfe",
+  "production_source_sha256": {
+    "ember-agent/src/ember_agent/inference/contracts.py": "5572aefbd8c4203e9ba25ad4c7f926d8cd67bfc2827742b832e220a19f0bfdd0",
+    "ember-agent/src/ember_agent/inference/ollama.py": "5bfbabda0ec12dd76c539c502c82f86ddb0dfe778b697e748ff4f0153ea4a0f1",
+    "ember-agent/src/ember_agent/inference/openai_bridge.py": "00d446f76edac677d9d5190df8ed8bfcc1103250ba2c3c95ce4492da37e69923",
+    "ember-agent/src/ember_agent/inference/vllm.py": "65467c7655a06f9234ffb05ed650a2f546006bfec8c1abe370f2a4c73e5ae0a2",
+    "ember-agent/src/ember_agent/runtime/browser_control.py": "0299de28e7a295e32517dad734f5553e026b9bb9e4114690141fe18fb5ee94c5",
+    "ember-agent/src/ember_agent/runtime/config.py": "3611dab7df3090abfa3ab447a6a067e49093ab776a5c1871e40147fb48bc143f",
+    "ember-agent/src/ember_agent/runtime/health.py": "f6f738910fc19af014fdc376dfcd7f591b0a696eba62019c42aa6ddbe2c31275",
+    "ember-agent/src/ember_agent/runtime/hermes_tasks.py": "17d9579e9621c55a61f9dc14c498a11c6e0234167aa8924f463d894fcb61c7fe",
+    "ember-agent/src/ember_agent/runtime/livekit_runtime.py": "df2e0ae1cdd571131a34591a02171d5af2456197c8e52b110207fa5ec6a3bb6e",
+    "ember-agent/src/ember_agent/runtime/searx_tools.py": "60d72aedac4a66287707a31b92d81b8f94756e28298f0e81d548e4f41f7835e6",
+    "ember-agent/src/ember_agent/runtime/task_router.py": "bf7a17e7b3e7275b4fbb099c8eab6b70b02352bc8fa5a3e82ffa5d0dbf70b989",
+    "ember-agent/src/ember_agent/runtime/task_store.py": "916d5aa423b4c64cb875b5bfb1ba3538ce0142f117d0bba10225b719f4fa692e",
+    "ember-agent/src/ember_agent/runtime/windows_job.py": "5d2abcfef1f1e56a7d38edc4765d1b22e4022b4fd3499d95550e5c17cb2efd45",
+    "ember-agent/src/ember_agent/runtime/worker_process.py": "ae8515943173a7e02dd38a24d31515d55d09ab9b18239c963c1d19a6109ebab7",
+    "scripts/hermes_setup.py": "6d13e66a2d715e0cfa46e9a2573d3dd574f9417a529b1ac8a0ff5633e22dfbe1",
+    "scripts/hermes_transport.py": "95dfb487c9f22744c964448915e6c8e18fbb536532ce0f7662e6766e2b8fe956",
+    "scripts/hermes_windows.py": "71223a6a2a4c44e103e3188eaa14a7daf16277225cabcb082023b0d201a7f548",
+    "scripts/hermes_worker.py": "da18ebd362cede791a2fd7df04242fa7dd7ab3e73027b21055b1cf92bd354258"
+  },
+  "full_gates": [
+    {
+      "platform": "macOS",
+      "python": "3.12.11",
+      "command": "TMPDIR=/private/tmp .venv/bin/python scripts/check.py",
+      "format": "passed",
+      "lint": "passed",
+      "strict_pyright_errors": 0,
+      "pytest_passed": 1060,
+      "pytest_skipped": 18,
+      "pytest_seconds": 109.67
+    },
+    {
+      "platform": "native Windows 11",
+      "python": "3.12.15",
+      "command": ".venv/Scripts/python.exe scripts/check.py",
+      "livekit": "explicit installed 1.13.9 binary supplied through EMBER_LIVEKIT_EXE",
+      "format": "passed",
+      "lint": "passed",
+      "strict_pyright_errors": 0,
+      "pytest_passed": 1060,
+      "pytest_skipped": 18,
+      "pytest_seconds": 237.12
+    }
+  ],
+  "frontend": {
+    "build": "TypeScript/Vite passed",
+    "unit_tests_passed": 21,
+    "task_and_mcp_browser_cases_passed": 3,
+    "source_sha256": {
+      "ember-agent/frontend/browser-tests/tasks.check.ts": "ea2fb675431795afd4baa037effaef96f535cf5ab039a665d1017d9ddb9c8c67",
+      "ember-agent/frontend/src/App.tsx": "4394e0055ea1120030b7189b9cccdfcb8faafdace11a504cc428d9b3f65b0049",
+      "ember-agent/frontend/src/Tasks.tsx": "52e4c34c9510be3d03b4e5037cc36b15637771ddcc1f0100040593a578d0169c",
+      "ember-agent/frontend/src/contracts.ts": "abc91f5edeca284eb9adf6c8480f85649ec2ec363e5db29c8177c2e4d11d9a8d"
+    }
+  },
+  "opt_in_scope": "Actual native OS/SDK and real-model tests are recorded separately; their default skips do not establish acceptance.",
+  "private_content_recorded": false
+}

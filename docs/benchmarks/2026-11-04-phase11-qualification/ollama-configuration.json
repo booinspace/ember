@@ -1,0 +1,30 @@
+{
+  "date_utc": "2026-11-04",
+  "base_commit": "502a5ad79322c9de6384d29c72da793f794b3cfe",
+  "backend": "ollama",
+  "model": "qwen3.8-rvn:27b-iq3_s-mtp",
+  "digest": "5b869f160df08fa13860487d8c341d3db22a9b3aca48e67dced4b53370a3cfd2",
+  "context_tokens": 131072,
+  "max_input_tokens": 126976,
+  "output_reserve_tokens": 4096,
+  "voice_model": "tts-1",
+  "voice": "Juniper",
+  "speed": 1.1,
+  "python": "3.12.15",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "source_files_sha256": {
+    "scripts/benchmark_gateway_suite.py": "0e8314189ef7ad574c3d491c9bd92fe04e4b9386c914b9bfc59e6847a891324b",
+    "ember-agent/src/ember_agent/inference/benchmark.py": "5eb61737718e606e449884c673c2f27916197a150d072f814d7d0a81dfd2b7ec",
+    "ember-agent/src/ember_agent/inference/benchmark_voice.py": "8fcc72130e124c5a8892893a3562f3efeaea1f07ecf6fbc7d9965f1884731f60",
+    "ember-agent/src/ember_agent/inference/contracts.py": "5572aefbd8c4203e9ba25ad4c7f926d8cd67bfc2827742b832e220a19f0bfdd0",
+    "ember-agent/src/ember_agent/inference/gateway.py": "b6681be64af342c54625cd0bbd046b891802fd3fd8a8a52dc5b13c4592270a9b",
+    "ember-agent/src/ember_agent/inference/ollama.py": "5bfbabda0ec12dd76c539c502c82f86ddb0dfe778b697e748ff4f0153ea4a0f1",
+    "ember-agent/src/ember_agent/inference/service.py": "61c02e59bf1eb121fa0eee44dc604cafa5b74e94256cf5e781057da92712d30e",
+    "ember-agent/src/ember_agent/inference/upstream.py": "bcfb19b3c0815f8af56e7d2ecbdb4abec0bef919afbb5bc3e3d5e994176734b9",
+    "ember-agent/src/ember_agent/inference/vllm.py": "65467c7655a06f9234ffb05ed650a2f546006bfec8c1abe370f2a4c73e5ae0a2",
+    "ember-agent/src/ember_agent/runtime/config.py": "3611dab7df3090abfa3ab447a6a067e49093ab776a5c1871e40147fb48bc143f"
+  },
+  "primary_app": "stopped by operator request; isolated gateway only",
+  "method": "30 trials per seven cases; warmup excluded; one detach/drain/next-P0 recovery probe per case; paced SDK PCM, no physical audio claim",
+  "source_report_sha256": "37cd0000539be51150fd559ae38a187a380c5544dbb726c5ae25b50003155311"
+}

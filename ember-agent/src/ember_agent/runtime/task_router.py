@@ -590,6 +590,7 @@ class TaskRouter:
         *,
         summary: AgenticTaskProvider | None = None,
         recall: AgenticTaskProvider | None = None,
+        delegate: AgenticTaskProvider | None = None,
         validate: Callable[[ContextDependencies], Awaitable[bool]] | None = None,
         mcp: "MCPTools | None" = None,
     ) -> None:
@@ -600,12 +601,14 @@ class TaskRouter:
         self.provider = provider
         self.summary = summary
         self.recall = recall
+        self.delegate = delegate
         self.validate = validate
         self.mcp = mcp
         self.providers = {
             "inspect": provider,
             "summarize": summary,
             "recall": recall,
+            "delegate": delegate,
         }
         self._wake = asyncio.Event()
         self.events = EventBus()

@@ -59,6 +59,7 @@ export const runtimeState = z.object({
   tasks_available: z.boolean().default(false),
   summary_tasks_available: z.boolean().default(false),
   recall_tasks_available: z.boolean().default(false),
+  delegation_available: z.boolean().default(false),
   voice: z.boolean().default(false),
   voice_status: z.string().default("disabled"),
   speech: speechOptions.nullable().default(null),

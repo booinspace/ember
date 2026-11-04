@@ -1,0 +1,112 @@
+{
+  "format": "ember-hermes-native-boundary-qualification-v1",
+  "date": "2026-11-04",
+  "status": "boundary_and_synthetic_sdk_passed; actual_gateway_task_blocked_by_prompt_overflow",
+  "hermes_revision": "71736c9f32597bbca9d89cede5aa136e55946b2f",
+  "profile_sha256": "2fafd09a00c1077cd51458feea5e51affdd0d1f42852079cf05354579331cb5e",
+  "profile_receipt_bytes": 6357275,
+  "sealed_assets": 31145,
+  "launcher_python": "3.12.15",
+  "sdk_python": "3.14.4",
+  "openai_sdk": "2.54.0",
+  "runtime_validation_seconds": 5.702999999994063,
+  "source_sha256": {
+    "scripts/hermes_setup.py": "26a24a525ecbd968fbcbfb205b39c54d3545c022475444dc193d4a750a19c216",
+    "scripts/hermes_worker.py": "8502ec7c1163ebbb07e4f4e4980d3b0b21eb6b634bd61c23df52e2529fec0c50",
+    "scripts/hermes_transport.py": "95dfb487c9f22744c964448915e6c8e18fbb536532ce0f7662e6766e2b8fe956",
+    "scripts/hermes_windows.py": "0ccdf410bb55ca9a356376c87c9da6559102cd147447c7f764ca51f56b34b6a4",
+    "ember-agent/src/ember_agent/runtime/windows_job.py": "5d2abcfef1f1e56a7d38edc4765d1b22e4022b4fd3499d95550e5c17cb2efd45",
+    "ember-agent/src/ember_agent/runtime/config.py": "3611dab7df3090abfa3ab447a6a067e49093ab776a5c1871e40147fb48bc143f"
+  },
+  "profile_coverage": {
+    "checkout": "pinned clean Git revision plus all regular installed source files, including untracked optional modules and data; root .git excluded",
+    "runtime": "all files in native SDK venv and separate base Python installation",
+    "first_party": "four boundary scripts, launcher/interpreter/Git binaries, Core WindowsJob and runtime config"
+  },
+  "boundary": {
+    "kind": "ordinary Windows AppContainer",
+    "capabilities": 0,
+    "identity": "fresh unique SID per task",
+    "writable_home": "protected per-task sibling of SDK installation roots",
+    "model_transport": "socket-free stdio JSON RPC using a private httpx transport",
+    "process_ownership": "suspended child assigned to private global named kill-on-close job before resume",
+    "recovery": "protected per-task byte-locked ledger; only unlocked validated identities confer named-job cleanup authority; no saved PID is killed"
+  },
+  "canary_proof": {
+    "private_inputs": false,
+    "normal_token_verified": true,
+    "denied": [
+      "synthetic canonical read",
+      "synthetic canonical write",
+      "synthetic credential read",
+      "synthetic credential write",
+      "other-task home read",
+      "other-task home write",
+      "SDK file creation",
+      "live loopback connection",
+      "reachable NAS connection"
+    ],
+    "positive_controls": [
+      "own task home write/read",
+      "host loopback listener reachable",
+      "NAS endpoint reachable from host"
+    ],
+    "live_locked_lease_skipped": true
+  },
+  "shutdown_proof": [
+    {
+      "mode": "parent_stdin_eof",
+      "seconds": 1.6710000000020955,
+      "retained_child_handle_signalled": true,
+      "task_home_and_lease_absent": true,
+      "known_profile_folder_absent": true,
+      "exact_sid_installation_grants_absent": true
+    },
+    {
+      "mode": "forced_controller_crash_then_orphan_recovery",
+      "seconds": 1.6410000000032596,
+      "retained_child_handle_signalled": true,
+      "task_home_and_lease_absent": true,
+      "known_profile_folder_absent": true,
+      "exact_sid_installation_grants_absent": true
+    }
+  ],
+  "sdk_synthetic": {
+    "uses_actual_pinned_AIAgent": true,
+    "real_model_requests": 0,
+    "structured_finish_validated": true,
+    "purged_acknowledged": true,
+    "native_process_exit": 0,
+    "first_request_bytes": 11709,
+    "first_system_prompt_characters": 10549,
+    "second_turn_request_bytes": 12094,
+    "request_keys": [
+      "messages",
+      "model",
+      "max_tokens",
+      "stream",
+      "stream_options",
+      "tools"
+    ],
+    "post_tool_message_keys": [
+      "role",
+      "content",
+      "tool_call_id"
+    ],
+    "metadata_http_calls": 0,
+    "rpc_ids": "strict increasing integers"
+  },
+  "checks": {
+    "native_ruff": "passed",
+    "native_strict_pyright": "0 errors",
+    "local_focused_tests": 30,
+    "native_opt_in_tests_initial_run": 3,
+    "native_initial_run_seconds": 57.23,
+    "native_test_path": "ember-agent/tests/test_hermes_windows_native.py"
+  },
+  "reproduce": {
+    "environment": "EMBER_HERMES_PROFILE=<explicit installed receipt path>",
+    "command": "<Ember Python 3.12> -B -m pytest -c pyproject.toml -q -s ember-agent/tests/test_hermes_windows_native.py"
+  },
+  "scope": "Synthetic OS canaries and SDK replies only. This report does not establish real delegated search-task acceptance or infer model performance. Profile5 is retained historical evidence pending the concise-prompt profile."
+}

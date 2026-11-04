@@ -15,6 +15,7 @@ const operationSchema = z.enum([
   "recall",
   "review",
   "tool",
+  "delegate",
 ]);
 const snapshot = handle.extend({
   result: z.string().nullable(),
@@ -52,10 +53,12 @@ const receiptSchema = z.object({
 export function Tasks({
   summaries,
   recall,
+  delegation,
   connected,
 }: {
   summaries: boolean;
   recall: boolean;
+  delegation: boolean;
   connected: boolean;
 }) {
   const retry = useRef<{ key: string; text: string; operation: string } | null>(
@@ -77,6 +80,7 @@ export function Tasks({
   const [recallResult, setRecallResult] = useState<Investigation>();
   const [receipt, setReceipt] = useState<z.infer<typeof receiptSchema>>();
   const taskId = current?.task_id;
+  const needsInference = operation === "summarize" || operation === "delegate";
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -234,12 +238,12 @@ export function Tasks({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!busy && text.trim() && !(connected && operation === "summarize"))
+          if (!busy && text.trim() && !(connected && needsInference))
             void submit();
         }}
       >
         <label>
-          Text to inspect
+          {operation === "delegate" ? "Research request" : "Text to inspect"}
           <textarea
             maxLength={8192}
             value={text}
@@ -257,16 +261,17 @@ export function Tasks({
             <option value="inspect">Count words and characters</option>
             {summaries && <option value="summarize">Summarize</option>}
             {recall && <option value="recall">Recall deeply</option>}
+            {delegation && (
+              <option value="delegate">Research with Hermes</option>
+            )}
             <option value="review">Review a draft</option>
           </select>
         </label>
-        {connected && operation === "summarize" && (
-          <p>Disconnect from conversation to run a summary.</p>
+        {connected && needsInference && (
+          <p>Disconnect from conversation to run this model task.</p>
         )}
         <button
-          disabled={
-            busy || !text.trim() || (connected && operation === "summarize")
-          }
+          disabled={busy || !text.trim() || (connected && needsInference)}
         >
           Queue task
         </button>

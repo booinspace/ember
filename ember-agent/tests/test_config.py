@@ -15,6 +15,23 @@ from ember_agent.runtime.health import ReadinessReport, readiness
 EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
 
 
+def test_hermes_profile_parses_without_launching_or_claiming_health(config_path: Path) -> None:
+    config_path.write_text(
+        config_path.read_text()
+        + "\n[hermes]\ncommand=["
+        + json.dumps(sys.executable)
+        + ',"-c","raise AssertionError()"]\n'
+        + 'revision="71736c9f32597bbca9d89cede5aa136e55946b2f"\n'
+        + 'profile_sha256="'
+        + "a" * 64
+        + '"\nsearch_endpoint="http://nas.example:8095"\n'
+    )
+    config = load_config(config_path)
+    assert config.hermes is not None and not config.hermes.private_recall
+    assert readiness(config).hermes == "configured_unprobed"
+    assert not config.runtime_root.exists() and not config.data_root.exists()
+
+
 def test_mcp_configuration_is_bounded_explicit_and_does_not_launch_servers(
     config_path: Path,
 ) -> None:

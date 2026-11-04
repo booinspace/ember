@@ -19,11 +19,34 @@ class GatewayError(RuntimeError):
         super().__init__("Inference gateway: " + code + ".")
 
 
+type PromptCallId = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
+
+
+class PromptToolCall(RuntimeModel):
+    """One complete historical call; its arguments and ID confer no execution authority."""
+
+    call_id: PromptCallId
+    name: Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")]
+    arguments: dict[str, JsonValue] = Field(repr=False)
+
+
 class PromptMessage(RuntimeModel):
     """One explicit request context item, without backend runner options."""
 
     role: Literal["system", "user", "assistant", "tool"]
     content: Annotated[str, Field(max_length=100000)] = Field(repr=False)
+    tool_calls: Annotated[tuple[PromptToolCall, ...], Field(max_length=16)] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
+    tool_call_id: PromptCallId | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def _tool_role(self) -> Self:
+        if self.tool_calls and self.role != "assistant":
+            raise ValueError("Only assistant messages contain historical tool calls.")
+        if self.tool_call_id is not None and self.role != "tool":
+            raise ValueError("Only tool results reference a historical call ID.")
+        return self
 
 
 class ToolFunction(RuntimeModel):
@@ -69,6 +92,30 @@ class GatewayRequest(RuntimeModel):
                 raise ValueError("Live thinking requires a version 0.4.0 plain P0 text request.")
         elif self.max_output_tokens > 1192:
             raise ValueError("Non-thinking requests retain the existing output limit.")
+        return self
+
+    @model_validator(mode="after")
+    def _tool_history(self) -> Self:
+        if any(message.tool_calls or message.tool_call_id is not None for message in self.messages):
+            seen: set[str] = set()
+            pending: set[str] = set()
+            for message in self.messages:
+                if message.role == "tool":
+                    if message.tool_call_id not in pending:
+                        raise ValueError("Tool results must match one pending historical call.")
+                    pending.remove(message.tool_call_id)
+                else:
+                    if pending:
+                        raise ValueError(
+                            "Historical calls require complete tool results before continuation."
+                        )
+                    for call in message.tool_calls:
+                        if call.call_id in seen:
+                            raise ValueError("Historical tool call IDs must be unique.")
+                        seen.add(call.call_id)
+                        pending.add(call.call_id)
+            if pending:
+                raise ValueError("Historical tool calls require complete results.")
         return self
 
 

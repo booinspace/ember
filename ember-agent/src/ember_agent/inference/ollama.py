@@ -65,9 +65,31 @@ class OllamaUpstream:
 
     async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
         """Use configured runner bounds; thinking is an explicit foreground display option."""
+        messages: list[JsonValue] = []
+        names: dict[str, str] = {}
+        for item in request.messages:
+            message: dict[str, JsonValue] = {"role": item.role, "content": item.content}
+            if item.tool_calls:
+                message["tool_calls"] = [
+                    {
+                        "id": call.call_id,
+                        "function": {
+                            "index": index,
+                            "name": call.name,
+                            "arguments": call.arguments,
+                        },
+                    }
+                    for index, call in enumerate(item.tool_calls)
+                ]
+                names.update({call.call_id: call.name for call in item.tool_calls})
+            if item.tool_call_id is not None:
+                message["tool_call_id"] = item.tool_call_id
+                if item.tool_call_id in names:
+                    message["tool_name"] = names[item.tool_call_id]
+            messages.append(message)
         body: dict[str, JsonValue] = {
             "model": self.config.model_tag,
-            "messages": [{"role": item.role, "content": item.content} for item in request.messages],
+            "messages": messages,
             "stream": True,
             "think": request.thinking,
             "keep_alive": "5m",

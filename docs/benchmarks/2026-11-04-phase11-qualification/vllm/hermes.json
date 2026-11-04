@@ -1,0 +1,68 @@
+{
+  "canonical_files_unchanged": true,
+  "citation_count": 1,
+  "context_tokens": 131072,
+  "followup_p0_context_id": "4d0bc462-bb90-4eca-bab3-7f8fe942c7e6",
+  "followup_p0_seconds": 0.4850000000005821,
+  "followup_p0_usage": {
+    "first_visible_seconds": 0.4219999999986612,
+    "load_seconds": 0.0,
+    "output_tokens": 3,
+    "prefill_seconds": 0.314819414,
+    "prompt_tokens": 18,
+    "tokens_per_second": 33.39086579508841,
+    "total_seconds": 0.4529999999940628
+  },
+  "model": "ember-vllm-qwen-iq3s",
+  "model_digest": "00f5c81940e6baa4fcde25c9a14610966c754da18a5f792cbf2aa18d99b2bfca",
+  "official_search_api_cited": true,
+  "outbox_delivered_and_acknowledged": true,
+  "p2_context_ids": [
+    "1bbac726-4e3b-4e7b-b081-d673c6899b63",
+    "1bbac726-4e3b-4e7b-b081-d673c6899b63"
+  ],
+  "p2_model_calls": 2,
+  "p2_request_ids": [
+    "d9a8c1d1-f000-4044-81fa-e1686432a568",
+    "caea6349-aee3-4b85-aea3-407471b1b864"
+  ],
+  "p2_usage": [
+    {
+      "first_visible_seconds": null,
+      "load_seconds": 0.0,
+      "output_tokens": 35,
+      "prefill_seconds": 2.143832278,
+      "prompt_tokens": 1413,
+      "queue_seconds": 0.01600000000325963,
+      "tokens_per_second": 36.14424635485401,
+      "total_seconds": 3.202999999994063
+    },
+    {
+      "first_visible_seconds": null,
+      "load_seconds": 0.0,
+      "output_tokens": 156,
+      "prefill_seconds": 2.550524015,
+      "prompt_tokens": 2002,
+      "queue_seconds": 0.01599999999598367,
+      "tokens_per_second": 35.12822222196565,
+      "total_seconds": 7.26600000000326
+    }
+  ],
+  "profile_sha256": "380bb9daab09cb406221bde1a34b2c0d85d8d3c5863ee100ec7848d027370d93",
+  "purged": true,
+  "revision": "71736c9f32597bbca9d89cede5aa136e55946b2f",
+  "search_calls": 1,
+  "source_report_sha256": "7b50047551825070cb85bd4ccf8fc836b525b47196d123148fb7d7c00a9c4716",
+  "source_sha256": {
+    "ember-agent/src/ember_agent/inference/openai_bridge.py": "00d446f76edac677d9d5190df8ed8bfcc1103250ba2c3c95ce4492da37e69923",
+    "ember-agent/src/ember_agent/runtime/hermes_tasks.py": "17d9579e9621c55a61f9dc14c498a11c6e0234167aa8924f463d894fcb61c7fe",
+    "ember-agent/src/ember_agent/runtime/worker_process.py": "ae8515943173a7e02dd38a24d31515d55d09ab9b18239c963c1d19a6109ebab7",
+    "scripts/hermes_setup.py": "6d13e66a2d715e0cfa46e9a2573d3dd574f9417a529b1ac8a0ff5633e22dfbe1",
+    "scripts/hermes_transport.py": "95dfb487c9f22744c964448915e6c8e18fbb536532ce0f7662e6766e2b8fe956",
+    "scripts/hermes_windows.py": "71223a6a2a4c44e103e3188eaa14a7daf16277225cabcb082023b0d201a7f548",
+    "scripts/hermes_worker.py": "da18ebd362cede791a2fd7df04242fa7dd7ab3e73027b21055b1cf92bd354258"
+  },
+  "structured_finish_verified": true,
+  "task_id_present": true,
+  "task_seconds": 25.610000000000582
+}

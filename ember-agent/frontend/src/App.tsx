@@ -407,6 +407,7 @@ export function App() {
         <Tasks
           summaries={state.summary_tasks_available}
           recall={state.recall_tasks_available}
+          delegation={state.delegation_available}
           connected={connected}
         />
       )}

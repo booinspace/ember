@@ -7,6 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from ember_agent.runtime import windows_job
 from ember_agent.runtime.config import ConfigurationError
 from ember_agent.runtime.windows_job import WindowsJob
 
@@ -41,3 +42,23 @@ def test_shutdown_cannot_claim_success_on_native_ownership_error(
     if failure == "membership":
         close.assert_any_call(456)
     library.WaitForSingleObject.assert_not_called()
+
+
+def test_named_job_collision_fails_before_assignment(monkeypatch: pytest.MonkeyPatch) -> None:
+    library = SimpleNamespace(
+        CreateJobObjectW=Mock(return_value=789),
+        SetInformationJobObject=Mock(),
+        AssignProcessToJobObject=Mock(),
+        CloseHandle=Mock(return_value=1),
+        LocalFree=Mock(),
+    )
+    monkeypatch.setattr(ctypes, "WinDLL", Mock(return_value=library), raising=False)
+    monkeypatch.setattr(ctypes, "set_last_error", lambda *_: None, raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 183, raising=False)
+    attributes = windows_job._Security(0, None, False)
+    monkeypatch.setattr(windows_job, "_private_job_security", lambda: (attributes, 456))
+    with pytest.raises(ConfigurationError, match="already exists"):
+        WindowsJob(123, name="Global\\EmberHermes." + "a" * 32)
+    library.CloseHandle.assert_called_once_with(789)
+    library.AssignProcessToJobObject.assert_not_called()
+    library.SetInformationJobObject.assert_not_called()

@@ -1,0 +1,42 @@
+{
+  "actual_native_hermes": true,
+  "benchmark_complete": 210,
+  "cancellation_drained_and_p0_recovered": 7,
+  "model_digest": "00f5c81940e6baa4fcde25c9a14610966c754da18a5f792cbf2aa18d99b2bfca",
+  "profile_sha256": "6dd32d911557805add32caca480fec5591056734389f921ad1a8cf6b754ae264",
+  "run_id_present": true,
+  "source_report_sha256": "304afd6004084c9dc47829b20190f727916daa8ab71a2302ff436a0e3efbde51",
+  "stages": [
+    {
+      "elapsed_seconds": 9.889999999999418,
+      "exit_code": 0,
+      "stage": "conformance"
+    },
+    {
+      "elapsed_seconds": 8.968000000000757,
+      "exit_code": 0,
+      "stage": "phase6"
+    },
+    {
+      "elapsed_seconds": 45.5309999999954,
+      "exit_code": 0,
+      "stage": "phase7"
+    },
+    {
+      "elapsed_seconds": 3.0,
+      "exit_code": 0,
+      "stage": "history"
+    },
+    {
+      "elapsed_seconds": 27.031999999999243,
+      "exit_code": 0,
+      "stage": "hermes"
+    },
+    {
+      "elapsed_seconds": 808.6720000000059,
+      "exit_code": 0,
+      "stage": "benchmark"
+    }
+  ],
+  "status": "complete"
+}

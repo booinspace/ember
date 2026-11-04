@@ -15,6 +15,7 @@ from ember_agent.inference.contracts import (
     GatewayError,
     GatewayRequest,
     PromptMessage,
+    PromptToolCall,
     ToolDefinition,
     ToolFunction,
 )
@@ -512,6 +513,39 @@ def test_usage_after_finish_is_consumed_before_gateway_completion(tmp_path: Path
         assert body["stop"] == ["<|im_start|>", "<|im_end|>"]
         assert "extra_body" not in body
         await gateway.aclose()
+
+    asyncio.run(run())
+
+
+def test_vllm_preserves_complete_assistant_calls_and_tool_result_ids(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = _configuration(tmp_path)
+        server = _Server(_complete())
+        upstream = VLLMUpstream(config, server.client())
+        request = _request(
+            config,
+            messages=(
+                PromptMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(
+                        PromptToolCall(
+                            call_id="call_synthetic", name="lookup", arguments={"query": "example"}
+                        ),
+                    ),
+                ),
+                PromptMessage(
+                    role="tool", content="Synthetic source", tool_call_id="call_synthetic"
+                ),
+            ),
+        )
+        assert [frame async for frame in upstream.generate(request)][-1].done
+        body = json.loads(next(item.content for item in server.requests if item.method == "POST"))
+        call = body["messages"][0]["tool_calls"][0]
+        assert call["id"] == "call_synthetic" and call["function"]["name"] == "lookup"
+        assert json.loads(call["function"]["arguments"]) == {"query": "example"}
+        assert body["messages"][1]["tool_call_id"] == "call_synthetic"
+        await upstream.aclose()
 
     asyncio.run(run())
 

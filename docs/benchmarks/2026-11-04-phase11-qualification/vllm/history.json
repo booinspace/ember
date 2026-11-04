@@ -1,0 +1,45 @@
+{
+  "broker_calls": 1,
+  "broker_scope_matches": true,
+  "distinct_followup_p0_context": true,
+  "gateway_ready_after": true,
+  "historical_id_pairing": true,
+  "model_digest": "00f5c81940e6baa4fcde25c9a14610966c754da18a5f792cbf2aa18d99b2bfca",
+  "p2_rounds": 2,
+  "passed": true,
+  "profile_sha256": "6dd32d911557805add32caca480fec5591056734389f921ad1a8cf6b754ae264",
+  "schema": "ember-phase11-vllm-tool-history-v1",
+  "source_report_sha256": "c9070aa01530dd56d565a3436480ea77b70b34ee7e4a37baa76f88a44c467bf7",
+  "unique_request_ids": 3,
+  "usage": [
+    {
+      "first_visible_seconds": null,
+      "load_seconds": 0.0,
+      "output_tokens": 28,
+      "prefill_seconds": 0.457740235,
+      "prompt_tokens": 298,
+      "queue_seconds": 0.01600000000325963,
+      "tokens_per_second": 36.81277698298314,
+      "total_seconds": 1.2810000000026776
+    },
+    {
+      "first_visible_seconds": 0.75,
+      "load_seconds": 0.0,
+      "output_tokens": 9,
+      "prefill_seconds": 0.468786162,
+      "prompt_tokens": 378,
+      "queue_seconds": 0.0,
+      "tokens_per_second": 37.792121704083215,
+      "total_seconds": 0.8129999999946449
+    },
+    {
+      "first_visible_seconds": 0.28100000000267755,
+      "load_seconds": 0.0,
+      "output_tokens": 4,
+      "prefill_seconds": 0.192837932,
+      "prompt_tokens": 18,
+      "tokens_per_second": 37.09280309005003,
+      "total_seconds": 0.3430000000007567
+    }
+  ]
+}

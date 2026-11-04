@@ -25,6 +25,7 @@ class ReadinessReport(RuntimeModel):
     model_pin: Literal["configured_unverified", "pending"]
     services: dict[ServiceName, ServiceHealth]
     odysseus: Literal["disabled"] = "disabled"
+    hermes: Literal["disabled", "configured_unprobed"] = "disabled"
     blockers: tuple[str, ...]
 
 
@@ -32,6 +33,7 @@ def readiness(config: DeploymentConfig) -> ReadinessReport:
     """Report validated configuration only, without network probes or runtime startup."""
     return ReadinessReport(
         inference_backend=config.inference.backend,
+        hermes="configured_unprobed" if config.hermes else "disabled",
         model_pin="configured_unverified" if config.model_pin_configured else "pending",
         voice=(
             "disabled"

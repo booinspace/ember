@@ -4,9 +4,29 @@ import ctypes
 from collections.abc import Callable
 from ctypes import wintypes
 from time import monotonic, sleep
-from typing import cast
+from typing import Protocol, cast
 
 from .config import ConfigurationError
+
+
+class _NativeFunction(Protocol):
+    argtypes: list[object]
+    restype: object
+
+    def __call__(self, *arguments: object) -> int | None: ...
+
+
+class _NativeLibrary(Protocol):
+    def __getattr__(self, name: str) -> _NativeFunction: ...
+
+
+def _library(name: str) -> _NativeLibrary:
+    factory = cast(Callable[..., _NativeLibrary], vars(ctypes)["WinDLL"])
+    return factory(name, use_last_error=True)
+
+
+def _last_error() -> int:
+    return cast(Callable[[], int], vars(ctypes)["get_last_error"])()
 
 
 class _BasicLimits(ctypes.Structure):
@@ -73,12 +93,70 @@ class _ThreadEntry(ctypes.Structure):
     ]
 
 
+class _Security(ctypes.Structure):
+    _fields_ = [
+        ("size", wintypes.DWORD),
+        ("descriptor", wintypes.LPVOID),
+        ("inherit", wintypes.BOOL),
+    ]
+
+
+def _private_job_security() -> tuple[_Security, int]:
+    """Grant a named job only to its actual user and SYSTEM, with no inherited handles."""
+    security = _library("advapi32")
+    kernel = _library("kernel32")
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    security.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    security.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    security.ConvertSidToStringSidW.argtypes = [wintypes.LPVOID, ctypes.POINTER(wintypes.LPWSTR)]
+    security.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPVOID),
+        wintypes.LPVOID,
+    ]
+    kernel.LocalFree.argtypes = [wintypes.LPVOID]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    token, size = wintypes.HANDLE(), wintypes.DWORD()
+    if not security.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)):
+        raise ConfigurationError("Cannot identify named job owner.")
+    text, descriptor = wintypes.LPWSTR(), wintypes.LPVOID()
+    try:
+        security.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+        buffer = ctypes.create_string_buffer(size.value)
+        if not security.GetTokenInformation(token, 1, buffer, size, ctypes.byref(size)):
+            raise ConfigurationError("Cannot identify named job owner.")
+        sid = ctypes.c_void_p.from_buffer(buffer)
+        if not security.ConvertSidToStringSidW(sid, ctypes.byref(text)):
+            raise ConfigurationError("Cannot identify named job owner.")
+        if not security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            f"D:P(A;;GA;;;SY)(A;;GA;;;{text.value})", 1, ctypes.byref(descriptor), None
+        ):
+            raise ConfigurationError("Cannot restrict named job ownership.")
+        assert descriptor.value is not None
+        return _Security(ctypes.sizeof(_Security), descriptor, False), descriptor.value
+    finally:
+        if text:
+            kernel.LocalFree(text)
+        kernel.CloseHandle(token)
+
+
 class WindowsJob:
     """Kill only assigned children on handle close, including when the launcher crashes."""
 
-    def __init__(self, process_handle: int) -> None:
+    def __init__(self, process_handle: int, *, name: str | None = None) -> None:
         # ctypes' Win32 exports are an untyped native ABI; pin signatures at this boundary.
-        library = ctypes.WinDLL("kernel32", use_last_error=True)
+        library = _library("kernel32")
         create = library.CreateJobObjectW
         create.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
         create.restype = wintypes.HANDLE
@@ -92,9 +170,23 @@ class WindowsJob:
         close.argtypes = [wintypes.HANDLE]
         close.restype = wintypes.BOOL
         self._close = cast(Callable[[int], int], close)
-        handle: object = create(None, None)
+        descriptor: int | None = None
+        attributes = None
+        if name is not None:
+            attributes, descriptor = _private_job_security()
+        cast(Callable[[int], object], vars(ctypes)["set_last_error"])(0)
+        try:
+            handle: object = create(ctypes.byref(attributes) if attributes else None, name)
+            existed = name is not None and _last_error() == 183
+        finally:
+            if descriptor is not None:
+                library.LocalFree.argtypes = [wintypes.LPVOID]
+                library.LocalFree(descriptor)
         if not isinstance(handle, int) or handle == 0:
             raise ConfigurationError("Cannot acquire Windows service ownership.")
+        if existed:
+            self._close(handle)
+            raise ConfigurationError("Named Windows job already exists.")
         self.handle: int | None = handle
         limits = _ExtendedLimits()
         limits.basic.limit_flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -103,6 +195,24 @@ class WindowsJob:
         ):
             self.close()
             raise ConfigurationError("Cannot assign owned child to the Windows job.")
+
+    @classmethod
+    def open_named(cls, name: str) -> "WindowsJob | None":
+        """Retain a recorded private job for recovery, without trusting a saved process ID."""
+        library = _library("kernel32")
+        library.OpenJobObjectW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+        library.OpenJobObjectW.restype = wintypes.HANDLE
+        library.CloseHandle.argtypes = [wintypes.HANDLE]
+        library.CloseHandle.restype = wintypes.BOOL
+        handle: object = library.OpenJobObjectW(0x0010000C, False, name)
+        if not isinstance(handle, int) or not handle:
+            if _last_error() == 2:
+                return None
+            raise ConfigurationError("Cannot retain recorded Windows job.")
+        owned = cls.__new__(cls)
+        owned._close = cast(Callable[[int], int], library.CloseHandle)
+        owned.handle = handle
+        return owned
 
     def close(self) -> None:
         """Close the retained job capability; no saved PID is used."""
@@ -114,7 +224,7 @@ class WindowsJob:
         """Drain the retained job's children before reporting an owned shutdown complete."""
         if self.handle is None:
             return
-        library = ctypes.WinDLL("kernel32", use_last_error=True)
+        library = _library("kernel32")
         terminate = library.TerminateJobObject
         terminate.argtypes = [wintypes.HANDLE, wintypes.UINT]
         terminate.restype = wintypes.BOOL
@@ -150,7 +260,7 @@ class WindowsJob:
             for identity in identities:
                 handle: object = open_process(0x101000, False, identity)
                 if not isinstance(handle, int) or not handle:
-                    if ctypes.get_last_error() != 87:  # ERROR_INVALID_PARAMETER: member exited.
+                    if _last_error() != 87:  # ERROR_INVALID_PARAMETER: member exited.
                         raise ConfigurationError("Cannot retain owned Windows child.")
                     continue
                 owned = wintypes.BOOL()
@@ -186,7 +296,7 @@ class WindowsJob:
 
     def resume_suspended(self, process_handle: int) -> None:
         """Resume a newly suspended owned child only after job assignment, before it can fork."""
-        library = ctypes.WinDLL("kernel32", use_last_error=True)
+        library = _library("kernel32")
         process_id = library.GetProcessId
         process_id.argtypes = [wintypes.HANDLE]
         process_id.restype = wintypes.DWORD
@@ -206,7 +316,7 @@ class WindowsJob:
         resume = library.ResumeThread
         resume.argtypes = [wintypes.HANDLE]
         resume.restype = wintypes.DWORD
-        identity: int = process_id(process_handle)
+        identity = process_id(process_handle)
         if self.handle is None or not identity:
             raise ConfigurationError("Cannot resume an unowned child.")
         threads: object = snapshot(4, 0)  # TH32CS_SNAPTHREAD

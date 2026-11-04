@@ -1,0 +1,69 @@
+{
+  "profile_sha256": "380bb9daab09cb406221bde1a34b2c0d85d8d3c5863ee100ec7848d027370d93",
+  "revision": "71736c9f32597bbca9d89cede5aa136e55946b2f",
+  "model": "qwen3.8-rvn:27b-iq3_s-mtp",
+  "model_digest": "5b869f160df08fa13860487d8c341d3db22a9b3aca48e67dced4b53370a3cfd2",
+  "context_tokens": 131072,
+  "p2_model_calls": 2,
+  "search_calls": 1,
+  "citation_count": 1,
+  "official_search_api_cited": true,
+  "structured_finish_verified": true,
+  "purged": true,
+  "outbox_delivered_and_acknowledged": true,
+  "canonical_files_unchanged": true,
+  "task_seconds": 21.922000000005937,
+  "p2_usage": [
+    {
+      "prompt_tokens": 1403,
+      "output_tokens": 35,
+      "total_seconds": 1.6569999999992433,
+      "first_visible_seconds": null,
+      "tokens_per_second": 92.83450260599712,
+      "load_seconds": 0.0015464,
+      "queue_seconds": 0.014999999999417923,
+      "prefill_seconds": 1.001782
+    },
+    {
+      "prompt_tokens": 1916,
+      "output_tokens": 183,
+      "total_seconds": 3.9690000000045984,
+      "first_visible_seconds": null,
+      "tokens_per_second": 79.10257053096413,
+      "load_seconds": 0.0021163,
+      "queue_seconds": 0.030999999995401595,
+      "prefill_seconds": 1.517187
+    }
+  ],
+  "followup_p0_seconds": 0.4379999999946449,
+  "followup_p0_usage": {
+    "prompt_tokens": 18,
+    "output_tokens": 3,
+    "total_seconds": 0.3899999999994179,
+    "first_visible_seconds": 0.2809999999954016,
+    "tokens_per_second": 28.79299754299754,
+    "load_seconds": 0.0021452,
+    "prefill_seconds": 0.163958
+  },
+  "source_sha256": {
+    "scripts/hermes_setup.py": "6d13e66a2d715e0cfa46e9a2573d3dd574f9417a529b1ac8a0ff5633e22dfbe1",
+    "scripts/hermes_transport.py": "95dfb487c9f22744c964448915e6c8e18fbb536532ce0f7662e6766e2b8fe956",
+    "scripts/hermes_windows.py": "71223a6a2a4c44e103e3188eaa14a7daf16277225cabcb082023b0d201a7f548",
+    "scripts/hermes_worker.py": "da18ebd362cede791a2fd7df04242fa7dd7ab3e73027b21055b1cf92bd354258",
+    "ember-agent/src/ember_agent/inference/openai_bridge.py": "9021700d7186c76bd1bf4e85649fc75c2a4ea6795951fc7f56cb4578fbbdd8ad",
+    "ember-agent/src/ember_agent/runtime/hermes_tasks.py": "17d9579e9621c55a61f9dc14c498a11c6e0234167aa8924f463d894fcb61c7fe",
+    "ember-agent/src/ember_agent/runtime/worker_process.py": "ae8515943173a7e02dd38a24d31515d55d09ab9b18239c963c1d19a6109ebab7"
+  },
+  "task_context_consistent": true,
+  "request_ids_unique": true,
+  "distinct_p0_context": true,
+  "source_report_sha256": "27f595c181a2ffc2984bf454c5132764abfb95c1b07418e9d5c51e0cf1013eef",
+  "source_scope": "Historical successful task before the final preservation of the initial server request UUID/deadline across host-schema projection; source hashes are not relabeled.",
+  "source_differences_from_final": {
+    "ember-agent/src/ember_agent/inference/openai_bridge.py": {
+      "measured": "9021700d7186c76bd1bf4e85649fc75c2a4ea6795951fc7f56cb4578fbbdd8ad",
+      "current": "00d446f76edac677d9d5190df8ed8bfcc1103250ba2c3c95ce4492da37e69923"
+    }
+  },
+  "sanitization": "Operational task/request/context identifiers removed; assertions and numeric measurements retained."
+}

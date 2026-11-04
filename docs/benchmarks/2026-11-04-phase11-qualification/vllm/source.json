@@ -1,0 +1,40 @@
+{
+  "benchmark_samples_per_case": 30,
+  "context_tokens": 131072,
+  "controls_sha256": {
+    "common.py": "90a447c24b20660e5ad9d08db7a9359a0268fbc7a4602934f9c6cbe98c797626",
+    "conformance.py": "9b8eca74dc64715803cef5c57532f0b67f2ee418bb213c311f61d761bf92b153",
+    "freeze.py": "46e26c0c5f0558b12dec7110cb399e8725ea84216a1b730467f0136cc4fb0363",
+    "gateway.py": "d8eb3a9823ad988c7e87f917d207a314bf55d1c8c7683f86b12b2299e989158e",
+    "history.py": "29c8009d1efa418c997f305dddecbc7a3f0aff5c26e8a673f647ff7af3a84e18",
+    "prepare.py": "ec27a377c973620d601ba20705be0c539412d1cb406b8769cb7c085034f94255",
+    "qualify.py": "2dc3e43f3b0d5b5286a6e51aa3955c9ea1fa3a02c1fcee52de39a7177b5ffba2",
+    "runner.py": "21fbf45fb6a2df1a6684e807ff79ee5e3eafa70bbcf208bd8000bbdc5fb14d79",
+    "sanitize.py": "f2a1b1c011f7c37111bb049761f586ef388d25d6dbc6fb685f503b1903d28bb3"
+  },
+  "run_id_present": true,
+  "schema": "ember-phase11-vllm-qualification-source-v1",
+  "source_sha256": {
+    "ember-agent/src/ember_agent/inference/benchmark.py": "5eb61737718e606e449884c673c2f27916197a150d072f814d7d0a81dfd2b7ec",
+    "ember-agent/src/ember_agent/inference/benchmark_voice.py": "8fcc72130e124c5a8892893a3562f3efeaea1f07ecf6fbc7d9965f1884731f60",
+    "ember-agent/src/ember_agent/inference/client.py": "92f3ef8e57bd23005c503ff107339b7752639910ea6d24d39cd6e97492d26f8c",
+    "ember-agent/src/ember_agent/inference/contracts.py": "5572aefbd8c4203e9ba25ad4c7f926d8cd67bfc2827742b832e220a19f0bfdd0",
+    "ember-agent/src/ember_agent/inference/gateway.py": "b6681be64af342c54625cd0bbd046b891802fd3fd8a8a52dc5b13c4592270a9b",
+    "ember-agent/src/ember_agent/inference/ollama.py": "5bfbabda0ec12dd76c539c502c82f86ddb0dfe778b697e748ff4f0153ea4a0f1",
+    "ember-agent/src/ember_agent/inference/openai_bridge.py": "00d446f76edac677d9d5190df8ed8bfcc1103250ba2c3c95ce4492da37e69923",
+    "ember-agent/src/ember_agent/inference/service.py": "61c02e59bf1eb121fa0eee44dc604cafa5b74e94256cf5e781057da92712d30e",
+    "ember-agent/src/ember_agent/inference/upstream.py": "bcfb19b3c0815f8af56e7d2ecbdb4abec0bef919afbb5bc3e3d5e994176734b9",
+    "ember-agent/src/ember_agent/inference/vllm.py": "65467c7655a06f9234ffb05ed650a2f546006bfec8c1abe370f2a4c73e5ae0a2",
+    "ember-agent/src/ember_agent/runtime/config.py": "3611dab7df3090abfa3ab447a6a067e49093ab776a5c1871e40147fb48bc143f",
+    "ember-agent/tests/test_phase_seven_real_model.py": "e0c053ed1f5eb792408276c1a130aec53a481ec691dd6ab7f40dfd4a1391e717",
+    "ember-agent/tests/test_phase_six_real_model.py": "ef3776c49898fe6a268b155f9f603be0536ef79460c687fa5b910a86b6f2c2cd",
+    "ember-agent/tests/test_real_hermes.py": "e769ce1b6139d57f76029bed16019b28fe023e7a7c1925d32041e9e5393f76cf",
+    "scripts/benchmark_gateway_suite.py": "0e8314189ef7ad574c3d491c9bd92fe04e4b9386c914b9bfc59e6847a891324b",
+    "scripts/inspect_vllm_pin.py": "d577d683830517be6810779572fc7acb355197a79c5a1a97763a4c122a2d7af0",
+    "scripts/prepare_vllm_profile.py": "1af89bb937289517a09bc032724f424c93844dff781d539ff2d65c9534d779fc",
+    "scripts/run_vllm.py": "5755fd3a881d50685e18c9e33c15ffb40f810583b967194c2c46eff88159e765",
+    "scripts/vllm_gateway_guard.py": "af9a38ad9e7b2a10eff0869f3786436a119b8f8788f82e5952997d6964581f7d",
+    "scripts/vllm_profile.py": "af912d962b08f738452b2dd48393c89fa956fc975ee07583425b3ebd72627e24"
+  },
+  "voice_samples": 30
+}
