@@ -1,0 +1,57 @@
+{
+  "date_utc": "2026-11-04",
+  "gateway_base_commit": "62a8e8d08cc1dc559d76816b13a0aa4a035b73c4",
+  "source_files_sha256": {
+    "scripts/benchmark_gateway_suite.py": "0e8314189ef7ad574c3d491c9bd92fe04e4b9386c914b9bfc59e6847a891324b",
+    "scripts/prepare_vllm_profile.py": "1af89bb937289517a09bc032724f424c93844dff781d539ff2d65c9534d779fc",
+    "scripts/run_vllm.py": "5755fd3a881d50685e18c9e33c15ffb40f810583b967194c2c46eff88159e765",
+    "scripts/vllm_profile.py": "af912d962b08f738452b2dd48393c89fa956fc975ee07583425b3ebd72627e24",
+    "scripts/vllm_gateway_guard.py": "af9a38ad9e7b2a10eff0869f3786436a119b8f8788f82e5952997d6964581f7d",
+    "ember-agent/src/ember_agent/inference/benchmark.py": "84e0746ad0eb8bad32c9442068be82c390aa7426c3654dfecd67e074151d55e6",
+    "ember-agent/src/ember_agent/inference/benchmark_voice.py": "8fcc72130e124c5a8892893a3562f3efeaea1f07ecf6fbc7d9965f1884731f60",
+    "ember-agent/src/ember_agent/inference/contracts.py": "9b370200ad4f232b29130f0fde8f92dc9fe03d3f12958d034b6906e90e20dff3",
+    "ember-agent/src/ember_agent/inference/gateway.py": "b6681be64af342c54625cd0bbd046b891802fd3fd8a8a52dc5b13c4592270a9b",
+    "ember-agent/src/ember_agent/inference/ollama.py": "e5939d29f22640ed988921b4756530d26d2b2a244510006cc5c677c6562023a8",
+    "ember-agent/src/ember_agent/inference/service.py": "61c02e59bf1eb121fa0eee44dc604cafa5b74e94256cf5e781057da92712d30e",
+    "ember-agent/src/ember_agent/inference/upstream.py": "bcfb19b3c0815f8af56e7d2ecbdb4abec0bef919afbb5bc3e3d5e994176734b9",
+    "ember-agent/src/ember_agent/inference/vllm.py": "71eb2cba5842cbae8ddb99f1652a83622d03769ac67f3c3a9120d11900da4dc3",
+    "ember-agent/src/ember_agent/runtime/config.py": "ae840b48a318668b975614299d0ac22ea9c71394b14caa50e252f3fe6d2263f7"
+  },
+  "configurations": {
+    "ollama": {
+      "active_profile": "ollama-benchmark",
+      "backend": "ollama",
+      "model": "qwen3.8-rvn:27b-iq3_s-mtp",
+      "digest": "5b869f160df08fa13860487d8c341d3db22a9b3aca48e67dced4b53370a3cfd2",
+      "context_tokens": 131072,
+      "max_input_tokens": 126976,
+      "output_reserve_tokens": 4096,
+      "speech_model": "tts-1",
+      "speech_voice": "Juniper",
+      "speech_speed": 1.1,
+      "vllm": null
+    },
+    "vllm": {
+      "active_profile": "vllm-qualification",
+      "backend": "vllm",
+      "model": "ember-vllm-qwen-iq3s",
+      "digest": "8156d83fecb448f5f2e643857d86836b790fc137c138fb3b6c8bd970da45e477",
+      "context_tokens": 131072,
+      "max_input_tokens": 126976,
+      "output_reserve_tokens": 4096,
+      "speech_model": "tts-1",
+      "speech_voice": "Juniper",
+      "speech_speed": 1.1,
+      "vllm": {
+        "endpoint": "http://127.0.0.1:8000",
+        "version": "0.31.0",
+        "artifact_sha256": "a4adabb80876639edf19db8f9f8197492fa5c26e82ee1fdb6f7dd2136d7c70c1",
+        "profile_sha256": "c6270e768189cc52266bbc2a306325f6526518e28dfc25d3b66f62d074fa4bda",
+        "api_key_environment": "EMBER_VLLM_TOKEN"
+      }
+    }
+  },
+  "benchmark_command": "python scripts/benchmark_gateway_suite.py --config <explicit isolated profile> --output-directory <new ignored directory> --samples 30 --voice-samples 30",
+  "source_scope": "Final working source hashes are recorded because the qualification precedes its containing commit.",
+  "source_report_sha256": "9e02deeef5307fd266d93c3c87e84a9bc83584524c8a94ac8a64eba8415a525d"
+}

@@ -21,6 +21,7 @@ class ReadinessReport(RuntimeModel):
     character: Literal["available_unprobed"] = "available_unprobed"
     voice: Literal["disabled", "configured_unprobed", "not_configured"]
     browser: Literal["disabled", "configured_unprobed"]
+    inference_backend: Literal["ollama", "vllm"] = "ollama"
     model_pin: Literal["configured_unverified", "pending"]
     services: dict[ServiceName, ServiceHealth]
     odysseus: Literal["disabled"] = "disabled"
@@ -30,6 +31,7 @@ class ReadinessReport(RuntimeModel):
 def readiness(config: DeploymentConfig) -> ReadinessReport:
     """Report validated configuration only, without network probes or runtime startup."""
     return ReadinessReport(
+        inference_backend=config.inference.backend,
         model_pin="configured_unverified" if config.model_pin_configured else "pending",
         voice=(
             "disabled"
@@ -40,7 +42,14 @@ def readiness(config: DeploymentConfig) -> ReadinessReport:
         ),
         browser="configured_unprobed" if config.browser.enabled else "disabled",
         services={
-            name: ServiceHealth(mode=service.mode) for name, service in config.services.items()
+            **{
+                name: ServiceHealth(mode=service.mode)
+                for name, service in config.services.items()
+                if name != "ollama" or config.inference.backend == "ollama"
+            },
+            **(
+                {"vllm": ServiceHealth(mode="attach")} if config.inference.backend == "vllm" else {}
+            ),
         },
         blockers=(
             "Configuration validation does not probe installed speech artifacts, "

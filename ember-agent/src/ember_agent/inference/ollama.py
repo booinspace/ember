@@ -1,66 +1,31 @@
-"""Sole generation upstream adapter; all callers go through the owned gateway."""
+"""Ollama generation adapter; callers remain behind the owned gateway."""
 
 from collections.abc import AsyncIterator
-from typing import Literal, Protocol
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from ..runtime.config import DeploymentConfig
 from .contracts import GatewayError, GatewayRequest
 from .frames import bounded_lines
-
-
-class BackendModel(BaseModel):
-    """Narrow external response immediately; stream-only thinking never becomes a prompt."""
-
-    model_config = ConfigDict(strict=True, extra="ignore", frozen=True)
-
-
-class NativeFunction(BackendModel):
-    name: str
-    arguments: dict[str, JsonValue] | str
-
-
-class NativeTool(BackendModel):
-    index: int = 0
-    function: NativeFunction
-
-
-class NativeMessage(BackendModel):
-    role: Literal["assistant"] = "assistant"
-    content: str = Field(default="", repr=False)
-    thinking: str = Field(default="", repr=False, exclude=True)
-    tool_calls: list[NativeTool] = Field(default_factory=list[NativeTool])
-
-
-class NativeFrame(BackendModel):
-    model: str | None = None
-    message: NativeMessage = Field(default_factory=NativeMessage)
-    done: bool = False
-    error: str | None = Field(default=None, repr=False)
-    prompt_eval_count: int = 0
-    prompt_eval_duration: int | None = None
-    eval_count: int = 0
-    eval_duration: int = 0
-    load_duration: int = 0
-    done_reason: str | None = None
-
-
-class Upstream(Protocol):
-    """Owned metadata/generation boundary, replaceable by deterministic acceptance fakes."""
-
-    async def verify(self, *, loaded: bool = False) -> None:
-        """Verify configured tag/digest, and the loaded identity after generation when requested."""
-        ...
-
-    def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
-        """Yield bounded native frames, keeping hidden reasoning outside contracts."""
-        ...
-
-    async def aclose(self) -> None:
-        """Close this adapter's owned network connections only."""
-        ...
+from .upstream import (
+    BackendModel as BackendModel,
+)
+from .upstream import (
+    NativeFrame as NativeFrame,
+)
+from .upstream import (
+    NativeFunction as NativeFunction,
+)
+from .upstream import (
+    NativeMessage as NativeMessage,
+)
+from .upstream import (
+    NativeTool as NativeTool,
+)
+from .upstream import (
+    Upstream as Upstream,
+)
 
 
 class OllamaUpstream:

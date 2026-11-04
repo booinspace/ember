@@ -1,0 +1,86 @@
+{
+  "evidence_kind": "transcription_of_previously_observed_native_CPU_tool_output",
+  "new_execution": false,
+  "description": "Recorded from the completed final CPU probe; this file does not represent a rerun.",
+  "environment": {
+    "host": "authorized desktop",
+    "service_environment": "EmberVLLM Ubuntu 24.04 WSL, pinned vLLM 0.31.0 environment",
+    "GPU_generation": false,
+    "CUDA_VISIBLE_DEVICES": ""
+  },
+  "inputs": {
+    "originals": "Actual ClaimBatch and DatedClaimBatch model_json_schema() exports",
+    "projected": "Actual adapter _grammar_schema output exported locally as schema bytes; no duplicated projection algorithm in the final native probe",
+    "original_request_schema_modified": false
+  },
+  "validators": {
+    "vllm_xgrammar_validator": "vllm.v1.structured_output.backend_xgrammar.validate_xgrammar_grammar(SamplingParams(structured_outputs=StructuredOutputsParams(json=schema)))",
+    "guidance": "llguidance.JsonCompiler().compile(json.dumps(schema))"
+  },
+  "results": [
+    {
+      "schema": "ClaimBatch",
+      "projection": "original",
+      "backend": "vllm_xgrammar_validator",
+      "outcome": "error",
+      "type": "VLLMValidationError",
+      "detail": "The provided JSON schema contains features not supported by xgrammar."
+    },
+    {
+      "schema": "ClaimBatch",
+      "projection": "original",
+      "backend": "guidance",
+      "outcome": "error",
+      "type": "ValueError",
+      "detail": "Unimplemented keys: [\"propertyNames\"]"
+    },
+    {
+      "schema": "ClaimBatch",
+      "projection": "projected",
+      "backend": "vllm_xgrammar_validator",
+      "outcome": "ok"
+    },
+    {
+      "schema": "ClaimBatch",
+      "projection": "projected",
+      "backend": "guidance",
+      "outcome": "ok"
+    },
+    {
+      "schema": "DatedClaimBatch",
+      "projection": "original",
+      "backend": "vllm_xgrammar_validator",
+      "outcome": "error",
+      "type": "VLLMValidationError",
+      "detail": "The provided JSON schema contains features not supported by xgrammar."
+    },
+    {
+      "schema": "DatedClaimBatch",
+      "projection": "original",
+      "backend": "guidance",
+      "outcome": "error",
+      "type": "ValueError",
+      "detail": "Unimplemented keys: [\"propertyNames\"]"
+    },
+    {
+      "schema": "DatedClaimBatch",
+      "projection": "projected",
+      "backend": "vllm_xgrammar_validator",
+      "outcome": "ok"
+    },
+    {
+      "schema": "DatedClaimBatch",
+      "projection": "projected",
+      "backend": "guidance",
+      "outcome": "ok"
+    }
+  ],
+  "warnings": [
+    "The projected xgrammar compilation reported that overlapping or non-provably-disjoint oneOf branches may fall back to anyOf semantics. The gateway retains final validation against the complete original JSON schema."
+  ],
+  "completed_exit_code": 0,
+  "remote_probe_assets": {
+    "script": ".local/vllm-schema-cpu-probe.py",
+    "schema_data": ".local/vllm-full-schemas.zlib"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "original_tests_unchanged_from_phase10": true,
+  "test_sources_sha256": {
+    "ember-agent/tests/test_phase_six_real_model.py": "ef3776c49898fe6a268b155f9f603be0536ef79460c687fa5b910a86b6f2c2cd",
+    "ember-agent/tests/test_phase_seven_real_model.py": "e0c053ed1f5eb792408276c1a130aec53a481ec691dd6ab7f40dfd4a1391e717"
+  },
+  "phase6": {
+    "result": "passed",
+    "elapsed_seconds": 9.13,
+    "source_log_sha256": "70f9d13d7fff75d97eb18d65769e6cdc9b1f0c22a829afc9838394f97ffbdf33",
+    "coverage": "Real synthetic structured extraction, review, seed, index rebuild, engine restart and CharacterCore/LiveKit-hook gateway recall."
+  },
+  "phase7": {
+    "result": "blocked_native_prefill_metric_unavailable",
+    "elapsed_seconds": 21.89,
+    "source_log_sha256": "eb92fc3942054961179cae4ddb27405daca0332de0c7d43c1a8c976ac45fbd83",
+    "failed_assertion": "usage.prefill_seconds is not None",
+    "test_line": 209,
+    "observed_value": null,
+    "reached_after": "P4 native extraction and acceptance, bounded profile prompt checks, and completed P0 response. The full paired suite did not complete.",
+    "resolution": "Native source audit proved its reported scheduled-to-first-token interval is exactly the native Prometheus prefill interval. A tested mapping and unchanged acceptance rerun are recorded in the final sibling report.",
+    "interpretation_superseded": true
+  }
+}

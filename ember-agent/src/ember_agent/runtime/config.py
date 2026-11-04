@@ -5,15 +5,23 @@ import re
 import tomllib
 from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    model_validator,
+)
 
 from .mcp_contracts import MCPServerSettings
 
 type ManagementMode = Literal["attach", "managed", "disabled"]
-type ServiceName = Literal["ollama", "livekit", "tts", "gateway"]
+type ServiceName = Literal["ollama", "vllm", "livekit", "tts", "gateway"]
 type SpeechSpeed = Annotated[float, Field(ge=0.75, le=1.5, allow_inf_nan=False)]
 type PositiveInteger = Annotated[int, Field(gt=0)]
 
@@ -33,6 +41,34 @@ class ServiceSettings(RuntimeModel):
 
     endpoint: str
     mode: ManagementMode
+
+
+class VLLMSettings(RuntimeModel):
+    """An explicitly installed external runner; setup and GPU ownership remain external."""
+
+    endpoint: str
+    version: Literal["0.31.0"] = "0.31.0"
+    artifact_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    profile_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    api_key_environment: Annotated[str, Field(pattern=r"^(?:[A-Za-z_][A-Za-z0-9_]{0,127})?$")] = ""
+
+    @model_validator(mode="after")
+    def _local_origin(self) -> Self:
+        _validate_endpoint(ServiceSettings(endpoint=self.endpoint, mode="attach"), "vllm")
+        return self
+
+
+class InferenceSettings(RuntimeModel):
+    """Select exactly one upstream behind the unchanged gateway and admission policy."""
+
+    backend: Literal["ollama", "vllm"] = "ollama"
+    vllm: VLLMSettings | None = None
+
+    @model_validator(mode="after")
+    def _selected_runner(self) -> Self:
+        if self.backend == "vllm" and self.vllm is None:
+            raise ValueError("vLLM requires an explicit installed runner profile.")
+        return self
 
 
 class LiveKitSettings(ServiceSettings):
@@ -152,10 +188,11 @@ class DeploymentConfig(RuntimeModel):
     audio: AudioSettings = Field(default_factory=AudioSettings)
     interpretation: InterpretationSettings = Field(default_factory=InterpretationSettings)
     mcp_servers: tuple[MCPServerSettings, ...] = ()
+    inference: InferenceSettings = InferenceSettings()
 
     @property
     def model_pin_configured(self) -> bool:
-        """Indicate configuration presence; actual Ollama identity remains unverified."""
+        """Indicate configuration presence; actual runner identity remains unverified."""
         return bool(self.model_tag and self.model_digest)
 
 
@@ -228,6 +265,7 @@ class _DeploymentSettings(RuntimeModel):
     browser: _BrowserSettings = _BrowserSettings()
     interpretation: InterpretationSettings = InterpretationSettings()
     prompts: _PromptSettings = _PromptSettings()
+    inference: InferenceSettings = InferenceSettings()
     mcp_servers: list[dict[str, JsonValue]] = Field(
         default_factory=list[dict[str, JsonValue]], max_length=8
     )
@@ -302,7 +340,7 @@ def _validate_model(settings: _ModelSettings, require_model_pin: bool) -> tuple[
             "Configure both model tag and expected_digest, or leave both pending."
         )
     if require_model_pin and not tag:
-        raise ConfigurationError("Actual Ollama model tag and digest are still required.")
+        raise ConfigurationError("Actual model tag and digest are still required.")
     if settings.max_input_tokens + settings.output_reserve_tokens > settings.context_tokens:
         raise ConfigurationError("Input budget plus output reserve exceeds context_tokens.")
     return tag, digest
@@ -358,14 +396,20 @@ def _validate_services(
         raise ConfigurationError("LiveKit signalling, TCP and UDP ports must differ.")
     if services.livekit.mode == "managed" and services.livekit.endpoint.startswith("wss:"):
         raise ConfigurationError("Managed local LiveKit uses ws; TLS requires an attached server.")
-    if services.ollama.mode != "attach":
+    if services.ollama.mode != "attach" and not (
+        settings.inference.backend == "vllm" and services.ollama.mode == "disabled"
+    ):
         raise ConfigurationError("Ollama must remain independently managed in this deployment.")
     if settings.gateway.preemption_enabled:
         raise ConfigurationError(
             "Preemption must remain disabled until measured phase 13 acceptance."
         )
-    if urlsplit(services.gateway.endpoint).port == urlsplit(services.ollama.endpoint).port:
-        raise ConfigurationError("Gateway and Ollama must have distinct endpoints.")
+    upstream_endpoint = services.ollama.endpoint
+    if settings.inference.backend == "vllm":
+        assert settings.inference.vllm is not None
+        upstream_endpoint = settings.inference.vllm.endpoint
+    if urlsplit(services.gateway.endpoint).port == urlsplit(upstream_endpoint).port:
+        raise ConfigurationError("Gateway and inference upstream must have distinct endpoints.")
     if settings.providers.odysseus.mode != "disabled":
         raise ConfigurationError("Odysseus is not implemented yet; keep its mode disabled.")
     return services
@@ -456,6 +500,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         raise ConfigurationError("MCP server configuration is invalid.") from error
     return DeploymentConfig(
         mcp_servers=mcp_servers,
+        inference=settings.inference,
         active_profile=settings.active_profile,
         system_prompt_file=(path.resolve().parent / settings.prompts.system_file).absolute(),
         data_root=data_root,

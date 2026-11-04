@@ -1,0 +1,10 @@
+{
+  "obsolete_candidate_removed": true,
+  "old_distro_removed": false,
+  "old_distro_name": "Ubuntu",
+  "qualified_distro_name": "EmberVLLM",
+  "obsolete_candidate_allocated_bytes": 9010081792,
+  "diagnostic_logs_retained_privately": true,
+  "shared_ollama_blob_deleted": false,
+  "host_vhd_shrink_claimed": false
+}

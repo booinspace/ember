@@ -1,0 +1,75 @@
+{
+  "attempt_logs": [
+    {
+      "log_source_sha256": "0094bcbc66c31f5080f6f944bee5311a814bcb93efac5339d587d4cdfa627ce8",
+      "log_bytes": 279,
+      "diagnostic_lines": [
+        "vllm: error: unrecognized arguments: --disable-log-requests"
+      ]
+    },
+    {
+      "log_source_sha256": "6dbeafbd6c8e70164ca7cb52ee2bff2cc229d0ec47f79c20a7f50ad9a15d259c",
+      "log_bytes": 60201,
+      "diagnostic_lines": [
+        "(EngineCore pid=<redacted>) INFO 11-04 04:59:43 [gpu_worker.py:692] Available KV cache memory: 8.84 GiB",
+        "(EngineCore pid=<redacted>) ERROR 11-04 05:00:27 [core.py:1433] subprocess.CalledProcessError: Command '['ninja', '-v', '-C', '<service-cache>/flashinfer/0.7.0.post1/86/cached_ops/sampling', '-f', '<service-cache>/flashinfer/0.7.0.post1/86/cached_ops/sampling/build.ninja']' returned non-zero exit status 1.",
+        "(EngineCore pid=<redacted>) ERROR 11-04 05:00:27 [core.py:1433] RuntimeError: Ninja build failed. Ninja output:",
+        "(EngineCore pid=<redacted>) ERROR 11-04 05:00:27 [core.py:1433] /usr/bin/ld: cannot find -lcudart: No such file or directory",
+        "(EngineCore pid=<redacted>) ERROR 11-04 05:00:27 [core.py:1433] /usr/bin/ld: cannot find -lcuda: No such file or directory",
+        "(EngineCore pid=<redacted>) ERROR 11-04 05:00:27 [core.py:1433] collect2: error: ld returned 1 exit status",
+        "subprocess.CalledProcessError: Command '['ninja', '-v', '-C', '<service-cache>/flashinfer/0.7.0.post1/86/cached_ops/sampling', '-f', '<service-cache>/flashinfer/0.7.0.post1/86/cached_ops/sampling/build.ninja']' returned non-zero exit status 1.",
+        "RuntimeError: Ninja build failed. Ninja output:",
+        "/usr/bin/ld: cannot find -lcudart: No such file or directory",
+        "/usr/bin/ld: cannot find -lcuda: No such file or directory",
+        "collect2: error: ld returned 1 exit status",
+        "RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+      ]
+    },
+    {
+      "log_source_sha256": "e7c9de59c569527857e051a750ee09cb27de49322e8eae08f5980608677e0cff",
+      "log_bytes": 24921,
+      "diagnostic_lines": [
+        "(EngineCore pid=<redacted>) INFO 11-04 04:44:39 [gpu_worker.py:692] Available KV cache memory: 7.89 GiB",
+        "(EngineCore pid=<redacted>) ERROR 11-04 04:44:39 [core.py:1433] ValueError: To serve at least one request with the model's max seq len (131072), (8.33 GiB KV cache is needed, which is larger than the available KV cache memory (7.85 GiB). Based on the available memory, the estimated maximum model length is 123088. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.",
+        "ValueError: To serve at least one request with the model's max seq len (131072), (8.33 GiB KV cache is needed, which is larger than the available KV cache memory (7.85 GiB). Based on the available memory, the estimated maximum model length is 123088. Try increasing `gpu_memory_utilization` (which also controls CPU memory on the CPU backend) or decreasing `max_model_len` when initializing the engine. See https://docs.vllm.ai/en/latest/configuration/conserving_memory/ for more details.",
+        "RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {}"
+      ]
+    },
+    {
+      "log_source_sha256": "d707b12526b509f8f0a0d8e75f2fcce5e8d31b5ec52860bbaf6aae668c3c0a72",
+      "log_bytes": 23459,
+      "diagnostic_lines": [
+        "(EngineCore pid=<redacted>) INFO 11-04 05:33:40 [gpu_worker.py:692] Available KV cache memory: 8.86 GiB",
+        "(EngineCore pid=<redacted>) INFO 11-04 05:33:42 [gpu_worker.py:955] Free memory on device (22.75/24.0 GiB) on startup. Desired GPU memory utilization is (0.9, 21.6 GiB). Actual usage is 12.12 GiB for consumed memory (weights + non-torch), 0.61 GiB for peak activation, and 0.16 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=9187568436` (8.56 GiB) to fit into requested memory, or `--kv-cache-memory=10427037696` (9.71 GiB) to fully utilize gpu memory. Current kv cache memory in use is 8.86 GiB."
+      ]
+    },
+    {
+      "log_source_sha256": "0086da5af3ae66c77a47dff80f4db829aeed0f551c2573ffd58e3dec9dd887ff",
+      "log_bytes": 21287,
+      "diagnostic_lines": [
+        "(EngineCore pid=<redacted>) INFO 11-04 05:40:01 [gpu_worker.py:692] Available KV cache memory: 8.86 GiB",
+        "(EngineCore pid=<redacted>) INFO 11-04 05:40:04 [gpu_worker.py:955] Free memory on device (22.75/24.0 GiB) on startup. Desired GPU memory utilization is (0.9, 21.6 GiB). Actual usage is 12.12 GiB for consumed memory (weights + non-torch), 0.61 GiB for peak activation, and 0.16 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=9187568436` (8.56 GiB) to fit into requested memory, or `--kv-cache-memory=10427037696` (9.71 GiB) to fully utilize gpu memory. Current kv cache memory in use is 8.86 GiB.",
+        "    raise ValueError(\"Installed software metadata is missing or duplicated.\")",
+        "ValueError: Installed software metadata is missing or duplicated."
+      ]
+    },
+    {
+      "log_source_sha256": "e4f7a36156d8f5538c2d0624b08270553e08f61f793caa40cd30e8406a3090f4",
+      "log_bytes": 93160,
+      "diagnostic_lines": [
+        "(EngineCore pid=<redacted>) INFO 11-04 05:12:20 [gpu_worker.py:692] Available KV cache memory: 8.86 GiB",
+        "(EngineCore pid=<redacted>) INFO 11-04 05:12:25 [gpu_worker.py:955] Free memory on device (22.75/24.0 GiB) on startup. Desired GPU memory utilization is (0.9, 21.6 GiB). Actual usage is 12.12 GiB for consumed memory (weights + non-torch), 0.61 GiB for peak activation, and 0.16 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=9187568436` (8.56 GiB) to fit into requested memory, or `--kv-cache-memory=10427037696` (9.71 GiB) to fully utilize gpu memory. Current kv cache memory in use is 8.86 GiB.",
+        "ERROR:    Exception in ASGI application",
+        "AttributeError: 'NoneType' object has no attribute 'splitlines'",
+        "ERROR:    Exception in ASGI application",
+        "AttributeError: 'NoneType' object has no attribute 'splitlines'",
+        "ERROR:    Exception in ASGI application",
+        "AttributeError: 'NoneType' object has no attribute 'splitlines'",
+        "ERROR:    Exception in ASGI application",
+        "AttributeError: 'NoneType' object has no attribute 'splitlines'",
+        "ERROR:    Exception in ASGI application",
+        "AttributeError: 'NoneType' object has no attribute 'splitlines'"
+      ]
+    }
+  ]
+}

@@ -45,6 +45,7 @@ class Sample(RuntimeModel):
     usage: GenerationUsage | None = None
     cancellation_to_release_seconds: float | None = None
     next_p0_first_visible_seconds: float | None = None
+    next_p0_outcome: str | None = None
     first_pcm_seconds: float | None = None
     interruption_to_sink_clear_seconds: float | None = None
 
@@ -143,11 +144,14 @@ async def measure(
             probe = request.model_copy(update={"request_id": uuid4(), "max_output_tokens": 16})
             next_turn = await measure(client, probe)
             return Sample(
-                outcome="consumer_detached_and_drained",
+                outcome="consumer_detached_and_drained"
+                if next_turn.outcome == "complete" and next_turn.first_visible_seconds is not None
+                else "benchmark_next_p0_failed",
                 elapsed_seconds=perf_counter() - started,
                 first_visible_seconds=first,
                 cancellation_to_release_seconds=released,
                 next_p0_first_visible_seconds=next_turn.first_visible_seconds,
+                next_p0_outcome=next_turn.outcome,
                 first_pcm_seconds=sink_first,
                 interruption_to_sink_clear_seconds=sink_clear,
             )
@@ -245,18 +249,36 @@ async def run(
         await client.aclose()
         raise GatewayError("benchmark_requires_exclusive_session")
     manifest = await asyncio.to_thread(hardware)
-    try:
-        async with httpx.AsyncClient(trust_env=False, timeout=3) as metadata:
-            response = await metadata.get(config.services.ollama.endpoint + "/api/version")
-            response.raise_for_status()
-            manifest["ollama_version_response"] = response.text[:256]
-    except httpx.HTTPError:
-        manifest["ollama_version_response"] = None
+    manifest["inference_backend"] = config.inference.backend
+    manifest["decode_metric_definition"] = (
+        "ollama_eval_count_over_eval_duration"
+        if config.inference.backend == "ollama"
+        else "vllm_completion_tokens_minus_one_over_generation_interval_or_unknown"
+    )
+    manifest["prefill_metric_definition"] = (
+        "ollama_prompt_eval_duration"
+        if config.inference.backend == "ollama"
+        else "vllm_native_prefill_scheduled_to_first_token_including_first_step"
+    )
+    if config.inference.backend == "ollama":
+        try:
+            async with httpx.AsyncClient(trust_env=False, timeout=3) as metadata:
+                response = await metadata.get(config.services.ollama.endpoint + "/api/version")
+                response.raise_for_status()
+                manifest["ollama_version_response"] = response.text[:256]
+        except httpx.HTTPError:
+            manifest["ollama_version_response"] = None
+    else:
+        assert config.inference.vllm is not None
+        manifest["configured_vllm_version"] = config.inference.vllm.version
+        manifest["artifact_sha256"] = config.inference.vllm.artifact_sha256
     sampler = asyncio.create_task(gpu(), name="benchmark-gpu-sampler")
     warmup: Sample | None = None
     background: HttpGatewayClient | None = None
     queued: asyncio.Task[None] | None = None
     queued_health: GatewayHealth | None = None
+    measurements_complete = False
+    cleanup_complete = False
     try:
         await client.session(reservation, connected=True)
         if queued_workload is not None:
@@ -317,31 +339,40 @@ async def run(
                 voice=config if voice else None,
             )
         )
+        measurements_complete = True
     finally:
         stopped.set()
         await sampler
         try:
-            if queued is not None:
-                queued.cancel()
-                await asyncio.gather(queued, return_exceptions=True)
-                # Observe server-side detach before releasing our reservation.
-                async with asyncio.timeout(5):
-                    while True:
-                        state = await client.health()
-                        if (state.queued_p2, state.queued_p3, state.queued_p4) == (
-                            health.queued_p2,
-                            health.queued_p3,
-                            health.queued_p4,
-                        ):
-                            break
-                        await asyncio.sleep(0.02)
-            if background is not None:
-                await background.aclose()
-            await client.session(reservation, connected=False)
+            try:
+                if queued is not None:
+                    queued.cancel()
+                    await asyncio.gather(queued, return_exceptions=True)
+                    # Observe server-side detach before releasing our reservation.
+                    async with asyncio.timeout(5):
+                        while True:
+                            state = await client.health()
+                            if (state.queued_p2, state.queued_p3, state.queued_p4) == (
+                                health.queued_p2,
+                                health.queued_p3,
+                                health.queued_p4,
+                            ):
+                                break
+                            await asyncio.sleep(0.02)
+            finally:
+                try:
+                    if background is not None:
+                        await background.aclose()
+                finally:
+                    await client.session(reservation, connected=False)
+            cleanup_complete = True
         finally:
             await client.aclose()
             report = {
                 "version": 1,
+                "measurements_complete": measurements_complete,
+                "cleanup_complete": cleanup_complete,
+                "reservation_id": str(reservation),
                 "environment": manifest,
                 "model": config.model_tag,
                 "digest": config.model_digest,

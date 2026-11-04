@@ -1,0 +1,1753 @@
+{
+  "version": 1,
+  "measurements_complete": true,
+  "cleanup_complete": true,
+  "owned_reservation_recorded": true,
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.15",
+    "gpu": "NVIDIA GeForce RTX 3090, 616.92, 24576 MiB",
+    "inference_backend": "vllm",
+    "decode_metric_definition": "vllm_completion_tokens_minus_one_over_generation_interval_or_unknown",
+    "configured_vllm_version": "0.31.0",
+    "artifact_sha256": "a4adabb80876639edf19db8f9f8197492fa5c26e82ee1fdb6f7dd2136d7c70c1"
+  },
+  "model": "ember-vllm-qwen-iq3s",
+  "digest": "8156d83fecb448f5f2e643857d86836b790fc137c138fb3b6c8bd970da45e477",
+  "context_tokens": 131072,
+  "output_tokens": 64,
+  "fixture_repetitions": 8,
+  "queued_workload": "P4",
+  "queued_health": {
+    "version": "0.2.0",
+    "status": "ready",
+    "model": "ember-vllm-qwen-iq3s",
+    "digest": "8156d83fecb448f5f2e643857d86836b790fc137c138fb3b6c8bd970da45e477",
+    "context_tokens": 131072,
+    "active_request_id": null,
+    "journal_status": "available",
+    "supported_workloads": [
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+      "P4"
+    ],
+    "queued_p1": 0,
+    "queued_p2": 0,
+    "queued_p3": 0,
+    "queued_p4": 1,
+    "realtime_session_count": 1,
+    "scheduling": "conservative",
+    "features": [
+      "live_thinking_v1"
+    ]
+  },
+  "health": {
+    "version": "0.2.0",
+    "status": "ready",
+    "model": "ember-vllm-qwen-iq3s",
+    "digest": "8156d83fecb448f5f2e643857d86836b790fc137c138fb3b6c8bd970da45e477",
+    "context_tokens": 131072,
+    "active_request_id": null,
+    "journal_status": "available",
+    "supported_workloads": [
+      "P0",
+      "P1",
+      "P2",
+      "P3",
+      "P4"
+    ],
+    "queued_p1": 0,
+    "queued_p2": 0,
+    "queued_p3": 0,
+    "queued_p4": 0,
+    "realtime_session_count": 0,
+    "scheduling": "conservative",
+    "features": [
+      "live_thinking_v1"
+    ]
+  },
+  "voice_measurement": null,
+  "physical_audio_stop_seconds": null,
+  "gpu_sampling_interval_seconds": 0.25,
+  "gpu_samples": [
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ],
+    [
+      {
+        "used_mib": 22539.0,
+        "free_mib": 1784.0
+      }
+    ]
+  ],
+  "warmup_excluded": {
+    "outcome": "complete",
+    "elapsed_seconds": 1.4949930000002496,
+    "first_visible_seconds": 0.39240280000376515,
+    "usage": {
+      "prompt_tokens": 84,
+      "output_tokens": 38,
+      "total_seconds": 1.4839999999967404,
+      "first_visible_seconds": 0.375,
+      "tokens_per_second": 35.04649630970633,
+      "load_seconds": 0.0
+    },
+    "cancellation_to_release_seconds": null,
+    "next_p0_first_visible_seconds": null,
+    "next_p0_outcome": null,
+    "first_pcm_seconds": null,
+    "interruption_to_sink_clear_seconds": null
+  },
+  "samples": [
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.8141440999970655,
+      "first_visible_seconds": 0.3850680999967153,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 49,
+        "total_seconds": 1.7810000000026776,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 35.616860033735485,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.617573600000469,
+      "first_visible_seconds": 0.38879760000418173,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 43,
+        "total_seconds": 1.5940000000045984,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 35.86256849995281,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6976646000039182,
+      "first_visible_seconds": 0.38750390000495827,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.6719999999986612,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 36.11958367736525,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6822333999953116,
+      "first_visible_seconds": 0.37223119999543997,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 47,
+        "total_seconds": 1.6710000000020955,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 36.57699285451285,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.7557693000053405,
+      "first_visible_seconds": 0.3776514000055613,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 49,
+        "total_seconds": 1.7190000000045984,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 36.665503061463056,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6114327000032063,
+      "first_visible_seconds": 0.37723010000627255,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 43,
+        "total_seconds": 1.5940000000045984,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 35.511872870417385,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5134266000022762,
+      "first_visible_seconds": 0.37997509999695467,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 41,
+        "total_seconds": 1.5,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 36.70118820207059,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.559132900001714,
+      "first_visible_seconds": 0.3725601000041934,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 43,
+        "total_seconds": 1.5469999999986612,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 36.92263810351757,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6546957999962615,
+      "first_visible_seconds": 0.37715559999924153,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.639999999999418,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 36.08182679981133,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5079799000013736,
+      "first_visible_seconds": 0.3719425000017509,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 41,
+        "total_seconds": 1.4839999999967404,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 35.90969537534078,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.644789400001173,
+      "first_visible_seconds": 0.3762429000053089,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.625,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 36.28823788002964,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5027774999980466,
+      "first_visible_seconds": 0.3767557000028319,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 41,
+        "total_seconds": 1.5,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 36.185685491723305,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6667574999955832,
+      "first_visible_seconds": 0.3733282999965013,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.6410000000032596,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 35.617202407476626,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5502534000042942,
+      "first_visible_seconds": 0.37763210000412073,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 42,
+        "total_seconds": 1.5469999999986612,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 35.62029390497445,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6568783999973675,
+      "first_visible_seconds": 0.3721499999955995,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.639999999999418,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 33.715176512876646,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5557732000015676,
+      "first_visible_seconds": 0.3695999999981723,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 43,
+        "total_seconds": 1.5310000000026776,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 36.11999169608103,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.2939337999996496,
+      "first_visible_seconds": 0.37065289999736706,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 34,
+        "total_seconds": 1.2810000000026776,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 36.11303664112284,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6590854999958538,
+      "first_visible_seconds": 0.38076639999781037,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.639999999999418,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 36.03116444942672,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6506818999987445,
+      "first_visible_seconds": 0.3766302000003634,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.6410000000032596,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 36.12556013547331,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5182003999943845,
+      "first_visible_seconds": 0.36987199999566656,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 42,
+        "total_seconds": 1.5,
+        "first_visible_seconds": 0.3600000000005821,
+        "tokens_per_second": 37.822683218645935,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6778965999983484,
+      "first_visible_seconds": 0.3748007999965921,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.6560000000026776,
+        "first_visible_seconds": 0.35900000000401633,
+        "tokens_per_second": 37.04941294356075,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5138885000051232,
+      "first_visible_seconds": 0.3799185000025318,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 41,
+        "total_seconds": 1.5,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 37.688024376024515,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6466622999942047,
+      "first_visible_seconds": 0.3744698999944376,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.6409999999959837,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 37.92680762279094,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5004521000009845,
+      "first_visible_seconds": 0.37384300000121584,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 41,
+        "total_seconds": 1.4839999999967404,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 37.87523381168856,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5846385000040755,
+      "first_visible_seconds": 0.37830850000318605,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 43,
+        "total_seconds": 1.5619999999980791,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 36.08312468399068,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.74382930000138,
+      "first_visible_seconds": 0.378947800003516,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 49,
+        "total_seconds": 1.7339999999967404,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 36.068417595104165,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.4190210000015213,
+      "first_visible_seconds": 0.3776222000014968,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 38,
+        "total_seconds": 1.389999999999418,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 36.145851904292016,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.5523125000036089,
+      "first_visible_seconds": 0.3701141000055941,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 43,
+        "total_seconds": 1.5309999999954016,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 36.266019135472604,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6421601999973063,
+      "first_visible_seconds": 0.37014210000052117,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.625,
+        "first_visible_seconds": 0.35899999999674037,
+        "tokens_per_second": 36.2063496609688,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "complete",
+      "elapsed_seconds": 1.6906438000005437,
+      "first_visible_seconds": 0.3797329000008176,
+      "usage": {
+        "prompt_tokens": 84,
+        "output_tokens": 46,
+        "total_seconds": 1.6719999999986612,
+        "first_visible_seconds": 0.375,
+        "tokens_per_second": 35.063700376528075,
+        "load_seconds": 0.0
+      },
+      "cancellation_to_release_seconds": null,
+      "next_p0_first_visible_seconds": null,
+      "next_p0_outcome": null,
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    },
+    {
+      "outcome": "consumer_detached_and_drained",
+      "elapsed_seconds": 2.496201400004793,
+      "first_visible_seconds": 0.3765706999984104,
+      "usage": null,
+      "cancellation_to_release_seconds": 1.3303098999967915,
+      "next_p0_first_visible_seconds": 0.3767435000045225,
+      "next_p0_outcome": "complete",
+      "first_pcm_seconds": null,
+      "interruption_to_sink_clear_seconds": null
+    }
+  ],
+  "warm_first_visible_seconds": {
+    "samples": 30,
+    "p50": 0.37669295000159764,
+    "p95": 0.38750390000495827,
+    "p99_exploratory": 0.38879760000418173
+  },
+  "warm_turn_seconds": {
+    "samples": 30,
+    "p50": 1.6298668999988877,
+    "p95": 1.7557693000053405,
+    "p99_exploratory": 1.8141440999970655
+  },
+  "decode_tokens_per_second": {
+    "samples": 30,
+    "p50": 36.12277591577717,
+    "p95": 37.87523381168856,
+    "p99_exploratory": 37.92680762279094
+  },
+  "source_report_sha256": "dd6ebadf8a6770a14838c03d9d239f31aefd407e2e5ccb8cf509ea3eb931a3d0",
+  "sanitization": "Operational session/reservation identifiers replaced with counts/presence; all samples, failures and timings retained."
+}

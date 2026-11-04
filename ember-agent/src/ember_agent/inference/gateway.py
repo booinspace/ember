@@ -22,7 +22,7 @@ from .contracts import (
     GenerationUsage,
     ToolCall,
 )
-from .ollama import NativeFrame, NativeTool, Upstream
+from .upstream import NativeFrame, NativeTool, Upstream
 from .visible import VisibleText
 
 
@@ -469,6 +469,10 @@ class P0Gateway:
                 if frame.eval_count > request.max_output_tokens:
                     self.uncertain = True
                     raise GatewayError("upstream_output_budget_mismatch")
+                if frame.done_reason == "length" and (
+                    request.output == "json" or request.tools or request.workload != "P0"
+                ):
+                    raise GatewayError("upstream_output_truncated")
                 if request.output == "json":
                     raw = "".join(json_text)
                     adapter: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -488,7 +492,9 @@ class P0Gateway:
                     output_tokens=frame.eval_count,
                     total_seconds=monotonic() - started,
                     first_visible_seconds=first,
-                    tokens_per_second=frame.eval_count / (frame.eval_duration / 1e9)
+                    tokens_per_second=frame.decode_tokens_per_second
+                    if frame.decode_tokens_per_second is not None
+                    else frame.eval_count / (frame.eval_duration / 1e9)
                     if frame.eval_duration > 0
                     else None,
                     load_seconds=frame.load_duration / 1e9,
@@ -592,7 +598,7 @@ class P0Gateway:
         )
 
     async def aclose(self) -> None:
-        """Stop admission, drain owned work, then close transport without stopping Ollama."""
+        """Drain owned work and close transport without stopping the external runner."""
         self.closed = True
         for queue in self.pending.values():
             for job in tuple(queue):

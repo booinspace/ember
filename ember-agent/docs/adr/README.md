@@ -55,3 +55,6 @@ records operator editing, bounded composition and per-turn snapshots alongside P
 
 [Agent ADR 0009 — Direct MCP](0009-direct-mcp.md) records the bounded native adapter,
 existing task/confirmation ownership and Phase 10 acceptance evidence.
+
+[Agent ADR 0010 — vLLM upstream](0010-vllm-upstream.md) records explicit backend
+selection, stable profile identity, transport semantics and qualification.

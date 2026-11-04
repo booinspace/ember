@@ -433,3 +433,28 @@ def test_incomplete_p2_never_publishes_partial_text(tmp_path: Path) -> None:
             await gateway.aclose()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("structured", [False, True])
+def test_length_terminated_json_is_not_a_success_even_when_syntax_is_complete(
+    tmp_path: Path, structured: bool
+) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        upstream = FakeUpstream(
+            (
+                NativeFrame(message=NativeMessage(content='{"ready":true}')),
+                NativeFrame(done=True, done_reason="length", prompt_eval_count=10, eval_count=2),
+            )
+        )
+        gateway = P0Gateway(config, upstream)
+        value = request(config, output="json" if structured else "text")
+        events = [event async for event in (await gateway.admit(value)).events()]
+        if structured:
+            assert events[-1].kind == "error" and events[-1].code == "upstream_output_truncated"
+            assert not any(event.kind in {"text", "tools", "end"} for event in events)
+        else:
+            assert events[-1].kind == "end"
+        await gateway.aclose()
+
+    asyncio.run(run())

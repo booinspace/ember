@@ -1,0 +1,27 @@
+{
+  "source_test_log_sha256": "8292e11d4ba0ecda79f5978f1432d496855b39649310a926e61d70b96d0c8aa0",
+  "tests_unchanged": true,
+  "native_error": "vLLM auto rejects propertyNames with schema-valued additionalProperties in XGrammar, then Guidance rejects propertyNames.",
+  "observed_failed_jobs": [
+    {
+      "status": "failed",
+      "total_windows": 1,
+      "completed_windows": 0,
+      "failed_windows": 1,
+      "candidates": 0,
+      "failure_codes": [
+        "gateway_generation_failed"
+      ]
+    },
+    {
+      "status": "failed",
+      "total_windows": 1,
+      "completed_windows": 0,
+      "failed_windows": 1,
+      "candidates": 0,
+      "failure_codes": [
+        "gateway_background_unavailable"
+      ]
+    }
+  ]
+}

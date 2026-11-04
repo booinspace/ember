@@ -4097,10 +4097,10 @@ The [RTX 3090 backend evaluation](docs/inference-backend-evaluation.md) records 
 scope, memory-job identity requirements and proposed benchmark methodology. No
 backend switch or concurrent generation is implemented by that review. Preserve
 bounded character context and Phase 9 task ownership. Future inference work must
-preserve a replaceable upstream boundary and backend-neutral metrics. vLLM is an
-intended future backend, but production adoption and concurrent scheduling are
-gated on Phase 13 proving cancellation and actual capacity release for its pinned
-model/runner/GPU profile. Do not enable vLLM before that acceptance. Measure queue/first-visible/decode timing, warm voice turns, dedicated/shared
+preserve a replaceable upstream boundary and backend-neutral metrics. The operator superseded the adoption gate on 2026-11-04: implement the optional
+vLLM adapter after Phase 10, qualify the exact artifact and benchmark it through
+the gateway. Serial admission and drain-on-cancellation remain supported for now.
+Concurrent scheduling and native preemption still require Phase 13 acceptance. Measure queue/first-visible/decode timing, warm voice turns, dedicated/shared
 VRAM and audible interruption separately from cancellation-to-capacity-release.
 
 - **P8A-AC-01:** Pin Hermes and document tested Windows/WSL launch, dashboard chat,
@@ -4902,9 +4902,10 @@ records native Windows checks and synthetic 3090 benchmark limits. The
 [runbook](docs/phase-9-runbook.md) includes a runnable backend-neutral gateway
 benchmark for first visible text, decode, warm turns, sampled VRAM and separate
 SDK speech interruption/cancellation-to-drain observations. Keep these contracts
-usable by the intended future vLLM adapter. Production vLLM, live abort/preemption
-and concurrent model scheduling remain gated on Phase 13 verified cancellation
-and capacity release. Phase 8A remains parked; MCP/harness/skills remain later phases.
+usable by the selected upstream adapter. The operator authorized vLLM after Phase
+10 without waiting for native cancellation. Live abort/preemption and concurrent
+model scheduling remain Phase 13 work. Phase 8A remains parked; the Phase 10
+status below records direct MCP; harness/skills retain their later ownership.
 
 ## Engineering language and code-quality standards
 
@@ -5136,3 +5137,24 @@ sandbox is claimed. Native conversation and memory remain independent.
 records independent review corrections, native platform gates and the complete
 gateway benchmark suite. [Root ADR 0019](docs/adr/0019-direct-mcp.md) and the
 [runbook](docs/phase-10-runbook.md) describe authority and configuration.
+
+
+## vLLM amendment after Phase 10
+
+The operator authorized implementation and qualification before Phase 13 while
+retaining one generation at a time and drain-on-cancellation. [Root ADR 0020](docs/adr/0020-vllm-upstream.md)
+and the [runbook/validation](docs/vllm-implementation.md) record the exact supported
+profile, independent review, native installation and matched benchmark evidence.
+Backend selection is explicit and defaults to Ollama. All generation still uses
+the existing gateway; no automatic fallback, concurrent runner scheduling,
+canonical memory migration or enlarged character-context allowance is introduced.
+New backend/profile identities fence existing extraction jobs. Subsequent work
+must preserve neutral frames, setup/processing identity, bounded contexts and
+per-request metric provenance. Phase 13 retains actual abort/release acceptance. Phase 11 must
+normalize and qualify complete tool-result transcripts, including backend-required
+call IDs, rather than assuming bare tool-role messages are a generic OpenAI
+conversation format. Provider auxiliary inference still uses this gateway.
+Native conformance, unchanged real Phase6/7 acceptance, both full gateway benchmark
+suites and same-profile restart verification passed. The measured current GGUF
+profile remains faster and lower in sampled VRAM on Ollama, which stays default;
+vLLM is an explicit available backend, with results and limits in the runbook.

@@ -1,0 +1,32 @@
+{
+  "original_tests_unchanged_from_phase10": true,
+  "test_sources_sha256": {
+    "ember-agent/tests/test_phase_six_real_model.py": "ef3776c49898fe6a268b155f9f603be0536ef79460c687fa5b910a86b6f2c2cd",
+    "ember-agent/tests/test_phase_seven_real_model.py": "e0c053ed1f5eb792408276c1a130aec53a481ec691dd6ab7f40dfd4a1391e717"
+  },
+  "phase6": {
+    "result": "passed",
+    "elapsed_seconds": 8.14,
+    "source_log_sha256": "11057395b3d2e597a63ecc8ab7c575f7f182d64cc12eb660a02e11812cbc6759",
+    "coverage": "Synthetic real structured extraction, review, seed, index/restart and gateway recall."
+  },
+  "phase7": {
+    "result": "passed",
+    "elapsed_seconds": 45.31,
+    "source_log_sha256": "9992386025673993bbb6dd83629c18d7f57c6e80bf7df056f35a185d824bbed4",
+    "coverage": "Native P4 extraction/acceptance, all four bounded profile pins and all six paired P0 replies with native prefill counters."
+  },
+  "timing_definition": {
+    "formula_seconds": "first_token_ts - scheduled_ts",
+    "source_reported_field": "time_to_first_token_ms",
+    "mapping": "reported milliseconds * 1,000,000 -> native frame nanoseconds -> gateway seconds",
+    "includes": "First-token generation step and intervening preemptions",
+    "excludes": "Initial scheduler queue and client HTTP transport",
+    "not_claimed": "Pure GPU time or equivalence to Ollama prompt_eval_duration",
+    "sources": [
+      "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/metrics/stats.py#L547",
+      "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/entrypoints/generate/base/serving.py#L78",
+      "https://github.com/vllm-project/vllm/blob/v0.31.0/vllm/v1/metrics/loggers.py#L1163"
+    ]
+  }
+}

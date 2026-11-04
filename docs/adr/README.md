@@ -146,3 +146,6 @@ gated on Phase 13 verified cancellation and capacity release.
 
 [Root ADR 0019 — Direct MCP](0019-direct-mcp.md) records Phase 10 implementation,
 scoped atomic tools, operator UI and [acceptance evidence](../phase-10-validation.md).
+
+[Root ADR 0020 — Selectable vLLM](0020-vllm-upstream.md) records the operator-superseded
+adoption gate, stable processing identity and [native qualification](../vllm-implementation.md).

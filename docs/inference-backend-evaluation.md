@@ -1,12 +1,12 @@
 # Inference backend evaluation for the RTX 3090
 
-Status: proposed evaluation, researched 2026-11-04. No backend, concurrency,
-model, context setting or memory policy was changed. vLLM is an intended future
-backend; production use is gated on Phase 13 cancellation/capacity-release
-acceptance. Phase 9 adds backend-neutral benchmark coverage and preserves the
-replaceable upstream boundary, without enabling vLLM or concurrent inference. No comparative performance
-results exist yet. This expands the runner work in Phase 8A; Phase 9 remains in
-progress and measured live preemption remains a Phase 13 gate.
+Status: historical investigation, researched 2026-11-04. The operator subsequently
+superseded the wait-until-Phase-13 adoption gate and authorized an optional vLLM
+adapter after Phase 10, retaining serial admission and drain-on-cancellation.
+[Implementation and qualification](vllm-implementation.md) records current code,
+installation and actual measurements. The analysis below remains evidence of the
+original deployment and tradeoffs; it does not establish comparative performance.
+Native preemption and concurrent scheduling remain later acceptance work.
 
 ## Recommendation
 

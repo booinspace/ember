@@ -22,6 +22,7 @@ from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import GatewayError, GatewayRequest
 from .gateway import P0Gateway
 from .ollama import OllamaUpstream
+from .upstream import Upstream
 
 
 class RequestState(RuntimeModel):
@@ -264,15 +265,24 @@ def create_app(
     return app
 
 
+def upstream_for(config: DeploymentConfig) -> Upstream:
+    """Select one explicit runner; unavailable profiles never fall back to another backend."""
+    if config.inference.backend == "vllm":
+        from .vllm import VLLMUpstream
+
+        return VLLMUpstream(config)
+    return OllamaUpstream(config)
+
+
 def serve(config: DeploymentConfig, *, acknowledge_quiescence: bool = False) -> None:
-    """Run the owned foreground gateway; shutdown drains native work and never stops Ollama."""
+    """Run the owned gateway; shutdown drains work without stopping its external runner."""
     if config.services.gateway.mode != "managed":
         raise GatewayError("gateway_not_managed")
     owner = ServiceOwner(config.runtime_root, acknowledge_quiescence=acknowledge_quiescence)
     try:
         gateway = P0Gateway(
             config,
-            OllamaUpstream(config),
+            upstream_for(config),
             record=owner.record,
             uncertain=owner.uncertain,
             sessions=owner.sessions,

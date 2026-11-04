@@ -1,0 +1,45 @@
+{
+  "attempt_logs": [
+    {
+      "log_source_sha256": "f74b09e090680c183984ba15e4651760d2afb86df70a0c32391d71bba818a5c1",
+      "log_bytes": 1059994,
+      "diagnostic_lines": [
+        "error: Failed to build `vllm-gguf-plugin @ file://<service>/plugin`",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:311:374: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:315:374: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:319:374: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:323:374: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:327:374: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:331:292: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:335:292: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:339:292: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:343:292: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:347:292: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1",
+        "         /tmp/tmpxft_000e1a63_00000000-6_gguf_kernel.cudafe1.stub.c:351:295: error: macro \"__cudaLaunch\" passed 2 arguments, but takes just 1"
+      ]
+    },
+    {
+      "log_source_sha256": "d6dcde9be40bb15aa4ac4e75c4473b6e4287df4f51430b0a74529297876b9298",
+      "log_bytes": 36988,
+      "diagnostic_lines": [
+        "error: Failed to build `vllm-gguf-plugin @ file://<service>/plugin`",
+        "         <service>/venv/lib/python3.12/site-packages/nvidia/cu13/include/cccl/cuda/std/__cccl/cuda_toolkit.h:41:8: error: #error \"CUDA compiler and CUDA toolkit headers are incompatible, please check your include paths\"",
+        "         subprocess.CalledProcessError: Command '['ninja', '-v', '-j', '2']' returned non-zero exit status 1.",
+        "         RuntimeError: Error compiling objects for extension"
+      ]
+    },
+    {
+      "log_source_sha256": "a28eacf7e6237262a6f17b21b2ce5ae6efdcada3a0cd2d96c69a08bd20473f1e",
+      "log_bytes": 30286,
+      "diagnostic_lines": [
+        "error: Failed to build `vllm-gguf-plugin @ file://<service>/plugin`",
+        "         /usr/include/x86_64-linux-gnu/bits/mathcalls.h(206): error: exception specification is incompatible with that of previous function \"rsqrt\" (declared at line 629 of <service>/venv/lib/python3.12/site-packages/nvidia/cu13/include/crt/math_functions.h)",
+        "            extern double rsqrt (double __x) noexcept (true); extern double __rsqrt (double __x) noexcept (true);",
+        "         /usr/include/x86_64-linux-gnu/bits/mathcalls.h(206): error: exception specification is incompatible with that of previous function \"rsqrtf\" (declared at line 653 of <service>/venv/lib/python3.12/site-packages/nvidia/cu13/include/crt/math_functions.h)",
+        "            extern float rsqrtf (float __x) noexcept (true); extern float __rsqrtf (float __x) noexcept (true);",
+        "         subprocess.CalledProcessError: Command '['ninja', '-v', '-j', '2']' returned non-zero exit status 2.",
+        "         RuntimeError: Error compiling objects for extension"
+      ]
+    }
+  ]
+}

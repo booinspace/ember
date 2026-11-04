@@ -248,3 +248,39 @@ def test_tts_pace_rejects_invalid_configured_defaults(config_path: Path, value: 
     )
     with pytest.raises(ConfigurationError):
         load_config(config_path)
+
+
+def test_explicit_vllm_profile_is_local_offline_and_keeps_ollama_default(
+    config_path: Path,
+) -> None:
+    original = config_path.read_text()
+    assert load_config(config_path).inference.backend == "ollama"
+    profile = (
+        '\n[inference]\nbackend="vllm"\n[inference.vllm]\n'
+        'endpoint="http://127.0.0.1:8000"\nversion="0.31.0"\n'
+        'artifact_sha256="'
+        + "a" * 64
+        + '"\nprofile_sha256="'
+        + "b" * 64
+        + '"\napi_key_environment="EMBER_VLLM_TOKEN"\n'
+    )
+    config_path.write_text(original + profile)
+    loaded = load_config(config_path)
+    assert loaded.inference.backend == "vllm"
+    assert loaded.inference.vllm is not None
+    assert loaded.inference.vllm.artifact_sha256 == "a" * 64
+    report = readiness(loaded)
+    assert report.inference_backend == "vllm" and "ollama" not in report.services
+    assert report.services["vllm"].health == "not_probed"
+    assert not loaded.runtime_root.exists()
+    for invalid in [
+        profile.replace("127.0.0.1:8000", "example.com:8000"),
+        profile.replace("127.0.0.1:8000", "user:secret@127.0.0.1:8000"),
+        profile.replace("127.0.0.1:8000", "127.0.0.1:11435"),
+        profile.replace('version="0.31.0"', 'version="0.33.0"'),
+        profile.replace("EMBER_VLLM_TOKEN", "literal token"),
+        '\n[inference]\nbackend="vllm"\n',
+    ]:
+        config_path.write_text(original + invalid)
+        with pytest.raises(ConfigurationError):
+            load_config(config_path)

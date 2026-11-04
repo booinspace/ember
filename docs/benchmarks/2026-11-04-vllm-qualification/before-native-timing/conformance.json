@@ -1,0 +1,264 @@
+{
+  "guard": {
+    "GET /version auth=False": 401,
+    "GET /server_info?config_format=json auth=False": 401,
+    "GET /ember/profile auth=False": 401,
+    "GET /version auth=True": 200,
+    "POST /collective_rpc auth=True": 404,
+    "POST /sleep?level=invalid auth=True": 404
+  },
+  "model_digest": "8156d83fecb448f5f2e643857d86836b790fc137c138fb3b6c8bd970da45e477",
+  "cases": [
+    {
+      "case": "plain",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "text",
+        "end"
+      ],
+      "visible_chars": 5,
+      "synthetic_output": "rain.",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 17,
+        "output_tokens": 3,
+        "total_seconds": 0.6719999999986612,
+        "first_visible_seconds": 0.6719999999986612,
+        "tokens_per_second": 37.28911003876831,
+        "load_seconds": 0.0
+      }
+    },
+    {
+      "case": "unicode-json",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "text",
+        "end"
+      ],
+      "visible_chars": 24,
+      "synthetic_output": "{\n  \"answer\": \"caf\u00e9 \u96e8\"\n}",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 22,
+        "output_tokens": 15,
+        "total_seconds": 1.0619999999980791,
+        "first_visible_seconds": 0.7960000000020955,
+        "tokens_per_second": 37.96568595156983,
+        "load_seconds": 0.0
+      }
+    },
+    {
+      "case": "thinking",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
+        "text",
+        "end"
+      ],
+      "visible_chars": 3,
+      "synthetic_output": "\n\n4",
+      "calls": [],
+      "reasoning_chars": 92,
+      "usage": {
+        "prompt_tokens": 65,
+        "output_tokens": 30,
+        "total_seconds": 1.139999999999418,
+        "first_visible_seconds": 1.139999999999418,
+        "tokens_per_second": 37.79981864652545,
+        "load_seconds": 0.0
+      }
+    },
+    {
+      "case": "tool",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "tools",
+        "end"
+      ],
+      "visible_chars": 0,
+      "synthetic_output": "",
+      "calls": [
+        {
+          "name": "record_weather",
+          "arguments": {
+            "weather": "rain"
+          }
+        }
+      ],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 289,
+        "output_tokens": 27,
+        "total_seconds": 1.25,
+        "first_visible_seconds": null,
+        "tokens_per_second": 38.18843752229591,
+        "load_seconds": 0.0
+      }
+    },
+    {
+      "case": "p1-json",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "visible_chars": 22,
+      "synthetic_output": "{\n  \"answer\": \"rain\"\n}",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 20,
+        "output_tokens": 12,
+        "total_seconds": 0.6089999999967404,
+        "first_visible_seconds": 0.4219999999986612,
+        "tokens_per_second": 38.20875919661779,
+        "load_seconds": 0.0,
+        "queue_seconds": 0.0
+      }
+    },
+    {
+      "case": "p2-schema",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "visible_chars": 22,
+      "synthetic_output": "{\n  \"answer\": \"rain\"\n}",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 23,
+        "output_tokens": 12,
+        "total_seconds": 0.5939999999973224,
+        "first_visible_seconds": 0.4219999999986612,
+        "tokens_per_second": 38.227360724147005,
+        "load_seconds": 0.0,
+        "queue_seconds": 0.0
+      }
+    },
+    {
+      "case": "p3-schema",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "visible_chars": 22,
+      "synthetic_output": "{\n  \"answer\": \"rain\"\n}",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 23,
+        "output_tokens": 12,
+        "total_seconds": 0.5939999999973224,
+        "first_visible_seconds": 0.40600000000267755,
+        "tokens_per_second": 38.17764084757305,
+        "load_seconds": 0.0
+      }
+    },
+    {
+      "case": "p4-schema",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "visible_chars": 22,
+      "synthetic_output": "{\n  \"answer\": \"rain\"\n}",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 23,
+        "output_tokens": 12,
+        "total_seconds": 0.5780000000013388,
+        "first_visible_seconds": 0.40600000000267755,
+        "tokens_per_second": 38.31486006699849,
+        "load_seconds": 0.0
+      }
+    },
+    {
+      "case": "full-claim",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "visible_chars": 18,
+      "synthetic_output": "{\n  \"claims\": []\n}",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 27,
+        "output_tokens": 10,
+        "total_seconds": 1.8430000000007567,
+        "first_visible_seconds": 1.7180000000007567,
+        "tokens_per_second": 37.6761274187687,
+        "load_seconds": 0.0
+      }
+    },
+    {
+      "case": "full-dated-claim",
+      "passed": true,
+      "event_kinds": [
+        "start",
+        "progress",
+        "text",
+        "end"
+      ],
+      "visible_chars": 18,
+      "synthetic_output": "{\n  \"claims\": []\n}",
+      "calls": [],
+      "reasoning_chars": 0,
+      "usage": {
+        "prompt_tokens": 27,
+        "output_tokens": 10,
+        "total_seconds": 0.6399999999994179,
+        "first_visible_seconds": 0.5149999999994179,
+        "tokens_per_second": 37.293510339594306,
+        "load_seconds": 0.0
+      }
+    }
+  ],
+  "source_report_sha256": "a96556b98fc7a7a640031f05eb862cfc6375bb5eda7ce103f540ebd32d79da1b"
+}
