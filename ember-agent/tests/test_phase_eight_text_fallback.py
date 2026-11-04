@@ -155,7 +155,7 @@ def test_authenticated_http_turn_requires_delivery_receipt_and_blocks_background
                         response.status_code == 200
                         and response.json()["text"] == "Synthetic visible reply"
                     )
-                    assert not core.history and core.pending_delivery is not None
+                    assert core.history[0].assistant == "" and core.pending_delivery is not None
                     assert len(CaptureService(engine, character).pending()) == 1
                     assert (await client.post("/api/text/turn", json=body)).status_code == 409
                     receipt = {"session_id": identity, "request_id": request_id}
@@ -240,7 +240,8 @@ def test_expired_browser_lease_cancels_and_drains_unheard_generation(tmp_path: P
             with pytest.raises(asyncio.CancelledError):
                 await task
             await text.aclose()
-            assert not core.busy and core.pending_delivery is None and not core.history
+            assert not core.busy and core.pending_delivery is None
+            assert core.history[0].user == "Synthetic question" and not core.history[0].assistant
             assert text.lease.done()
             with pytest.raises(GatewayError):
                 text.heartbeat(identity)

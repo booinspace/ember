@@ -34,7 +34,7 @@ def test_audio_delivery_keeps_only_acknowledged_prefix_and_replays_once(tmp_path
                 [event.text async for event in core.stream(prepared, defer_delivery=True)]
             )
             assert output == "Synthetic visible reply"
-            assert not core.history
+            assert len(core.history) == 1 and core.history[0].assistant == ""
             records = archive.database.read(
                 lambda c: c.execute(
                     "SELECT count(*) FROM source_records WHERE record_kind='message'"
@@ -47,13 +47,16 @@ def test_audio_delivery_keeps_only_acknowledged_prefix_and_replays_once(tmp_path
                 await core.acknowledge(prepared.request.request_id, "different", complete=True)
             delivered = output[:9]
             await core.acknowledge(prepared.request.request_id, delivered, complete=False)
-            assert not core.history and core.pending_delivery is None
-            await sink.commit_delivery(
+            assert core.history[0].assistant == delivered and not core.history[0].complete
+            assert core.pending_delivery is None
+            await sink.commit_context(
                 core.context_id,
                 prepared.request.request_id,
                 prepared.observed_at,
                 delivered,
                 False,
+                prepared.dependencies,
+                prepared.certificate,
             )
             assert len(CaptureService(engine, character).pending()) == 1
             messages = archive.database.read(

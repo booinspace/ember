@@ -90,7 +90,8 @@ def test_cancelled_deep_input_still_has_original_capture(tmp_path: Path) -> None
                 await agent.prepare_turn(message)
             assert agent.gateway_llm.prepared is None
             assert len(CaptureService(engine, character).pending()) == 1
-            assert not core.history and core.pending_delivery is None
+            assert len(core.history) == 1 and not core.history[0].assistant
+            assert core.pending_delivery is None
             await sink.aclose()
             await memory.aclose()
 

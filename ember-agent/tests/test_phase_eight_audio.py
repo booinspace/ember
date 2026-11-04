@@ -100,7 +100,7 @@ def test_sdk_receipt_archives_only_played_prefix_without_sdk_id_assumptions(tmp_
             turn = await core.prepare("Synthetic voice question.")
             host.agent.gateway_llm.active_turn = turn
             text = "".join([event.text async for event in core.stream(turn, defer_delivery=True)])
-            assert not core.history
+            assert all(not old.assistant for old in core.history)
             host._conversation_item(
                 ConversationItemAddedEvent(
                     item=llm.ChatMessage(
@@ -112,7 +112,8 @@ def test_sdk_receipt_archives_only_played_prefix_without_sdk_id_assumptions(tmp_
                 )
             )
             await host._drain_delivery()
-            assert not core.history and core.pending_delivery is None
+            assert core.history[0].assistant == text[:9] and not core.history[0].complete
+            assert core.pending_delivery is None
             assert host.agent.gateway_llm.active_turn is None
             await client.aclose()
 
@@ -157,7 +158,7 @@ def test_voice_turn_recovers_when_completed_speech_has_no_receipt(
             message = context.add_message(role="user", content="Synthetic next question.")
             await host.agent.on_user_turn_completed(context, message)
             assert core.pending_delivery is None
-            assert not core.history
+            assert all(not old.assistant for old in core.history)
             assert host.agent.gateway_llm.prepared is not None
             assert host.agent.gateway_llm.prepared[1].user == "Synthetic next question."
             await client.aclose()
@@ -231,7 +232,7 @@ def test_voice_turn_does_not_discard_without_a_speech_completion_fence(tmp_path:
                 await host._before_turn()
             assert core.pending_delivery is not None
             assert host.agent.gateway_llm.active_turn is first
-            assert not core.history
+            assert all(not old.assistant for old in core.history)
             await client.aclose()
 
         asyncio.run(exercise())
@@ -289,7 +290,7 @@ def test_forced_speech_completion_waits_for_linked_sdk_task(
             assert not pending.done() and core.pending_delivery is not None
             release.set()
             await pending
-            assert len(core.history) == 1 and core.history[0].assistant == output
+            assert len(core.history) == 2 and core.history[0].assistant == output
             assert core.pending_delivery is None
             await client.aclose()
 
@@ -344,7 +345,7 @@ def test_receipt_does_not_release_unfinished_sdk_speech_task(tmp_path: Path) -> 
             release.set()
             await pending
             assert host._turn_speech is None
-            assert len(core.history) == 1 and core.history[0].assistant == output
+            assert len(core.history) == 2 and core.history[0].assistant == output
             await client.aclose()
 
         asyncio.run(exercise())
@@ -428,7 +429,11 @@ def test_new_voice_turn_waits_for_playout_and_preserves_late_receipt(
             await pending
             assert core.pending_delivery is None
             assert sink.deliveries == [(heard, not interrupted)]
-            assert len(core.history) == (0 if interrupted else 1)
+            assert (
+                len(core.history) == 2
+            )  # Previous delivery plus independently observed next input.
+            assert core.history[0].assistant == heard
+            assert core.history[0].complete is not interrupted
             assert host.agent.gateway_llm.prepared is not None
             await client.aclose()
 

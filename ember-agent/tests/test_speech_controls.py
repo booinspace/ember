@@ -132,7 +132,7 @@ def test_read_ahead_stream_is_immediate_validated_and_closed_on_revocation(tmp_p
             stream = agent.transcription_node(chunks(), {})
             assert await anext(stream) == "Read this before playback finishes."
             writer.write.assert_awaited_once_with("Read this before playback finishes.")
-            assert not core.history and core.pending_delivery is None
+            assert not core.history[0].assistant and core.pending_delivery is None
             core.current = AsyncMock(return_value=False)
             with pytest.raises(GatewayError, match="context_invalidated"):
                 await anext(stream)

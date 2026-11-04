@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ember-memory-engine"
-version = "0.6.0"
+version = "0.7.0"
 description = "Experimental canonical SQLite memory engine and bounded async facade"
 requires-python = ">=3.12,<3.13"
 dependencies = ["ember-memory-abi==0.5.0", "pydantic>=2.10,<3", "tzdata>=2025.2,<2027"]

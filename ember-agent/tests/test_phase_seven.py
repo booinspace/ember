@@ -325,7 +325,7 @@ def test_profile_policy_change_stops_visible_delivery_not_metadata_progress(tmp_
                 async for event in core.stream(turn):
                     delivered.append(event.text)
             assert "".join(delivered) == "First"
-            assert not core.history
+            assert core.history[0].assistant == "First" and not core.history[0].complete
             await memory.aclose()
 
         asyncio.run(run())

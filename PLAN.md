@@ -5078,3 +5078,13 @@ text while Phase 9 continues. The [design and validation](docs/voice-controls-an
 retain synchronized played-prefix receipts, installed-only voice choices and the
 existing room/audio owner. This adds no memory/schema, task or inference-scheduler
 contract and does not reopen Phase 8 or advance a future phase.
+
+## Conversation continuity amendment (before Phase 9 completes)
+
+[Conversation continuity](docs/conversation-continuity-amendment.md) repairs same-session
+user/assistant history independently of Phase 9. Original user input survives failed or
+interrupted playback; only confirmed assistant text enters context. Native archive turn
+references support bounded first-message and literal topic lookup. A fixed 24,576-unit
+serialized prompt guard includes current input, memories and all dialogue, with smaller
+category caps; the 128K model window never enables whole-transcript prompting.
+Restart/resume controls and semantic transcript summaries remain separate work.

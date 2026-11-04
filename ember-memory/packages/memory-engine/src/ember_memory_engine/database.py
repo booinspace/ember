@@ -22,6 +22,7 @@ from .errors import CorruptStoreError, EngineBusyError, StorageError
 from .models import Clock
 from .ownership import StoreLock, validate_local_root
 from .schema import (
+    CONVERSATION_SQL,
     IMMUTABLE_TABLES,
     PHASE_EIGHT_SQL,
     PHASE_FIVE_SQL,
@@ -138,7 +139,7 @@ class SqliteDatabase:
         version_value: object = connection.execute("PRAGMA user_version").fetchone()[0]
         if not isinstance(version_value, int):
             raise CorruptStoreError()
-        if version_value not in {0, 1, 2, 3, 4, 5, SCHEMA_VERSION}:
+        if version_value not in {0, 1, 2, 3, 4, 5, 6, SCHEMA_VERSION}:
             raise UnsupportedVersionError()
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -160,6 +161,7 @@ class SqliteDatabase:
                         + PHASE_SIX_SQL
                         + PHASE_SEVEN_SQL
                         + PHASE_EIGHT_SQL
+                        + CONVERSATION_SQL
                     )
                 )
                 for table in (
@@ -192,7 +194,7 @@ class SqliteDatabase:
                 if connection.in_transaction:
                     connection.rollback()
                 raise
-        if version_value in {1, 2, 3, 4, 5}:
+        if version_value in {1, 2, 3, 4, 5, 6}:
             row = connection.execute(
                 "SELECT store_id,kind,namespace FROM store_metadata"
             ).fetchone()
@@ -222,6 +224,7 @@ class SqliteDatabase:
                             + (PHASE_SIX_SQL if version_value < 4 else "")
                             + PHASE_SEVEN_SQL
                             + PHASE_EIGHT_SQL
+                            + CONVERSATION_SQL
                         )
                         if kind != "registry"
                         else ""

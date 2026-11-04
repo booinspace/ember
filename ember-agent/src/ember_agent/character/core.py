@@ -33,6 +33,7 @@ from ..inference.contracts import (
 from ..memory.deep_contracts import DeepRecallResult
 from ..memory.deep_prompt import condense
 from ..runtime.config import RuntimeModel
+from .conversation import CompletedTurn, ConversationSink
 from .delivery import ObservedDialogueSink
 from .interpretation import CalendarInterpreter
 from .prompt_budget import (
@@ -63,14 +64,6 @@ class DialogueSink(Protocol):
     async def commit(self, context_id: UUID, user: str, delivered: str, complete: bool) -> None:
         """Persist one delivery observation through owned bounded work."""
         ...
-
-
-@dataclass(frozen=True)
-class CompletedTurn:
-    user: str
-    assistant: str
-    dependencies: tuple[tuple[UUID, int], ...]
-    certificate: ContextDependencies | None = None
 
 
 @dataclass(frozen=True)
@@ -146,8 +139,9 @@ class CharacterCore:
         self.memory = memory
         self.model = model
         self.model_tag = model_tag
-        self.input_ceiling = input_ceiling
-        self.memory_ceiling = min(6144, input_ceiling // 4)
+        self.input_ceiling = min(input_ceiling, 24576)
+        self.history_ceiling = min(8192, self.input_ceiling // 2)
+        self.memory_ceiling = min(6144, self.input_ceiling // 4)
         self.output_ceiling = min(8192, output_ceiling)
         self.thinking_available = thinking_available and self.output_ceiling >= 4096
         self.thinking_enabled = False
@@ -219,6 +213,12 @@ class CharacterCore:
             await self.sink.begin_input(
                 value.context_id, value.request_id, value.observed_at, value.text
             )
+        # The input is retained even if generation, speech or its receipt fails.
+        if not any(old.request_id == value.request_id for old in self.history):
+            self.history.append(
+                CompletedTurn(text, "", (), request_id=value.request_id, complete=False)
+            )
+            self.history = self.history[-64:]
         return value
 
     async def prepare(
@@ -378,8 +378,18 @@ class CharacterCore:
             )
             memories = []
             omissions.extend(deep_context.omissions if deep_context else ())
+        previous = (
+            await self.sink.recent(self.context_id, identity)
+            if isinstance(self.sink, ConversationSink)
+            else [old for old in self.history if old.request_id != identity]
+        )
+        excerpt = (
+            await self.sink.lookup(self.context_id, identity, text)
+            if isinstance(self.sink, ConversationSink)
+            else None
+        )
         live_history: list[CompletedTurn] = []
-        for old in self.history[-12:]:
+        for old in previous[-64:]:
             if not old.dependencies and (
                 old.certificate is None
                 or not (
@@ -397,9 +407,13 @@ class CharacterCore:
                     live_history.append(old)
                 else:
                     omissions.append("history_policy_changed")
-            elif base is None and await self.current(old.dependencies):
+                    live_history.append(
+                        replace(old, assistant="", dependencies=(), certificate=None)
+                    )
+            elif base is None and await self.current(old.dependencies, old.certificate):
                 live_history.append(old)
-        self.history = live_history
+            else:
+                live_history.append(replace(old, assistant="", dependencies=(), certificate=None))
         historical = resolved.scope is not None and resolved.scope.axis == "recorded"
         selected_values: list[Memory] = []
         seen_values: set[str] = set()
@@ -417,26 +431,15 @@ class CharacterCore:
             selected_values.append(memory)
             seen_values.add(key)
         memories = selected_values
-        history = self.history[-12:]
-        trimmed = len(self.history) - len(history)
+        history = live_history
+        trimmed = max(0, len(previous) - len(history))
         if (
             message_bytes(PromptMessage(role="system", content=self.personality.instructions))
             > 1024
         ):
             raise GatewayError("prompt_overflow")
         current_cost = message_bytes(PromptMessage(role="user", content=text))
-        if current_cost > 2304:
-            raise GatewayError("prompt_overflow")
-        while (
-            history
-            and current_cost
-            + sum(
-                message_bytes(PromptMessage(role="user", content=turn.user))
-                + message_bytes(PromptMessage(role="assistant", content=turn.assistant))
-                for turn in history
-            )
-            > 2304
-        ):
+        while history and sum(self._history_cost(turn) for turn in history) > self.history_ceiling:
             history = history[1:]
             trimmed += 1
             omissions.append("history_category_budget")
@@ -586,13 +589,10 @@ class CharacterCore:
                 messages.append(recalled_message(memories, historical=historical))
             if deep_context is not None:
                 messages.extend(deep_context.messages)
+            if excerpt is not None:
+                messages.append(PromptMessage(role="user", content=excerpt))
             for turn in history:
-                messages.extend(
-                    (
-                        PromptMessage(role="user", content=turn.user),
-                        PromptMessage(role="assistant", content=turn.assistant),
-                    )
-                )
+                messages.extend(self._history_messages(turn))
             messages.append(PromptMessage(role="user", content=text))
             return tuple(messages)
 
@@ -605,6 +605,10 @@ class CharacterCore:
         while prompt_cost(messages) > self.input_ceiling and memories:
             memories.pop()
             omissions.append("memory_prompt_budget")
+            messages = compose()
+        if prompt_cost(messages) > self.input_ceiling and excerpt is not None:
+            excerpt = None
+            omissions.append("session_excerpt_prompt_budget")
             messages = compose()
         while prompt_cost(messages) > self.input_ceiling and pins:
             pins.pop()
@@ -644,14 +648,15 @@ class CharacterCore:
         if not valid:
             # One stale member cannot trigger unbounded per-ID probes. Drop dependent
             # history together, then certify only the remaining prompt once.
-            history = []
+            history = [
+                replace(old, assistant="", dependencies=(), certificate=None) for old in history
+            ]
             references, certificate = dependencies()
             omissions.append("history_dependency_invalid")
             valid, certificate = await certify(references, certificate)
             if not valid:
                 raise GatewayError("context_invalidated")
             messages = compose()
-        self.history = history
         thinking = self.turn_view.thinking_for(identity)
         request = GatewayRequest(
             version="0.4.0" if thinking else "0.3.0",
@@ -681,13 +686,9 @@ class CharacterCore:
                 else deep_context.memory_bytes
                 if deep_context
                 else 0,
-                excerpts=deep_context.excerpt_bytes if deep_context else 0,
-                recent_and_current=current_cost
-                + sum(
-                    message_bytes(PromptMessage(role="user", content=old.user))
-                    + message_bytes(PromptMessage(role="assistant", content=old.assistant))
-                    for old in history
-                ),
+                excerpts=(deep_context.excerpt_bytes if deep_context else 0)
+                + (message_bytes(PromptMessage(role="user", content=excerpt)) if excerpt else 0),
+                recent_and_current=current_cost + sum(self._history_cost(old) for old in history),
                 framing=message_bytes(frame)
                 if (
                     frame := recall_frame(
@@ -711,6 +712,25 @@ class CharacterCore:
             )
         self.turn_view.prepared(identity, view_rows, references, certificate, historical=historical)
         return prepared
+
+    @staticmethod
+    def _history_messages(turn: CompletedTurn) -> tuple[PromptMessage, ...]:
+        user = turn.user.encode()[:4096].decode("utf-8", errors="ignore")
+        if turn.clipped or user != turn.user:
+            user += "\n[Passage clipped]"
+        messages = [PromptMessage(role="user", content=user)]
+        if turn.assistant:
+            reply = turn.assistant.encode()[:2048].decode("utf-8", errors="ignore")
+            if not turn.complete:
+                reply += "\n[Partial delivered reply]"
+            elif turn.clipped or reply != turn.assistant:
+                reply += "\n[Passage clipped]"
+            messages.append(PromptMessage(role="assistant", content=reply))
+        return tuple(messages)
+
+    @classmethod
+    def _history_cost(cls, turn: CompletedTurn) -> int:
+        return sum(message_bytes(message) for message in cls._history_messages(turn))
 
     def _clarification(
         self, text: str, identity: UUID, observed_at: str, reasons: tuple[str, ...]
@@ -743,11 +763,7 @@ class CharacterCore:
             PromptMessage(role="system", content=self.personality.instructions),
             PromptMessage(role="user", content=text),
         )
-        if (
-            message_bytes(messages[0]) > 1024
-            or message_bytes(messages[1]) > 2304
-            or prompt_cost(messages) > self.input_ceiling
-        ):
+        if message_bytes(messages[0]) > 1024 or prompt_cost(messages) > self.input_ceiling:
             raise GatewayError("prompt_overflow")
         return PreparedTurn(
             request=GatewayRequest(
@@ -866,13 +882,26 @@ class CharacterCore:
         self.pending_delivery = None
 
     async def _delivered(self, turn: PreparedTurn, text: str, complete: bool) -> None:
-        if isinstance(self.sink, ObservedDialogueSink):
+        if isinstance(self.sink, ConversationSink):
+            await self.sink.commit_context(
+                self.context_id,
+                turn.request.request_id,
+                turn.observed_at,
+                text,
+                complete,
+                turn.dependencies,
+                turn.certificate,
+            )
+        elif isinstance(self.sink, ObservedDialogueSink):
             await self.sink.commit_delivery(
                 self.context_id, turn.request.request_id, turn.observed_at, text, complete
             )
         elif self.sink is not None:
             await self.sink.commit(self.context_id, turn.user, text, complete)
-        if complete:
-            self.history.append(CompletedTurn(turn.user, text, turn.dependencies, turn.certificate))
-            self.history = self.history[-24:]
+        observed = CompletedTurn(
+            turn.user, text, turn.dependencies, turn.certificate, turn.request.request_id, complete
+        )
+        self.history = [old for old in self.history if old.request_id != turn.request.request_id]
+        self.history.append(observed)
+        self.history = self.history[-64:]
         self.turn_view.stage(turn.request.request_id, "complete" if complete else "interrupted")

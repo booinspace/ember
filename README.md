@@ -201,3 +201,8 @@ The browser supports immediate reply text ahead of speech and session controls f
 installed CPU Phonon voices and speaking speed. This independent amendment fits
 alongside Phase 9; the earlier sections retain historical phase records. See
 [voice controls and setup](docs/voice-controls-and-read-ahead.md).
+
+Conversation continuity uses a [bounded session transcript](docs/conversation-continuity-amendment.md):
+user input survives interrupted speech, recent dialogue stays within fixed prompt limits,
+and first-message/literal topic questions can retrieve earlier session passages. Restarting
+Ember begins a new session. The full conversation is never appended to every prompt.

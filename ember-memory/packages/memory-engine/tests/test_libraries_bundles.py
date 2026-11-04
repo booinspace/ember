@@ -1061,5 +1061,5 @@ def test_previous_phase_bundle_schema_restores_and_migrates(version: int, tmp_pa
             database.read(
                 lambda connection: connection.execute("PRAGMA user_version").fetchone()[0]
             )
-            == 6
+            == 7
         )

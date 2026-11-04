@@ -1,6 +1,6 @@
 """Canonical SQLite schema 0.4.0: immutable baseline plus backed-up additive migration."""
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 SCHEMA_SQL = """
 CREATE TABLE store_metadata (
     store_id TEXT PRIMARY KEY, kind TEXT NOT NULL, namespace TEXT NOT NULL,
@@ -360,4 +360,19 @@ CREATE TRIGGER IF NOT EXISTS temporal_enrichments_no_update BEFORE UPDATE ON tem
 BEGIN SELECT RAISE(ABORT,'immutable temporal proposal'); END;
 CREATE TRIGGER IF NOT EXISTS temporal_enrichments_no_delete BEFORE DELETE ON temporal_enrichments
 BEGIN SELECT RAISE(ABORT,'immutable temporal proposal'); END;
+"""
+
+
+# Native conversation ordering is transactional metadata; bodies remain immutable sources.
+CONVERSATION_SQL = """
+CREATE TABLE IF NOT EXISTS native_sessions (
+    conversation_id TEXT PRIMARY KEY, turn_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS native_turns (
+    conversation_id TEXT NOT NULL REFERENCES native_sessions(conversation_id),
+    request_id TEXT NOT NULL, sequence INTEGER NOT NULL CHECK(sequence > 0),
+    user_record_id TEXT NOT NULL, assistant_record_id TEXT, complete INTEGER NOT NULL DEFAULT 0,
+    reply_context TEXT, reply_context_sha256 TEXT,
+    PRIMARY KEY(conversation_id,request_id), UNIQUE(conversation_id,sequence)
+);
 """

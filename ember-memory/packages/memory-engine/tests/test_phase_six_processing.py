@@ -770,7 +770,7 @@ def test_schema_three_upgrade_is_backed_up_and_failed_ddl_rolls_back(
             engine.maintenance_store(library.store_id)[1].read(
                 lambda c: c.execute("PRAGMA user_version").fetchone()[0]
             )
-            == 6
+            == 7
         )
 
 

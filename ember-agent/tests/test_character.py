@@ -256,7 +256,12 @@ def test_forget_invalidates_prepared_turn_and_copied_history(tmp_path: Path) -> 
 
         async def run() -> None:
             model = FakeModel()
-            core = CharacterCore(memory, model, model_tag="synthetic")
+            core = CharacterCore(
+                memory,
+                model,
+                model_tag="synthetic",
+                sink=ArchiveDialogueSink(engine.archive(character.store_id)),
+            )
             first = await core.prepare("GPU")
             _ = [event async for event in core.stream(first)]
             assert len(core.history) == 1
@@ -272,7 +277,9 @@ def test_forget_invalidates_prepared_turn_and_copied_history(tmp_path: Path) -> 
             with pytest.raises(GatewayError, match="context_invalidated"):
                 _ = [event async for event in core.stream(prepared)]
             clean = await core.prepare("GPU")
-            assert not core.history and clean.retained_memories == 0
+            assert clean.retained_memories == 0
+            assert not any(m.role == "assistant" for m in clean.request.messages)
+            assert sum(m.content == "GPU" for m in clean.request.messages) == 3
             assert len(model.requests) == 1
             await memory.aclose()
 

@@ -33,6 +33,7 @@ from ember_memory_abi.evidence import Evidence, SourceRef
 from .database import SqliteDatabase, model_bytes, payload_hash, row_int, row_text
 from .errors import CorruptStoreError, IdempotencyConflictError
 from .models import SourceKey, SourceKeyAssignment
+from .sessions import NativeTurnWrite, write_native_turn
 
 
 class SourceResolver(Protocol):
@@ -166,12 +167,21 @@ class SqliteArchiveStore:
         )
 
     def submit_batch(
-        self, batch: NormalizedArchiveBatch, *, keys: tuple[SourceKeyAssignment, ...] = ()
+        self,
+        batch: NormalizedArchiveBatch,
+        *,
+        keys: tuple[SourceKeyAssignment, ...] = (),
+        native_turn: "NativeTurnWrite | None" = None,
     ) -> Future[ArchiveWriteReceipt]:
         """Submit a snapshot to existing bounded writers without blocking a realtime event loop."""
         snapshot = NormalizedArchiveBatch.model_validate_json(batch.model_dump_json())
+        native = (
+            NativeTurnWrite.model_validate_json(native_turn.model_dump_json())
+            if native_turn
+            else None
+        )
         return self.database.submit(
-            lambda connection: self._write(connection, snapshot, tuple(keys)), write=True
+            lambda connection: self._write(connection, snapshot, tuple(keys), native), write=True
         )
 
     def _write(
@@ -179,6 +189,7 @@ class SqliteArchiveStore:
         connection: sqlite3.Connection,
         batch: NormalizedArchiveBatch,
         keys: tuple[SourceKeyAssignment, ...],
+        native_turn: "NativeTurnWrite | None" = None,
     ) -> ArchiveWriteReceipt:
         if (
             batch.source_store_id != self.source_store_id
@@ -203,6 +214,7 @@ class SqliteArchiveStore:
             {
                 "batch": batch.model_dump(mode="json"),
                 "keys": [key.model_dump(mode="json") for key in keys],
+                **({"native_turn": native_turn.model_dump(mode="json")} if native_turn else {}),
             }
         )
         with self.database.transaction(connection):
@@ -297,6 +309,26 @@ class SqliteArchiveStore:
                 "INSERT INTO archive_receipts VALUES(?,?,?)",
                 (batch.idempotency_key, request_hash, model_bytes(receipt)),
             )
+            if native_turn is not None:
+                expected_role = "user" if native_turn.operation == "input" else "assistant"
+                matching = [
+                    record
+                    for record in batch.records
+                    if isinstance(record, Message)
+                    and record.source.record_id == native_turn.message_id
+                ]
+                if batch.idempotency_key != native_turn.operation + ":" + str(
+                    native_turn.request_id
+                ) or (
+                    native_turn.message_id is not None
+                    and (
+                        len(matching) != 1
+                        or matching[0].actor.role != expected_role
+                        or matching[0].conversation.record_id != native_turn.conversation_id
+                    )
+                ):
+                    raise UnsupportedWriteError()
+                write_native_turn(connection, native_turn)
             _, recorded = self.database.recorded_stamp(connection)
             connection.execute(
                 "INSERT INTO audit_events VALUES(?,?,?,?,?)",
