@@ -23,3 +23,8 @@ Text/voice/HTTP share snapshots; current dialogue and permission validation surv
 Phase 9 task prompts, extraction and interpretation retain their existing constrained
 instructions and scheduling. This amendment does not change their contracts or gates.
 See [Agent ADR 0008](../../ember-agent/docs/adr/0008-character-prompts.md).
+
+Installed Windows validation subsequently passed both saved synthetic styles through
+the authenticated editor API, the real gateway, LiveKit and CPU speech, preserving
+session/history and read-ahead. Primary HTTPS prompt controls are deployed. The owning
+runbook records timing-independent results, provider recovery and teardown limitations.

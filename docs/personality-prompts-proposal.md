@@ -243,3 +243,15 @@ the existing managed TTS voice-list endpoint returned HTTP 503. The primary proc
 was still using the old prompt implementation at that point. Live speech acceptance
 and primary migration therefore remain pending; the provider failure is not evidence
 that prompt editing caused a crash. Physical microphone acceptance remains manual.
+
+Subsequent deployment: the verified idle old runtime was restarted on committed main.
+HTTPS state and authenticated prompt controls returned 200; migrated default instructions
+used 599 / 4,096 guard units. The managed TTS voice-list endpoint recovered to 200.
+An isolated real-gateway/LiveKit test saved two distinct synthetic personality styles
+through the authenticated API. Both styles were reflected in delivered replies, the
+session/history survived the edit, and 862,080 PCM bytes arrived through LiveKit.
+Read-ahead text arrived before playout completed in both cases. The test process exited
+successfully but the SDK emitted FFI destructor assertions during teardown; clean SDK
+teardown is not claimed. Physical microphone validation remains manual. Restarting
+restored provider availability for these checks; the earlier speech stall's root cause
+remains unproven.
