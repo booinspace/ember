@@ -1,0 +1,138 @@
+{
+  "date": "2026-11-04",
+  "source_base": "ed21efa647eef392ff77d4dfa7e2c99496560cf1",
+  "sdk_revision": "71736c9f32597bbca9d89cede5aa136e55946b2f",
+  "layout": "Windows Ember and gateway; isolated Ubuntu WSL2 Hermes worker",
+  "bridge_assets_sha256": {
+    "hermes_setup.py": "5e6df2bd66681d7377707312c34e72f9ef98cd7d106bbd8ca87d9d9abd7a3bce",
+    "hermes_worker.py": "0ec6e0d6c4825d8c42373e76d8ab3dafde167402a5d3e3662b3bff7588091ea1",
+    "hermes_transport.py": "95dfb487c9f22744c964448915e6c8e18fbb536532ce0f7662e6766e2b8fe956",
+    "hermes_windows.py": "71223a6a2a4c44e103e3188eaa14a7daf16277225cabcb082023b0d201a7f548",
+    "hermes_skills.py": "fad48c4d29c3cd5410fccddbd9752519b36dc3bb0e99127a2db1d89b5a4af12d",
+    "hermes_web.py": "4653bff5f3d70d307427d72213f752bde24b93677f83dedaa6139c931732e903"
+  },
+  "sample_package_sha256": {
+    "text-brief": "cc5a1fd0cca89bbf16c970f30fdebb9699f5b402dd9173874f9efb7a81c19929",
+    "page-summary": "c42221afb7dfb6c1772d5b0a9ab1ab472ed315d07ced5c44b19f7e30a967ffb6"
+  },
+  "native_sdk_tests": {
+    "passed": 8,
+    "seconds": 36.63,
+    "gpu_model_calls": 0,
+    "synthetic_skill_completions": 3,
+    "progressive_procedure_and_resource_loaded": true,
+    "duplicate_load_reuses_existing_complete_content": true,
+    "gateway_schema_validation": true,
+    "shutdown_cases": [
+      "eof",
+      "cancel",
+      "controller_crash"
+    ],
+    "forbidden_operations_denied_per_case": 11,
+    "cleanup_seconds": [
+      0.079,
+      0.078,
+      0.047
+    ]
+  },
+  "checks": {
+    "macos": {
+      "passed": 1214,
+      "skipped": 29,
+      "seconds": 118.5,
+      "ruff": "passed",
+      "pyright": "passed"
+    },
+    "frontend": {
+      "unit_passed": 31,
+      "browser_passed": 20,
+      "browser_skipped": 3,
+      "typescript_build": "passed"
+    },
+    "windows": {
+      "passed": 1212,
+      "skipped": 31,
+      "seconds": 309.4,
+      "ruff": "passed",
+      "pyright": "passed"
+    }
+  },
+  "live_gateway": {
+    "catalog_packages": 188,
+    "enabled": [
+      "shared/page-summary",
+      "shared/text-brief"
+    ],
+    "unavailable_packages": 136,
+    "lazy_document_seconds": 2.36,
+    "stale_selection_rejected": true,
+    "export_verified": true,
+    "profile_sha256": "d5b43e09e69d1ee34b081e6bb845c12415e7194f29ed8afc4d67bdba61c20983",
+    "config_sha256": "446babdbca1ad09eaf63c6cbf44c1a16685b5105012c6d8d9c51602f4ee4f3e9",
+    "model": "qwen3.8-rvn:27b-iq3_s-mtp",
+    "model_digest": "5b869f160df08fa13860487d8c341d3db22a9b3aca48e67dced4b53370a3cfd2",
+    "cases": [
+      {
+        "case": "text-brief",
+        "state": "succeeded",
+        "elapsed_seconds": 57.094,
+        "tool_receipts": [
+          "ember_skill_view",
+          "ember_skill_view"
+        ],
+        "purged": true,
+        "input_units": 8480,
+        "input_budget_units": 16384,
+        "exact_model_input_verified": true,
+        "source_citation": false
+      },
+      {
+        "case": "page-summary",
+        "state": "succeeded",
+        "elapsed_seconds": 57.094,
+        "tool_receipts": [
+          "ember_skill_view",
+          "read_page"
+        ],
+        "purged": true,
+        "input_units": 10470,
+        "input_budget_units": 16384,
+        "exact_model_input_verified": true,
+        "source_citation": true
+      }
+    ]
+  },
+  "limits": {
+    "core_input_guard": 24576,
+    "task_input_guard": 16384,
+    "max_enabled_skills": 8,
+    "max_procedure_or_resource_bytes": 8192,
+    "public_page_excerpt_bytes": 1536,
+    "page_result_bytes": 2560,
+    "page_receipt_bytes": 3072,
+    "full_inference_benchmark_rerun": false,
+    "physical_microphone_tested": false,
+    "desktop_qualified": false,
+    "openclaw_runtime_qualified": false,
+    "physical_gpu_abort_claimed": false
+  },
+  "live_browser": {
+    "https_dashboard": true,
+    "browser": "installed Edge",
+    "harness_visible": true,
+    "voice_transport_connected": true,
+    "conversation_selected_skill_executed": true,
+    "skills_catalog_ui": true,
+    "raw_procedure_ui": true,
+    "skill_use_prefill": true,
+    "public_page_event": true,
+    "public_page_in_exact_p0_input": true,
+    "context_input_units": 9569,
+    "input_budget_units": 24576,
+    "visible_text_while_speech_active": true,
+    "stop_speaking_exercised": true,
+    "ui_page_errors": 0,
+    "physical_microphone_tested": false,
+    "screenshot_private_not_committed": true
+  }
+}

@@ -1216,3 +1216,64 @@ details.controls > summary {
     scroll-behavior: auto !important;
   }
 }
+
+.skills-panel {
+  min-width: 0;
+}
+.skill-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.skill-list {
+  display: grid;
+  gap: 6px;
+  max-height: 340px;
+  overflow-y: auto;
+  margin: 12px 0;
+}
+.skill-row {
+  text-align: left;
+  display: grid;
+  gap: 3px;
+  padding: 11px;
+  width: 100%;
+}
+.skill-row strong {
+  color: var(--accent);
+}
+.skill-row span {
+  font-weight: 400;
+  color: #b3bdcd;
+}
+.skill-document {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.skill-document code {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.skill-document details {
+  margin-top: 12px;
+}
+.skill-document pre {
+  max-height: 420px;
+  overflow: auto;
+}
+.file-button {
+  display: inline-block;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  border-radius: 7px;
+}
+.file-button input {
+  display: block;
+  font-size: 11px;
+  max-width: 220px;
+  margin-top: 5px;
+}

@@ -189,6 +189,7 @@ class LocalRuntime:
         core.load_prompts = self.load_prompt_snapshot
         core.activity = self.dashboard.activity
         core.public_search_available = True
+        core.public_page = self.core.public_page
         return core
 
     async def read_prompts(self) -> PromptDocuments:

@@ -5307,7 +5307,7 @@ clears revoked inspections. It shows exactly visible gateway messages/schemas an
 options, not hidden reasoning. P3/P4 and deferred Desktop requests are not captured
 by this dashboard; their scheduled workload remains visible in gateway metadata.
 
-#### Phase 12 direction (planned, not implemented)
+#### Phase 12 direction (design amendment; implementation recorded below)
 
 Keep Phase 12 because reviewed reusable procedures reduce repeated tool planning
 and make delegated work reproducible. Implement it primarily inside the selected
@@ -5340,3 +5340,18 @@ character, not archive excerpts. Separate opt-in delegates short, append-only no
 writes to the canonical `OpenCode` library, with ordinary seed and recall policy.
 No new owner, schema change, or Phase 12/13 advancement. See the
 [runbook](docs/opencode-memory.md) for deployment.
+
+### Phase 12 implementation — 4 November 2026
+
+The operator authorized Phase 12 and a unified skills/tools catalog shared across
+Ember and its selected harness. [Implementation scope and acceptance](docs/phase-12-implementation.md)
+retain P12-AC-01–06. One portable operational package repository and provider-neutral
+skill contract support future OpenClaw adapters; only Hermes is implemented now.
+Skill loading remains harness-owned, metadata-first, grant-checked and bounded.
+Include operator browsing/enablement and the requested brokered URL-summary path;
+no independent skill executor, automatic installer, memory authority or Phase 13
+scheduling change. Status: implemented and qualified on the selected Windows/WSL
+Hermes profile. [Runbook](docs/phase-12-runbook.md), [acceptance record](docs/phase-12-validation.md)
+and [sanitized qualification/latency evidence](docs/benchmarks/2026-11-04-phase12/README.md)
+record the tests, failures corrected and current limits. Desktop, OpenClaw runtime
+and Phase 13 scheduling/capacity release remain separate work.

@@ -266,3 +266,5 @@ pause routine metadata polling. Existing Stop/read-ahead controls retain their b
 Hermes Desktop's current native backend startup verification failure is deferred.
 Keep its launcher/profile/chat data for a later client-specific qualification; enabling
 this task provider and public search does not require `[hermes_client]`.
+
+The subsequent [Phase 12 shared-skills amendment](phase-12-runbook.md) supersedes the earlier skills-disabled worker profile. Desktop remains separate and deferred.

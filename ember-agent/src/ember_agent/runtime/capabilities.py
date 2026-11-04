@@ -72,7 +72,9 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             else "unavailable"
             if router and router.delegate_unavailable
             else "unconfigured",
-            operations=("delegate",),
+            operations=("delegate", "skills.list", "skills.view")
+            if router and router.skills
+            else ("delegate",),
             reason=(
                 "Configured; each task verifies the sealed worker profile."
                 if router.delegate

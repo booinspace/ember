@@ -271,3 +271,5 @@ model trials remain identified in the evidence rather than counted as passes. Th
 broader Phase 8A gates, physical microphone/device testing, Desktop/purge work and
 Phase 13 scheduling/native abort remain open. Phase 12 is replanned toward harness
 skill ownership; its original acceptance outcomes remain planned, not complete.
+
+The subsequent [Phase 12 shared-skills amendment](phase-12-runbook.md) supersedes the earlier skills-disabled worker profile. Desktop remains separate and deferred.

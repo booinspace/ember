@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { Skills } from "./Skills";
 import {
   useDashboard,
   SystemStatus,
@@ -491,6 +492,9 @@ export function App() {
           <a href="#capabilities">
             <span aria-hidden="true">◇</span> Capabilities
           </a>
+          <a href="#skills">
+            <span aria-hidden="true">▧</span> Skills
+          </a>
           <a href="#memory-controls">
             <span aria-hidden="true">▤</span> Memory & settings
           </a>
@@ -769,6 +773,13 @@ export function App() {
             nonce={inspectionNonce}
           />
           <Capabilities enabled={state !== null} />
+          <Skills
+            enabled={state !== null}
+            useSkill={(name) => {
+              setInput("Use " + name + " to ");
+              document.getElementById("prompt")?.focus();
+            }}
+          />
           {state?.tasks_available && <Tools />}
           {state?.tasks_available && (
             <Tasks

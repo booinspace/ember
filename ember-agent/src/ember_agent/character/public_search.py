@@ -21,3 +21,20 @@ def public_search_query(text: str) -> str | None:
     if not query or len(query) > 400:
         raise GatewayError("public_search_query_bound")
     return query
+
+
+_PAGE_REQUEST = re.compile(
+    r"^\s*(?:(?:please|can you|could you|would you|will you)\s+)*"
+    r"(?:summari[sz]e|read|explain|give me (?:a )?summary of)\b",
+    re.IGNORECASE,
+)
+
+
+def public_page_url(text: str) -> str | None:
+    """Fetch only one literal URL in an explicit read request, never recalled/model-derived text."""
+    if not _PAGE_REQUEST.match(text):
+        return None
+    urls = re.findall(r"https?://[^\s<>]+", text)
+    if len(urls) != 1:
+        return None
+    return urls[0].rstrip(".,!?;)")

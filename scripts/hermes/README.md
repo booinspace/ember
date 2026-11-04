@@ -38,3 +38,5 @@ new `ember_tool` callback routes only explicit native/MCP grants through Ember's
 broker and existing approvals. The selected PC task worker uses Ubuntu WSL2/bubblewrap; Ember and its gateway
 stay Windows-native. A bridge update requires a new seal and platform
 qualification; startup never installs or auto-reseals it.
+
+Phase 12 adds `hermes_skills.py` (native parsing/loading, portable package data and explicit enablement) and `hermes_web.py` (bounded public-page extraction). These and `hermes_setup.py`, `hermes_worker.py`, `hermes_transport.py`, `hermes_windows.py` are the six sealed worker assets. The shared root is selected explicitly at setup; the SDK stays outside the project. See the [skills runbook](../../docs/phase-12-runbook.md). Desktop is not required for catalog or tool delegation.

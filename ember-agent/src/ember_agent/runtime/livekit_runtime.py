@@ -155,11 +155,33 @@ async def _start_tasks(
     )
     settings = runtime.config.selected_harness
     if settings is not None:
-        from .harness import create_task_provider
+        from .harness import create_skill_provider, create_task_provider
         from .hermes_tasks import PersonalContext
         from .searx_tools import SearXNGTools
 
         router.delegate_label = settings.provider.title()
+        try:
+            router.skills = create_skill_provider(runtime.config)
+            if router.skills is not None:
+                router.skills.activity = runtime.dashboard.activity
+                await router.skills.refresh()
+                if "web.read_page" in settings.tools:
+                    from .public_page import PublicPageProvider
+
+                    pages = PublicPageProvider(router.skills)
+                    router.broker.web = ToolRouter(
+                        pages, binding.character_id, activity=runtime.dashboard.activity
+                    )
+
+                    async def read_public_page(url: str) -> str:
+                        try:
+                            return await pages.read(url)
+                        except (TaskConflict, TimeoutError) as error:
+                            raise GatewayError("public_page_unavailable") from error
+
+                    runtime.core.public_page = read_public_page
+        except (TaskConflict, TimeoutError):
+            router.skills = None
         search = SearXNGTools(settings.search_endpoint)
         cleanup.push_async_callback(search.aclose)
 
@@ -202,6 +224,7 @@ async def _start_tasks(
                     recall=recall_context,
                     validate=validate_task_dependencies,
                     observe=observe,
+                    skills=router.skills,
                 )
                 router.providers["delegate"] = router.delegate
             except TaskConflict as error:
@@ -244,6 +267,25 @@ async def _start_tasks(
             "Quote the user's goal exactly. Model steps wait while voice is connected.",
             delegate_task,
         )
+        if router.skills is not None:
+
+            def update_skills() -> None:
+                assert router.skills is not None
+                names = "; ".join(
+                    item.id + " (" + item.name + "): " + item.description[:160]
+                    for item in router.skills.enabled
+                )
+                runtime.core.task_tools["delegate_task"] = (
+                    "Delegate the user's exact explicit goal. Enabled skills: "
+                    + (names or "none")
+                    + ". Name the selected skill in the goal. Skills grant no tools. "
+                    "Background model steps wait until voice disconnects.",
+                    delegate_task,
+                )
+
+            router.skills.changed = update_skills
+            update_skills()
+
     runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)
     return router

@@ -23,6 +23,8 @@ from ..memory.deep_contracts import DeepRecallRequest
 from ..memory.deep_recall import DeepRecallService
 from ..observability import ActivityLog, ActivityStatus, notify
 from .config import RuntimeModel
+from .skills import Skills
+from .skills_contracts import SkillDependency
 from .task_artifacts import TaskArtifact, TaskArtifacts
 from .task_store import (
     Confirmation,
@@ -319,6 +321,7 @@ class TaskResult(RuntimeModel):
     citations: tuple[SourceRef, ...] = Field(default=(), max_length=24)
     dependencies: ContextDependencies | None = None
     tool_dependencies: tuple[ToolDependency, ...] = Field(default=(), max_length=8)
+    skill_dependencies: tuple[SkillDependency, ...] = Field(default=(), max_length=8)
 
 
 class AgenticTaskProvider(Protocol):
@@ -710,6 +713,7 @@ class HarnessToolBroker:
     ) -> None:
         self.native = ToolRouter(TextInspectionProvider(), character, activity=activity)
         self.mcp = mcp
+        self.web: ToolRouter | None = None
 
     def catalog(self, grants: tuple[str, ...]) -> tuple[BrokerTool, ...]:
         values: list[BrokerTool] = []
@@ -722,6 +726,20 @@ class HarnessToolBroker:
                         id=identity,
                         description="Count words and characters in supplied text.",
                         input_schema=cast(dict[str, JsonValue], InspectText.model_json_schema()),
+                        effect="read",
+                    )
+                )
+            elif identity == "web.read_page" and self.web is not None:
+                values.append(
+                    BrokerTool(
+                        id=identity,
+                        description="Read one public HTML/text page; partial content is labelled.",
+                        input_schema={
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {"url": {"type": "string", "maxLength": 512}},
+                            "required": ["url"],
+                        },
                         effect="read",
                     )
                 )
@@ -769,6 +787,10 @@ class HarnessToolBroker:
             return await self.native.invoke(
                 "inspect_text", arguments, context, allowed=frozenset({"inspect_text"})
             )
+        if identity == "web.read_page" and self.web is not None:
+            return await self.web.invoke(
+                "read_page", arguments, context, allowed=frozenset({"read_page"})
+            )
         if self.mcp is None:
             raise TaskConflict("harness_tool_not_granted")
         receipt = await self.mcp.invoke(
@@ -798,6 +820,7 @@ class TaskRouter:
     ) -> None:
         self.store = TaskStore(root)
         self.activity = activity
+        self.skills: Skills | None = None
         self.delegate_label = "Agentic harness"
         self.delegate_unavailable: str | None = None
         self.artifacts = TaskArtifacts(root)
@@ -816,6 +839,7 @@ class TaskRouter:
             "delegate": delegate,
         }
         self._wake = asyncio.Event()
+        self._completion_lock = asyncio.Lock()
         self.events = EventBus()
         self.attention = AttentionPolicy()
         self.providers["review"] = DraftReviewTask(
@@ -899,9 +923,14 @@ class TaskRouter:
                 return value.model_copy(update={"result": None, "receipt": None})
         elif result.citations:
             return value.model_copy(update={"result": None, "receipt": None})
-        if not self._tool_context_current(result):
+        if not self._tool_context_current(result) or not await self._skills_current(result):
             return value.model_copy(update={"result": None, "receipt": None})
         return value
+
+    async def _skills_current(self, result: TaskResult) -> bool:
+        return not result.skill_dependencies or (
+            self.skills is not None and await self.skills.valid(result.skill_dependencies)
+        )
 
     def _tool_context_current(self, result: TaskResult) -> bool:
         try:
@@ -916,7 +945,8 @@ class TaskRouter:
 
     async def status(self, task_id: UUID) -> TaskSnapshot | None:
         """Inspect operational state after revalidating any memory dependencies."""
-        value = await self.store.status(task_id, self.character_id)
+        async with self._completion_lock:
+            value = await self.store.status(task_id, self.character_id)
         return await self._validated(value) if value else None
 
     async def receipt(self, task_id: UUID) -> TaskReceiptView:
@@ -1114,6 +1144,25 @@ class TaskRouter:
                 raise TaskConflict("task_provider_unavailable")
             return await provider.execute(request, context, progress)
 
+        async def finish(
+            terminal: TerminalState,
+            *,
+            result: str | None = None,
+            receipt: str | None = None,
+            artifact: tuple[str, int] | None = None,
+        ) -> None:
+            # Publish terminal activity before operator status can expose its committed state.
+            async with self._completion_lock:
+                await self.store.finish(
+                    identity, state, terminal, result=result, receipt=receipt, artifact=artifact
+                )
+                if self.activity and span:
+                    finished = await self.store.status(identity, self.character_id)
+                    if finished:
+                        self.activity.update(
+                            span, cast(ActivityStatus, finished.state), code=failure_code
+                        )
+
         try:
             async with asyncio.timeout(max(0.0, min(180.0, deadline - time()))):
                 execution = asyncio.create_task(execute_provider(), name="ember-task-provider")
@@ -1145,6 +1194,8 @@ class TaskRouter:
                     raise TaskConflict("task_context_invalidated")
             if not self._tool_context_current(result):
                 raise TaskConflict("task_tool_context_invalidated")
+            if not await self._skills_current(result):
+                raise TaskConflict("task_skill_context_invalidated")
             artifact: tuple[str, int] | None = None
             if request.operation == "review":
                 data = result.summary.encode("utf-8")
@@ -1164,11 +1215,11 @@ class TaskRouter:
             if len(receipt.encode()) > 65536:
                 raise TaskConflict("receipt_too_large")
         except EffectUncertain:
-            await self.store.finish(identity, state, "uncertain")
+            await finish("uncertain")
         except TaskCancelled:
-            await self.store.finish(identity, state, "cancelled")
+            await finish("cancelled")
         except TimeoutError:
-            await self.store.finish(identity, state, "timed_out")
+            await finish("timed_out")
         except Exception as error:
             candidate = (
                 error.code
@@ -1180,7 +1231,7 @@ class TaskRouter:
             failure_code = (
                 candidate if re.fullmatch(r"[a-z0-9_]{1,64}", candidate) else "task_provider_failed"
             )
-            await self.store.finish(identity, state, "failed")
+            await finish("failed")
         else:
             outcome: dict[str, TerminalState] = {
                 "success": "succeeded",
@@ -1188,25 +1239,12 @@ class TaskRouter:
                 "timeout": "timed_out",
                 "unknown_effect": "uncertain",
             }
-            await self.store.finish(
-                identity,
-                state,
+            await finish(
                 outcome[result.receipt.outcome],
                 result=result.summary,
                 receipt=receipt,
                 artifact=artifact,
             )
-
-        if self.activity and span:
-            finished = await self.store.status(identity, self.character_id)
-            if finished and finished.state in {
-                "succeeded",
-                "failed",
-                "cancelled",
-                "timed_out",
-                "uncertain",
-            }:
-                self.activity.update(span, cast(ActivityStatus, finished.state), code=failure_code)
 
     async def aclose(self) -> None:
         """Stop taking work and wait for the active read-only operation."""

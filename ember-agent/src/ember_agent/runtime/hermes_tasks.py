@@ -17,6 +17,8 @@ from ember_memory_abi.related import ContextDependencies
 from ..inference.contracts import GatewayRequest, ModelClient, ToolDefinition, ToolFunction
 from ..inference.openai_bridge import OpenAIModelBridge
 from .config import DeploymentConfig, RuntimeModel
+from .skills import Skills
+from .skills_contracts import SkillDependency
 from .task_router import (
     BrokerTool,
     HarnessToolBroker,
@@ -80,6 +82,7 @@ def available_model_tools(
     evidence_available: bool,
     citation_ids: tuple[str, ...],
     broker_tools: tuple[BrokerTool, ...] = (),
+    skill_catalog: tuple[dict[str, JsonValue], ...] = (),
 ) -> tuple[ToolDefinition, ...]:
     """Advertise current host authority; worker schemas never grant an operation or citation."""
     selected: list[ToolDefinition] = []
@@ -101,6 +104,20 @@ def available_model_tools(
                 "Finish now with concise supported findings and the listed citation IDs. "
                 "Report gaps honestly. Citation IDs are not URLs."
             )
+        elif name == "ember_skills_list" and skill_catalog:
+            parameters = {"type": "object", "additionalProperties": False, "properties": {}}
+            description = "List enabled skills (metadata only); choose relevant instructions next."
+        elif name == "ember_skill_view" and skill_catalog:
+            parameters = {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "name": {"type": "string", "enum": [item["id"] for item in skill_catalog]},
+                    "file_path": {"type": "string", "maxLength": 256},
+                },
+                "required": ["name"],
+            }
+            description = "Read a complete skill/resource; no script execution or installers."
         elif name == "ember_tool" and broker_tools:
             parameters = {
                 "type": "object",
@@ -158,7 +175,9 @@ def broker_continuation_fits(
     input_units: int, tool_id: str, budget: int, *, call_units: int = 768
 ) -> bool:
     """Reserve escaped receipt/history and normal call overhead before advertising or effects."""
-    reserve = 1024 if tool_id == "native.inspect_text" else 9216
+    reserve = (
+        1024 if tool_id == "native.inspect_text" else 7168 if tool_id == "web.read_page" else 9216
+    )
     return input_units + max(768, call_units) + reserve <= budget
 
 
@@ -187,6 +206,7 @@ class HermesTask:
         validate: Callable[[ContextDependencies], Awaitable[bool]] | None = None,
         broker: HarnessToolBroker | None = None,
         observe: Callable[[GatewayRequest, Callable[[], Awaitable[bool]]], None] | None = None,
+        skills: Skills | None = None,
     ) -> None:
         settings = config.selected_harness
         if settings is None:
@@ -197,6 +217,7 @@ class HermesTask:
         ):
             raise TaskConflict("harness_profile_unsupported")
         self.config, self.settings = config, settings
+        self.skills = skills
         self.broker, self.observe = broker, observe
         self.client, self.tools = client, tools
         self.recall, self.validate = recall, validate
@@ -229,19 +250,28 @@ class HermesTask:
         catalog = self.broker.catalog(self.settings.tools) if self.broker else ()
         input_budget = min(self.config.max_input_tokens, self.config.context_tokens - 1192, 16384)
 
+        used_skills: dict[str, SkillDependency] = {}
+        skill_metadata = tuple(self.skills.metadata()) if self.skills else ()
         used_broker_tools: set[str] = set()
         broker_private = False
 
         def observe(step: GatewayRequest) -> None:
             dependencies = personal.dependencies if personal else None
             used = tuple(used_broker_tools)
+            skill_dependencies = tuple(used_skills.values())
 
             async def valid() -> bool:
                 if dependencies is not None and (
                     self.validate is None or not await self.validate(dependencies)
                 ):
                     return False
-                return not used or (self.broker is not None and self.broker.valid(catalog, used))
+                return (
+                    not used or (self.broker is not None and self.broker.valid(catalog, used))
+                ) and (
+                    not skill_dependencies
+                    or self.skills is not None
+                    and await self.skills.valid(skill_dependencies)
+                )
 
             if self.observe is not None:
                 self.observe(step, valid)
@@ -264,6 +294,7 @@ class HermesTask:
                 and not recall_attempted,
                 evidence_available=bool(receipts) or personal is not None,
                 citation_ids=tuple(issued),
+                skill_catalog=skill_metadata,
                 broker_tools=tuple(
                     tool
                     for tool in catalog
@@ -274,7 +305,17 @@ class HermesTask:
                 else (),
             )
 
-        async def check_context() -> None:
+        async def check_context(*, verify_skills: bool = True) -> None:
+            if used_skills:
+                if self.skills is None:
+                    raise TaskConflict("skill_context_revoked")
+                current = {item.id: item.content_sha256 for item in self.skills.enabled}
+                if any(
+                    current.get(item.id) != item.content_sha256 for item in used_skills.values()
+                ):
+                    raise TaskConflict("skill_context_revoked")
+                if verify_skills and not await self.skills.valid(tuple(used_skills.values())):
+                    raise TaskConflict("skill_context_revoked")
             if used_broker_tools and (
                 self.broker is None or not self.broker.valid(catalog, tuple(used_broker_tools))
             ):
@@ -287,7 +328,7 @@ class HermesTask:
         async def watch_context() -> None:
             while True:
                 await asyncio.sleep(0.25)
-                await check_context()
+                await check_context(verify_skills=False)
 
         async with owned_stdio(self.settings.command) as process:
             output, input_stream = process.stdout, process.stdin
@@ -323,14 +364,29 @@ class HermesTask:
                     previous_id
                 hello = await receive()
                 surface = hello.get("tools")
-                extended = surface == [*TOOLS, "ember_tool"]
-                if hello != {
-                    "type": "hello",
-                    "protocol": 1,
-                    "revision": self.settings.revision,
-                    "profile_sha256": self.settings.profile_sha256,
-                    "tools": [*TOOLS, "ember_tool"] if extended else list(TOOLS),
-                } or (catalog and not extended):
+                skill_peer = surface == [
+                    *TOOLS,
+                    "ember_tool",
+                    "ember_skills_list",
+                    "ember_skill_view",
+                ]
+                extended = surface == [*TOOLS, "ember_tool"] or skill_peer
+                if (
+                    hello
+                    != {
+                        "type": "hello",
+                        "protocol": 1,
+                        "revision": self.settings.revision,
+                        "profile_sha256": self.settings.profile_sha256,
+                        "tools": [*TOOLS, "ember_tool", "ember_skills_list", "ember_skill_view"]
+                        if skill_peer
+                        else [*TOOLS, "ember_tool"]
+                        if extended
+                        else list(TOOLS),
+                    }
+                    or (catalog and not extended)
+                    or (skill_metadata and not skill_peer)
+                ):
                     if hello.get("type") == "error":
                         stage = hello.get("stage")
                         if hello.get("code") == "hermes_native_startup_failed" and stage in (
@@ -377,7 +433,9 @@ class HermesTask:
                                 if name != "ember_recall" or self.settings.private_recall
                             ]
                             + (["ember_tool"] if catalog else [])
+                            + (["ember_skills_list", "ember_skill_view"] if skill_metadata else [])
                         ),
+                        **({"skill_catalog": list(skill_metadata)} if skill_peer else {}),
                         **(
                             {"tool_catalog": [tool.model_dump(mode="json") for tool in catalog]}
                             if extended
@@ -441,6 +499,7 @@ class HermesTask:
                             ),
                             dependencies=personal.dependencies if personal else None,
                             citations=personal.sources if personal else (),
+                            skill_dependencies=tuple(used_skills.values()),
                             tool_dependencies=tuple(
                                 ToolDependency(tool_id=tool.id, authority_tag=tool.authority_tag)
                                 for tool in catalog
@@ -466,6 +525,77 @@ class HermesTask:
                             body = await bridge.complete(frame["body"], tool_policy=model_tools)
                         else:
                             raise TaskConflict("hermes_model_route_denied")
+                    elif kind == "skill":
+                        tool_calls += 1
+                        if tool_calls > 30:
+                            raise TaskConflict("hermes_tool_budget")
+                        if (
+                            set(frame) != {"protocol", "type", "id", "name", "arguments"}
+                            or self.skills is None
+                            or not skill_metadata
+                        ):
+                            raise TaskConflict("skill_read_denied")
+                        name, arguments = frame["name"], frame["arguments"]
+                        if not isinstance(arguments, dict):
+                            raise TaskConflict("skill_read_invalid")
+                        await progress("waiting_for_tool")
+                        if name == "ember_skills_list" and not arguments:
+                            body = {"skills": list(skill_metadata)}
+                        elif name == "ember_skill_view":
+                            selected, resource = arguments.get("name"), arguments.get("file_path")
+                            if (
+                                set(arguments) - {"name", "file_path"}
+                                or not isinstance(selected, str)
+                                or resource is not None
+                                and not isinstance(resource, str)
+                            ):
+                                raise TaskConflict("skill_read_invalid")
+                            metadata = next(
+                                (item for item in skill_metadata if item["id"] == selected), None
+                            )
+                            if metadata is None or not isinstance(
+                                digest := metadata["content_sha256"], str
+                            ):
+                                raise TaskConflict("skill_not_granted")
+                            dependency = SkillDependency(id=selected, content_sha256=digest)
+                            if not await self.skills.valid((dependency,)):
+                                raise TaskConflict("skill_context_revoked")
+                            document = await self.skills.inspect(selected)
+                            member = next(
+                                (
+                                    item
+                                    for item in document.resources
+                                    if item.path == (resource or "SKILL.md")
+                                ),
+                                None,
+                            )
+                            if member is None:
+                                raise TaskConflict("skill_resource_not_found")
+                            if (
+                                bridge.last_input_units or 6000
+                            ) + member.size_bytes * 2 + 2048 > input_budget:
+                                raise TaskConflict("skill_procedure_exceeds_task_budget")
+                            used_skills[selected] = dependency
+                            body = {"authorized": True, "content_sha256": digest}
+                            receipts.append(
+                                {
+                                    "tool": "ember_skill_view",
+                                    "outcome": "success",
+                                    "skill": selected,
+                                }
+                            )
+                            if self.skills.activity is not None:
+                                event = self.skills.activity.begin(
+                                    "tool",
+                                    "ember_skill_view",
+                                    request_id=context.turn_id,
+                                    task_id=context.task_id,
+                                    provider=self.settings.provider,
+                                )
+                                self.skills.activity.update(event, "succeeded")
+                        else:
+                            raise TaskConflict("skill_read_invalid")
+                        await progress("running")
                     elif kind == "tool":
                         if set(frame) != {"protocol", "type", "id", "name", "arguments"}:
                             raise TaskConflict("hermes_invalid_tool_frame")
@@ -541,6 +671,10 @@ class HermesTask:
                             body = {"receipt": receipt.model_dump(mode="json"), "citation_id": key}
                             if receipt.outcome == "success":
                                 issued[key] = {"id": key, "title": "Ember broker tool " + tool_id}
+                                if tool_id == "web.read_page" and isinstance(
+                                    url := receipt.data.get("url"), str
+                                ):
+                                    issued[key]["url"] = url
                                 receipts.append(
                                     {
                                         "tool": receipt.tool,

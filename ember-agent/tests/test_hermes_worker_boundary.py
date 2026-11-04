@@ -181,7 +181,9 @@ def test_recovery_identity_cannot_select_other_objects(worker: ModuleType, name:
         importlib.import_module("hermes_windows").job_name(name)
 
 
-@pytest.mark.parametrize("asset", ["hermes_transport.py", "hermes_windows.py"])
+@pytest.mark.parametrize(
+    "asset", ["hermes_transport.py", "hermes_windows.py", "hermes_skills.py", "hermes_web.py"]
+)
 @pytest.mark.parametrize("mutation", ["missing", "changed"])
 def test_receipt_requires_all_executable_boundary_assets(
     worker: ModuleType,
@@ -198,6 +200,8 @@ def test_receipt_requires_all_executable_boundary_assets(
             "hermes_worker.py",
             "hermes_transport.py",
             "hermes_windows.py",
+            "hermes_skills.py",
+            "hermes_web.py",
         ]
     ]
     for path in paths:
