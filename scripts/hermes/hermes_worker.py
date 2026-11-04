@@ -17,6 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import BinaryIO, Literal, Protocol, TextIO, cast
 
+import httpx
 from hermes_setup import REVISION, HermesProfile, load_profile
 from hermes_transport import ENDPOINT, create_agent_factory
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
@@ -607,6 +608,12 @@ def catalog_command(profile: HermesProfile, digest: str) -> None:
             else:
                 raise ValueError("skills_action_unsupported")
         frame.update(ok=True, result=result)
+    except httpx.TimeoutException:
+        frame["code"] = "page_fetch_timeout"
+    except httpx.HTTPStatusError as error:
+        frame["code"] = "page_http_" + str(error.response.status_code)
+    except httpx.RequestError:
+        frame["code"] = "page_fetch_failed"
     except (ValueError, OSError) as error:
         code = str(error)
         frame["code"] = code if re.fullmatch(r"[a-z_]{1,80}", code) else "skills_operation_failed"

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, replace
@@ -412,9 +413,16 @@ class CharacterCore:
                 public_result = await reader(query_text)
                 if len(public_result.encode()) > (4096 if page_url else 2048):
                     raise GatewayError("public_search_result_bound")
-            except GatewayError:
+            except GatewayError as error:
                 if self.activity and search_span:
-                    self.activity.update(search_span, "failed")
+                    code = (
+                        error.code
+                        if re.fullmatch(r"[a-z0-9_]{1,64}", error.code)
+                        else "public_page_unavailable"
+                        if page_url
+                        else "public_search_unavailable"
+                    )
+                    self.activity.update(search_span, "failed", code=code)
                 return self._local_turn(
                     text,
                     identity,

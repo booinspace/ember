@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -176,8 +177,13 @@ async def _start_tasks(
                     async def read_public_page(url: str) -> str:
                         try:
                             return await pages.read(url)
-                        except (TaskConflict, TimeoutError) as error:
-                            raise GatewayError("public_page_unavailable") from error
+                        except TaskConflict as error:
+                            code = str(error)
+                            if not re.fullmatch(r"(?:page|skills)_[a-z0-9_]{1,48}", code):
+                                code = "public_page_unavailable"
+                            raise GatewayError(code) from error
+                        except TimeoutError as error:
+                            raise GatewayError("page_fetch_timeout") from error
 
                     runtime.core.public_page = read_public_page
         except (TaskConflict, TimeoutError):

@@ -34,7 +34,12 @@ def public_page_url(text: str) -> str | None:
     """Fetch only one literal URL in an explicit read request, never recalled/model-derived text."""
     if not _PAGE_REQUEST.match(text):
         return None
-    urls = re.findall(r"https?://[^\s<>]+", text)
+    # A Markdown link's label is display text; only its literal destination is requested.
+    destinations = re.sub(r"\[[^\]\n]*\]\(\s*(?=<?https?://)", "", text)
+    urls = re.findall(r"https?://[^\s<>]+", destinations)
     if len(urls) != 1:
         return None
-    return urls[0].rstrip(".,!?;)")
+    url = urls[0].rstrip(".,!?;")
+    while url.endswith(")") and url.count(")") > url.count("("):
+        url = url[:-1]
+    return url

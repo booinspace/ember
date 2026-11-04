@@ -1,0 +1,52 @@
+{
+  "source_base": "a4103c0b0373c26907e426207d674a18677db75b",
+  "url": "https://arxiv.org/abs/1706.03762",
+  "original_failure_cause_retained": false,
+  "reproduced_parser_bug": "URL-valued Markdown labels were joined with their destination",
+  "installed_profile_sha256": "8b0ea40322c4642b835a2f4f592cf4f6c56c281cc13fc18625a6c5cd22d7c6e1",
+  "worker_sha256": "1e380b42680ff29fb64aa594c587fd353296114501438230cd4a3955b4b61f05",
+  "checks": {
+    "full_macos": {
+      "passed": 1226,
+      "skipped": 29,
+      "seconds": 132.96,
+      "ruff": "passed",
+      "pyright": "passed"
+    },
+    "targeted_windows_wsl": {
+      "passed": 67,
+      "platform_skipped": 6,
+      "seconds": 39.77,
+      "includes_real_sdk_and_wsl_boundary_tests": true,
+      "ruff": "passed",
+      "pyright": "passed"
+    }
+  },
+  "https_browser": {
+    "cases": [
+      {
+        "input": "plain",
+        "read_succeeded": true,
+        "paper_title_in_exact_prompt": true,
+        "partial_label_in_prompt": true,
+        "input_units": 9574,
+        "input_budget_units": 24576,
+        "read_seconds": 2.485,
+        "first_visible_answer_seconds": 11.721
+      },
+      {
+        "input": "markdown",
+        "read_succeeded": true,
+        "paper_title_in_exact_prompt": true,
+        "partial_label_in_prompt": true,
+        "input_units": 9745,
+        "input_budget_units": 24576,
+        "read_seconds": 2.391,
+        "first_visible_answer_seconds": 5.893
+      }
+    ],
+    "physical_microphone_tested": false,
+    "full_pdf_read": false
+  },
+  "interpretation": "Single integration samples, including page fetch and model prefill. Not a throughput or full-paper benchmark. No raw model prompts, user chat or paper text retained."
+}
