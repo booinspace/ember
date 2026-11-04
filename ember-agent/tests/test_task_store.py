@@ -390,6 +390,10 @@ def test_speech_claim_is_durable_scoped_and_does_not_ack_ui(tmp_path: Path) -> N
         await store.finish(handle.task_id, "running", "succeeded", result="Ready")
         assert await store.claim_speech(uuid4(), request.session_id) is None
         assert await store.claim_speech(request.character_id, uuid4()) is None
+        assert (
+            await store.claim_speech(request.character_id, request.session_id, turn_id=uuid4())
+            is None
+        )
         claims = await asyncio.gather(
             *(store.claim_speech(request.character_id, request.session_id) for _ in range(4))
         )
@@ -446,7 +450,12 @@ def test_speech_worker_records_interrupted_playout_without_replay(tmp_path: Path
                 assert settings == {"allow_interruptions": True, "add_to_chat_ctx": False}
                 return Speech()
 
-        host = SimpleNamespace(closing=False, session=Session(), _can_announce_tasks=lambda: True)
+        host = SimpleNamespace(
+            closing=False,
+            core=SimpleNamespace(history=[]),
+            session=Session(),
+            _can_announce_tasks=lambda: True,
+        )
         worker = asyncio.create_task(HostedRoom._announce_tasks(host, router))
         try:
             handle = await router.submit("speech-worker", "Synthetic input")
@@ -468,6 +477,58 @@ def test_speech_worker_records_interrupted_playout_without_replay(tmp_path: Path
             await router.aclose()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "blocked",
+    [
+        "core_busy",
+        "pending_delivery",
+        "prepared",
+        "active_turn",
+        "current_speech",
+        "user_speaking",
+        "agent_thinking",
+        "disconnected",
+        "closing",
+    ],
+)
+def test_task_announcements_respect_full_turn_and_speech_fence(blocked: str) -> None:
+    from types import SimpleNamespace
+
+    from ember_agent.realtime.session import HostedRoom
+
+    core = SimpleNamespace(busy=False, pending_delivery=None)
+    gateway = SimpleNamespace(prepared=None, active_turn=None)
+    session = SimpleNamespace(current_speech=None, agent_state="listening", user_state="listening")
+    host = SimpleNamespace(
+        closing=False,
+        busy=False,
+        core=core,
+        session=session,
+        agent=SimpleNamespace(gateway_llm=gateway),
+        room=SimpleNamespace(remote_participants={"user": SimpleNamespace(identity="ember-user")}),
+    )
+    assert HostedRoom._can_announce_tasks(host)
+    if blocked == "core_busy":
+        core.busy = True
+    elif blocked == "pending_delivery":
+        core.pending_delivery = object()
+    elif blocked == "prepared":
+        gateway.prepared = object()
+    elif blocked == "active_turn":
+        gateway.active_turn = object()
+    elif blocked == "current_speech":
+        session.current_speech = object()
+    elif blocked == "user_speaking":
+        session.user_state = "speaking"
+    elif blocked == "agent_thinking":
+        session.agent_state = "thinking"
+    elif blocked == "disconnected":
+        host.room.remote_participants.clear()
+    else:
+        host.closing = True
+    assert not HostedRoom._can_announce_tasks(host)
 
 
 def test_confirmed_effect_fence_prevents_replay_across_restart(tmp_path: Path) -> None:
@@ -533,6 +594,74 @@ def test_confirmed_effect_fence_prevents_replay_across_restart(tmp_path: Path) -
             await store.finish_confirmed_effect(
                 request.character_id, action.confirmation_id, receipt={"ok": True}
             )
+
+    asyncio.run(exercise())
+
+
+def test_tool_and_confirmation_respect_remaining_task_deadline(tmp_path: Path) -> None:
+    from time import time
+
+    from ember_agent.runtime.task_artifacts import TaskArtifacts
+    from ember_agent.runtime.task_router import (
+        DraftReviewTask,
+        EventBus,
+        TextInspectionProvider,
+        ToolContext,
+        ToolRouter,
+    )
+
+    async def exercise() -> None:
+        store = TaskStore(tmp_path)
+        await store.initialize()
+        request = TaskSubmission(
+            character_id=uuid4(),
+            session_id=uuid4(),
+            turn_id=uuid4(),
+            idempotency_key="deadline",
+            goal="Synthetic draft",
+            operation="review",
+        )
+        handle = await store.submit(request)
+        await store.claim(request.character_id)
+        context = ToolContext(
+            character_id=request.character_id,
+            session_id=request.session_id,
+            turn_id=request.turn_id,
+            task_id=handle.task_id,
+            deadline_at=time() + 5,
+        )
+        tools = ToolRouter(TextInspectionProvider(), request.character_id)
+        with pytest.raises(TaskConflict, match="tool_deadline_exceeded"):
+            await tools.invoke(
+                "inspect_text",
+                {"text": "synthetic"},
+                context.model_copy(update={"deadline_at": time() - 1}),
+                allowed=frozenset({"inspect_text"}),
+            )
+        events = EventBus()
+        provider = DraftReviewTask(store, events, TaskArtifacts(tmp_path), request.character_id)
+
+        async def progress(state: str) -> None:
+            await store.progress(handle.task_id, "running", state)
+
+        execution = asyncio.create_task(provider.execute(request, context, progress))
+        try:
+            async with asyncio.timeout(3):
+                while not (pending := await store.pending_confirmations(request.character_id)):
+                    await asyncio.sleep(0.01)
+            assert pending[0].deadline_at <= context.deadline_at
+            await store.decide_confirmation(
+                request.character_id,
+                pending[0].confirmation_id,
+                pending[0].action_sha256,
+                approve=False,
+            )
+            events.publish()
+            with pytest.raises(TaskConflict, match="draft_not_approved"):
+                await execution
+        finally:
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
 
     asyncio.run(exercise())
 

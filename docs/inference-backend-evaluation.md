@@ -234,8 +234,10 @@ preemption are the larger change; keep them out of the first adapter diff.
 
 ## Benchmark contract before any production switch
 
-The benchmark described here is **proposed**, not an installed command or measured
-result. Use synthetic prompts, memories and audio; no primary-memory root, private
+The baseline gateway/SDK benchmark is now implemented in Phase 9; see its
+[commands and limits](phase-9-runbook.md) and [measurements](phase-9-validation.md).
+The broader multi-runner comparison below remains an acceptance methodology,
+not comparative evidence that a candidate is faster. Use synthetic prompts, memories and audio; no primary-memory root, private
 conversation capture or hidden reasoning in reports. Every model request,
 including warmup and contention, passes through the one gateway. Do not point
 vendor load generators directly at the primary runner.

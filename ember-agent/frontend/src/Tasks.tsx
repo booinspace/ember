@@ -214,22 +214,20 @@ export function Tasks({
             onChange={(event) => setText(event.target.value)}
           />
         </label>
-        {true && (
-          <label>
-            Operation
-            <select
-              value={operation}
-              onChange={(event) =>
-                setOperation(operationSchema.parse(event.target.value))
-              }
-            >
-              <option value="inspect">Count words and characters</option>
-              {summaries && <option value="summarize">Summarize</option>}
-              {recall && <option value="recall">Recall deeply</option>}
-              <option value="review">Review a draft</option>
-            </select>
-          </label>
-        )}
+        <label>
+          Operation
+          <select
+            value={operation}
+            onChange={(event) =>
+              setOperation(operationSchema.parse(event.target.value))
+            }
+          >
+            <option value="inspect">Count words and characters</option>
+            {summaries && <option value="summarize">Summarize</option>}
+            {recall && <option value="recall">Recall deeply</option>}
+            <option value="review">Review a draft</option>
+          </select>
+        </label>
         {connected && operation === "summarize" && (
           <p>Disconnect from conversation to run a summary.</p>
         )}

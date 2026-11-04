@@ -1,40 +1,37 @@
 # 0007 — Operational dispatch and agent inference admission
 
-Status: implemented slice, Phase 9 acceptance in progress.
+Status: implemented native Phase 9 foundations. See
+[Root ADR 0017](../../../docs/adr/0017-phase-nine-operational-tasks.md) and
+[validation](../../../docs/phase-9-validation.md) for scope and evidence.
 
-TaskRouter owns dispatch and shutdown. ToolRouter accepts only installed
-read-only capability names explicitly granted by the task. The provider
-returns a validated receipt with character, session, turn and task identity.
-The browser obtains authority from the existing operator cookie and exact
-origin checks. The conversational command obtains its turn ID from the
-shared CharacterCore. The memory ABI remains the only memory boundary.
+TaskRouter owns submit/status/cancel/result/event lifecycle and one dispatcher.
+Installed providers execute bounded native steps; ToolRouter checks capabilities,
+authority, typed input and receipt context. Model routing uses the existing P0
+call and one advertised literal-input route, with no auxiliary routing model.
+External MCP and harness adapters belong to their later phases.
 
-WAL allows status reads while a short transaction claims or finishes a task.
-SQLite work runs off the realtime loop. The operational store coalesces
-progress to a state and atomically commits terminal notifications. One event
-cursor wakes open task panels without buffering individual updates. Browser
-notifications are visual. The existing LiveKit delivery fence remains
-responsible for conversational speech. Automatic task playout is open.
+SQLite runs off the realtime loop. Transactions bind idempotency, attempts,
+progress, confirmations, effect fences, results and terminal outbox. Exact action
+hashes bind operator approval. Fenced effects cannot repeat after cancellation,
+transport failure or restart. Active attempts become uncertain, while untouched
+queued requests retain their original scope and deadline. No speculative provider
+recovery or automatic tool replay occurs.
 
-The managed gateway creates a distinct agent token for P1 and P2. P1 needs
-a current live reservation. P2 waits for release. The existing scheduler
-weights P2, P3 and P4 at 4:1:1 and retains FIFO order within a class.
-Metadata checks can park a job before generation. An active upstream is
-never assumed released on disconnect. P2 content is published only after
-complete output validation and journal completion. Existing extraction
-credentials retain P3/P4 scope. Phase 13 owns preemption acceptance.
+Dependency-bearing results are validated before completion and every disclosure.
+Citations must belong to the supplied certificate. Revoked or malformed results
+cannot expose summaries or artifacts. Stored receipts are excluded from public
+snapshots. Task state never becomes canonical autobiographical memory.
 
-See [Root ADR 0017](../../../docs/adr/0017-phase-nine-operational-tasks.md)
-for the benchmark scope, review findings and remaining criteria.
+EventBus coalesces updates into a revision and bounded notification batch. SDK
+announcements require full turn/playback idleness, current session/turn and no
+pending confirmation, including rechecks after store awaits. Speech dispatch is
+persisted first. Interrupted or uncertain delivery stays UI-only without replay;
+UI acknowledgement does not imply speech. The generic notice contains no memory
+or task result text.
 
-The character checks that the initiating gateway request actually advertised a
-tool before accepting the model-selected count call. The count remains a narrow
-allowlisted path, not a general tool discovery or task-selection implementation.
-
-The LiveKit runtime now registers model-selectable count, summary and Deep
-Recall routes. Summary is offered only when the agent gateway is configured.
-The existing P0 generation can select one advertised route, with arguments
-restricted to text from the initiating user turn. Trusted code supplies the
-operation and turn identity. The task still runs through the existing dispatcher.
-The focused character, gateway, task-store and browser API run passed 51 tests.
-This extends native routing while provider recovery and speech delivery remain open.
+The sole gateway retains one upstream, distinct contexts and scoped credentials.
+P1 needs a live reservation; P2 waits for release. Weighted P2:P3:P4 dispatch is
+4:1:1. Detachment removes pending work but drains an active generation. The
+benchmark modules use public gateway contracts, retain failed trials and separate
+visible text, provider decode, PCM sink interruption and observed slot release.
+They do not implement a second scheduler or certify native GPU preemption.

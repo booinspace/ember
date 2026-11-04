@@ -216,3 +216,10 @@ file locations, budgets, migration and recovery.
 Speech service settings use `[services.tts]`. The Phonon example defaults to Juniper
 at 1.1× through `[audio]` settings; Kokoro uses the same adapter with its own voice.
 See [TTS configuration](docs/tts-configuration.md) for defaults and legacy compatibility.
+
+Native Phase 9 task foundations now include exact-action confirmation, durable
+effect/attempt recovery, scoped model-selected tasks, validated artifacts and
+idle speech notifications. See the [runbook](docs/phase-9-runbook.md) and
+[validation](docs/phase-9-validation.md), including the opt-in gateway inference
+benchmark. Future vLLM production use remains gated on Phase 13 cancellation
+and verified capacity release.

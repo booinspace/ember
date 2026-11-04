@@ -430,19 +430,29 @@ class TaskStore:
             for row in rows
         )
 
-    async def claim_speech(self, character_id: UUID, session_id: UUID) -> UUID | None:
+    async def claim_speech(
+        self, character_id: UUID, session_id: UUID, *, turn_id: UUID | None = None
+    ) -> UUID | None:
         """Journal one eligible announcement before sending it to the speech transport."""
-        return await asyncio.to_thread(self._claim_speech, character_id, session_id)
+        return await asyncio.to_thread(self._claim_speech, character_id, session_id, turn_id)
 
-    def _claim_speech(self, character_id: UUID, session_id: UUID) -> UUID | None:
+    def _claim_speech(
+        self, character_id: UUID, session_id: UUID, turn_id: UUID | None
+    ) -> UUID | None:
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 """SELECT t.id FROM task t JOIN terminal_outbox o ON o.task_id=t.id
                    WHERE t.character_id=? AND t.session_id=? AND o.delivery='pending'
+                     AND (? IS NULL OR json_extract(t.request_json, '$.turn_id')=?)
                      AND NOT EXISTS (SELECT 1 FROM task_speech_delivery s WHERE s.task_id=t.id)
                    ORDER BY o.rowid LIMIT 1""",
-                (str(character_id), str(session_id)),
+                (
+                    str(character_id),
+                    str(session_id),
+                    str(turn_id) if turn_id else None,
+                    str(turn_id) if turn_id else None,
+                ),
             ).fetchone()
             if row is None:
                 return None

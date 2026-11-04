@@ -184,6 +184,7 @@ class HostedRoom:
         ):
             raise GatewayError("speech_settings_busy")
         return self.voice.configure_speech(selection)
+
     def start_task_announcements(self, router: "TaskRouter") -> None:
         """Own a single speech worker for the connected task session."""
         if self.task_announcer is not None:
@@ -197,6 +198,11 @@ class HostedRoom:
         return (
             not self.closing
             and not self.busy
+            and not self.core.busy
+            and self.core.pending_delivery is None
+            and self.agent.gateway_llm.prepared is None
+            and self.agent.gateway_llm.active_turn is None
+            and self.session.current_speech is None
             and self.session.agent_state == "listening"
             and self.session.user_state == "listening"
             and any(p.identity == USER_IDENTITY for p in self.room.remote_participants.values())
@@ -209,12 +215,23 @@ class HostedRoom:
                 continue
             if await router.confirmations():
                 continue
-            identity = await router.store.claim_speech(router.character_id, router.session_id)
+            turn = self.core.history[-1].request_id if self.core.history else None
+            identity = await router.store.claim_speech(
+                router.character_id, router.session_id, turn_id=turn
+            )
             if identity is None:
                 continue
             completed = False
             try:
-                if self._can_announce_tasks():
+                current = self.core.history[-1].request_id if self.core.history else None
+                if (
+                    self._can_announce_tasks()
+                    and current == turn
+                    and not await router.confirmations()
+                ):
+                    current = self.core.history[-1].request_id if self.core.history else None
+                    if not self._can_announce_tasks() or current != turn:
+                        continue
                     speech = self.session.say(
                         "A task result is ready in Tasks.",
                         allow_interruptions=True,

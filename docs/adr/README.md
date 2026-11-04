@@ -138,3 +138,8 @@ contract and does not reopen Phase 8 or advance a future phase.
 Implemented: [Root ADR 0018 — Shared system and character Markdown prompts](0018-shared-character-prompts.md).
 The [design/runbook](../personality-prompts-proposal.md) records the independent editor amendment;
 Phase 9 task, memory and inference authority remain unchanged.
+
+Phase 9 native foundations and their acceptance evidence are recorded in
+[Root ADR 0017](0017-phase-nine-operational-tasks.md) and
+[Phase 9 validation](../phase-9-validation.md). Intended future vLLM use remains
+gated on Phase 13 verified cancellation and capacity release.

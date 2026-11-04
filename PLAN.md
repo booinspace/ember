@@ -4889,15 +4889,22 @@ ADR 0015 and the validation record retain the evidence and restart requirement.
 
 ## Phase 9 implementation status
 
-The isolated checkout based on a15f238 includes durable operator tasks, a
-native read-only tool, P2 summarization, and task-bound Deep Associative Recall.
-Its existing inference gateway owns scoped P1/P2 admission and keeps the
-single-runner reservation. Browser notifications and managed artifact export
-use the operational store. Canonical memory remains independent.
+Native Phase 9 foundations are implemented: scoped model-selected tasks,
+persisted attempts and confirmations, replay-fenced approved artifact writes,
+validated citations, durable UI and idle/current-turn speech notifications,
+and the existing gateway's conservative P1/P2 admission. Queued work recovers;
+active or uncertain effects and speech never replay automatically. Canonical
+memory and the Memory ABI remain independent.
 
-[Root ADR 0017](docs/adr/0017-phase-nine-operational-tasks.md) records the
-criterion-by-criterion evidence, benchmark limits and remaining gates.
-Phase 9 remains in progress. Phase 8A remains parked.
+[Root ADR 0017](docs/adr/0017-phase-nine-operational-tasks.md) maps each acceptance
+criterion to implementation and tests. [Validation](docs/phase-9-validation.md)
+records native Windows checks and synthetic 3090 benchmark limits. The
+[runbook](docs/phase-9-runbook.md) includes a runnable backend-neutral gateway
+benchmark for first visible text, decode, warm turns, sampled VRAM and separate
+SDK speech interruption/cancellation-to-drain observations. Keep these contracts
+usable by the intended future vLLM adapter. Production vLLM, live abort/preemption
+and concurrent model scheduling remain gated on Phase 13 verified cancellation
+and capacity release. Phase 8A remains parked; MCP/harness/skills remain later phases.
 
 ## Engineering language and code-quality standards
 

@@ -49,6 +49,7 @@ class ToolContext(RuntimeModel):
     session_id: UUID
     turn_id: UUID
     task_id: UUID
+    deadline_at: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class ToolReceipt(RuntimeModel):
@@ -113,7 +114,10 @@ class ToolRouter:
             raise TaskConflict("tool_scope_denied")
         if name not in self.provider.capabilities:
             raise TaskConflict("tool_unavailable")
-        async with asyncio.timeout(5):
+        remaining = min(5.0, context.deadline_at - time()) if context.deadline_at else 5.0
+        if remaining <= 0:
+            raise TaskConflict("tool_deadline_exceeded")
+        async with asyncio.timeout(remaining):
             receipt = await self.provider.invoke(name, arguments, context)
         receipt = ToolReceipt.model_validate_json(receipt.model_dump_json())
         if receipt.context != context or receipt.tool != name:
@@ -424,7 +428,7 @@ class DraftReviewTask:
                 task_id=context.task_id,
                 tool="publish_draft",
                 arguments={"draft": request.goal},
-                deadline_at=time() + 120,
+                deadline_at=min(time() + 120, context.deadline_at or time() + 120),
             ),
         )
         self.events.publish()
@@ -654,6 +658,7 @@ class TaskRouter:
             session_id=request.session_id,
             turn_id=request.turn_id,
             task_id=identity,
+            deadline_at=deadline,
         )
         progress_lock = asyncio.Lock()
 
