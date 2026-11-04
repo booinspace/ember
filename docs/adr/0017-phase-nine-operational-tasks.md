@@ -28,7 +28,7 @@ records dispatch, admission, safety and scalability decisions.
 |---|---|
 | P9-AC-01 | Authenticated operator and explicit conversation requests bind scope. Tool schemas, capabilities, deadlines and receipts are validated. General model-selected dispatch and external providers remain open. |
 | P9-AC-02 | Concurrent retries, restart retry, queue limits, progress state, cancellation and terminal CAS are implemented. Provider-side recovery checkpoints remain open. |
-| P9-AC-03 | Operational result, receipt, notification and export authorization are durable. General provider attempts and confirmation state remain open. |
+| P9-AC-03 | Operational result, receipt, notification and export authorization are durable. Claimed attempts and terminal outcomes are durable. Provider checkpoints and confirmation state remain open. |
 | P9-AC-04 | Coalesced changes and durable UI delivery are implemented. Speech-aware announcement and recovery from uncertain playout remain open. |
 | P9-AC-05 | Scoped P1/P2 admission, single upstream, live reservations, queue timing, buffered P2 and weighted dispatch are implemented. Real short-turn RVN smoke passed. Full contention and audio measurements remain open. |
 | P9-AC-06 | Reconciliation marks interrupted work uncertain, cancellation suppresses late read-only results, and artifact downloads reject modified bytes. Generic provider citation and effect validation remain open. |
@@ -60,3 +60,54 @@ providers reached LiveKit voice readiness in 11.9 seconds at the configured
 SDK emitted a destructor assertion after shutdown. A separate short Ollama
 generation verified context 131,072 and 100% GPU residency. Neither check
 exercised a near-limit prompt or physical microphone.
+
+The runtime now records each claimed attempt and its completion or uncertain
+restart outcome atomically with task transitions. P2 tasks use the gateway's
+bounded 180-second wait rather than an eight-second timeout, allowing queued
+work to survive a brief live reservation.
+
+Cancellation is now checked at each persisted progress boundary. Once the
+operator has requested cancellation, the next step is fenced and the
+terminal cancellation and attempt outcome are committed together. A
+cancellation racing an off-loop SQLite transition observes the actual
+transition before recording the terminal state.
+
+The operational database can persist a pending confirmation with exact
+canonical tool arguments, an action hash, character scope and a deadline no
+later than the task deadline. Decisions are idempotent and reject changed
+arguments, changed decisions, cancelled tasks and other characters. The
+confirmation store is not yet wired to a provider or operator interface and
+therefore does not close the Phase 9 confirmation criterion.
+
+A single allowlisted count tool can be selected by the existing P0 model on a
+user request containing count. The tool's text must be an exact substring of
+the initiating input, and trusted runtime code binds task scope. No extra model
+call runs for routing. The tool schema is omitted if it would exceed the input
+guard or when thinking mode is active. Synthetic tests cover successful routing
+and rejection of model-invented text. General tool selection remains open.
+
+A draft-review provider now requests confirmation of the exact draft and the
+authenticated task panel displays its arguments before accepting a decision.
+Uncertain active work is not replayed after a restart. Explicit conversational
+task-update questions use the existing acknowledged text/voice turn and only
+report a count; notifications remain pending until dismissed. Automatic
+proactive speech is not enabled.
+
+Task results with citations are accepted only when every citation belongs to
+the provided memory dependency certificate and the existing character client
+validates it. Status, notifications and artifact reads revalidate that
+certificate. Invalidated results do not disclose their stored summary.
+Synthetic tests cover valid scope, out-of-scope citations, later revocation,
+and artifact denial. The provider boundary remains read-only.
+
+The character now rejects model tool calls when no tool schema was advertised
+on the initiating gateway request. A synthetic regression covers this alongside
+the existing user-text scope checks. General routing remains open.
+
+The LiveKit runtime now registers model-selectable count, summary and Deep
+Recall routes. Summary is offered only when the agent gateway is configured.
+The existing P0 generation can select one advertised route, with arguments
+restricted to text from the initiating user turn. Trusted code supplies the
+operation and turn identity. The task still runs through the existing dispatcher.
+The focused character, gateway, task-store and browser API run passed 51 tests.
+This extends native routing while provider recovery and speech delivery remain open.

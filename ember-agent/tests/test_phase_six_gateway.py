@@ -247,3 +247,41 @@ def test_failed_session_journal_keeps_background_admission_closed(tmp_path: Path
         await gateway.aclose()
 
     asyncio.run(run())
+
+
+def test_weighted_agent_queue_preserves_background_progress(tmp_path: Path) -> None:
+    from collections.abc import AsyncIterator
+
+    class RecordingUpstream(FakeUpstream):
+        def __init__(self) -> None:
+            super().__init__(
+                (
+                    NativeFrame(message=NativeMessage(content='{"claims":[]}')),
+                    NativeFrame(done=True),
+                )
+            )
+            self.order: list[str] = []
+
+        async def generate(self, value: GatewayRequest) -> AsyncIterator[NativeFrame]:
+            self.order.append(value.workload)
+            async for frame in super().generate(value):
+                yield frame
+
+    async def run() -> None:
+        config = configuration(tmp_path)
+        native = RecordingUpstream()
+        gateway = P0Gateway(config, native)
+        session = uuid4()
+        await gateway.session(session, connected=True)
+        try:
+            jobs = [await gateway.admit(request(config, workload="P2")) for _ in range(4)]
+            jobs += [await gateway.admit(background(config, workload)) for workload in ("P3", "P4")]
+            await gateway.session(session, connected=False)
+            async with asyncio.timeout(5):
+                for job in jobs:
+                    assert [event async for event in job.events()][-1].kind == "end"
+            assert native.order == ["P2", "P2", "P2", "P2", "P3", "P4"]
+        finally:
+            await gateway.aclose()
+
+    asyncio.run(run())

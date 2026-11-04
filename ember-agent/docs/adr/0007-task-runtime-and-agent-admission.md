@@ -26,3 +26,15 @@ credentials retain P3/P4 scope. Phase 13 owns preemption acceptance.
 
 See [Root ADR 0017](../../../docs/adr/0017-phase-nine-operational-tasks.md)
 for the benchmark scope, review findings and remaining criteria.
+
+The character checks that the initiating gateway request actually advertised a
+tool before accepting the model-selected count call. The count remains a narrow
+allowlisted path, not a general tool discovery or task-selection implementation.
+
+The LiveKit runtime now registers model-selectable count, summary and Deep
+Recall routes. Summary is offered only when the agent gateway is configured.
+The existing P0 generation can select one advertised route, with arguments
+restricted to text from the initiating user turn. Trusted code supplies the
+operation and turn identity. The task still runs through the existing dispatcher.
+The focused character, gateway, task-store and browser API run passed 51 tests.
+This extends native routing while provider recovery and speech delivery remain open.

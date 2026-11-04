@@ -2,13 +2,14 @@
 
 import asyncio
 import sqlite3
+from collections.abc import Awaitable, Callable
 from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from ember_agent.runtime.task_store import TaskConflict, TaskStore, TaskSubmission
+from ember_agent.runtime.task_store import TaskCancelled, TaskConflict, TaskStore, TaskSubmission
 
 
 def test_durable_retries_and_terminal_outbox(tmp_path: Path) -> None:
@@ -74,6 +75,15 @@ def test_restart_and_cancellation_preserve_terminal_outcome(tmp_path: Path) -> N
         snapshot = await reopened.status(second.task_id, request.character_id)
         assert snapshot is not None and snapshot.state == "uncertain"
         assert await reopened.claim(request.character_id) is None
+        with closing(sqlite3.connect(store.path)) as db:
+            attempts = db.execute(
+                "SELECT task_id, outcome, finished_at FROM task_attempt ORDER BY started_at"
+            ).fetchall()
+        assert [(row[0], row[1]) for row in attempts] == [
+            (str(handle.task_id), "cancelled"),
+            (str(second.task_id), "uncertain"),
+        ]
+        assert all(row[2] is not None for row in attempts)
 
     asyncio.run(exercise())
 
@@ -125,5 +135,574 @@ def test_summary_dispatches_through_p2_gateway(tmp_path: Path) -> None:
             finally:
                 await router.aclose()
                 await gateway.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_attempt_table_is_additive_for_existing_runtime(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        store = TaskStore(tmp_path)
+        await store.initialize()
+        request = TaskSubmission(
+            character_id=uuid4(),
+            session_id=uuid4(),
+            turn_id=uuid4(),
+            idempotency_key="existing",
+            goal="Synthetic input",
+        )
+        handle = await store.submit(request)
+        with closing(sqlite3.connect(store.path)) as db, db:
+            db.execute("DROP TABLE task_attempt")
+        await store.initialize()
+        claim = await store.claim(request.character_id)
+        assert claim is not None and claim[0] == handle.task_id
+        await store.finish(handle.task_id, "running", "failed")
+        with closing(sqlite3.connect(store.path)) as db:
+            assert db.execute(
+                "SELECT outcome FROM task_attempt WHERE task_id=?", (str(handle.task_id),)
+            ).fetchone() == ("failed",)
+
+    asyncio.run(exercise())
+
+
+def test_cancelled_progress_does_not_admit_next_step(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        store = TaskStore(tmp_path)
+        await store.initialize()
+        request = TaskSubmission(
+            character_id=uuid4(),
+            session_id=uuid4(),
+            turn_id=uuid4(),
+            idempotency_key="cancel",
+            goal="synthetic",
+        )
+        handle = await store.submit(request)
+        assert await store.claim(request.character_id) is not None
+        await store.cancel(handle.task_id, request.character_id)
+        with pytest.raises(TaskCancelled):
+            await store.progress(handle.task_id, "running", "waiting_for_tool")
+        await store.finish(handle.task_id, "waiting_for_tool", "cancelled")
+        status = await store.status(handle.task_id, request.character_id)
+        assert status is not None and status.state == "cancelled"
+
+    asyncio.run(exercise())
+
+
+def test_confirmation_is_scoped_to_exact_action_and_task(tmp_path: Path) -> None:
+    from time import time
+
+    from ember_agent.runtime.task_store import ConfirmationRequest
+
+    async def exercise() -> None:
+        store = TaskStore(tmp_path)
+        await store.initialize()
+        request = TaskSubmission(
+            character_id=uuid4(),
+            session_id=uuid4(),
+            turn_id=uuid4(),
+            idempotency_key="approval",
+            goal="synthetic",
+        )
+        task = await store.submit(request)
+        assert await store.claim(request.character_id) is not None
+        action = ConfirmationRequest(
+            task_id=task.task_id,
+            tool="synthetic_tool",
+            arguments={"value": "a"},
+            deadline_at=time() + 30,
+        )
+        pending = await store.request_confirmation(request.character_id, action)
+        assert await store.request_confirmation(request.character_id, action) == pending
+        with pytest.raises(TaskConflict, match="confirmation_action_changed"):
+            await store.request_confirmation(
+                request.character_id, action.model_copy(update={"arguments": {"value": "b"}})
+            )
+        with pytest.raises(TaskConflict, match="confirmation_scope_or_action_mismatch"):
+            await store.decide_confirmation(
+                uuid4(), pending.confirmation_id, pending.action_sha256, approve=True
+            )
+        with pytest.raises(TaskConflict, match="confirmation_scope_or_action_mismatch"):
+            await store.decide_confirmation(
+                request.character_id, pending.confirmation_id, "0" * 64, approve=True
+            )
+        approved = await store.decide_confirmation(
+            request.character_id, pending.confirmation_id, pending.action_sha256, approve=True
+        )
+        assert approved.state == "approved"
+        assert (
+            await store.decide_confirmation(
+                request.character_id, pending.confirmation_id, pending.action_sha256, approve=True
+            )
+            == approved
+        )
+        with pytest.raises(TaskConflict, match="confirmation_decided"):
+            await store.decide_confirmation(
+                request.character_id, pending.confirmation_id, pending.action_sha256, approve=False
+            )
+        await store.cancel(task.task_id, request.character_id)
+        with pytest.raises(TaskConflict, match="confirmation_task_unavailable"):
+            await store.decide_confirmation(
+                request.character_id, pending.confirmation_id, pending.action_sha256, approve=True
+            )
+
+    asyncio.run(exercise())
+
+
+def test_cited_task_is_revalidated_at_delivery_and_artifact_export(tmp_path: Path) -> None:
+    from ember_agent.runtime.task_router import (
+        TaskResult,
+        TaskRouter,
+        ToolContext,
+        ToolReceipt,
+    )
+    from ember_agent.runtime.task_store import TaskState
+    from ember_memory_abi.evidence import SourceRef
+    from ember_memory_abi.related import ContextDependencies
+
+    class Provider:
+        async def execute(
+            self,
+            request: TaskSubmission,
+            context: ToolContext,
+            progress: Callable[[TaskState], Awaitable[None]],
+        ) -> TaskResult:
+            del request, progress
+            return TaskResult(
+                summary="Synthetic supported result",
+                receipt=ToolReceipt(context=context, tool="synthetic", data={}),
+                citations=(source,),
+                dependencies=dependencies,
+            )
+
+    async def exercise() -> None:
+        nonlocal source, dependencies
+        character = uuid4()
+        source = SourceRef(
+            source_store_id=character,
+            record_kind="document",
+            record_id=uuid4(),
+            record_revision=1,
+        )
+        dependencies = ContextDependencies(policy_epoch=1, sources=(source,))
+        allowed = True
+
+        async def validate(_: ContextDependencies) -> bool:
+            return allowed
+
+        router = TaskRouter(tmp_path, character, uuid4(), Provider(), validate=validate)
+        await router.start()
+        try:
+            handle = await router.submit("cited", "synthetic")
+            async with asyncio.timeout(3):
+                while True:
+                    status = await router.status(handle.task_id)
+                    if status is not None and status.state in {"succeeded", "failed"}:
+                        break
+                    await asyncio.sleep(0.01)
+            assert status.state == "succeeded"
+            assert status.result == "Synthetic supported result"
+            allowed = False
+            assert (await router.status(handle.task_id)).result is None
+            assert (await router.notifications(None)).items[0].result is None
+            with pytest.raises(TaskConflict, match="task_artifact_unavailable"):
+                await router.save_artifact(handle.task_id)
+            allowed = True
+            source = SourceRef(
+                source_store_id=character,
+                record_kind="document",
+                record_id=uuid4(),
+                record_revision=1,
+            )
+            rejected = await router.submit("unscoped", "synthetic")
+            async with asyncio.timeout(3):
+                while True:
+                    status = await router.status(rejected.task_id)
+                    if status is not None and status.state in {"succeeded", "failed"}:
+                        break
+                    await asyncio.sleep(0.01)
+            assert status.state == "failed" and status.result is None
+        finally:
+            await router.aclose()
+
+    source: SourceRef
+    dependencies: ContextDependencies
+    asyncio.run(exercise())
+
+
+def test_router_cancellation_stops_inflight_read_only_provider(tmp_path: Path) -> None:
+    from ember_agent.runtime.task_router import TaskResult, TaskRouter, ToolContext
+    from ember_agent.runtime.task_store import TaskState
+
+    async def exercise() -> None:
+        started = asyncio.Event()
+        stopped = asyncio.Event()
+
+        class Provider:
+            async def execute(
+                self,
+                request: TaskSubmission,
+                context: ToolContext,
+                progress: Callable[[TaskState], Awaitable[None]],
+            ) -> TaskResult:
+                await progress("waiting_for_tool")
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    stopped.set()
+                raise AssertionError("Provider should be interrupted")
+
+        router = TaskRouter(tmp_path, uuid4(), uuid4(), Provider())
+        await router.start()
+        try:
+            handle = await router.submit("cancel-active", "Synthetic input")
+            async with asyncio.timeout(3):
+                await started.wait()
+                await router.cancel(handle.task_id)
+                await stopped.wait()
+                while True:
+                    status = await router.status(handle.task_id)
+                    if status is not None and status.state == "cancelled":
+                        break
+                    await asyncio.sleep(0.01)
+            assert status.result is None
+            items = (await router.notifications(None)).items
+            assert items == (status,)
+        finally:
+            await router.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_speech_claim_is_durable_scoped_and_does_not_ack_ui(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        store = TaskStore(tmp_path)
+        await store.initialize()
+        request = TaskSubmission(
+            character_id=uuid4(),
+            session_id=uuid4(),
+            turn_id=uuid4(),
+            idempotency_key="speech",
+            goal="Synthetic result",
+        )
+        handle = await store.submit(request)
+        await store.claim(request.character_id)
+        await store.finish(handle.task_id, "running", "succeeded", result="Ready")
+        assert await store.claim_speech(uuid4(), request.session_id) is None
+        assert await store.claim_speech(request.character_id, uuid4()) is None
+        claims = await asyncio.gather(
+            *(store.claim_speech(request.character_id, request.session_id) for _ in range(4))
+        )
+        assert claims.count(handle.task_id) == 1
+        reopened = TaskStore(tmp_path)
+        await reopened.initialize()
+        assert await reopened.claim_speech(request.character_id, request.session_id) is None
+        assert (await reopened.notifications(request.character_id))[0].task_id == handle.task_id
+        await reopened.reconcile(request.character_id)
+        with closing(sqlite3.connect(reopened.path)) as db:
+            assert db.execute("SELECT state FROM task_speech_delivery").fetchone() == ("uncertain",)
+        assert await reopened.claim_speech(request.character_id, request.session_id) is None
+        with pytest.raises(TaskConflict, match="speech_delivery_state_conflict"):
+            await reopened.finish_speech(handle.task_id, request.session_id, completed=True)
+
+    asyncio.run(exercise())
+
+
+def test_speech_worker_records_interrupted_playout_without_replay(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from ember_agent.realtime.session import HostedRoom
+    from ember_agent.runtime.task_router import (
+        TaskRouter,
+        TextInspectionProvider,
+        TextInspectionTask,
+        ToolRouter,
+    )
+
+    async def exercise() -> None:
+        character = uuid4()
+        router = TaskRouter(
+            tmp_path,
+            character,
+            uuid4(),
+            TextInspectionTask(ToolRouter(TextInspectionProvider(), character)),
+        )
+        await router.start()
+        entered = asyncio.Event()
+        interrupted = asyncio.Event()
+
+        class Speech:
+            async def wait_for_playout(self) -> None:
+                entered.set()
+                await asyncio.Event().wait()
+
+            def interrupt(self, *, force: bool) -> None:
+                assert force
+                interrupted.set()
+
+        class Session:
+            def say(self, text: str, **settings: object) -> Speech:
+                assert text == "A task result is ready in Tasks."
+                assert settings == {"allow_interruptions": True, "add_to_chat_ctx": False}
+                return Speech()
+
+        host = SimpleNamespace(closing=False, session=Session(), _can_announce_tasks=lambda: True)
+        worker = asyncio.create_task(HostedRoom._announce_tasks(host, router))
+        try:
+            handle = await router.submit("speech-worker", "Synthetic input")
+            async with asyncio.timeout(5):
+                await entered.wait()
+                worker.cancel()
+                await asyncio.gather(worker, return_exceptions=True)
+                await interrupted.wait()
+            assert await router.store.claim_speech(character, router.session_id) is None
+            assert (await router.notifications(None)).items[0].task_id == handle.task_id
+            with closing(sqlite3.connect(router.store.path)) as db:
+                state = db.execute(
+                    "SELECT state FROM task_speech_delivery WHERE task_id=?", (str(handle.task_id),)
+                ).fetchone()
+            assert state == ("uncertain",)
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+            await router.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_confirmed_effect_fence_prevents_replay_across_restart(tmp_path: Path) -> None:
+    from time import time
+
+    from ember_agent.runtime.task_store import ConfirmationRequest
+
+    async def exercise() -> None:
+        store = TaskStore(tmp_path)
+        await store.initialize()
+        request = TaskSubmission(
+            character_id=uuid4(),
+            session_id=uuid4(),
+            turn_id=uuid4(),
+            idempotency_key="effect",
+            goal="Synthetic draft",
+        )
+        task = await store.submit(request)
+        await store.claim(request.character_id)
+        action = await store.request_confirmation(
+            request.character_id,
+            ConfirmationRequest(
+                task_id=task.task_id,
+                tool="synthetic_write",
+                arguments={"target": "draft"},
+                deadline_at=time() + 60,
+            ),
+        )
+        with pytest.raises(TaskConflict, match="effect_authority_invalid"):
+            await store.begin_confirmed_effect(
+                request.character_id, action.confirmation_id, action.action_sha256
+            )
+        await store.decide_confirmation(
+            request.character_id, action.confirmation_id, action.action_sha256, approve=True
+        )
+        with pytest.raises(TaskConflict, match="effect_authority_invalid"):
+            await store.begin_confirmed_effect(
+                uuid4(), action.confirmation_id, action.action_sha256
+            )
+        with pytest.raises(TaskConflict, match="effect_authority_invalid"):
+            await store.begin_confirmed_effect(
+                request.character_id, action.confirmation_id, "0" * 64
+            )
+        outcomes = await asyncio.gather(
+            *(
+                store.begin_confirmed_effect(
+                    request.character_id, action.confirmation_id, action.action_sha256
+                )
+                for _ in range(2)
+            ),
+            return_exceptions=True,
+        )
+        assert sum(result is None for result in outcomes) == 1
+        assert sum(isinstance(result, TaskConflict) for result in outcomes) == 1
+        await store.reconcile(request.character_id)
+        with closing(sqlite3.connect(store.path)) as db:
+            assert db.execute("SELECT state FROM task_effect").fetchone() == ("uncertain",)
+        with pytest.raises(TaskConflict):
+            await store.begin_confirmed_effect(
+                request.character_id, action.confirmation_id, action.action_sha256
+            )
+        with pytest.raises(TaskConflict, match="effect_state_conflict"):
+            await store.finish_confirmed_effect(
+                request.character_id, action.confirmation_id, receipt={"ok": True}
+            )
+
+    asyncio.run(exercise())
+
+
+def test_failed_confirmed_write_is_uncertain_and_never_retried(tmp_path: Path) -> None:
+    from time import time
+
+    from pydantic import JsonValue
+
+    from ember_agent.runtime.task_router import (
+        ConfirmedEffectRouter,
+        TaskResult,
+        TaskRouter,
+        ToolContext,
+        ToolReceipt,
+    )
+    from ember_agent.runtime.task_store import ConfirmationRequest, TaskState
+
+    async def exercise() -> None:
+        calls = 0
+        waiting = asyncio.Event()
+        decision = asyncio.Event()
+
+        class Tool:
+            capabilities = frozenset({"write"})
+
+            async def invoke(
+                self, name: str, arguments: dict[str, JsonValue], context: ToolContext
+            ) -> ToolReceipt:
+                nonlocal calls
+                calls += 1
+                raise OSError("Unknown remote write outcome")
+
+        class Provider:
+            async def execute(
+                self,
+                request: TaskSubmission,
+                context: ToolContext,
+                progress: Callable[[TaskState], Awaitable[None]],
+            ) -> TaskResult:
+                await progress("waiting_for_user")
+                confirmation = await router.store.request_confirmation(
+                    context.character_id,
+                    ConfirmationRequest(
+                        task_id=context.task_id,
+                        tool="write",
+                        arguments={"text": request.goal},
+                        deadline_at=time() + 30,
+                    ),
+                )
+                waiting.set()
+                await decision.wait()
+                await progress("running")
+                broker = ConfirmedEffectRouter(router.store, Tool(), context.character_id)
+                receipt = await broker.invoke(
+                    confirmation, {"text": request.goal}, context, allowed=frozenset({"write"})
+                )
+                return TaskResult(summary="Done", receipt=receipt)
+
+        router = TaskRouter(tmp_path, uuid4(), uuid4(), Provider())
+        await router.start()
+        try:
+            task = await router.submit("unknown-write", "synthetic")
+            async with asyncio.timeout(5):
+                await waiting.wait()
+                pending = await router.confirmations()
+                assert len(pending) == 1
+                await router.decide(
+                    pending[0].confirmation_id, pending[0].action_sha256, approve=True
+                )
+                decision.set()
+                while True:
+                    status = await router.status(task.task_id)
+                    if status is not None and status.state == "uncertain":
+                        break
+                    await asyncio.sleep(0.01)
+            assert calls == 1
+            assert (await router.submit("unknown-write", "synthetic")).state == "uncertain"
+            with closing(sqlite3.connect(router.store.path)) as db:
+                assert db.execute("SELECT state FROM task_effect").fetchone() == ("uncertain",)
+        finally:
+            await router.aclose()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("mode", ["cancel", "malformed"])
+def test_effect_cancellation_and_bad_receipt_are_uncertain(tmp_path: Path, mode: str) -> None:
+    from time import time
+
+    from pydantic import JsonValue
+
+    from ember_agent.runtime.task_router import (
+        ConfirmedEffectRouter,
+        TaskResult,
+        TaskRouter,
+        ToolContext,
+        ToolReceipt,
+    )
+    from ember_agent.runtime.task_store import ConfirmationRequest, TaskState
+
+    async def exercise() -> None:
+        started = asyncio.Event()
+        ready = asyncio.Event()
+        decision = asyncio.Event()
+
+        class Tool:
+            capabilities = frozenset({"write"})
+
+            async def invoke(
+                self, name: str, arguments: dict[str, JsonValue], context: ToolContext
+            ) -> ToolReceipt:
+                started.set()
+                if mode == "cancel":
+                    await asyncio.Event().wait()
+                return ToolReceipt(
+                    context=context.model_copy(update={"task_id": uuid4()}), tool=name, data={}
+                )
+
+        class Provider:
+            async def execute(
+                self,
+                request: TaskSubmission,
+                context: ToolContext,
+                progress: Callable[[TaskState], Awaitable[None]],
+            ) -> TaskResult:
+                await progress("waiting_for_user")
+                confirmation = await router.store.request_confirmation(
+                    context.character_id,
+                    ConfirmationRequest(
+                        task_id=context.task_id,
+                        tool="write",
+                        arguments={"text": request.goal},
+                        deadline_at=time() + 30,
+                    ),
+                )
+                ready.set()
+                await decision.wait()
+                await progress("running")
+                receipt = await ConfirmedEffectRouter(
+                    router.store, Tool(), context.character_id
+                ).invoke(
+                    confirmation, {"text": request.goal}, context, allowed=frozenset({"write"})
+                )
+                return TaskResult(summary="Done", receipt=receipt)
+
+        router = TaskRouter(tmp_path, uuid4(), uuid4(), Provider())
+        await router.start()
+        try:
+            task = await router.submit("effect", "synthetic")
+            async with asyncio.timeout(5):
+                await ready.wait()
+                confirmation = (await router.confirmations())[0]
+                await router.decide(
+                    confirmation.confirmation_id, confirmation.action_sha256, approve=True
+                )
+                decision.set()
+                await started.wait()
+                if mode == "cancel":
+                    await router.cancel(task.task_id)
+                while True:
+                    status = await router.status(task.task_id)
+                    if status is not None and status.state in {"uncertain", "failed", "cancelled"}:
+                        break
+                    await asyncio.sleep(0.01)
+            assert status.state == "uncertain"
+            assert status.result is None
+            with closing(sqlite3.connect(router.store.path)) as db:
+                assert db.execute("SELECT state FROM task_effect").fetchone() == ("uncertain",)
+        finally:
+            await router.aclose()
 
     asyncio.run(exercise())

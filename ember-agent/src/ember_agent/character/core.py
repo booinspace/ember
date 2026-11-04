@@ -29,6 +29,8 @@ from ..inference.contracts import (
     GenerationUsage,
     ModelClient,
     PromptMessage,
+    ToolDefinition,
+    ToolFunction,
 )
 from ..memory.deep_contracts import DeepRecallResult
 from ..memory.deep_prompt import condense
@@ -160,6 +162,8 @@ class CharacterCore:
         self.last_scope: CalendarScope | None = None
         self.context_id = uuid4()
         self.submit_task: Callable[[str, UUID], Awaitable[str]] | None = None
+        self.task_tools: dict[str, tuple[str, Callable[[str, UUID], Awaitable[str]]]] = {}
+        self.task_notice: Callable[[], Awaitable[str]] | None = None
         self.history: list[CompletedTurn] = []
         self.busy = False
         self.batch_validation = False
@@ -282,6 +286,15 @@ class CharacterCore:
                 observation.prompts,
             )
         stripped = text.strip()
+        if self.task_notice is not None and stripped.casefold().rstrip("?.!") in {
+            "task updates",
+            "any task updates",
+            "are there any task updates",
+        }:
+            local = self._local_turn(
+                text, identity, observed_at, "Checking task updates.", ("task_update",)
+            )
+            return replace(local, local_reply=await self.task_notice())
         if self.submit_task is not None:
             prefix = next(
                 (
@@ -694,6 +707,35 @@ class CharacterCore:
             max_output_tokens=self.output_ceiling if thinking else 512,
             deadline_at=timestamp_from_datetime(datetime.now(UTC) + timedelta(seconds=180)),
         )
+        definitions = tuple(
+            ToolDefinition(
+                function=ToolFunction(
+                    name=name,
+                    description=description,
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string", "minLength": 1, "maxLength": 1600}
+                        },
+                        "required": ["text"],
+                        "additionalProperties": False,
+                    },
+                )
+            )
+            for name, (description, _) in self.task_tools.items()
+            if not thinking
+        )
+        if definitions:
+            candidate = request.model_copy(update={"tools": definitions})
+            serialized = json.dumps(
+                {
+                    "messages": [item.model_dump() for item in candidate.messages],
+                    "tools": [item.model_dump() for item in candidate.tools],
+                },
+                ensure_ascii=False,
+            )
+            if len(serialized.encode("utf-8")) + 512 + 64 * len(messages) <= self.input_ceiling:
+                request = candidate
         prepared = PreparedTurn(
             request=request,
             user=text,
@@ -888,6 +930,32 @@ class CharacterCore:
                     } and not await self.current(turn.dependencies, turn.certificate):
                         self.turn_view.invalidate(turn.request.request_id)
                         raise GatewayError("context_invalidated")
+                    if event.kind == "tools":
+                        if len(event.calls) != 1:
+                            raise GatewayError("task_tool_not_authorized")
+                        call = event.calls[0]
+                        selected = self.task_tools.get(call.name)
+                        if selected is None or not any(
+                            tool.function.name == call.name for tool in turn.request.tools
+                        ):
+                            raise GatewayError("task_tool_not_authorized")
+                        _, submit = selected
+                        arguments = call.arguments
+                        value = arguments.get("text")
+                        if (
+                            set(arguments) != {"text"}
+                            or not isinstance(value, str)
+                            or not value
+                            or len(value) > 1600
+                            or value not in turn.user
+                        ):
+                            raise GatewayError("task_tool_scope_denied")
+                        text = await submit(value, turn.request.request_id)
+                        event = GatewayEvent.model_validate_json(
+                            event.model_copy(
+                                update={"kind": "text", "text": text, "calls": ()}
+                            ).model_dump_json()
+                        )
                     if event.kind == "thinking":
                         if not turn.request.thinking:
                             raise GatewayError("unexpected_thinking_stream")

@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 from datetime import UTC, datetime, timedelta
@@ -13,6 +14,8 @@ from uuid import UUID, uuid4, uuid5
 from pydantic import Field, JsonValue
 
 from ember_memory_abi.common import timestamp_from_datetime
+from ember_memory_abi.evidence import SourceRef
+from ember_memory_abi.related import ContextDependencies
 
 from ..inference.contracts import GatewayRequest, ModelClient, PromptMessage
 from ..memory.deep_contracts import DeepRecallRequest
@@ -20,6 +23,9 @@ from ..memory.deep_recall import DeepRecallService
 from .config import RuntimeModel
 from .task_artifacts import TaskArtifact, TaskArtifacts
 from .task_store import (
+    Confirmation,
+    ConfirmationRequest,
+    TaskCancelled,
     TaskConflict,
     TaskHandle,
     TaskOperation,
@@ -117,15 +123,96 @@ class ToolRouter:
         return receipt
 
 
+class EffectUncertain(TaskConflict):
+    """An effect was dispatched but its final outcome cannot be established."""
+
+
+class ConfirmedEffectRouter:
+    """Fence one exact approved effect before invoking an installed provider."""
+
+    def __init__(self, store: TaskStore, provider: ToolProvider, character_id: UUID) -> None:
+        self.store, self.provider, self.character_id = store, provider, character_id
+
+    async def invoke(
+        self,
+        confirmation: Confirmation,
+        arguments: dict[str, JsonValue],
+        context: ToolContext,
+        *,
+        allowed: frozenset[str],
+    ) -> ToolReceipt:
+        """Run a confirmed action once; an ambiguous result cannot be replayed."""
+        encoded = json.dumps(
+            {"tool": confirmation.tool, "arguments": arguments},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        digest = hashlib.sha256(encoded).hexdigest()
+        if (
+            context.character_id != self.character_id
+            or confirmation.task_id != context.task_id
+            or confirmation.tool not in allowed
+            or confirmation.tool not in self.provider.capabilities
+            or confirmation.action_sha256 != digest
+        ):
+            raise TaskConflict("effect_scope_denied")
+        fence = asyncio.create_task(
+            self.store.begin_confirmed_effect(
+                self.character_id, confirmation.confirmation_id, digest
+            )
+        )
+        try:
+            await asyncio.shield(fence)
+        except asyncio.CancelledError:
+            # SQLite can commit after cancellation; establish its outcome before proceeding.
+            await fence
+            await self.store.finish_confirmed_effect(
+                self.character_id, confirmation.confirmation_id, receipt=None
+            )
+            raise EffectUncertain("effect_interrupted_before_dispatch") from None
+        try:
+            async with asyncio.timeout(5):
+                receipt = await self.provider.invoke(confirmation.tool, arguments, context)
+            receipt = ToolReceipt.model_validate_json(receipt.model_dump_json())
+            if receipt.context != context or receipt.tool != confirmation.tool:
+                raise TaskConflict("effect_receipt_mismatch")
+            if len(receipt.model_dump_json().encode()) > 4096:
+                raise TaskConflict("effect_receipt_too_large")
+        except BaseException as error:
+            await asyncio.shield(
+                self.store.finish_confirmed_effect(
+                    self.character_id, confirmation.confirmation_id, receipt=None
+                )
+            )
+            raise EffectUncertain("effect_outcome_uncertain") from error
+        completion = asyncio.create_task(
+            self.store.finish_confirmed_effect(
+                self.character_id, confirmation.confirmation_id, receipt=receipt.data
+            )
+        )
+        try:
+            await asyncio.shield(completion)
+        except asyncio.CancelledError as error:
+            await asyncio.gather(completion, return_exceptions=True)
+            raise EffectUncertain("effect_completed_during_cancellation") from error
+        except Exception as error:
+            raise EffectUncertain("effect_receipt_commit_failed") from error
+        return receipt
+
+
 class TaskResult(RuntimeModel):
     """Bounded result with a single authoritative native receipt."""
 
     summary: str = Field(min_length=1, max_length=4096, repr=False)
     receipt: ToolReceipt
+    citations: tuple[SourceRef, ...] = Field(default=(), max_length=24)
+    dependencies: ContextDependencies | None = None
 
 
 class AgenticTaskProvider(Protocol):
-    """Execute one read-only task. A provider never grants itself authority."""
+    """Execute one scoped task. A provider never grants itself authority."""
 
     async def execute(
         self,
@@ -133,7 +220,7 @@ class AgenticTaskProvider(Protocol):
         context: ToolContext,
         progress: Callable[[TaskState], Awaitable[None]],
     ) -> TaskResult:
-        """Return a scope-bound result without external mutation."""
+        """Return a scope-bound result using only explicitly authorized operations."""
         ...
 
 
@@ -184,7 +271,7 @@ class SummaryTask:
             workload="P2",
             model=self.model_tag,
             max_output_tokens=256,
-            deadline_at=timestamp_from_datetime(datetime.now(UTC) + timedelta(seconds=8)),
+            deadline_at=timestamp_from_datetime(datetime.now(UTC) + timedelta(seconds=180)),
             messages=(
                 PromptMessage(
                     role="system",
@@ -282,6 +369,97 @@ class EventBus:
         return self.revision
 
 
+class DraftPublicationProvider:
+    """Publish an approved draft only within the managed artifact root."""
+
+    capabilities = frozenset({"publish_draft"})
+
+    def __init__(self, artifacts: TaskArtifacts) -> None:
+        self.artifacts = artifacts
+
+    async def invoke(
+        self, name: str, arguments: dict[str, JsonValue], context: ToolContext
+    ) -> ToolReceipt:
+        """Create a private managed text artifact and return its content identity."""
+        if name != "publish_draft" or set(arguments) != {"draft"}:
+            raise TaskConflict("effect_invalid_arguments")
+        draft = arguments["draft"]
+        if not isinstance(draft, str) or not draft or len(draft) > 8192:
+            raise TaskConflict("effect_invalid_arguments")
+        artifact = await self.artifacts.save(
+            TaskSnapshot(
+                task_id=context.task_id, state="succeeded", result=draft, operation="review"
+            )
+        )
+        return ToolReceipt(
+            context=context,
+            tool=name,
+            data={"sha256": artifact.sha256, "size_bytes": artifact.size_bytes},
+        )
+
+
+class DraftReviewTask:
+    """Publish a draft only after a confirmation bound to its exact contents."""
+
+    def __init__(
+        self, store: TaskStore, events: EventBus, artifacts: TaskArtifacts, character_id: UUID
+    ) -> None:
+        self.store, self.events = store, events
+        self.effects = ConfirmedEffectRouter(
+            store, DraftPublicationProvider(artifacts), character_id
+        )
+
+    async def execute(
+        self,
+        request: TaskSubmission,
+        context: ToolContext,
+        progress: Callable[[TaskState], Awaitable[None]],
+    ) -> TaskResult:
+        if len(request.goal) > 4096:
+            raise TaskConflict("draft_too_large")
+        await progress("waiting_for_user")
+        confirmation = await self.store.request_confirmation(
+            context.character_id,
+            ConfirmationRequest(
+                task_id=context.task_id,
+                tool="publish_draft",
+                arguments={"draft": request.goal},
+                deadline_at=time() + 120,
+            ),
+        )
+        self.events.publish()
+        while True:
+            revision = self.events.revision
+            status = await self.store.status(context.task_id, context.character_id)
+            if status is None or status.cancellation_requested:
+                raise TaskCancelled()
+            current = await self.store.confirmation(
+                context.character_id, confirmation.confirmation_id
+            )
+            if current.state != "pending":
+                if current.state != "approved":
+                    raise TaskConflict("draft_not_approved")
+                break
+            await self.events.wait(revision)
+        await progress("running")
+        receipt = await self.effects.invoke(
+            current, {"draft": request.goal}, context, allowed=frozenset({"publish_draft"})
+        )
+        return TaskResult(summary=request.goal, receipt=receipt)
+
+
+class AttentionPolicy:
+    """Deliver confirmations and results only when an operator requests an update."""
+
+    def update(self, confirmations: int, results: int) -> str:
+        """Return a fixed notice, keeping task content in the authorized UI."""
+        if confirmations:
+            return f"You have {confirmations} task approval request(s) in Tasks."
+        if results:
+            return f"You have {results} task result(s) in Tasks."
+        return "There are no task updates."
+
+
 class TaskRouter:
     """Own one dispatcher, bind admission to the runtime scope, and drain on shutdown."""
 
@@ -294,6 +472,7 @@ class TaskRouter:
         *,
         summary: AgenticTaskProvider | None = None,
         recall: AgenticTaskProvider | None = None,
+        validate: Callable[[ContextDependencies], Awaitable[bool]] | None = None,
     ) -> None:
         self.store = TaskStore(root)
         self.artifacts = TaskArtifacts(root)
@@ -302,6 +481,7 @@ class TaskRouter:
         self.provider = provider
         self.summary = summary
         self.recall = recall
+        self.validate = validate
         self.providers = {
             "inspect": provider,
             "summarize": summary,
@@ -309,8 +489,13 @@ class TaskRouter:
         }
         self._wake = asyncio.Event()
         self.events = EventBus()
+        self.attention = AttentionPolicy()
+        self.providers["review"] = DraftReviewTask(
+            self.store, self.events, self.artifacts, character_id
+        )
         self._worker: asyncio.Task[None] | None = None
         self._closing = False
+        self._active: tuple[UUID, asyncio.Task[TaskResult]] | None = None
 
     async def start(self) -> None:
         """Reconcile interrupted work before accepting new work."""
@@ -348,17 +533,41 @@ class TaskRouter:
         self.events.publish()
         return handle
 
-    async def submit_turn(self, text: str, turn_id: UUID) -> str:
+    async def submit_turn(
+        self, text: str, turn_id: UUID, *, operation: TaskOperation = "inspect"
+    ) -> str:
         """Queue an explicit conversational task and return a short local receipt."""
         try:
-            await self.submit(str(turn_id), text, turn_id=turn_id)
+            await self.submit(str(turn_id), text, turn_id=turn_id, operation=operation)
         except TaskConflict:
             return "I couldn't queue that task. Please try again."
-        return "I queued the text inspection. Its result will appear in Tasks."
+        return "I queued the task. Its result will appear in Tasks."
+
+    async def _validated(self, value: TaskSnapshot) -> TaskSnapshot:
+        if value.receipt is None:
+            return value
+        try:
+            result = TaskResult.model_validate_json(value.receipt)
+        except ValueError:
+            # Earlier built-in tasks stored only their ToolReceipt.
+            try:
+                ToolReceipt.model_validate_json(value.receipt)
+            except ValueError:
+                return value.model_copy(update={"result": None})
+            return value
+        if result.dependencies is None:
+            return value if not result.citations else value.model_copy(update={"result": None})
+        if self.validate is None or not await self.validate(result.dependencies):
+            return value.model_copy(update={"result": None})
+        authorized = {source.identity_key() for source in result.dependencies.sources}
+        if any(source.identity_key() not in authorized for source in result.citations):
+            return value.model_copy(update={"result": None})
+        return value
 
     async def status(self, task_id: UUID) -> TaskSnapshot | None:
-        """Inspect operational state for this character."""
-        return await self.store.status(task_id, self.character_id)
+        """Inspect operational state after revalidating any memory dependencies."""
+        value = await self.store.status(task_id, self.character_id)
+        return await self._validated(value) if value else None
 
     async def save_artifact(self, task_id: UUID) -> TaskArtifact:
         """Export a scoped result after an explicit operator request."""
@@ -390,19 +599,41 @@ class TaskRouter:
     async def cancel(self, task_id: UUID) -> None:
         """Record cancellation under this character's authority."""
         await self.store.cancel(task_id, self.character_id)
+        active = self._active
+        if active is not None and active[0] == task_id and not active[1].cancelling():
+            active[1].cancel()
         self.events.publish()
 
     async def notifications(self, revision: int | None) -> TaskNotifications:
         """Deliver routine task completions only to the authenticated operator UI."""
         current = await self.events.wait(revision)
+        values = await self.store.notifications(self.character_id)
         return TaskNotifications(
-            revision=current, items=await self.store.notifications(self.character_id)
+            revision=current, items=tuple([await self._validated(value) for value in values])
         )
 
     async def acknowledge(self, task_id: UUID) -> None:
         """Record explicit UI delivery without advancing speech."""
         await self.store.acknowledge(task_id, self.character_id)
         self.events.publish()
+
+    async def confirmations(self) -> tuple[Confirmation, ...]:
+        """Read pending actions for the current character."""
+        return await self.store.pending_confirmations(self.character_id)
+
+    async def decide(self, identity: UUID, action_sha256: str, *, approve: bool) -> Confirmation:
+        """Record an explicit operator decision and wake the provider."""
+        decision = await self.store.decide_confirmation(
+            self.character_id, identity, action_sha256, approve=approve
+        )
+        self.events.publish()
+        return decision
+
+    async def turn_notice(self) -> str:
+        """Answer an explicit update request without claiming or replaying speech."""
+        pending = await self.store.pending_confirmations(self.character_id)
+        results = await self.store.notifications(self.character_id)
+        return self.attention.update(len(pending), len(results))
 
     async def _dispatch(self) -> None:
         while not self._closing:
@@ -432,35 +663,97 @@ class TaskRouter:
                 operation = asyncio.create_task(self.store.progress(identity, state, next_state))
                 try:
                     await asyncio.shield(operation)
+                except TaskCancelled:
+                    state = next_state
+                    self.events.publish()
+                    raise
                 except asyncio.CancelledError:
                     # A timed-out await does not stop SQLite. Observe the commit
                     # before selecting the expected state for terminal CAS.
-                    await operation
+                    try:
+                        await operation
+                    except TaskCancelled:
+                        state = next_state
+                        self.events.publish()
+                        raise
                     state = next_state
                     self.events.publish()
                     raise
                 state = next_state
                 self.events.publish()
 
+        async def execute_provider() -> TaskResult:
+            status = await self.store.status(identity, self.character_id)
+            if status is None or status.cancellation_requested:
+                raise TaskCancelled()
+            provider = self.providers[request.operation]
+            if provider is None:
+                raise TaskConflict("task_provider_unavailable")
+            return await provider.execute(request, context, progress)
+
         try:
-            async with asyncio.timeout(max(0.0, min(10.0, deadline - time()))):
-                provider = self.providers[request.operation]
-                if provider is None:
-                    raise TaskConflict("task_provider_unavailable")
-                result = await provider.execute(request, context, progress)
+            async with asyncio.timeout(max(0.0, min(180.0, deadline - time()))):
+                execution = asyncio.create_task(execute_provider(), name="ember-task-provider")
+                self._active = (identity, execution)
+                try:
+                    result = await asyncio.shield(execution)
+                except asyncio.CancelledError:
+                    # The dispatcher owns the provider even when its own deadline expires.
+                    dispatcher = asyncio.current_task()
+                    if dispatcher is not None and dispatcher.cancelling():
+                        if not execution.cancelling():
+                            execution.cancel()
+                        await asyncio.gather(execution, return_exceptions=True)
+                        raise
+                    raise TaskCancelled() from None
+                finally:
+                    self._active = None
             result = TaskResult.model_validate_json(result.model_dump_json())
             if result.receipt.context != context:
                 raise TaskConflict("task_receipt_mismatch")
-            receipt = result.receipt.model_dump_json()
-            if len(receipt.encode()) > 4096:
+            if result.citations:
+                if result.dependencies is None or self.validate is None:
+                    raise TaskConflict("task_citation_unvalidated")
+                authorized = {source.identity_key() for source in result.dependencies.sources}
+                if any(source.identity_key() not in authorized for source in result.citations):
+                    raise TaskConflict("task_citation_out_of_scope")
+            if result.dependencies is not None:
+                if self.validate is None or not await self.validate(result.dependencies):
+                    raise TaskConflict("task_context_invalidated")
+            artifact: tuple[str, int] | None = None
+            if request.operation == "review":
+                data = result.summary.encode("utf-8")
+                digest, size = (
+                    result.receipt.data.get("sha256"),
+                    result.receipt.data.get("size_bytes"),
+                )
+                if (
+                    result.receipt.tool != "publish_draft"
+                    or digest != hashlib.sha256(data).hexdigest()
+                    or type(size) is not int
+                    or size != len(data)
+                ):
+                    raise TaskConflict("effect_receipt_invalid")
+                artifact = (str(digest), size)
+            receipt = result.model_dump_json()
+            if len(receipt.encode()) > 65536:
                 raise TaskConflict("receipt_too_large")
+        except EffectUncertain:
+            await self.store.finish(identity, state, "uncertain")
+        except TaskCancelled:
+            await self.store.finish(identity, state, "cancelled")
         except TimeoutError:
             await self.store.finish(identity, state, "timed_out")
         except Exception:
             await self.store.finish(identity, state, "failed")
         else:
             await self.store.finish(
-                identity, state, "succeeded", result=result.summary, receipt=receipt
+                identity,
+                state,
+                "succeeded",
+                result=result.summary,
+                receipt=receipt,
+                artifact=artifact,
             )
 
     async def aclose(self) -> None:

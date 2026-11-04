@@ -354,6 +354,13 @@ def test_authenticated_operator_task_round_trip(tmp_path: Path) -> None:
                     artifact_path.write_text("changed", encoding="utf-8")
                     assert (await client.get(artifact_route)).status_code == 409
 
+                    core.task_notice = router.turn_notice
+                    notice = await core.prepare("Any task updates?")
+                    assert notice.local_reply == "You have 1 task result(s) in Tasks."
+                    events = [event async for event in core.stream(notice)]
+                    assert [event.kind for event in events] == ["start", "text", "end"]
+                    assert (await client.get("/api/task-notifications")).json()["items"]
+
                     delivery = (await client.get("/api/task-notifications")).json()
                     assert [item["task_id"] for item in delivery["items"]] == [task]
                     for _ in range(2):
@@ -382,6 +389,46 @@ def test_authenticated_operator_task_round_trip(tmp_path: Path) -> None:
                     assert response.json()["result"]["context_id"] == recall_id
                     ordinary_view = await client.get("/api/deep/" + recall_id)
                     assert ordinary_view.json()["result"] is None
+
+                    review = await client.post(
+                        "/api/tasks",
+                        json={
+                            "idempotency_key": "review",
+                            "text": "A synthetic draft",
+                            "operation": "review",
+                        },
+                    )
+                    assert review.status_code == 202
+                    review_id = review.json()["task_id"]
+                    async with asyncio.timeout(3):
+                        while True:
+                            confirmations = (await client.get("/api/task-confirmations")).json()
+                            if confirmations:
+                                break
+                            await asyncio.sleep(0.01)
+                    confirmation = confirmations[0]
+                    assert confirmation["arguments"] == {"draft": "A synthetic draft"}
+                    wrong = await client.post(
+                        "/api/task-confirmations/" + confirmation["confirmation_id"],
+                        json={"action_sha256": "0" * 64, "approve": True},
+                    )
+                    assert wrong.status_code == 409
+                    approved = await client.post(
+                        "/api/task-confirmations/" + confirmation["confirmation_id"],
+                        json={"action_sha256": confirmation["action_sha256"], "approve": True},
+                    )
+                    assert approved.json()["state"] == "approved"
+                    async with asyncio.timeout(3):
+                        while True:
+                            review_status = (await client.get("/api/tasks/" + review_id)).json()
+                            if review_status["state"] in {"succeeded", "failed"}:
+                                break
+                            await asyncio.sleep(0.01)
+                    assert review_status["state"] == "succeeded"
+                    assert review_status["result"] == "A synthetic draft"
+                    published = await client.get("/api/tasks/" + review_id + "/artifact")
+                    assert published.status_code == 200
+                    assert published.text == "A synthetic draft"
 
                     core.submit_task = router.submit_turn
                     turn = await core.prepare("Count the words in a synthetic example")

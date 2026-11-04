@@ -3,7 +3,7 @@
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from uuid import UUID, uuid4
 
 from livekit import rtc
@@ -39,6 +39,9 @@ from .contracts import (
     TurnResult,
 )
 from .livekit import EmberAgent
+
+if TYPE_CHECKING:
+    from ..runtime.task_router import TaskRouter
 
 
 class VoiceProviders(Protocol):
@@ -110,6 +113,7 @@ class HostedRoom:
         )
         self._turn_speech: SpeechHandle | None = None
         self.agent.gateway_llm.on_generation_start = self._capture_speech
+        self.task_announcer: asyncio.Task[None] | None = None
         self.delivery_tasks: set[asyncio.Task[None]] = set()
         self.delivery_failed = False
         # SDK EventEmitter callback return annotations are unspecified.
@@ -180,6 +184,59 @@ class HostedRoom:
         ):
             raise GatewayError("speech_settings_busy")
         return self.voice.configure_speech(selection)
+    def start_task_announcements(self, router: "TaskRouter") -> None:
+        """Own a single speech worker for the connected task session."""
+        if self.task_announcer is not None:
+            raise RuntimeError("Task announcements already started")
+        if self.voice is not None and self.voice.tts is not None:
+            self.task_announcer = asyncio.create_task(
+                self._announce_tasks(router), name="ember-task-announcements"
+            )
+
+    def _can_announce_tasks(self) -> bool:
+        return (
+            not self.closing
+            and not self.busy
+            and self.session.agent_state == "listening"
+            and self.session.user_state == "listening"
+            and any(p.identity == USER_IDENTITY for p in self.room.remote_participants.values())
+        )
+
+    async def _announce_tasks(self, router: "TaskRouter") -> None:
+        while not self.closing:
+            await asyncio.sleep(1)
+            if not self._can_announce_tasks():
+                continue
+            if await router.confirmations():
+                continue
+            identity = await router.store.claim_speech(router.character_id, router.session_id)
+            if identity is None:
+                continue
+            completed = False
+            try:
+                if self._can_announce_tasks():
+                    speech = self.session.say(
+                        "A task result is ready in Tasks.",
+                        allow_interruptions=True,
+                        add_to_chat_ctx=False,
+                    )
+                    try:
+                        await speech.wait_for_playout()
+                    except asyncio.CancelledError:
+                        speech.interrupt(force=True)
+                        raise
+                    completed = not speech.interrupted and speech.exception() is None
+            finally:
+                await asyncio.shield(
+                    router.store.finish_speech(identity, router.session_id, completed=completed)
+                )
+
+    async def stop_task_announcements(self) -> None:
+        """Stop the owned worker and retain uncertain delivery after interruption."""
+        if self.task_announcer is not None:
+            self.task_announcer.cancel()
+            await asyncio.gather(self.task_announcer, return_exceptions=True)
+            self.task_announcer = None
 
     def _start_permission_watch(self) -> None:
         if self.permission_watch is None:
@@ -435,6 +492,7 @@ class HostedRoom:
     async def aclose(self) -> None:
         """Stop admission, drain the sole turn, then close session and room."""
         self.closing = True
+        await self.stop_task_announcements()
         try:
             if self.permission_watch is not None:
                 await asyncio.shield(self.permission_watch)

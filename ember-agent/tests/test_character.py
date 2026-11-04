@@ -386,3 +386,84 @@ def test_text_composition_human_entry_and_stable_identity(
     assert reopened.memory.character_id == identity
     asyncio.run(reopened.aclose())
     reopened.close_workers()
+
+
+@pytest.mark.parametrize(
+    "name, trigger", [("inspect_user_text", "count"), ("investigate_memory", "investigate")]
+)
+@pytest.mark.parametrize(
+    "value, allowed, advertised",
+    [("hello world", True, True), ("invented text", False, True), ("hello world", False, False)],
+)
+def test_model_selected_task_is_bound_to_user_text(
+    tmp_path: Path, value: str, allowed: bool, advertised: bool, name: str, trigger: str
+) -> None:
+    from dataclasses import replace
+    from uuid import uuid4
+
+    from ember_agent.inference.contracts import ToolCall
+
+    class ToolModel:
+        async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
+            assert bool(request.tools) is advertised
+            yield GatewayEvent(
+                request_id=request.request_id,
+                context_id=request.context_id,
+                sequence=0,
+                kind="start",
+            )
+            yield GatewayEvent(
+                request_id=request.request_id,
+                context_id=request.context_id,
+                sequence=1,
+                kind="tools",
+                calls=(ToolCall(call_id=uuid4(), name=name, arguments={"text": value}),),
+            )
+            yield GatewayEvent(
+                request_id=request.request_id,
+                context_id=request.context_id,
+                sequence=2,
+                kind="end",
+                usage=GenerationUsage(
+                    prompt_tokens=3,
+                    output_tokens=2,
+                    total_seconds=0.1,
+                    first_visible_seconds=0.05,
+                    tokens_per_second=20,
+                ),
+            )
+
+    async def exercise() -> None:
+        with CanonicalEngine(tmp_path / "canonical") as engine:
+            character = engine.create_character().store_id
+            memory = InProcessAsyncMemoryClient(engine.character(character))
+            model = ToolModel()
+            core = CharacterCore(memory, model, model_tag="synthetic")
+            submitted: list[str] = []
+
+            async def submit(text: str, _: UUID) -> str:
+                submitted.append(text)
+                return "Queued."
+
+            core.task_tools[name] = ("Queue a task.", submit)
+            try:
+                turn = await core.prepare(f"Please {trigger} hello world for me")
+                if not advertised:
+                    turn = replace(turn, request=turn.request.model_copy(update={"tools": ()}))
+                if allowed:
+                    events = [event async for event in core.stream(turn)]
+                    assert "".join(event.text for event in events) == "Queued."
+                    assert submitted == [value]
+                else:
+                    with pytest.raises(
+                        GatewayError,
+                        match="task_tool_scope_denied"
+                        if advertised
+                        else "task_tool_not_authorized",
+                    ):
+                        _ = [event async for event in core.stream(turn)]
+                    assert not submitted
+            finally:
+                await memory.aclose()
+
+    asyncio.run(exercise())

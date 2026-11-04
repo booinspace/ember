@@ -24,3 +24,7 @@ in the operational database. The canonical memory root is independent.
 
 See [Root ADR 0017](adr/0017-phase-nine-operational-tasks.md) for the
 acceptance matrix and the scope of hardware checks.
+
+In conversation, the model can also select an installed task route for a
+request to count, summarize, or investigate. It queues one operation using
+text from the current message. Summary requires the agent gateway.

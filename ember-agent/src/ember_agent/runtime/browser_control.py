@@ -30,7 +30,7 @@ from .controls import CaptureControl, PromptControls, RuntimeControls
 from .speech_settings import SpeechOptions, SpeechSelection
 from .task_artifacts import TaskArtifact
 from .task_router import TaskNotifications, TaskRouter
-from .task_store import TaskConflict, TaskHandle, TaskOperation, TaskSnapshot
+from .task_store import Confirmation, TaskConflict, TaskHandle, TaskOperation, TaskSnapshot
 from .text_session import DirectTextSession, TextReply
 
 COOKIE = "ember_session"
@@ -68,6 +68,13 @@ class TextTurnInput(TextAcknowledgement):
 
     text: str = Field(min_length=1, max_length=1600, repr=False)
     investigation_id: Annotated[UUID4, Field(strict=False)] | None = None
+
+
+class ConfirmationDecision(RuntimeModel):
+    """Decision binds to the displayed action hash."""
+
+    action_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approve: bool
 
 
 class TaskInput(RuntimeModel):
@@ -213,7 +220,9 @@ class BrowserControl:
                     path="/api/",
                 )
                 response.headers["Cache-Control"] = "no-store"
-            if request.url.path.startswith(("/api/tasks", "/api/task-notifications")):
+            if request.url.path.startswith(
+                ("/api/tasks", "/api/task-notifications", "/api/task-confirmations")
+            ):
                 response.headers["Cache-Control"] = "no-store"
             return response
 
@@ -241,6 +250,16 @@ class BrowserControl:
                 return await router.submit(
                     value.idempotency_key, value.text, operation=value.operation
                 )
+
+            @app.get("/api/task-confirmations")
+            async def task_confirmations() -> tuple[Confirmation, ...]:
+                return await router.confirmations()
+
+            @app.post("/api/task-confirmations/{identity}")
+            async def decide_confirmation(
+                identity: UUID, value: ConfirmationDecision
+            ) -> Confirmation:
+                return await router.decide(identity, value.action_sha256, approve=value.approve)
 
             @app.get("/api/task-notifications")
             async def task_notifications(revision: int | None = None) -> TaskNotifications:

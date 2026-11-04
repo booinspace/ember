@@ -277,3 +277,64 @@ def test_explicit_alias_recalls_entity_valued_facts_without_literal_payload_name
                 await foreground.aclose()
 
         asyncio.run(exercise())
+
+
+def test_task_deep_recall_revalidates_source_selection(
+    tmp_path: Path,
+    engine: CanonicalEngine,
+    store: SqliteMemoryStore,
+    draft: MemoryDraft,
+) -> None:
+    from datetime import datetime
+
+    from ember_agent.runtime.task_router import (
+        RecallTask,
+        TaskRouter,
+        TextInspectionProvider,
+        TextInspectionTask,
+        ToolRouter,
+    )
+
+    accepted = store.remember(RememberRequest(idempotency_key="task-source", draft=draft)).affected[
+        0
+    ]
+
+    async def exercise() -> None:
+        foreground = InProcessAsyncMemoryClient(store)
+
+        def factory(deadline: float) -> InProcessAsyncMemoryClient:
+            budget = ReadBudget(deadline=deadline)
+            return InProcessAsyncMemoryClient(
+                store, deep_sources=DeepSources(engine, budget), read_budget=budget
+            )
+
+        service = DeepRecallService(store.character_id, factory, validation=foreground)
+        router = TaskRouter(
+            tmp_path / "runtime",
+            store.character_id,
+            uuid4(),
+            TextInspectionTask(ToolRouter(TextInspectionProvider(), store.character_id)),
+            recall=RecallTask(service, lambda: datetime.fromisoformat(STAMP), "UTC"),
+        )
+        await router.start()
+        try:
+            task = await router.submit("deep", "primary GPU SYNTHETIC_A", operation="recall")
+            async with asyncio.timeout(5):
+                while True:
+                    status = await router.status(task.task_id)
+                    if status is not None and status.state in {"succeeded", "failed"}:
+                        break
+                    await asyncio.sleep(0.01)
+            assert status.state == "succeeded"
+            result = await service.inspect(task.task_id, task.task_id)
+            assert result is not None
+            assert [m.memory.memory_id for m in result.memories] == [accepted.memory_id]
+            assert await service.inspect(task.task_id, uuid4()) is None
+            store.configure_recall(RecallSelection(local_enabled=False, import_mode="none"))
+            assert await service.inspect(task.task_id, task.task_id) is None
+        finally:
+            await router.aclose()
+            await service.aclose()
+            await foreground.aclose()
+
+    asyncio.run(exercise())

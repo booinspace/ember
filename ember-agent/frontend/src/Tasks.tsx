@@ -9,7 +9,7 @@ const handle = z.object({
   state: z.string(),
   cancellation_requested: z.boolean(),
 });
-const operationSchema = z.enum(["inspect", "summarize", "recall"]);
+const operationSchema = z.enum(["inspect", "summarize", "recall", "review"]);
 const snapshot = handle.extend({
   result: z.string().nullable(),
   operation: operationSchema,
@@ -19,6 +19,14 @@ const notifications = z.object({
   items: z.array(snapshot).max(16),
 });
 const acknowledged = z.object({ accepted: z.boolean() });
+const confirmation = z.object({
+  confirmation_id: z.string().uuid(),
+  action_sha256: z.string(),
+  tool: z.string(),
+  arguments: z.record(z.string(), z.unknown()),
+  state: z.string(),
+});
+
 const artifact = z.object({ task_id: z.string().uuid(), sha256: z.string() });
 
 export function Tasks({
@@ -41,6 +49,9 @@ export function Tasks({
   const [pending, setPending] = useState<
     z.infer<typeof notifications>["items"]
   >([]);
+  const [confirmations, setConfirmations] = useState<
+    z.infer<typeof confirmation>[]
+  >([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [recallResult, setRecallResult] = useState<Investigation>();
@@ -60,6 +71,14 @@ export function Tasks({
           controller.signal,
         );
         setPending(values.items);
+        setConfirmations(
+          await control(
+            "task-confirmations",
+            z.array(confirmation).max(16),
+            undefined,
+            controller.signal,
+          ),
+        );
         revision = values.revision;
         if (taskId) {
           const status = await control(
@@ -116,6 +135,26 @@ export function Tasks({
         setPending((items) => items.filter((item) => item.task_id !== id));
     } catch {
       setError("Task update failed.");
+    }
+  };
+  const decide = async (
+    item: z.infer<typeof confirmation>,
+    approve: boolean,
+  ) => {
+    try {
+      await control(
+        "task-confirmations/" + item.confirmation_id,
+        confirmation,
+        {
+          action_sha256: item.action_sha256,
+          approve,
+        },
+      );
+      setConfirmations((items) =>
+        items.filter((value) => value.confirmation_id !== item.confirmation_id),
+      );
+    } catch {
+      setError("Confirmation unavailable; refresh the task status.");
     }
   };
   const download = async (id: string) => {
@@ -175,7 +214,7 @@ export function Tasks({
             onChange={(event) => setText(event.target.value)}
           />
         </label>
-        {(summaries || recall) && (
+        {true && (
           <label>
             Operation
             <select
@@ -187,6 +226,7 @@ export function Tasks({
               <option value="inspect">Count words and characters</option>
               {summaries && <option value="summarize">Summarize</option>}
               {recall && <option value="recall">Recall deeply</option>}
+              <option value="review">Review a draft</option>
             </select>
           </label>
         )}
@@ -214,6 +254,14 @@ export function Tasks({
           )}
         </p>
       )}
+      {confirmations.map((item) => (
+        <section key={item.confirmation_id}>
+          <p>Approve {item.tool.replaceAll("_", " ")}?</p>
+          <pre>{JSON.stringify(item.arguments, null, 2)}</pre>
+          <button onClick={() => void decide(item, true)}>Approve</button>
+          <button onClick={() => void decide(item, false)}>Reject</button>
+        </section>
+      ))}
       {pending.map((item) => (
         <p key={item.task_id}>
           {item.result ?? item.state}

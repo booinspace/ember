@@ -15,6 +15,8 @@ import httpx
 from livekit import api, rtc
 from pydantic import ValidationError
 
+from ember_memory_abi.related import ContextDependencies
+
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
@@ -59,12 +61,17 @@ async def _start_tasks(
         client = HttpGatewayClient(runtime.config.services.gateway.endpoint, token)
         cleanup.push_async_callback(client.aclose)
         summary = SummaryTask(client, runtime.config.model_tag)
+
+    async def validate_task_dependencies(dependencies: ContextDependencies) -> bool:
+        return await runtime.core.current((), dependencies)
+
     router = TaskRouter(
         runtime.config.runtime_root,
         binding.character_id,
         binding.instance_id,
         TextInspectionTask(ToolRouter(TextInspectionProvider(), binding.character_id)),
         summary=summary,
+        validate=validate_task_dependencies,
         recall=RecallTask(
             runtime.deep, runtime.core.reference_clock, runtime.core.calendar.timezone
         ),
@@ -75,6 +82,29 @@ async def _start_tasks(
         print("Tasks unavailable: operational storage could not start.")
         return None
     runtime.core.submit_task = router.submit_turn
+
+    async def summarize(text: str, turn_id: UUID) -> str:
+        return await router.submit_turn(text, turn_id, operation="summarize")
+
+    async def investigate(text: str, turn_id: UUID) -> str:
+        return await router.submit_turn(text, turn_id, operation="recall")
+
+    runtime.core.task_tools = {
+        "inspect_user_text": (
+            "When the user requests a word count, queue text quoted exactly by the user.",
+            router.submit_turn,
+        ),
+        "investigate_memory": (
+            "When the user requests a deep memory investigation, queue their exact query.",
+            investigate,
+        ),
+    }
+    if summary is not None:
+        runtime.core.task_tools["summarize_user_text"] = (
+            "When the user requests a summary, queue text quoted exactly by the user.",
+            summarize,
+        )
+    runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)
     return router
 
@@ -598,6 +628,9 @@ async def _run_room(
             if await asyncio.to_thread(port_open, config.browser.endpoint):
                 raise ConfigurationError("Browser control port is already occupied.")
             task_router = await _start_tasks(runtime, binding, cleanup)
+            if task_router is not None:
+                host.start_task_announcements(task_router)
+                cleanup.push_async_callback(host.stop_task_announcements)
             control = BrowserControl(
                 task_router=task_router,
                 origin=config.browser.endpoint,
