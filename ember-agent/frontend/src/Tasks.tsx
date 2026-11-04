@@ -9,7 +9,13 @@ const handle = z.object({
   state: z.string(),
   cancellation_requested: z.boolean(),
 });
-const operationSchema = z.enum(["inspect", "summarize", "recall", "review"]);
+const operationSchema = z.enum([
+  "inspect",
+  "summarize",
+  "recall",
+  "review",
+  "tool",
+]);
 const snapshot = handle.extend({
   result: z.string().nullable(),
   operation: operationSchema,
@@ -20,6 +26,8 @@ const notifications = z.object({
 });
 const acknowledged = z.object({ accepted: z.boolean() });
 const confirmation = z.object({
+  display_label: z.string().optional(),
+  approvable: z.boolean().optional(),
   confirmation_id: z.string().uuid(),
   action_sha256: z.string(),
   tool: z.string(),
@@ -28,6 +36,18 @@ const confirmation = z.object({
 });
 
 const artifact = z.object({ task_id: z.string().uuid(), sha256: z.string() });
+const receiptSchema = z.object({
+  task_id: z.string().uuid(),
+  state: z.string(),
+  receipt: z
+    .object({
+      tool: z.string(),
+      outcome: z.string(),
+      code: z.string().nullable(),
+      data: z.record(z.string(), z.unknown()),
+    })
+    .nullable(),
+});
 
 export function Tasks({
   summaries,
@@ -55,6 +75,7 @@ export function Tasks({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [recallResult, setRecallResult] = useState<Investigation>();
+  const [receipt, setReceipt] = useState<z.infer<typeof receiptSchema>>();
   const taskId = current?.task_id;
   useEffect(() => {
     if (!open) return;
@@ -180,6 +201,14 @@ export function Tasks({
       setError("Recall unavailable.");
     }
   };
+  const inspectReceipt = async (id: string) => {
+    setReceipt(undefined);
+    try {
+      setReceipt(await control("tasks/" + id + "/receipt", receiptSchema));
+    } catch {
+      setError("Receipt is unavailable.");
+    }
+  };
   const active =
     current &&
     [
@@ -195,7 +224,10 @@ export function Tasks({
       className="controls"
       onToggle={(event) => {
         setOpen(event.currentTarget.open);
-        if (!event.currentTarget.open) setRecallResult(undefined);
+        if (!event.currentTarget.open) {
+          setRecallResult(undefined);
+          setReceipt(undefined);
+        }
       }}
     >
       <summary>Tasks</summary>
@@ -254,23 +286,38 @@ export function Tasks({
       )}
       {confirmations.map((item) => (
         <section key={item.confirmation_id}>
-          <p>Approve {item.tool.replaceAll("_", " ")}?</p>
+          <p>Approve {item.display_label || item.tool.replaceAll("_", " ")}?</p>
           <pre>{JSON.stringify(item.arguments, null, 2)}</pre>
-          <button onClick={() => void decide(item, true)}>Approve</button>
+          <button
+            disabled={
+              item.approvable === false ||
+              (item.tool.startsWith("mcp.") && !item.display_label)
+            }
+            onClick={() => void decide(item, true)}
+          >
+            Approve
+          </button>
           <button onClick={() => void decide(item, false)}>Reject</button>
         </section>
       ))}
       {pending.map((item) => (
         <p key={item.task_id}>
           {item.result ?? item.state}
-          {item.operation !== "recall" && item.state === "succeeded" && (
-            <button onClick={() => void download(item.task_id)}>
-              Save result
-            </button>
-          )}
+          {item.operation !== "recall" &&
+            item.operation !== "tool" &&
+            item.state === "succeeded" && (
+              <button onClick={() => void download(item.task_id)}>
+                Save result
+              </button>
+            )}
           {item.operation === "recall" && item.state === "succeeded" && (
             <button onClick={() => void inspectRecall(item.task_id)}>
               View recall
+            </button>
+          )}
+          {item.operation === "tool" && (
+            <button onClick={() => void inspectReceipt(item.task_id)}>
+              View receipt
             </button>
           )}
           <button onClick={() => void act(item.task_id, "acknowledge")}>
@@ -279,6 +326,16 @@ export function Tasks({
         </p>
       ))}
       {open && recallResult && <Inspector result={recallResult} busy={false} />}
+      {open && receipt && (
+        <section aria-label="Tool receipt">
+          <p>Outcome: {receipt.state}</p>
+          <pre>
+            {receipt.receipt
+              ? JSON.stringify(receipt.receipt, null, 2)
+              : "No result data was retained for this outcome."}
+          </pre>
+        </section>
+      )}
     </details>
   );
 }

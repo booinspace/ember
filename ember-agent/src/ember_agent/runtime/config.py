@@ -1,5 +1,6 @@
 """Offline validated deployment contracts; never starts services or generation."""
 
+import json
 import re
 import tomllib
 from ipaddress import IPv4Address, IPv4Network
@@ -7,7 +8,9 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, ValidationError
+
+from .mcp_contracts import MCPServerSettings
 
 type ManagementMode = Literal["attach", "managed", "disabled"]
 type ServiceName = Literal["ollama", "livekit", "tts", "gateway"]
@@ -148,6 +151,7 @@ class DeploymentConfig(RuntimeModel):
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
     audio: AudioSettings = Field(default_factory=AudioSettings)
     interpretation: InterpretationSettings = Field(default_factory=InterpretationSettings)
+    mcp_servers: tuple[MCPServerSettings, ...] = ()
 
     @property
     def model_pin_configured(self) -> bool:
@@ -224,6 +228,9 @@ class _DeploymentSettings(RuntimeModel):
     browser: _BrowserSettings = _BrowserSettings()
     interpretation: InterpretationSettings = InterpretationSettings()
     prompts: _PromptSettings = _PromptSettings()
+    mcp_servers: list[dict[str, JsonValue]] = Field(
+        default_factory=list[dict[str, JsonValue]], max_length=8
+    )
 
 
 def _read_settings(path: Path) -> _DeploymentSettings:
@@ -438,7 +445,17 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         ZoneInfo(settings.search.timezone)
     except (ZoneInfoNotFoundError, ValueError) as error:
         raise ConfigurationError("Configured recall timezone is unavailable; run setup.") from error
+    try:
+        mcp_servers = tuple(
+            MCPServerSettings.model_validate_json(json.dumps(value))
+            for value in settings.mcp_servers
+        )
+        if len({server.id for server in mcp_servers}) != len(mcp_servers):
+            raise ConfigurationError("MCP server identities must be unique.")
+    except (ValidationError, ValueError) as error:
+        raise ConfigurationError("MCP server configuration is invalid.") from error
     return DeploymentConfig(
+        mcp_servers=mcp_servers,
         active_profile=settings.active_profile,
         system_prompt_file=(path.resolve().parent / settings.prompts.system_file).absolute(),
         data_root=data_root,

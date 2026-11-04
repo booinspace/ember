@@ -7,14 +7,14 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 from time import time
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID, uuid4
 
-from pydantic import Field, JsonValue, TypeAdapter
+from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
 from .config import RuntimeModel
 
-type TaskOperation = Literal["inspect", "summarize", "recall", "review"]
+type TaskOperation = Literal["inspect", "summarize", "recall", "review", "tool"]
 type TerminalState = Literal["succeeded", "failed", "cancelled", "timed_out", "uncertain"]
 type TaskState = Literal[
     "queued",
@@ -43,6 +43,19 @@ class TaskCancelled(Exception):
     """The operator cancelled a task before its next step."""
 
 
+class ToolInvocation(RuntimeModel):
+    """Explicit operator request for one discovered policy-bound external tool."""
+
+    tool_id: str = Field(min_length=1, max_length=64)
+    arguments: dict[str, JsonValue] = Field(repr=False, max_length=64)
+
+    @model_validator(mode="after")
+    def bounded_arguments(self) -> Self:
+        if len(self.model_dump_json().encode()) > 8192:
+            raise ValueError("Tool arguments exceed the bounded request size")
+        return self
+
+
 class TaskSubmission(RuntimeModel):
     """A trusted caller binds task identity and scope before persistence."""
 
@@ -52,6 +65,13 @@ class TaskSubmission(RuntimeModel):
     idempotency_key: Annotated[str, Field(min_length=1, max_length=128)]
     goal: Annotated[str, Field(min_length=1, max_length=8192, repr=False)]
     operation: TaskOperation = "inspect"
+    tool: ToolInvocation | None = None
+
+    @model_validator(mode="after")
+    def bound_operation(self) -> Self:
+        if (self.operation == "tool") != (self.tool is not None):
+            raise ValueError("Tool payload must belong to the tool operation")
+        return self
 
 
 class ConfirmationRequest(RuntimeModel):
@@ -73,6 +93,8 @@ class Confirmation(RuntimeModel):
     arguments: dict[str, JsonValue] = Field(repr=False)
     state: Literal["pending", "approved", "rejected", "expired"]
     deadline_at: float
+    display_label: str = Field(default="", max_length=256)
+    approvable: bool = True
 
 
 class TaskHandle(RuntimeModel):
@@ -182,7 +204,11 @@ class TaskStore:
             ).fetchone()
             if row is not None:
                 original = TaskSubmission.model_validate_json(row[1])
-                if (original.goal, original.operation) != (request.goal, request.operation):
+                if (original.goal, original.operation, original.tool) != (
+                    request.goal,
+                    request.operation,
+                    request.tool,
+                ):
                     raise TaskConflict("idempotency_key_reused")
                 return TaskHandle.model_validate(
                     {
@@ -244,7 +270,8 @@ class TaskStore:
         with closing(sqlite3.connect(self.path)) as db, db:
             row = db.execute(
                 """UPDATE task
-                   SET state=CASE WHEN EXISTS (SELECT 1 FROM task_effect e WHERE e.task_id=task.id)
+                   SET state=CASE WHEN EXISTS (SELECT 1 FROM task_effect e
+                                              WHERE e.task_id=task.id AND e.state<>'not_dispatched')
                                         AND (?<>'succeeded' OR cancellation_requested)
                                   THEN 'uncertain'
                                   WHEN cancellation_requested AND ?='succeeded'
@@ -701,7 +728,12 @@ class TaskStore:
                 raise TaskConflict("effect_already_dispatched") from error
 
     async def finish_confirmed_effect(
-        self, character_id: UUID, confirmation_id: UUID, *, receipt: dict[str, JsonValue] | None
+        self,
+        character_id: UUID,
+        confirmation_id: UUID,
+        *,
+        receipt: dict[str, JsonValue] | None,
+        dispatched: bool = True,
     ) -> None:
         """Record a bounded receipt or preserve an uncertain outcome after dispatch."""
         encoded = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -713,10 +745,16 @@ class TaskStore:
             confirmation_id,
             receipt is not None,
             encoded,
+            dispatched,
         )
 
     def _finish_confirmed_effect(
-        self, character_id: UUID, confirmation_id: UUID, completed: bool, encoded: str
+        self,
+        character_id: UUID,
+        confirmation_id: UUID,
+        completed: bool,
+        encoded: str,
+        dispatched: bool,
     ) -> None:
         with closing(sqlite3.connect(self.path)) as db, db:
             row = db.execute(
@@ -724,7 +762,11 @@ class TaskStore:
                    AND state='dispatching' AND task_id IN
                    (SELECT id FROM task WHERE character_id=?)""",
                 (
-                    "completed" if completed else "uncertain",
+                    "not_dispatched"
+                    if not dispatched
+                    else "completed"
+                    if completed
+                    else "uncertain",
                     encoded,
                     str(confirmation_id),
                     str(character_id),

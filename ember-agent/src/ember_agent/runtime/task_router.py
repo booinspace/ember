@@ -8,7 +8,7 @@ from contextlib import aclosing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import time
-from typing import Annotated, Protocol
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol, cast
 from uuid import UUID, uuid4, uuid5
 
 from pydantic import Field, JsonValue
@@ -33,7 +33,12 @@ from .task_store import (
     TaskState,
     TaskStore,
     TaskSubmission,
+    TerminalState,
+    ToolInvocation,
 )
+
+if TYPE_CHECKING:
+    from .mcp_tools import MCPTools
 
 
 class InspectText(RuntimeModel):
@@ -58,6 +63,9 @@ class ToolReceipt(RuntimeModel):
     context: ToolContext
     tool: str = Field(min_length=1, max_length=64)
     data: dict[str, JsonValue] = Field(repr=False)
+    outcome: Literal["success", "failure", "timeout", "unknown_effect"] = "success"
+    code: str | None = Field(default=None, pattern=r"^[a-z0-9_]{1,64}$")
+    dispatched: bool | None = None
 
 
 class ToolProvider(Protocol):
@@ -182,6 +190,10 @@ class ConfirmedEffectRouter:
             receipt = ToolReceipt.model_validate_json(receipt.model_dump_json())
             if receipt.context != context or receipt.tool != confirmation.tool:
                 raise TaskConflict("effect_receipt_mismatch")
+            if receipt.outcome != "success" and not (
+                receipt.dispatched is False and receipt.outcome in {"failure", "timeout"}
+            ):
+                raise TaskConflict("effect_result_not_success")
             if len(receipt.model_dump_json().encode()) > 4096:
                 raise TaskConflict("effect_receipt_too_large")
         except BaseException as error:
@@ -193,13 +205,18 @@ class ConfirmedEffectRouter:
             raise EffectUncertain("effect_outcome_uncertain") from error
         completion = asyncio.create_task(
             self.store.finish_confirmed_effect(
-                self.character_id, confirmation.confirmation_id, receipt=receipt.data
+                self.character_id,
+                confirmation.confirmation_id,
+                receipt=receipt.data,
+                dispatched=receipt.dispatched is not False,
             )
         )
         try:
             await asyncio.shield(completion)
         except asyncio.CancelledError as error:
             await asyncio.gather(completion, return_exceptions=True)
+            if receipt.dispatched is False:
+                raise TaskCancelled() from error
             raise EffectUncertain("effect_completed_during_cancellation") from error
         except Exception as error:
             raise EffectUncertain("effect_receipt_commit_failed") from error
@@ -349,6 +366,14 @@ class TaskNotifications(RuntimeModel):
     items: tuple[TaskSnapshot, ...]
 
 
+class TaskReceiptView(RuntimeModel):
+    """Truthful outcome remains inspectable even when cancellation suppresses result data."""
+
+    task_id: UUID
+    state: TaskState
+    receipt: ToolReceipt | None
+
+
 class EventBus:
     """One coalesced change signal. Durable terminal payloads live in the outbox."""
 
@@ -464,6 +489,95 @@ class AttentionPolicy:
         return "There are no task updates."
 
 
+class MCPTask:
+    """Use existing durable task/approval ownership for explicit direct MCP requests."""
+
+    def __init__(
+        self, store: TaskStore, events: EventBus, tools: "MCPTools", character: UUID
+    ) -> None:
+        self.store, self.events, self.tools = store, events, tools
+        self.reads = ToolRouter(tools, character)
+        self.writes = ConfirmedEffectRouter(store, tools, character)
+
+    async def execute(
+        self,
+        request: TaskSubmission,
+        context: ToolContext,
+        progress: Callable[[TaskState], Awaitable[None]],
+    ) -> TaskResult:
+        invocation = request.tool
+        if invocation is None:
+            raise TaskConflict("tool_request_missing")
+        try:
+            definition = self.tools.definition(invocation.tool_id)
+            from jsonschema import Draft202012Validator
+
+            validator = Draft202012Validator(definition.input_schema)
+            validate = cast(Callable[[object], bool], validator.is_valid)  # pyright: ignore[reportUnknownMemberType]
+            if not validate(invocation.arguments):
+                raise TaskConflict("tool_arguments_invalid")
+            if definition.effect == "write":
+                await progress("waiting_for_user")
+                confirmation = await self.store.request_confirmation(
+                    context.character_id,
+                    ConfirmationRequest(
+                        task_id=context.task_id,
+                        tool=definition.id,
+                        arguments=invocation.arguments,
+                        deadline_at=min(time() + 120, context.deadline_at or time() + 120),
+                    ),
+                )
+                self.events.publish()
+                while True:
+                    revision = self.events.revision
+                    current = await self.store.confirmation(
+                        context.character_id, confirmation.confirmation_id
+                    )
+                    if current.state != "pending":
+                        if current.state != "approved":
+                            raise TaskConflict("tool_not_approved")
+                        break
+                    await progress("waiting_for_user")
+                    await self.events.wait(revision)
+                await progress("running")
+                receipt = await self.writes.invoke(
+                    current, invocation.arguments, context, allowed=frozenset({definition.id})
+                )
+            else:
+                await progress("waiting_for_tool")
+                receipt = await self.reads.invoke(
+                    definition.id, invocation.arguments, context, allowed=frozenset({definition.id})
+                )
+                await progress("running")
+        except EffectUncertain:
+            receipt = ToolReceipt(
+                context=context,
+                tool=invocation.tool_id,
+                data={},
+                outcome="unknown_effect",
+                code="tool_effect_uncertain",
+            )
+        except TimeoutError:
+            receipt = ToolReceipt(
+                context=context,
+                tool=invocation.tool_id,
+                data={},
+                outcome="timeout",
+                code="tool_timeout",
+            )
+        except TaskConflict:
+            receipt = ToolReceipt(
+                context=context,
+                tool=invocation.tool_id,
+                data={},
+                outcome="failure",
+                code="tool_request_rejected",
+            )
+        return TaskResult(
+            summary="Tool " + receipt.outcome + ". Open its receipt for details.", receipt=receipt
+        )
+
+
 class TaskRouter:
     """Own one dispatcher, bind admission to the runtime scope, and drain on shutdown."""
 
@@ -477,6 +591,7 @@ class TaskRouter:
         summary: AgenticTaskProvider | None = None,
         recall: AgenticTaskProvider | None = None,
         validate: Callable[[ContextDependencies], Awaitable[bool]] | None = None,
+        mcp: "MCPTools | None" = None,
     ) -> None:
         self.store = TaskStore(root)
         self.artifacts = TaskArtifacts(root)
@@ -486,6 +601,7 @@ class TaskRouter:
         self.summary = summary
         self.recall = recall
         self.validate = validate
+        self.mcp = mcp
         self.providers = {
             "inspect": provider,
             "summarize": summary,
@@ -496,6 +612,9 @@ class TaskRouter:
         self.attention = AttentionPolicy()
         self.providers["review"] = DraftReviewTask(
             self.store, self.events, self.artifacts, character_id
+        )
+        self.providers["tool"] = (
+            MCPTask(self.store, self.events, mcp, character_id) if mcp else None
         )
         self._worker: asyncio.Task[None] | None = None
         self._closing = False
@@ -517,10 +636,13 @@ class TaskRouter:
         *,
         turn_id: UUID | None = None,
         operation: TaskOperation = "inspect",
+        tool: ToolInvocation | None = None,
     ) -> TaskHandle:
         """Persist a scoped task before signalling the worker."""
         if self._closing or self._worker is None or self._worker.done():
             raise TaskConflict("task_router_unavailable")
+        if (operation == "tool") != (tool is not None):
+            raise TaskConflict("invalid_tool_submission")
         if self.providers[operation] is None:
             raise TaskConflict("task_provider_unavailable")
         handle = await self.store.submit(
@@ -531,6 +653,7 @@ class TaskRouter:
                 idempotency_key=key,
                 goal=text,
                 operation=operation,
+                tool=tool,
             )
         )
         self._wake.set()
@@ -572,6 +695,19 @@ class TaskRouter:
         """Inspect operational state after revalidating any memory dependencies."""
         value = await self.store.status(task_id, self.character_id)
         return await self._validated(value) if value else None
+
+    async def receipt(self, task_id: UUID) -> TaskReceiptView:
+        """Revalidate ownership and dependencies before explicitly disclosing a bounded receipt."""
+        value = await self.status(task_id)
+        if value is None:
+            raise TaskConflict("task_receipt_unavailable")
+        if value.result is None or value.receipt is None:
+            return TaskReceiptView(task_id=task_id, state=value.state, receipt=None)
+        try:
+            receipt = TaskResult.model_validate_json(value.receipt).receipt
+            return TaskReceiptView(task_id=task_id, state=value.state, receipt=receipt)
+        except ValueError as error:
+            raise TaskConflict("task_receipt_unavailable") from error
 
     async def save_artifact(self, task_id: UUID) -> TaskArtifact:
         """Export a scoped result after an explicit operator request."""
@@ -623,10 +759,45 @@ class TaskRouter:
 
     async def confirmations(self) -> tuple[Confirmation, ...]:
         """Read pending actions for the current character."""
-        return await self.store.pending_confirmations(self.character_id)
+        pending = await self.store.pending_confirmations(self.character_id)
+        results: list[Confirmation] = []
+        for value in pending:
+            if not value.tool.startswith("mcp."):
+                results.append(
+                    value.model_copy(update={"display_label": value.tool.replace("_", " ")})
+                )
+                continue
+            try:
+                if self.mcp is None:
+                    raise TaskConflict("mcp_unavailable")
+                definition = self.mcp.definition(value.tool)
+                if definition.effect != "write":
+                    raise TaskConflict("mcp_effect_changed")
+            except TaskConflict:
+                results.append(
+                    value.model_copy(
+                        update={
+                            "display_label": "Unavailable external tool",
+                            "approvable": False,
+                        }
+                    )
+                )
+            else:
+                results.append(
+                    value.model_copy(
+                        update={
+                            "display_label": f"{definition.server_id}: {definition.name} (write)",
+                        }
+                    )
+                )
+        return tuple(results)
 
     async def decide(self, identity: UUID, action_sha256: str, *, approve: bool) -> Confirmation:
         """Record an explicit operator decision and wake the provider."""
+        original = await self.store.confirmation(self.character_id, identity)
+        if approve and original.tool.startswith("mcp."):
+            if self.mcp is None or self.mcp.definition(original.tool).effect != "write":
+                raise TaskConflict("mcp_approval_unavailable")
         decision = await self.store.decide_confirmation(
             self.character_id, identity, action_sha256, approve=approve
         )
@@ -752,10 +923,16 @@ class TaskRouter:
         except Exception:
             await self.store.finish(identity, state, "failed")
         else:
+            outcome: dict[str, TerminalState] = {
+                "success": "succeeded",
+                "failure": "failed",
+                "timeout": "timed_out",
+                "unknown_effect": "uncertain",
+            }
             await self.store.finish(
                 identity,
                 state,
-                "succeeded",
+                outcome[result.receipt.outcome],
                 result=result.summary,
                 receipt=receipt,
                 artifact=artifact,

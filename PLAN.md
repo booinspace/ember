@@ -5124,3 +5124,15 @@ retain existing ownership. Phase 9 task, memory policy and gateway contracts are
 retains Kokoro through the existing compatible adapter and legacy TOML alias, and
 makes startup pace an explicit deployment value. Phonon deployment defaults select
 Juniper at 1.1×; engine-specific voice IDs do not enter character/memory logic.
+
+## Phase 10 implementation status
+
+Direct MCP is implemented through the existing tool/task owner with pinned SDK
+2.3.0, explicit grants, actor-bound clients, exact write approvals and truthful
+receipts. The initial supported interaction is an authenticated operator UI for
+trusted atomic/stateless services; no automatic conversational tool loop or OS
+sandbox is claimed. Native conversation and memory remain independent.
+[Validation](docs/phase-10-validation.md) maps the original six acceptance criteria,
+records independent review corrections, native platform gates and the complete
+gateway benchmark suite. [Root ADR 0019](docs/adr/0019-direct-mcp.md) and the
+[runbook](docs/phase-10-runbook.md) describe authority and configuration.

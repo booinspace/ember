@@ -16,6 +16,7 @@ import {
 } from "./contracts";
 import { Controls } from "./controls";
 import { Tasks } from "./Tasks";
+import { Tools } from "./Tools";
 import { Inspector } from "./Inspector";
 import { TurnDetailsPanel } from "./TurnDetails";
 import { PromptEditor } from "./PromptEditor";
@@ -401,6 +402,7 @@ export function App() {
           {error}
         </div>
       )}
+      {state?.tasks_available && <Tools />}
       {state?.tasks_available && (
         <Tasks
           summaries={state.summary_tasks_available}

@@ -143,3 +143,6 @@ Phase 9 native foundations and their acceptance evidence are recorded in
 [Root ADR 0017](0017-phase-nine-operational-tasks.md) and
 [Phase 9 validation](../phase-9-validation.md). Intended future vLLM use remains
 gated on Phase 13 verified cancellation and capacity release.
+
+[Root ADR 0019 — Direct MCP](0019-direct-mcp.md) records Phase 10 implementation,
+scoped atomic tools, operator UI and [acceptance evidence](../phase-10-validation.md).

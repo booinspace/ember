@@ -51,6 +51,13 @@ from .text_session import DirectTextSession
 async def _start_tasks(
     runtime: LocalRuntime, binding: RoomBinding, cleanup: AsyncExitStack
 ) -> TaskRouter | None:
+    mcp = None
+    if runtime.config.mcp_servers:
+        from .mcp_tools import MCPTools
+
+        mcp = MCPTools(runtime.config.mcp_servers, binding.character_id, binding.instance_id)
+        cleanup.push_async_callback(mcp.aclose)
+        await mcp.start()
     token_path = runtime.config.runtime_root / "gateway-agent.token"
     try:
         token = (await asyncio.to_thread(token_path.read_text, encoding="utf-8")).strip()
@@ -71,6 +78,7 @@ async def _start_tasks(
         binding.instance_id,
         TextInspectionTask(ToolRouter(TextInspectionProvider(), binding.character_id)),
         summary=summary,
+        mcp=mcp,
         validate=validate_task_dependencies,
         recall=RecallTask(
             runtime.deep, runtime.core.reference_clock, runtime.core.calendar.timezone

@@ -5,7 +5,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import UUID4, Field
+from pydantic import UUID4, Field, model_validator
 
 from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.errors import MemoryError
@@ -27,10 +27,18 @@ from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
 from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, PromptControls, RuntimeControls
+from .mcp_contracts import MCPDiscovery
 from .speech_settings import SpeechOptions, SpeechSelection
 from .task_artifacts import TaskArtifact
-from .task_router import TaskNotifications, TaskRouter
-from .task_store import Confirmation, TaskConflict, TaskHandle, TaskOperation, TaskSnapshot
+from .task_router import TaskNotifications, TaskReceiptView, TaskRouter
+from .task_store import (
+    Confirmation,
+    TaskConflict,
+    TaskHandle,
+    TaskOperation,
+    TaskSnapshot,
+    ToolInvocation,
+)
 from .text_session import DirectTextSession, TextReply
 
 COOKIE = "ember_session"
@@ -83,6 +91,13 @@ class TaskInput(RuntimeModel):
     idempotency_key: str = Field(min_length=1, max_length=128)
     text: str = Field(min_length=1, max_length=8192, repr=False)
     operation: TaskOperation = "inspect"
+    tool: ToolInvocation | None = None
+
+    @model_validator(mode="after")
+    def bound_tool_operation(self) -> Self:
+        if (self.operation == "tool") != (self.tool is not None):
+            raise ValueError("Tool payload must belong to the tool operation")
+        return self
 
 
 class BrowserControl:
@@ -221,7 +236,7 @@ class BrowserControl:
                 )
                 response.headers["Cache-Control"] = "no-store"
             if request.url.path.startswith(
-                ("/api/tasks", "/api/task-notifications", "/api/task-confirmations")
+                ("/api/tasks", "/api/task-notifications", "/api/task-confirmations", "/api/tools")
             ):
                 response.headers["Cache-Control"] = "no-store"
             return response
@@ -248,8 +263,22 @@ class BrowserControl:
             @app.post("/api/tasks", status_code=202)
             async def submit_task(value: TaskInput) -> TaskHandle:
                 return await router.submit(
-                    value.idempotency_key, value.text, operation=value.operation
+                    value.idempotency_key, value.text, operation=value.operation, tool=value.tool
                 )
+
+            @app.get("/api/tools")
+            async def tool_discovery() -> MCPDiscovery:
+                return router.mcp.snapshot() if router.mcp else MCPDiscovery(servers=(), tools=())
+
+            @app.post("/api/tools/refresh")
+            async def refresh_tools() -> MCPDiscovery:
+                if router.mcp:
+                    await router.mcp.refresh()
+                return await tool_discovery()
+
+            @app.get("/api/tasks/{task_id}/receipt")
+            async def tool_receipt(task_id: UUID) -> TaskReceiptView:
+                return await router.receipt(task_id)
 
             @app.get("/api/task-confirmations")
             async def task_confirmations() -> tuple[Confirmation, ...]:

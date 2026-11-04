@@ -223,3 +223,9 @@ idle speech notifications. See the [runbook](docs/phase-9-runbook.md) and
 [validation](docs/phase-9-validation.md), including the opt-in gateway inference
 benchmark. Future vLLM production use remains gated on Phase 13 cancellation
 and verified capacity release.
+
+Direct MCP tools are available through **External tools** and the existing **Tasks**
+panel. No external service is enabled by default. The [runbook](docs/phase-10-runbook.md)
+describes installed-service configuration, exact write approvals and supported
+bounds; the [validation record](docs/phase-10-validation.md) includes acceptance
+evidence and gateway performance measurements.

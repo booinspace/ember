@@ -1,5 +1,6 @@
 """Runtime configuration tests, without services, models, or canonical writes."""
 
+import json
 import os
 import subprocess
 import sys
@@ -12,6 +13,35 @@ from ember_agent.runtime.config import ConfigurationError, load_config
 from ember_agent.runtime.health import ReadinessReport, readiness
 
 EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
+
+
+def test_mcp_configuration_is_bounded_explicit_and_does_not_launch_servers(
+    config_path: Path,
+) -> None:
+    original = config_path.read_text()
+    server = (
+        '\n[[mcp_servers]]\nid="fixture"\ntransport="stdio"\ncommand='
+        + json.dumps(sys.executable)
+        + '\narguments=["-c", "raise AssertionError(\'must not launch during config parsing\')"]\n'
+        + 'grants=[{name="echo", effect="read"}]\n'
+    )
+    config_path.write_text(original + server)
+    config = load_config(config_path)
+    assert config.mcp_servers[0].command == sys.executable
+    assert config.mcp_servers[0].grants[0].effect == "read"
+    assert not config.runtime_root.exists()
+    config_path.write_text(original + server + server)
+    with pytest.raises(ConfigurationError, match="MCP"):
+        load_config(config_path)
+    config_path.write_text(
+        original
+        + "".join(
+            f'\n[[mcp_servers]]\nid="fixture{i}"\ntransport="http"\nurl="http://127.0.0.1:1/mcp"\n'
+            for i in range(9)
+        )
+    )
+    with pytest.raises(ConfigurationError):
+        load_config(config_path)
 
 
 @pytest.fixture

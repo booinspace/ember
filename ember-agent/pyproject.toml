@@ -13,6 +13,7 @@ dependencies = [
     "tzdata>=2025.2,<2027",
     "httpx>=0.28,<1",
     "jsonschema>=4.23,<5",
+    "mcp==2.3.0",
     "fastapi>=0.115,<1",
     "uvicorn>=0.34,<1",
     "livekit-agents>=1.8.5,<1.9",

@@ -52,3 +52,6 @@ In progress: [Agent ADR 0007 — Operational dispatch and agent inference admiss
 
 [Agent ADR 0008 — Shared system and character Markdown prompts](0008-character-prompts.md)
 records operator editing, bounded composition and per-turn snapshots alongside Phase 9.
+
+[Agent ADR 0009 — Direct MCP](0009-direct-mcp.md) records the bounded native adapter,
+existing task/confirmation ownership and Phase 10 acceptance evidence.
