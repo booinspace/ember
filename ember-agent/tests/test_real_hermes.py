@@ -278,7 +278,7 @@ def test_real_native_hermes_broker_outbox_and_followup_p0(tmp_path: Path) -> Non
         )
         root = Path(__file__).resolve().parents[2]
         sources = [
-            *sorted((root / "scripts").glob("hermes_*.py")),
+            *sorted((root / "scripts/hermes").glob("hermes_*.py")),
             root / "ember-agent/src/ember_agent/inference/openai_bridge.py",
             root / "ember-agent/src/ember_agent/runtime/hermes_tasks.py",
             root / "ember-agent/src/ember_agent/runtime/worker_process.py",

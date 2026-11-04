@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
@@ -28,7 +29,7 @@ class SetupReceipt(BaseModel):
     package_version: str = PACKAGE_VERSION
     sdk_revision: str = SDK_REVISION
     home: Path
-    desktop_data: Path
+    desktop_data: Path | None
     configured_context_tokens: int
     files: dict[str, str]
     setup_source_sha256: str
@@ -272,21 +273,90 @@ def main() -> None:
     """Explicit setup only; ordinary application startup never downloads or provisions."""
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--home", type=Path, required=True)
-    parser.add_argument("--desktop-data", type=Path, required=True)
+    parser.add_argument("--desktop-data", type=Path)
+    parser.add_argument("--named-profile", action="store_true")
     parser.add_argument("--token-file", type=Path, required=True)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--context-tokens", type=int, required=True)
     parser.add_argument("--search-endpoint", required=True)
     args = parser.parse_args()
-    digest = prepare_profile(
-        args.home,
-        args.desktop_data,
-        args.token_file,
-        base_url=args.base_url,
-        context_tokens=args.context_tokens,
-        search_endpoint=args.search_endpoint,
-    )
+    if args.named_profile:
+        digest = prepare_named_profile(
+            args.home,
+            args.token_file,
+            base_url=args.base_url,
+            context_tokens=args.context_tokens,
+            search_endpoint=args.search_endpoint,
+        )
+    else:
+        if args.desktop_data is None:
+            parser.error("--desktop-data is required for a separate application home")
+        digest = prepare_profile(
+            args.home,
+            args.desktop_data,
+            args.token_file,
+            base_url=args.base_url,
+            context_tokens=args.context_tokens,
+            search_endpoint=args.search_endpoint,
+        )
     print(json.dumps({"setup_sha256": digest}))
+
+
+def prepare_named_profile(
+    home: Path,
+    token_file: Path,
+    *,
+    base_url: str,
+    context_tokens: int,
+    search_endpoint: str,
+) -> str:
+    """Publish a complete standalone profile atomically into the regular Hermes profile list."""
+    home = home.resolve()
+    if home.parent.name != "profiles" or re.fullmatch(r"[a-z][a-z0-9-]{0,63}", home.name) is None:
+        raise ValueError("Use a new named home inside the normal Hermes profiles directory.")
+    if home.exists():
+        raise FileExistsError("Preserve the existing Hermes profile.")
+    # Keep incomplete configuration outside the live profile discovery directory.
+    stage = home.parent.parent / ("." + home.name + "-install-" + uuid4().hex)
+    scratch = stage.parent / (stage.name + "-desktop")
+    owned = False
+    try:
+        prepare_profile(
+            stage,
+            scratch,
+            token_file,
+            base_url=base_url,
+            context_tokens=context_tokens,
+            search_endpoint=search_endpoint,
+        )
+        owned = True
+        config = json.loads((stage / "config.yaml").read_text(encoding="utf-8"))
+        config["gateway"] = {"standalone": True}
+        (stage / "config.yaml").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        _write(
+            stage / "profile.yaml",
+            b'{"display_name":"Ember","description":"Ember chat, character and memory."}\n',
+        )
+        # Regular Desktop owns its existing data and discovers this profile; no separate window.
+        (stage / "start-hermes.ps1").unlink()
+        receipt = SetupReceipt.model_validate_json((stage / "ember-setup.json").read_bytes())
+        files = {
+            name: hashlib.sha256((stage / name).read_bytes()).hexdigest()
+            for name in (*receipt.files, "profile.yaml")
+            if name != "start-hermes.ps1"
+        }
+        receipt = receipt.model_copy(update={"home": home, "desktop_data": None, "files": files})
+        raw = (receipt.model_dump_json(indent=2) + "\n").encode()
+        (stage / "ember-setup.json").write_bytes(raw)
+        scratch.rmdir()
+        home.parent.mkdir(parents=True, exist_ok=True)
+        stage.rename(home)
+        return hashlib.sha256(raw).hexdigest()
+    finally:
+        if owned:
+            for unpublished in (stage, scratch):
+                if unpublished.exists():
+                    shutil.rmtree(unpublished)
 
 
 if __name__ == "__main__":

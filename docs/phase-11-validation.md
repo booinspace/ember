@@ -205,3 +205,34 @@ plugin hash `7221f9542ed7d1af885db28cca34f99bb1b6e76e1dc63bf1d553efa1c93870a7`.
 The working private home is `%LOCALAPPDATA%\ember-hermes\desktop-ember-v2-20261104`;
 its desktop data is separate. The **Ember (Hermes)** shortcut selects that home.
 Earlier canary homes are not the supported launch target.
+
+## Tool-provider cleanup — 4 November 2026
+
+The operator replaced the requested voice-session mirroring with tool delegation
+only. No native voice-session bridge, protocol, runtime hook or config remains.
+The previously qualified voice search uses Hermes' installed provider; ordinary
+Desktop chat still goes through CharacterCore and the sole gateway. Existing
+memory, bounded history, played-prefix receipts and Stop contracts are unchanged.
+
+The eight external adapter sources are grouped in `scripts/hermes/`, with their
+roles documented there. A tracked repository-root `start-hermes.ps1` selects the
+regular named Ember profile through the official native command. Named setup stages
+outside the live discovery directory, publishes a complete standalone profile and
+never overwrites an existing profile. Tests cover final metadata/receipt, failure
+cleanup and preservation of an unowned staging collision.
+
+Final local `scripts/check.py`: formatting, lint and strict Pyright passed;
+**1,151 tests passed, 18 skipped** in 90.67 seconds, using Python 3.12.11. Independent
+read-only review found no remaining actionable issues after the staging/cleanup
+safeguards. Frontend and inference benchmark runs were not repeated because neither
+frontend nor generation behavior changed. The [sanitized report](benchmarks/2026-11-04-phase11-qualification/tools-cleanup.json)
+records configuration, adapter hashes and exact validation scope.
+
+**Deployment is pending, not accepted.** SSH and ping to the PC timed out, and the
+provided NAS hostname stopped resolving from the Mac. This does not establish a PC
+crash. No new Windows profile, shortcut, runtime path or service restart was applied.
+After connectivity returns, update the ignored `search_command` to
+`scripts/hermes/hermes_search.py`, install the named profile, update the shortcut to
+the repository launcher, and validate Desktop/profile/search on Windows. Existing
+custom profile/chat data remains preserved. The copied-chat purge deferral remains
+unchanged.

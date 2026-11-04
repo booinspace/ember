@@ -53,7 +53,7 @@ class RPC:
 
 @pytest.fixture
 def transport(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    scripts = Path(__file__).resolve().parents[2] / "scripts" / "hermes"
     monkeypatch.syspath_prepend(str(scripts))
     return importlib.import_module("hermes_transport")
 

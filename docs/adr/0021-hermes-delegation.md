@@ -84,3 +84,18 @@ of affected Desktop chats, durable cross-restart chat continuity, messaging and 
 remaining Phase 8A adoption/performance criteria remain open. This authorization
 amends the prior private-recall/purge gate for the dedicated client only; it does not
 weaken the isolated worker's purge receipt or tool authority.
+
+## Tool-provider and launcher simplification — 4 November 2026
+
+The operator chose tool delegation instead of voice-session mirroring. Keep the
+qualified direct provider path for explicit voice search; create no native chat and
+make no extra model call for that preflight. Desktop ordinary chat remains paired
+with CharacterCore and the single inference gateway. The unfinished alternative
+voice-session bridge is removed, including its config, protocol and runtime hooks.
+
+External adapter source is grouped under `scripts/hermes/` with an inventory.
+`start-hermes.ps1` at the repository root selects a regular named Ember profile.
+Private profile state stays in Hermes' supported user storage. The named profile is
+published complete and standalone, preventing its process-global provider hook from
+being adopted by other profiles' shared backend. Old profile/chat data is preserved;
+no transcript merge, capture-owner change or memory/schema migration is introduced.

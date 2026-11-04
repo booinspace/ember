@@ -5218,3 +5218,20 @@ chats after restart. Messaging providers, autonomous learning, durable client-se
 restoration, affected-chat deletion and remaining Phase 8A adoption measurements
 remain follow-up work. The [runbook](docs/phase-11-runbook.md) and
 [validation](docs/phase-11-validation.md) describe exact setup and observed checks.
+
+### Hermes integration simplification — 4 November 2026
+
+The user superseded the proposed voice-to-Desktop session mirroring. Keep separate
+voice and native text histories. Ember voice invokes Hermes tools (currently the
+installed SearXNG provider); it does not create a Hermes chat for every voice session.
+Native Hermes Desktop chats continue through the paired CharacterCore ingress and
+sole Ember gateway, with the existing bounded history, shared prompts and canonical
+memory. Asynchronous delegated tasks retain the existing P2/isolation contracts.
+No native voice-session controller or second generation path is added.
+
+Group the existing external adapters in `scripts/hermes/`, document their roles,
+and use the tracked repository-root `start-hermes.ps1` with a regular named Ember
+profile instead of a date-stamped external launcher and separate Electron data.
+Runtime tokens and chat databases remain private Hermes data. Preserve existing
+profiles/chats during the change. This amendment does not broaden tool grants,
+implement messaging, copied-chat purge, or Phase 13 cancellation/scheduling.

@@ -39,3 +39,10 @@ policy. The isolated one-shot P2 worker contracts above remain unchanged.
 Stop speaking uses room-bound RPC ownership and each retained LiveKit SpeechHandle,
 including task notices. Browser playback is silenced immediately; subsequent turns
 have their own speech identity. Native model abort is still Phase 13 work.
+
+The [tool-provider simplification](../../../docs/adr/0021-hermes-delegation.md#tool-provider-and-launcher-simplification--4-november-2026)
+keeps separate voice/Desktop histories and the existing Core/task contracts. There
+is no native voice-session bridge. External source is grouped in `scripts/hermes/`;
+the repository launcher selects a complete standalone named Desktop profile. This
+changes deployment paths, so explicit `search_command` paths must be updated when
+installing it. Existing sealed task-worker copies and receipts stay valid.

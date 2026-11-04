@@ -12,8 +12,8 @@ from types import ModuleType, SimpleNamespace
 import httpx
 import pytest
 from pydantic import JsonValue
-from scripts import hermes_client_plugin as plugin
-from scripts import hermes_client_transport as transport
+from scripts.hermes import hermes_client_plugin as plugin
+from scripts.hermes import hermes_client_transport as transport
 
 from .test_hermes_chat import TOKEN, TOOL, application, body
 

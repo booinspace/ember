@@ -243,3 +243,9 @@ installed Hermes SearXNG provider. The web voice UI also supports explicit searc
 **Stop speaking** for replies and task notices. See the [native-client runbook](docs/phase-11-runbook.md#native-desktop-chat-and-voice-search-amendment)
 for setup, restart/new-chat behavior and the user-authorized deferred deletion of
 Hermes transcript copies. Hermes messaging accounts are not connected by this setup.
+
+Open the paired Windows text client with [`start-hermes.ps1`](start-hermes.ps1) from
+this repository, then select **Ember** in Hermes' regular profile picker. Setup and
+the retained external adapters are documented in [`scripts/hermes/`](scripts/hermes/README.md).
+Voice searches use Hermes as a tool provider; voice transcripts are not mirrored
+into Hermes Desktop chats.

@@ -1,0 +1,48 @@
+{
+  "schema": "ember-hermes-tools-cleanup-1",
+  "date": "2026-11-04",
+  "baseline": "27c276ee8f83f822103744fa0cd75090f5f9fa48",
+  "scope": {
+    "voice": "Hermes tool provider; no native voice-session mirroring",
+    "desktop": "paired CharacterCore ingress, shared prompts and canonical memory, sole gateway",
+    "worker": "unchanged isolated P2 delegation contracts"
+  },
+  "local_quality": {
+    "python": "3.12.11",
+    "ruff_format": "passed",
+    "ruff_check": "passed",
+    "pyright": "passed",
+    "pytest": {
+      "passed": 1151,
+      "skipped": 18,
+      "seconds": 90.67
+    },
+    "command": "TMPDIR=/private/tmp .venv/bin/python scripts/check.py"
+  },
+  "independent_review": {
+    "actionable_findings_remaining": 0,
+    "resolved": "Stage configuration outside live profile discovery and clean only owned staging."
+  },
+  "remote": {
+    "deployment_applied": false,
+    "named_profile_created": false,
+    "shortcut_updated": false,
+    "windows_launch_verified": false,
+    "blocked_by": "SSH and ping timed out; provided NAS hostname no longer resolved from the Mac. No PC crash is inferred."
+  },
+  "not_repeated": [
+    "Frontend tests: no frontend changes.",
+    "Inference benchmarks: no inference/runtime generation changes."
+  ],
+  "source_sha256": {
+    "start-hermes.ps1": "5d62284460943b52f7bc7a3c1957d8c66795f0110073990788603c8d5a20644d",
+    "scripts/hermes/hermes_client_plugin.py": "7221f9542ed7d1af885db28cca34f99bb1b6e76e1dc63bf1d553efa1c93870a7",
+    "scripts/hermes/hermes_client_setup.py": "ce3ac1be3ed1457a7480f8090b8934c505a0bc95fe0425a84902941a3de276fd",
+    "scripts/hermes/hermes_client_transport.py": "abcb4b4bf584b8e46513f63f3670a966e91decd2558ba88374c3f21b01403ea6",
+    "scripts/hermes/hermes_search.py": "d5088da335a2cb05e05c2e74283ca26725eec91dd967773e9f0dcb12d4795c7b",
+    "scripts/hermes/hermes_setup.py": "6d13e66a2d715e0cfa46e9a2573d3dd574f9417a529b1ac8a0ff5633e22dfbe1",
+    "scripts/hermes/hermes_transport.py": "95dfb487c9f22744c964448915e6c8e18fbb536532ce0f7662e6766e2b8fe956",
+    "scripts/hermes/hermes_windows.py": "71223a6a2a4c44e103e3188eaa14a7daf16277225cabcb082023b0d201a7f548",
+    "scripts/hermes/hermes_worker.py": "da18ebd362cede791a2fd7df04242fa7dd7ab3e73027b21055b1cf92bd354258"
+  }
+}

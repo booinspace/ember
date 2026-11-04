@@ -13,7 +13,7 @@ supported editable `uv sync --frozen` installation with a separate system Python
 selected desktop deployment; its AppContainer launcher passed the recorded native isolation and task proofs. The
 Linux reconnaissance profile uses bubblewrap and its own Linux filesystem.
 
-Copy the `scripts/hermes_*.py` boundary files into an explicit external bridge
+Copy the `scripts/hermes/hermes_*.py` boundary files into an explicit external bridge
 directory, then seal the installed checkout, package inventory
 and launcher sources with `hermes_setup.py --source <checkout> --python <venv-python>
 --output <new-receipt.json>`. The output is private; creation is exclusive.
@@ -116,7 +116,7 @@ private_recall = true
 input_ceiling = 16384
 search_command = [
   "C:/path/to/hermes/.venv/Scripts/python.exe", "-B",
-  "C:/path/to/ember/scripts/hermes_search.py",
+  "C:/path/to/ember/scripts/hermes/hermes_search.py",
   "--source", "C:/path/to/hermes/source",
   "--packages", "C:/path/to/hermes/.venv/Lib/site-packages",
   "--endpoint", "http://your-installed-searxng:8095",
@@ -128,12 +128,28 @@ Hermes provider runs in its own Python 3.14 environment. Restart Ember after cha
 this table. It creates a separate `hermes-client.token` in the private runtime root;
 this is not a gateway credential. Startup downloads nothing.
 
-Use `scripts/hermes_client_setup.py --help` to create a **new dedicated** Hermes home
-and Desktop data directory with the paired token, installed client extension, real
-model context capacity and search origin. Existing directories are never replaced.
-Launch its generated `start-hermes.ps1`, or a Windows shortcut to that script. It
-uses the installed app's official `hermes.exe desktop` command. Ordinary Start-menu
-launches of another Hermes profile are independent. No debug browser port is needed.
+Use `scripts/hermes/hermes_client_setup.py --named-profile` to publish a **new**
+`Ember` profile under Hermes' regular Windows profile root:
+
+```powershell
+.venv\Scripts\python.exe scripts/hermes/hermes_client_setup.py --named-profile `
+  --home "$env:LOCALAPPDATA\hermes\profiles\ember" `
+  --token-file .local/runtime/non-mtp/hermes-client.token `
+  --base-url http://127.0.0.1:8787/hermes/v1 `
+  --context-tokens 131072 --search-endpoint http://10.254.254.10:8095
+.\start-hermes.ps1
+```
+
+Use the actual configured model capacity and private runtime token. Setup publishes
+only after the profile is complete, with `gateway.standalone: true` so its client
+hooks never load into another profile's shared backend. Existing profiles are never
+overwritten. The supported launcher is the tracked `start-hermes.ps1` at the Ember
+repository root; the Windows shortcut points there. It opens the official installed
+app without another Electron data directory. If Desktop is already open, use its
+profile picker to select **Ember**; the native app's second-instance handler only
+focuses the existing window. Hermes retains private profile/chat data in its normal
+user storage. No debug browser port is needed. Legacy separate-home setup remains
+available for compatibility, but is not the normal launch path.
 
 Each native chat has its own server-allocated Core/history, sharing Ember's current
 system/personality Markdown, character, canonical memory and dialogue capture.
@@ -184,6 +200,9 @@ For plugin upgrades, use a fresh qualified native process. The SDK can preserve 
 older registered provider after reporting a successful plugin reload. The extension
 therefore shares its one-shot grants and result/request hooks through the stable SDK
 plugin owner; module eviction and concurrent registration are regression tested.
-The PC's qualified launch target is the dedicated `desktop-ember-v2-20261104` home,
-selected by **Ember (Hermes)**. Existing ordinary Hermes shortcuts select independent
-profiles and do not establish the Ember connection.
+The former date-stamped `desktop-ember-v2-20261104` launcher is superseded by the
+project launcher and regular named profile. Existing data is preserved; it is not
+silently merged with a new Core session. The [adapter inventory](../scripts/hermes/README.md)
+explains each retained boundary file. In particular, voice tool requests do **not**
+create Desktop chats or mirror voice transcripts. Desktop chat still routes through
+Ember's character/memory ingress and sole gateway.

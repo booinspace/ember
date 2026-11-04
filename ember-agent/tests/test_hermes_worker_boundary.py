@@ -15,7 +15,7 @@ from pydantic import ValidationError
 
 @pytest.fixture
 def worker(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts" / "hermes"))
     return importlib.import_module("hermes_worker")
 
 

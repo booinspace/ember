@@ -13,7 +13,7 @@ import pytest
 
 @pytest.fixture
 def client_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    scripts = Path(__file__).resolve().parents[2] / "scripts" / "hermes"
     monkeypatch.syspath_prepend(str(scripts))
     module = importlib.import_module("hermes_client_setup")
     source = tmp_path / "sources"
@@ -183,3 +183,90 @@ def test_windows_acl_is_private_before_profile_content_is_written(
         "*S-1-5-21-100-200-300-400:(OI)(CI)F",
         "*S-1-5-18:(OI)(CI)F",
     ]
+
+
+def test_named_profile_is_published_standalone_without_touching_regular_desktop_data(
+    client_setup: SimpleNamespace,
+) -> None:
+    env = client_setup
+    home = env.home.parent / "normal-hermes" / "profiles" / "ember"
+    desktop = env.home.parent / "existing-desktop"
+    desktop.mkdir()
+    (desktop / "preserve").write_text("existing chat")
+    digest = env.module.prepare_named_profile(
+        home,
+        env.token_file,
+        base_url="http://127.0.0.1:8787/hermes/v1",
+        context_tokens=131072,
+        search_endpoint="http://192.0.2.5:8095",
+    )
+    assert json.loads((home / "config.yaml").read_text())["gateway"] == {"standalone": True}
+    assert json.loads((home / "profile.yaml").read_text())["display_name"] == "Ember"
+    assert not (home / "start-hermes.ps1").exists()
+    receipt = env.module.SetupReceipt.model_validate_json((home / "ember-setup.json").read_bytes())
+    assert receipt.home == home and receipt.desktop_data is None
+    assert hashlib.sha256((home / "ember-setup.json").read_bytes()).hexdigest() == digest
+    assert list(home.parent.iterdir()) == [home]
+    assert (desktop / "preserve").read_text() == "existing chat"
+
+
+def test_named_profile_never_replaces_an_existing_name(client_setup: SimpleNamespace) -> None:
+    env = client_setup
+    home = env.home.parent / "profiles" / "ember"
+    home.mkdir(parents=True)
+    (home / "preserve").write_text("existing profile")
+    with pytest.raises(FileExistsError):
+        env.module.prepare_named_profile(
+            home,
+            env.token_file,
+            base_url="http://127.0.0.1:8787/hermes/v1",
+            context_tokens=131072,
+            search_endpoint="http://192.0.2.5:8095",
+        )
+    assert (home / "preserve").read_text() == "existing profile"
+
+
+def test_named_profile_preserves_unowned_staging_collision(
+    client_setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = client_setup
+    home = env.home.parent / "profiles" / "ember"
+    collision = home.parent.parent / ".ember-install-fixed"
+    collision.mkdir(parents=True)
+    (collision / "preserve").write_text("not owned by this setup")
+    monkeypatch.setattr(env.module, "uuid4", lambda: SimpleNamespace(hex="fixed"))
+    with pytest.raises(FileExistsError):
+        env.module.prepare_named_profile(
+            home,
+            env.token_file,
+            base_url="http://127.0.0.1:8787/hermes/v1",
+            context_tokens=131072,
+            search_endpoint="http://192.0.2.5:8095",
+        )
+    assert (collision / "preserve").read_text() == "not owned by this setup"
+    assert not home.exists()
+
+
+def test_named_profile_failure_does_not_publish_partial_profile(
+    client_setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = client_setup
+    home = env.home.parent / "profiles" / "ember"
+    write = env.module._write
+
+    def fail_metadata(path: Path, content: bytes) -> None:
+        if path.name == "profile.yaml":
+            raise OSError("Synthetic metadata failure")
+        write(path, content)
+
+    monkeypatch.setattr(env.module, "_write", fail_metadata)
+    with pytest.raises(OSError, match="Synthetic metadata failure"):
+        env.module.prepare_named_profile(
+            home,
+            env.token_file,
+            base_url="http://127.0.0.1:8787/hermes/v1",
+            context_tokens=131072,
+            search_endpoint="http://192.0.2.5:8095",
+        )
+    assert not home.exists()
+    assert not home.parent.exists() or list(home.parent.iterdir()) == []

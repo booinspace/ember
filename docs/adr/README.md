@@ -152,4 +152,5 @@ adoption gate, stable processing identity and [native qualification](../vllm-imp
 
 [Root ADR 0021 — Isolated Hermes task delegation](0021-hermes-delegation.md)
 records Phase 11 delegation, paired native chat, shared recall, search and speech-stop
-amendments with their qualification evidence.
+amendments with their qualification evidence, plus the tool-provider simplification
+and repository-owned Desktop launcher.
