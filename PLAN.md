@@ -2575,7 +2575,9 @@ skill/
 └── assets/
 ```
 
-Normalize name, description, instructions, resources, requirements, source, content hash, and extensions.
+Normalize name, description, requirements, source, content hash and extensions at the
+Ember/provider boundary. The selected harness owns instruction/resource loading and
+procedural execution; Ember does not need a second general skill runtime.
 
 Agent Skills specifies YAML frontmatter plus Markdown and progressively loaded resources. [Agent Skills specification](https://agentskills.io/specification)
 
@@ -3488,7 +3490,7 @@ Each phase leaves working, tested behavior.
 | **9 — Generic agent foundations** | Events/attention, ToolProvider/TaskRouter foundations, operational store; **same gateway gains P1/P2, reservation, fairness/accounting** |
 | **10 — Direct MCP** | Discovery, normalization, credentials, scoped authority, UI |
 | **11 — Harness delegation (Hermes preferred)** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
-| **12 — Portable skills** | Loader, requirements/resources, provider metadata/translation |
+| **12 — Portable skills** | Harness-owned progressive loading; Ember manifests, grants, budgets and UI |
 | **13 — Preemption hardening** | Actual cancellation/runner/GPU/context-switch contention testing; enable live preemption only after acceptance |
 
 Phase 1's generic ABI/archive 0.1 core advanced while the personal export was
@@ -4215,15 +4217,20 @@ Owner: ember-agent provider adapter and isolated bridge; provider never owns mem
 
 ### Phase 12 acceptance criteria: portable skills
 
-Owner: ember-agent loader and provider translators; skills confer no authority.
+Owner: the selected agentic harness owns skill parsing, progressive loading and
+execution. Ember owns a thin manifest/requirements adapter, explicit grants,
+measured prompt budgets and operator visibility; skills confer no authority.
+The 4 November harness/dashboard amendment changes implementation ownership below,
+not the safety, portability or resource-budget outcomes.
 
-- **P12-AC-01:** Parse portable frontmatter/Markdown with bounded safe resources,
+- **P12-AC-01:** The supported harness parses portable frontmatter/Markdown with bounded safe resources;
+  its Ember adapter exposes
   identity/source/content hashes, requirements and namespaced extensions; retain
   original provider fields and translation diagnostics.
 - **P12-AC-02:** Duplicate identity/version/resource/path failures require explicit
   selection or typed errors; provider metadata round trips without requiring
   an OpenClaw runtime.
-- **P12-AC-03:** Load metadata first, selected instructions second, resources on
+- **P12-AC-03:** The harness loads metadata first, selected instructions second, resources on
   demand; only relevant authorized skills enter the measured prompt budget.
 - **P12-AC-04:** Requirements are checked against installed capabilities and current
   grants. Skill text cannot expose credentials, grant tools, change memory/personality/
@@ -4231,7 +4238,7 @@ Owner: ember-agent loader and provider translators; skills confer no authority.
 - **P12-AC-05:** Oversized required procedures defer/delegate where supported or
   report unavailable; mandatory steps are not silently chopped. Scripts run only
   through authorized tools with validated arguments/effects.
-- **P12-AC-06:** Loader, UI and actual supported provider translation tests cover
+- **P12-AC-06:** Harness loader, Ember manifest/UI and actual supported provider translation tests cover
   offline resources, unknown extensions, malicious instructions and unchanged core
   operation when a skill/provider is missing.
 
@@ -5176,14 +5183,16 @@ bounded P3 candidate extraction, pre-compression source checkpoints and reviewed
 Phase 12 skills without enlarging ordinary context or granting autonomous belief writes.
 
 
-The selected **native Windows** one-shot implementation is qualified: actual
+The earlier **native Windows** one-shot implementation was qualified under its
+recorded test token/profile (superseded by the WSL selection below): actual
 SearXNG tasks through both gateway backends, native AppContainer isolation/crash
 recovery, bounded 1/2/4-step SDK histories, full Windows/macOS quality gates and
 210 warm gateway trials plus seven cancellation/drain probes per backend passed.
 Exact configuration/source hashes, failed attempts, independent review corrections
 and shutdown limitations are retained in the acceptance record and benchmark
 reports. The original Phase 8A Desktop/dashboard/app-pairing/near-limit/physical
-voice adoption prerequisite remains open; delegation stays default-off. Messaging
+voice adoption prerequisite remains open. The later dashboard amendment explicitly
+authorizes enabling the selected WSL task provider on this PC. Messaging
 and autonomous memory/skill learning are separate future integrations.
 
 ### Phase 11 native client amendment — 4 November 2026
@@ -5235,3 +5244,77 @@ profile instead of a date-stamped external launcher and separate Electron data.
 Runtime tokens and chat databases remain private Hermes data. Preserve existing
 profiles/chats during the change. This amendment does not broaden tool grants,
 implement messaging, copied-chat purge, or Phase 13 cancellation/scheduling.
+
+
+### Harness broker and live dashboard amendment — 4 November 2026
+
+The operator authorized enabling the installed Hermes task provider and deferring
+Hermes Desktop, whose native backend startup is currently not verified. Desktop
+client adapters remain separate from task providers: future clients must bind
+Ember-owned sender/character/session identity, bounded history, prompt/recall and
+validated delivery without replacing CharacterCore. No voice-to-Desktop mirroring
+or Desktop repair belongs to this amendment. The operator selected Ubuntu WSL2
+for only the task worker after the normal unelevated Windows boundary failed startup.
+Reuse the external pinned Python 3.14 SDK and bubblewrap isolation; Windows retains
+Core/voice/memory/gateway, with no additional model or weight copy. Explicit setup
+and cross-Windows/WSL EOF/cancel/controller-crash qualification are required. The
+native Windows adapter stays available for separately qualified deployments; no
+kernel workaround, privileged worker launcher or whole-app elevation is introduced.
+
+One selected `[harness]` is constructed by a startup factory through the existing
+`AgenticTaskProvider` contract. `delegate_task` is the neutral conversational entry;
+Hermes is the first concrete adapter, not an atomic MCP tool. Legacy `[hermes]`
+normalizes into that selection, while ambiguous dual selections fail closed.
+`[public_search]` configures an installed command protocol independently of
+`[hermes_client]`; its provider string identifies that installed command. Legacy
+client `search_command` remains a compatibility path; conflicting commands fail
+configuration. Neither section installs code or expands credentials into a worker.
+
+Explicit harness tool IDs (at most eight, catalog at most 8 KiB) project a bounded
+native/MCP catalog. Native calls use ToolRouter; MCP calls reuse the exact current
+validation, credential identity, approval hash, effect fence and receipt owner.
+Writes require the existing operator confirmation. Revocation invalidates copied
+MCP context and prompt inspection. Treat MCP output as potentially private: no
+public search or further external MCP call after disclosure. A conservative
+pre-effect guard reserves bounded receipt/history space inside the existing
+16 KiB P2 input ceiling. Worker success still requires verified purge and exit.
+No shell, canonical memory writes, independent model server or implicit grants.
+
+The authenticated dashboard lists native operations, search, discovered MCP tools
+and the selected harness with explicit availability. Generic content-free activity
+records render inline tool, recall, task and inference transactions. Terminal
+counters supply the last completed prompt/decode metrics; unknown sensors remain
+unknown. Host/GPU sampling runs off the event loop and is cached for three seconds;
+visible-page metadata polling does not reassemble prompts or validate private data.
+The last eight immutable, already assembled web/Core, summary and harness requests
+may be inspected lazily, without an extra model call. Inspection is memory-only,
+expires after five minutes, is retired on replacement/new Core input/shutdown,
+and revalidates current private-context/tool authority before disclosure. The UI
+clears revoked inspections. It shows exactly visible gateway messages/schemas and
+options, not hidden reasoning. P3/P4 and deferred Desktop requests are not captured
+by this dashboard; their scheduled workload remains visible in gateway metadata.
+
+#### Phase 12 direction (planned, not implemented)
+
+Keep Phase 12 because reviewed reusable procedures reduce repeated tool planning
+and make delegated work reproducible. Implement it primarily inside the selected
+harness, initially Hermes, using its metadata-first skill loading. See the
+[official Hermes skills guide](https://hermes-agent.nousresearch.com/docs/guides/work-with-skills).
+Do not build a parallel skill executor or automatic learner in CharacterCore.
+Ember needs only bounded manifest/requirements visibility, selection and grants,
+source/content hashes, current authorization, receipts/events and unchanged prompt
+ceilings. Reviewed skill resources must be installed explicitly into the isolated
+worker's read-only allowed roots; existing shell/file capabilities are not thereby
+granted. A supported pinned profile must prove actual list/select/load behavior
+before any such tools are advertised. Missing skills/providers leave ordinary
+chat, recall and native/direct MCP usable.
+
+P12-AC-01/02 remain portable parsing/provenance/round-trip gates, proved in the
+harness and thin adapter. P12-AC-03 remains progressive disclosure under the actual
+measured task input guard, never the model's advertised 128K capacity alone.
+P12-AC-04/05 stay at Ember's broker boundary: no new authority, mandatory procedure
+truncation, automatic installers or unapproved effects. P12-AC-06 still requires
+actual supported-provider, malicious-input, missing-provider and offline-resource
+coverage. Autonomous skill learning is a separate future reviewed amendment.
+Phase 13 still owns cancellation/release and realtime/background scheduling;
+this amendment must not misrepresent subscriber cancellation as GPU release.

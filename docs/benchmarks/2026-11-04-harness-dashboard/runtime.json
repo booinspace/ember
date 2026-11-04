@@ -1,0 +1,17 @@
+{
+  "harness_enabled": true,
+  "desktop_deferred": true,
+  "public_search_independent": true,
+  "mcp_servers": 0,
+  "voice": true,
+  "voice_status": "ready",
+  "gateway_ready": true,
+  "old_reservations_reconciled": 0,
+  "config_sha256": "75b5a29f8f7b3164b2bcd94655a5719a9f9ab48c1aec23965a14a3998259275c",
+  "production_delegate_task": true,
+  "task_seconds": 7.437,
+  "broker_receipt_verified": true,
+  "purged": true,
+  "inline_activity_events": 2,
+  "exact_p2_tool_history_inspected": true
+}

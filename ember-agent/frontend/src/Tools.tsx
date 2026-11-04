@@ -129,7 +129,7 @@ export function Tools() {
       className="controls"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>External tools</summary>
+      <summary>Run an MCP tool</summary>
       <p>
         Only configured, granted tools can run. Write actions require approval
         in Tasks.

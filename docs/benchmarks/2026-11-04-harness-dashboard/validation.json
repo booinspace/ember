@@ -1,0 +1,121 @@
+{
+  "date": "2026-11-04",
+  "base_commit": "1dd30108181c05a703b5cf1c7bded8fff4b95ce5",
+  "selected_worker": {
+    "host": "Windows",
+    "distribution": "Ubuntu WSL2",
+    "user_mode": "normal user",
+    "python": "3.14.4",
+    "sdk_revision": "71736c9f32597bbca9d89cede5aa136e55946b2f",
+    "profile_sha256": "43c83dfc25a857c63b11243584f694516a60f616770347246d486f5ac301652a",
+    "isolator": "bubblewrap --unshare-all --die-with-parent --cap-drop ALL",
+    "dependency_bytes_sealed": true,
+    "extra_model_server": false,
+    "weights_copied": false
+  },
+  "checks": {
+    "macos": {
+      "python": "3.12.11",
+      "ruff_format": true,
+      "ruff_lint": true,
+      "pyright_errors": 0,
+      "pytest_passed": 1182,
+      "pytest_skipped": 28,
+      "seconds": 121.57
+    },
+    "frontend": {
+      "unit_tests_passed": 29,
+      "strict_typescript": true,
+      "production_build": true,
+      "prettier": true,
+      "browser_tests_passed": 19,
+      "browser_tests_skipped": 3,
+      "browser_seconds": 15.8
+    },
+    "wsl": {
+      "actual_sdk_cpu_tests_passed": 4,
+      "shutdown_tests_passed": 3,
+      "seconds": 26.83,
+      "denials_per_shutdown_case": 11,
+      "positive_home_write": true,
+      "positive_host_network_controls": true,
+      "eof_cleanup_seconds": 0.078,
+      "cancel_cleanup_seconds": 0.078,
+      "windows_controller_crash_cleanup_seconds": 0.063,
+      "independent_guest_survivor_check": true,
+      "cleanup_claim": "bounded guest namespace teardown; Windows job is not Linux process authority or GPU-release evidence",
+      "sdk_input_guard_units": [
+        3848,
+        6892,
+        9039,
+        10828
+      ],
+      "largest_escaped_mcp_receipt_next_input_units": 13690,
+      "input_guard_limit": 16384
+    },
+    "actual_gateway": {
+      "public_native_mcp_passed": 3,
+      "seconds": 33.2,
+      "actual_production_task_seconds": 7.437,
+      "exact_p2_tool_history_inspected": true
+    },
+    "windows": {
+      "python": "3.12.15",
+      "ruff_format": true,
+      "ruff_lint": true,
+      "pyright_errors": 0,
+      "pytest_passed": 1180,
+      "pytest_skipped": 30,
+      "seconds": 244.07
+    },
+    "live_https_browser": {
+      "https_dashboard": true,
+      "browser": "installed Edge",
+      "harness_visible": true,
+      "voice_transport_connected": true,
+      "public_search_event": true,
+      "public_search_in_exact_p0_input": true,
+      "context_input_units": 9878,
+      "input_budget_units": 24576,
+      "visible_text_while_speech_active": true,
+      "stop_speaking_exercised": true,
+      "ui_page_errors": 0,
+      "physical_microphone_tested": false,
+      "screenshot_private_not_committed": true,
+      "tls": "verified using installed Windows system CA; no bypass",
+      "synthetic_notifications_acknowledged": 8
+    }
+  },
+  "independent_review": {
+    "dependency_inventory_gap_fixed": true,
+    "new_changed_added_redirected_dependency_regressions": 3,
+    "remaining_concrete_source_findings": 0,
+    "cleanup_claim_qualified": true
+  },
+  "failed_trials": [
+    {
+      "case": "native Windows worker from normal desktop token",
+      "result": "failed startup; platform selection superseded by WSL",
+      "kernel_workaround_shipped": false,
+      "elevated_ember_required": false
+    },
+    {
+      "case": "early WSL public research attempt",
+      "result": "unrequested_tool after three searches; rejected with no successful result",
+      "final_acceptance": "three actual native/MCP/public gateway cases passed with unchanged authority/citation checks"
+    },
+    {
+      "case": "first macOS full gate",
+      "result": "sandbox denied process/socket access; macOS /var temp symlink rejected by existing storage guard",
+      "resolution": "reran with local test permissions and TMPDIR=/private/tmp; no test or storage guard weakened"
+    }
+  ],
+  "limits": [
+    "Hermes Desktop startup and affected transcript purge deferred",
+    "No physical microphone, headset or real mobile device test",
+    "No new 210-trial inference benchmark or native GPU-abort claim; previous Phase11 benchmark retained",
+    "P2 still waits while realtime voice reserves gateway",
+    "No MCP server enabled in production; actual MCP proof uses a synthetic conformance server",
+    "Linux OS shared libraries are platform inputs; dedicated SDK import tree and interpreter are sealed"
+  ]
+}

@@ -199,8 +199,7 @@ export class CharacterConnection {
     }
   }
 
-  async ask(text: string): Promise<number> {
-    const requestId = createRequestId();
+  async ask(text: string, requestId = createRequestId()): Promise<number> {
     const reply = await this.room.localParticipant.performRpc({
       destinationIdentity: "ember-agent",
       method: "ember.turn",

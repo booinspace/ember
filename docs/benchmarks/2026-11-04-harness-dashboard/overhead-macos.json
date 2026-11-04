@@ -1,0 +1,16 @@
+{
+  "kind": "in_memory_capture_only",
+  "python": "3.12.11",
+  "platform": "Darwin",
+  "trials": 5000,
+  "synthetic_content_bytes": 24000,
+  "median_microseconds": 5.333,
+  "p95_microseconds": 6.25,
+  "max_retained_requests": 8,
+  "activity_bound": 256,
+  "capture_serializes_prompts": false,
+  "extra_model_calls": 0,
+  "sensor_poll_seconds": 3,
+  "ui_metadata_poll_seconds": 1,
+  "scope": "Capture hook only; not an end-to-end voice or GPU performance benchmark."
+}

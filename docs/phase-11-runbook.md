@@ -9,9 +9,12 @@ voice transport. Setup is explicit; `start.ps1` never downloads Hermes.
 Pin `NousResearch/hermes-agent` at
 `71736c9f32597bbca9d89cede5aa136e55946b2f` in a separate external checkout. Use its
 supported editable `uv sync --frozen` installation with a separate system Python
-3.14 interpreter, without provider/cloud credentials. Native Windows is the
-selected desktop deployment; its AppContainer launcher passed the recorded native isolation and task proofs. The
-Linux reconnaissance profile uses bubblewrap and its own Linux filesystem.
+3.14 interpreter, without provider/cloud credentials. The selected Windows deployment
+runs **only the task worker in Ubuntu WSL2**, using Linux bubblewrap. Ember, voice,
+canonical memory and the sole inference gateway remain Windows processes. This adds
+no model server or weight copy. Native Windows AppContainer qualification below is
+historical/platform-specific; it failed the normal unelevated desktop launch and is
+not the selected deployment. Desktop itself is deferred.
 
 Copy the `scripts/hermes/hermes_*.py` boundary files into an explicit external bridge
 directory, then seal the installed checkout, package inventory
@@ -23,36 +26,42 @@ Do not put personal data or credentials into that checkout.
 Add a deployment table only after qualification:
 
 ```toml
-[hermes]
+[harness]
+provider = "hermes"
 command = [
-  "C:/path/to/ember/.venv/Scripts/python.exe", "-B",
-  "C:/Users/you/AppData/Local/ember-hermes/bridge/hermes_worker.py",
-  "--profile", "C:/Users/you/AppData/Local/ember-hermes/profile.json",
+  "C:/Windows/System32/wsl.exe", "--distribution", "Ubuntu", "--user", "you", "--exec",
+  "/home/you/.local/share/ember-hermes/source/.venv/bin/python", "-B",
+  "/home/you/.local/share/ember-hermes/bridge/hermes_worker.py",
+  "--profile", "/home/you/.local/share/ember-hermes/profile.json",
 ]
 revision = "71736c9f32597bbca9d89cede5aa136e55946b2f"
-profile_sha256 = "<verified receipt SHA-256>"
+profile_sha256 = "<canonical profile digest printed by hermes_setup.py>"
 search_endpoint = "http://your-installed-searxng:8095"
 private_recall = false
+tools = ["native.inspect_text"]
 ```
 
-On native Windows the executable is Ember's installed Python 3.12 interpreter;
-the controller reuses its retained-job primitive. The receipt separately pins
-the external Hermes Python 3.14 interpreter, SDK and boundary files. Seal using
-the same launcher interpreter that will appear in `command`. Arguments select
-the bridge file and `--profile` receipt. Core contains no
-hardcoded OS or WSL path. The doctor labels configuration as unprobed. Exact
-native Windows setup/deny probes must pass before enabling the provider.
+Use explicit installed paths and the same Linux launcher interpreter when sealing
+and launching. Keep SDK/bridge/profile files in the Linux filesystem, outside both
+Ember products. The current Linux profile requires `/usr` system Python 3.14 and
+`/usr/bin/bwrap`; its sandbox exposes only read-only installed code, fresh tmpfs
+`/task` and `/tmp`, and broker stdio. Host homes, Windows drives and network are not
+mounted into the sandbox. No WSL gateway token or cloud credential is needed.
+The outer WSL controller is trusted deployment code, just as the Windows controller
+was; the SDK child is the isolated task process.
 
-The checked desktop qualification uses the isolated checkout's Ember interpreter.
-Moving the launcher into another checkout requires a new receipt, even when the
-Git revision is identical. Replace example paths with the explicitly installed
-paths; the application does not expand environment variables in this command.
+Windows owns the `wsl.exe` pipe/job. Linux owns and reaps its bubblewrap PID namespace;
+EOF closes it, and `--die-with-parent` handles controller failure. Run both the
+configured SDK proof (`test_hermes_sdk.py`) and Windows-to-WSL denial/EOF/cancel/crash
+proof (`test_hermes_wsl.py`) against each changed installed profile before enabling
+it. Then run `test_real_hermes.py` against the idle actual gateway. None downloads
+software. Stop/cancel still does not imply native GPU abort; Phase 13 owns that.
 
-The qualified native layout uses `%LOCALAPPDATA%\ember-hermes\candidate-71736c9f\source`
-for the external SDK, `%LOCALAPPDATA%\ember-hermes\bridge` for the four bridge
-scripts, and a separate uv-managed Python 3.14 installation. Writable task homes
-live outside those read-only installation roots. Setup/resealing is explicit;
-neither startup nor a task downloads packages.
+Legacy `[hermes]` and the native Windows adapter remain compatible for separately
+qualified deployments. Core contains no hardcoded distribution or platform paths.
+A changed source/package/bridge/interpreter invalidates the seal; create a new
+receipt explicitly rather than weakening verification. `profile_sha256` is the
+canonical JSON digest printed by setup, not the raw receipt-file byte hash.
 
 The opt-in end-to-end test is `ember-agent/tests/test_real_hermes.py`, configured
 with `EMBER_TEST_HERMES_CONFIG` pointing to an isolated pinned deployment. It
@@ -92,11 +101,11 @@ the inventory includes code, bytecode and configuration data, including untracke
 files. A fresh receipt and qualification are required after installation drift.
 
 User-input/update/execution-resume are not advertised. Cancel and create a new
-explicit request for changed constraints. A restart marks interrupted native tasks
+explicit request for changed constraints. A restart marks interrupted delegated tasks
 uncertain instead of replaying them. Success requires the isolated worker to exit
 and prove context purge; process IDs in diagnostics are never restart authority.
 
-Remove `[hermes]` to disable delegation. Existing character prompts, history,
+Remove `[harness]` (or legacy `[hermes]`) to disable delegation. Existing character prompts, history,
 ordinary/deep recall, native/MCP tools and voice keep their owners. Hermes messaging
 and Desktop chat are not automatically connected to Ember's conversation capture.
 
@@ -206,3 +215,54 @@ silently merged with a new Core session. The [adapter inventory](../scripts/herm
 explains each retained boundary file. In particular, voice tool requests do **not**
 create Desktop chats or mirror voice transcripts. Desktop chat still routes through
 Ember's character/memory ingress and sole gateway.
+
+## Neutral harness and dashboard amendment
+
+For new installations prefer `[harness]` with `provider = "hermes"` and the same
+pinned command/revision/profile/search fields above. Add `tools =
+["native.inspect_text"]` to grant the native text counter; exact discovered MCP
+IDs may be added explicitly (eight grants / 8 KiB catalog maximum). Do not combine
+`[harness]` and legacy `[hermes]`. MCP writes still require exact operator approval;
+no credential, canonical store, shell or independent memory authority is delegated.
+Copied MCP findings remain bound to current tool authority even after task completion;
+revoked results/receipts/artifacts are suppressed, and restart fails closed for those
+runtime-bound copies. Results already exported outside Ember remain operator copies.
+
+Public voice search no longer needs Desktop configuration:
+
+```toml
+[public_search]
+provider = "hermes"
+command = ["C:/installed/hermes/python.exe", "-B", "C:/ember/scripts/hermes/hermes_search.py",
+           "--source", "C:/installed/hermes/source", "--packages", "C:/installed/hermes/site-packages",
+           "--endpoint", "http://your-installed-searxng:8095"]
+```
+
+Use actual installed absolute paths. The provider string labels the command-protocol
+implementation; it is not a dynamic import. Legacy client `search_command` remains
+compatible; a different simultaneous explicit command is a configuration error.
+The dashboard's **Enabled** state means the capability is configured and selected,
+not a continuous remote health probe. Missing executable/startup dependencies show
+Unavailable; each invocation revalidates its command/sealed worker and reports failure
+in activity. Profile/hash drift is never silently repaired or bypassed.
+
+The web dashboard shows native/search/MCP/harness capabilities and inline transactions.
+Use **Activity** for the complete bounded event ring, **Tasks** for durable results
+and approvals, and **Request inspector** for the exact visible input assembled before
+model generation. Typed events bind to the actual submitted request UUID; unmatched
+voice/task events remain visible without guessing a message owner. Monitoring does
+not require connecting voice and does not reserve the inference gateway.
+
+Inspection covers the main web CharacterCore and selected P2 summary/Hermes requests;
+P3/P4 and deferred Desktop prompts are outside this inspector. The conservative input
+guard is distinct from measured prompt tokens and the model's advertised capacity.
+Snapshots are memory-only (eight, five-minute TTL), replaced on new Core input and
+revalidated on disclosure. Closing the panel clears its browser copy; server shutdown
+clears the ring. Copy request JSON is an explicit local export under operator control.
+Do not paste private prompts into tracked reports. No hidden reasoning enters activity
+or prompt snapshots. Host sensors are cached three seconds/off-loop, and hidden tabs
+pause routine metadata polling. Existing Stop/read-ahead controls retain their behavior.
+
+Hermes Desktop's current native backend startup verification failure is deferred.
+Keep its launcher/profile/chat data for a later client-specific qualification; enabling
+this task provider and public search does not require `[hermes_client]`.

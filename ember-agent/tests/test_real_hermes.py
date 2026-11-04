@@ -1,4 +1,4 @@
-"""Opt-in native Windows delegation through actual Hermes, SearXNG and gateway admission."""
+"""Opt-in installed worker delegation through actual Hermes, SearXNG and gateway admission."""
 
 import asyncio
 import hashlib
@@ -25,6 +25,8 @@ from ember_agent.inference.contracts import (
 )
 from ember_agent.runtime.config import load_config
 from ember_agent.runtime.hermes_tasks import HermesTask
+from ember_agent.runtime.mcp_contracts import MCPServerSettings, MCPToolGrant
+from ember_agent.runtime.mcp_tools import MCPTools
 from ember_agent.runtime.searx_tools import SearXNGTools
 from ember_agent.runtime.task_router import (
     TaskResult,
@@ -37,6 +39,128 @@ from ember_agent.runtime.task_router import (
 )
 from ember_agent.runtime.task_store import TERMINAL_STATES, TaskConflict, TaskState, TaskSubmission
 from ember_memory_engine import CanonicalEngine
+
+
+@pytest.mark.integration
+@pytest.mark.end_to_end
+@pytest.mark.parametrize("operation", ["native", "mcp"])
+def test_actual_sdk_uses_granted_ember_broker(tmp_path: Path, operation: str) -> None:
+    import sys
+
+    setting = os.getenv("EMBER_TEST_HERMES_CONFIG")
+    if not setting:
+        pytest.skip("Explicit installed Hermes and idle gateway required.")
+    config = load_config(Path(setting), require_model_pin=True)
+    settings = config.selected_harness
+    assert settings is not None
+    token = (config.runtime_root / "gateway-agent.token").read_text().strip()
+
+    async def run() -> None:
+        character, session = uuid4(), uuid4()
+        tools = MCPTools(
+            (
+                MCPServerSettings(
+                    id="qualification",
+                    transport="stdio",
+                    command=sys.executable,
+                    arguments=(
+                        str(Path(__file__).parent / "fixtures/mcp_conformance_server.py"),
+                        "normal",
+                    ),
+                    grants=(MCPToolGrant(name="echo", effect="read"),),
+                ),
+            ),
+            character,
+            session,
+        )
+        await tools.start()
+        agent = HttpGatewayClient(config.services.gateway.endpoint, token)
+        observed = ObservedModels(agent)
+        router = TaskRouter(
+            tmp_path / "runtime",
+            character,
+            session,
+            TextInspectionTask(ToolRouter(TextInspectionProvider(), character)),
+            mcp=tools,
+        )
+        grant = "native.inspect_text" if operation == "native" else next(iter(tools.capabilities))
+        selected = config.model_copy(
+            update={
+                "hermes": None,
+                "harness": settings.model_copy(update={"tools": (grant,), "private_recall": False}),
+            }
+        )
+        delegate = ObservedHermes(
+            selected,
+            observed,
+            ToolRouter(TextInspectionProvider(), character),
+            broker=router.broker,
+        )
+        router.delegate = delegate
+        router.providers["delegate"] = delegate
+        await router.start()
+        try:
+            assert not (await agent.health()).realtime_sessions
+            handle = await router.submit(
+                "actual-broker-" + operation,
+                'Use ember_tool with tool_id "'
+                + grant
+                + '" and arguments {"text":"one two three"}. '
+                "Then call ember_finish with a concise summary of the tool result "
+                "and its citation_id. "
+                "Do not search or call other tools.",
+                operation="delegate",
+            )
+            async with asyncio.timeout(190):
+                while (
+                    result := await router.status(handle.task_id)
+                ) is None or result.state not in TERMINAL_STATES:
+                    await asyncio.sleep(0.05)
+            assert result.state == "succeeded", delegate.failure
+            assert result.receipt is not None
+            receipt = TaskResult.model_validate_json(result.receipt).receipt
+            assert receipt.data["purged"] is True
+            assert receipt.data["tool_receipts"] == [
+                {
+                    "tool": "inspect_text" if operation == "native" else grant,
+                    "outcome": "success",
+                    "call": 1,
+                }
+            ]
+            assert observed.requests and all(
+                r.context_id == handle.task_id and r.workload == "P2" for r in observed.requests
+            )
+            assert any(
+                message.role == "tool" and "receipt" in message.content
+                for r in observed.requests
+                for message in r.messages
+            )
+            report = os.getenv("EMBER_TEST_HERMES_REPORT")
+            if report:
+                path = Path(report).with_suffix("." + operation + ".json")
+                path.write_text(
+                    json.dumps(
+                        {
+                            "operation": operation,
+                            "worker_transport": "wsl"
+                            if Path(settings.command[0]).name.lower() == "wsl.exe"
+                            else "native",
+                            "profile_sha256": settings.profile_sha256,
+                            "model": config.model_tag,
+                            "model_digest": config.model_digest,
+                            "p2_model_calls": len(observed.requests),
+                            "purged": True,
+                            "broker_receipt_verified": True,
+                        },
+                        indent=2,
+                    )
+                )
+        finally:
+            await router.aclose()
+            await tools.aclose()
+            await agent.aclose()
+
+    asyncio.run(run())
 
 
 class ObservedModels:
@@ -112,14 +236,15 @@ def _files(root: Path) -> dict[str, str]:
 
 @pytest.mark.integration
 @pytest.mark.end_to_end
-def test_real_native_hermes_broker_outbox_and_followup_p0(tmp_path: Path) -> None:
+def test_real_hermes_broker_outbox_and_followup_p0(tmp_path: Path) -> None:
     setting = os.getenv("EMBER_TEST_HERMES_CONFIG")
     if not setting:
-        pytest.skip("Set EMBER_TEST_HERMES_CONFIG with an idle isolated gateway and native worker.")
-    assert os.name == "nt", "The production qualification must execute natively on Windows."
+        pytest.skip(
+            "Set EMBER_TEST_HERMES_CONFIG with an idle isolated gateway and qualified worker."
+        )
     config = load_config(Path(setting), require_model_pin=True)
-    assert config.hermes is not None and not config.hermes.private_recall
-    assert Path(config.hermes.command[0]).name.lower() not in {"wsl", "wsl.exe"}
+    settings = config.selected_harness
+    assert settings is not None and not settings.private_recall
     agent_token = (config.runtime_root / "gateway-agent.token").read_text().strip()
     foreground_token = (config.runtime_root / "gateway.token").read_text().strip()
     canonical = tmp_path / "synthetic-canonical"
@@ -134,7 +259,7 @@ def test_real_native_hermes_broker_outbox_and_followup_p0(tmp_path: Path) -> Non
         agent = HttpGatewayClient(config.services.gateway.endpoint, agent_token)
         foreground = HttpGatewayClient(config.services.gateway.endpoint, foreground_token)
         observed = ObservedModels(agent)
-        search = SearXNGTools(config.hermes.search_endpoint)
+        search = SearXNGTools(settings.search_endpoint)
         observed_search = ObservedSearch(search)
         delegate = ObservedHermes(config, observed, ToolRouter(observed_search, character))
         router = TaskRouter(
@@ -166,7 +291,7 @@ def test_real_native_hermes_broker_outbox_and_followup_p0(tmp_path: Path) -> Non
                     await asyncio.sleep(0.05)
             elapsed = monotonic() - started
             assert snapshot.state == "succeeded", (
-                "Native Hermes delegation did not succeed: "
+                "Hermes delegation did not succeed: "
                 f"{delegate.failure}; model calls={len(observed.requests)}, "
                 f"search receipts={len(observed_search.receipts)}"
             )
@@ -179,8 +304,8 @@ def test_real_native_hermes_broker_outbox_and_followup_p0(tmp_path: Path) -> Non
             )
             assert receipt.context.turn_id == turn and receipt.context.task_id == handle.task_id
             assert receipt.data["purged"] is True
-            assert receipt.data["profile_sha256"] == config.hermes.profile_sha256
-            assert receipt.data["revision"] == config.hermes.revision
+            assert receipt.data["profile_sha256"] == settings.profile_sha256
+            assert receipt.data["revision"] == settings.revision
             assert not result.citations and result.dependencies is None
             assert observed_search.receipts and len(observed_search.receipts) <= 3
             assert all(
@@ -241,8 +366,11 @@ def test_real_native_hermes_broker_outbox_and_followup_p0(tmp_path: Path) -> Non
             assert followup.context_id != handle.task_id and followup.workload == "P0"
             assert _files(canonical) == before
             return {
-                "profile_sha256": config.hermes.profile_sha256,
-                "revision": config.hermes.revision,
+                "worker_transport": "wsl"
+                if Path(settings.command[0]).name.lower() == "wsl.exe"
+                else "native",
+                "profile_sha256": settings.profile_sha256,
+                "revision": settings.revision,
                 "model": config.model_tag,
                 "model_digest": config.model_digest,
                 "context_tokens": config.context_tokens,

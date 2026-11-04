@@ -20,7 +20,13 @@ function valueText(value: unknown): string {
   return "Unavailable value";
 }
 
-export function TurnDetailsPanel({ details }: { details: Details | null }) {
+export function TurnDetailsPanel({
+  details,
+  inspect,
+}: {
+  details: Details | null;
+  inspect?: () => void;
+}) {
   if (!details) return null;
   const labels: Record<Details["stage"], string> = {
     preparing: "Recalling memories…",
@@ -40,7 +46,11 @@ export function TurnDetailsPanel({ details }: { details: Details | null }) {
       </p>
       {details.stage !== "invalidated" && (
         <>
-          <details>
+          <details
+            onToggle={(event) => {
+              if (event.currentTarget.open) inspect?.();
+            }}
+          >
             <summary>
               Thinking{details.thinking_enabled ? "" : " (off)"}
             </summary>
@@ -59,8 +69,15 @@ export function TurnDetailsPanel({ details }: { details: Details | null }) {
               )}
             </div>
           </details>
-          <details>
-            <summary>Recalled memories ({details.memories.length})</summary>
+          <details
+            onToggle={(event) => {
+              if (event.currentTarget.open) inspect?.();
+            }}
+          >
+            <summary>
+              Recalled memories (
+              {details.retained_memory_count ?? details.memories.length})
+            </summary>
             <div className="details-body memory-values">
               {details.memories.length === 0 && (
                 <p className="quiet">

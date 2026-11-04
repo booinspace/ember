@@ -184,6 +184,30 @@ def _body(config: DeploymentConfig) -> dict[str, object]:
     }
 
 
+def test_monitor_failures_cannot_drop_transport_end_or_leave_bridge_busy(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = _config(tmp_path)
+        bridge, gateway, client = _bridge(config, _Upstream())
+
+        def broken(_: object) -> None:
+            raise RuntimeError("SYNTHETIC_OBSERVER_ERROR")
+
+        bridge.observe_request = broken
+        client.observe_event = broken
+        try:
+            for _ in range(2):
+                result = await bridge.complete(_body(config))
+                assert result["choices"][0]["message"]["content"] == "Synthetic answer"
+                assert result["usage"]["completion_tokens"] == 3
+                assert not bridge.running
+            assert bridge.observation_failures == client.observation_failures == 2
+        finally:
+            await client.aclose()
+            await gateway.aclose()
+
+    asyncio.run(run())
+
+
 def test_bridge_uses_real_gateway_p2_admission_and_server_owned_identity(tmp_path: Path) -> None:
     async def run() -> None:
         config = _config(tmp_path)

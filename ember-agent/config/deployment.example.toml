@@ -95,3 +95,25 @@ timeout_seconds = 8.0
 # Relative paths resolve from this deployment TOML's directory.
 [prompts]
 system_file = "prompts/system.md"
+
+# Optional, independent of Hermes Desktop. Installed command speaks the bounded
+# public-search JSON protocol; provider is its display identity (no dynamic import).
+# [public_search]
+# provider = "hermes"
+# command = ["C:/installed/python.exe", "-B", "C:/ember/scripts/hermes/hermes_search.py", ...]
+
+# Optional single task provider. Explicit setup seals the worker before enabling it.
+# Legacy [hermes] is supported, but cannot be combined with [harness].
+# [harness]
+# provider = "hermes"
+# command = ["C:/ember/.venv/Scripts/python.exe", "-B", "C:/installed/bridge/hermes_worker.py",
+#            "--profile", "C:/installed/profile.json"]
+# For a qualified Linux task worker on a Windows host, command can instead be:
+# ["C:/Windows/System32/wsl.exe", "--distribution", "Ubuntu", "--user", "you", "--exec",
+#  "/installed/sdk/.venv/bin/python", "-B", "/installed/bridge/hermes_worker.py",
+#  "--profile", "/installed/profile.json"]
+# revision = "71736c9f32597bbca9d89cede5aa136e55946b2f"
+# profile_sha256 = "<verified SHA-256>"
+# search_endpoint = "http://your-installed-searxng:8095"
+# private_recall = false
+# tools = ["native.inspect_text"] # At most eight explicit native/MCP IDs; no implicit grants.

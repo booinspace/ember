@@ -1,0 +1,10 @@
+{
+  "operation": "mcp",
+  "worker_transport": "wsl",
+  "profile_sha256": "43c83dfc25a857c63b11243584f694516a60f616770347246d486f5ac301652a",
+  "model": "qwen3.8-rvn:27b-iq3_s-mtp",
+  "model_digest": "5b869f160df08fa13860487d8c341d3db22a9b3aca48e67dced4b53370a3cfd2",
+  "p2_model_calls": 2,
+  "purged": true,
+  "broker_receipt_verified": true
+}

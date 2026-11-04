@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
+from functools import partial
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,7 +27,7 @@ from ember_memory_engine.processing_contracts import (
 from ember_memory_engine.processing_gateway import GatewayExtractionModel
 from ember_memory_engine.read_budget import ReadBudget
 
-from ..character.core import CharacterCore, Personality, TurnObservation
+from ..character.core import CharacterCore, Personality, PreparedTurn, TurnObservation
 from ..character.interpretation import CalendarInterpreter
 from ..character.prompts import PromptDocuments, PromptEdit, PromptSnapshot
 from ..inference.client import HttpGatewayClient
@@ -37,6 +38,7 @@ from ..memory.deep_recall import DeepRecallService
 from .config import DeploymentConfig, RuntimeModel
 from .console import read_line
 from .controls import CaptureControl, LibraryChoice, ProcessingStatus
+from .dashboard import Dashboard
 from .prompt_files import PromptFiles
 
 
@@ -103,6 +105,13 @@ class LocalRuntime:
 
             self.deep = DeepRecallService(binding.character_id, deep_client, validation=self.memory)
             self.model = HttpGatewayClient(config.services.gateway.endpoint, token)
+            self.dashboard = Dashboard(
+                model=config.model_tag,
+                backend=config.inference.backend,
+                context_tokens=config.context_tokens,
+                health=self.model.health,
+            )
+            self.model.observe_event = self.dashboard.event
             self.capture = CaptureService(self.engine, binding.character_id)
             self.sink = ArchiveDialogueSink(self.engine.archive(binding.character_id), self.subject)
             ceiling = min(
@@ -138,6 +147,7 @@ class LocalRuntime:
                 else None,
             )
             self.core.load_prompts = self.load_prompt_snapshot
+            self._observe_core(self.core)
         except Exception:
             self.engine.close()
             self.pool.shutdown(wait=True)
@@ -146,6 +156,20 @@ class LocalRuntime:
     async def load_prompt_snapshot(self) -> PromptSnapshot:
         """Pin one bounded file pair using the existing off-loop runtime worker."""
         return await asyncio.wrap_future(self.pool.submit(self.prompt_files.load))
+
+    def _observe_core(self, core: CharacterCore) -> None:
+        def observe(turn: PreparedTurn) -> None:
+            self.dashboard.capture(
+                turn.request,
+                budget=core.input_ceiling,
+                input_units=turn.accounting.serialized_total if turn.accounting else None,
+                validate=partial(core.current, turn.dependencies, turn.certificate),
+            )
+
+        core.activity = self.dashboard.activity
+        core.observe_request = observe
+        core.observe_end = self.dashboard.finish
+        core.observe_input_started = self.dashboard.retire_context
 
     def new_text_core(self, *, input_ceiling: int, recall_enabled: bool) -> CharacterCore:
         """Share the character and ABI owner while giving a client its own bounded dialogue."""
@@ -160,6 +184,7 @@ class LocalRuntime:
             recall_enabled=recall_enabled,
         )
         core.load_prompts = self.load_prompt_snapshot
+        core.activity = self.dashboard.activity
         core.public_search_available = True
         return core
 
@@ -347,6 +372,7 @@ class LocalRuntime:
             cleanup.push_async_callback(self.memory.aclose)
             cleanup.push_async_callback(self.sink.aclose)
             cleanup.push_async_callback(self.deep.aclose)
+            cleanup.push_async_callback(self.dashboard.aclose)
 
     def close_workers(self) -> None:
         """Join the drained lifecycle worker outside the realtime loop."""

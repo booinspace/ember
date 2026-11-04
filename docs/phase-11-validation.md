@@ -1,12 +1,14 @@
 # Phase 11 acceptance and validation
 
-Status: implemented and qualified for the selected native Windows one-shot profile.
+Status: implemented; the selected PC task worker is now Ubuntu WSL2/bubblewrap
+under the operator-authorized harness/dashboard amendment. See the final amendment
+evidence below; native Windows records in earlier sections are historical.
 Original PLAN P11-AC-01–07 and the broader adoption prerequisite are unchanged.
 
 The original Phase 8A production-adoption prerequisite remains open. An isolated
 one-shot task does not qualify Hermes Desktop, messaging/app pairing, dashboard
-chat, near-limit context capacity or physical microphone performance. Delegation
-stays default-off; the implementation and isolated tests do not retire any Ember
+chat, near-limit context capacity or physical microphone performance. The later amendment explicitly authorizes enabling the selected WSL worker on the
+PC; broader adoption remains open. The implementation does not retire any Ember
 chat/voice controls or change the live inference backend.
 
 | Criterion | Implementation / observed proof |
@@ -14,7 +16,7 @@ chat/voice controls or change the live inference backend.
 | P11-AC-01 | Actual pinned native SDK reconnaissance and 1/2/4-round synthetic conversations identify the supported fields, buffered streaming, complete tool IDs and disabled auxiliary paths. The separate installed-software receipt fails closed on code/config/bytecode drift. See the native boundary report. |
 | P11-AC-02 | Socket-free HTTPX transport + credential-free stdio broker; strict task-local OpenAI mapping to authenticated P2; unsupported fields/routes and changed profiles fail closed. No secondary runner. |
 | P11-AC-03 | Existing native submit/status/events/result/cancel/artifact lifecycle; exact structured report/citation validation; bounded optional personal context. One-shot profile truthfully advertises input/update/resume unsupported. Purge requires worker acknowledgement and process exit. |
-| P11-AC-04 | Actual native Windows AppContainer proofs pass: zero capabilities, nine filesystem/network denials, positive own-home/network controls, exact grant/profile/home removal, EOF and forced-controller-crash recovery. Linux reconnaissance is separate evidence. |
+| P11-AC-04 | Actual native Windows AppContainer proofs pass: zero capabilities, nine filesystem/network denials, positive own-home/network controls, exact grant/profile/home removal, EOF and forced-controller-crash recovery. These are historical native-token/profile proofs, superseded for the selected PC by the WSL denial/EOF/cancel/crash qualification below. |
 | P11-AC-05 | Native task reconciliation/idempotency/effect fences retained. Process-creation/cancel/terminal races tested. A context watcher and per-step/final ABI validation stop revoked copies; no uncertain replay. |
 | P11-AC-06 | Actual public SearXNG research through broker + sole gateway passed on Ollama and vLLM, including structured completion, native notification, acknowledged outbox, unchanged canonical files and a distinct follow-up P0 context. |
 | P11-AC-07 | Disabled-provider/native task regression plus original core/MCP suites passed. Restored primary HTTPS/UI assets, text availability, Phonon readiness and a synthetic gateway P0 turn passed; physical microphone acceptance remains open. |
@@ -101,7 +103,7 @@ UI assets loaded, text/tasks were available and CPU Phonon reported Juniper at
 3.702 s), then no request or queue remained. This was the first post-startup turn,
 not a warm-latency comparison or a physical speech test.
 
-The optional Hermes configuration remains absent in the primary deployment,
+At that historical restoration the optional Hermes configuration remained absent,
 consistent with the open adoption prerequisite. The one-time test gateway and
 speech controllers stopped normally before the primary app started. No real
 messaging account or private conversation was used for qualification. See the
@@ -228,7 +230,7 @@ safeguards. Frontend and inference benchmark runs were not repeated because neit
 frontend nor generation behavior changed. The [sanitized report](benchmarks/2026-11-04-phase11-qualification/tools-cleanup.json)
 records configuration, adapter hashes and exact validation scope.
 
-**Deployment is pending, not accepted.** SSH and ping to the PC timed out, and the
+**Historical cleanup deployment was pending, not accepted.** SSH and ping to the PC timed out, and the
 provided NAS hostname stopped resolving from the Mac. This does not establish a PC
 crash. No new Windows profile, shortcut, runtime path or service restart was applied.
 After connectivity returns, update the ignored `search_command` to
@@ -236,3 +238,36 @@ After connectivity returns, update the ignored `search_command` to
 the repository launcher, and validate Desktop/profile/search on Windows. Existing
 custom profile/chat data remains preserved. The copied-chat purge deferral remains
 unchanged.
+
+## Selected WSL worker and live dashboard — 4 November 2026
+
+This is the current deployment record. The operator authorized enabling Hermes,
+deferred Desktop, and superseded the native Windows worker after its normal-token
+startup failed. **Only the task worker now runs in Ubuntu WSL2/bubblewrap**; Windows
+retains Core/voice, canonical memory, broker authority and the existing Ollama gateway.
+No model/weights were installed in WSL and no kernel/elevation experiment ships.
+
+The [final evidence and configuration](benchmarks/2026-11-04-harness-dashboard/README.md)
+records full Windows/macOS gates, responsive browser tests, actual pinned SDK and
+Windows-to-WSL denial/EOF/cancel/crash proofs, real native/MCP/public gateway tasks,
+normal-token production delegation, lazy exact input inspection and capture overhead.
+The final profile is `43c83dfc25a857c63b11243584f694516a60f616770347246d486f5ac301652a`.
+The dedicated Linux dependency import tree is byte-sealed, with changed/added/link
+regressions; OS shared libraries remain platform inputs. Windows controller cleanup
+is evidence of bounded guest teardown, not a retained Linux handle or GPU release.
+Success additionally requires the guest purge frame and verified launcher exit.
+
+Neutral harness/search settings no longer depend on Desktop. Explicit native/MCP
+requests return through existing grants, exact approvals, effect fences and receipts;
+private copied tool context is revocable on every disclosure surface. Capabilities
+separate providers from atomic tools and state configuration honestly. The dashboard
+uses generic tool/memory/task/inference events, cached off-loop system sensors and
+bounded, lazy, authenticated inspection of the actual visible model request. It adds
+no extra generation or durable prompt logging. Original input/output guards remain.
+
+Independent review found the Linux dependency-seal gap and confirmed its correction;
+no remaining concrete source issue was reported in the final pass. Failed/stochastic
+model trials remain identified in the evidence rather than counted as passes. The
+broader Phase 8A gates, physical microphone/device testing, Desktop/purge work and
+Phase 13 scheduling/native abort remain open. Phase 12 is replanned toward harness
+skill ownership; its original acceptance outcomes remain planned, not complete.

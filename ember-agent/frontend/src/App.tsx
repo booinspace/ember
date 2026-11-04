@@ -1,3 +1,11 @@
+import { Fragment } from "react";
+import {
+  useDashboard,
+  SystemStatus,
+  ActivityCard,
+  Capabilities,
+  PromptInspector,
+} from "./Dashboard";
 import { createRequestId } from "./ids";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -22,7 +30,12 @@ import { TurnDetailsPanel } from "./TurnDetails";
 import { PromptEditor } from "./PromptEditor";
 import { VoiceControls } from "./VoiceControls";
 
-type Turn = { id: string; role: "user" | "assistant"; text: string };
+type Turn = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  requestId?: string;
+};
 const acknowledgement = z.object({
   request_id: z.string().uuid(),
   status: z.string(),
@@ -44,6 +57,17 @@ export function App() {
     globalThis.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
   const [result, setResult] = useState<Investigation | null>(null);
   const [details, setDetails] = useState<TurnDetails | null>(null);
+  const monitor = useDashboard(state !== null);
+  const [view, setView] = useState<"conversation" | "activity">("conversation");
+  const [inspectDetails, setInspectDetails] = useState(false);
+  const [requestedInspection, setRequestedInspection] = useState<string | null>(
+    null,
+  );
+  const [inspectionNonce, setInspectionNonce] = useState(0);
+  const inspectRequest = (identity: string): void => {
+    setRequestedInspection(identity);
+    setInspectionNonce((value) => value + 1);
+  };
   const [thinkingSaving, setThinkingSaving] = useState(false);
   const thinkingPending = useRef(false);
   const messages = useRef<HTMLDivElement | null>(null);
@@ -90,7 +114,8 @@ export function App() {
     const inspect = async (): Promise<void> => {
       try {
         const value = await control(
-          "turn-details",
+          "turn-details?metadata_only=" +
+            String(!inspectDetails && !state?.thinking_enabled),
           turnInspection,
           undefined,
           AbortSignal.any([abort.signal, AbortSignal.timeout(5000)]),
@@ -108,7 +133,7 @@ export function App() {
       abort.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [connected]);
+  }, [connected, inspectDetails, state?.thinking_enabled]);
 
   useEffect(() => {
     if (
@@ -139,7 +164,7 @@ export function App() {
   ): void => {
     if (!mounted.current) return;
     if (role === "user") forceScroll.current = true;
-    const id = segment;
+    const id = role + ":" + segment;
     setTurns((old) => {
       const last = old.at(-1);
       if (last?.id === id)
@@ -237,12 +262,13 @@ export function App() {
     setError("");
     setBusy(true);
     outputId.current = null;
+    const requestId = createRequestId();
     setTurns((old) => [
       ...old.slice(-23),
-      { id: createRequestId(), role: "user", text },
+      { id: "user:" + requestId, role: "user", text, requestId },
     ]);
     try {
-      await connection.current.ask(text);
+      await connection.current.ask(text, requestId);
     } catch (failure: unknown) {
       report(failure instanceof Error ? failure.message : "Turn unavailable.");
     } finally {
@@ -396,14 +422,14 @@ export function App() {
     }
   };
   return (
-    <main>
-      <header>
+    <main className="dashboard-shell">
+      <header className="app-header">
         <div className="mark" aria-hidden="true">
           e
         </div>
         <div>
           <h1>Ember</h1>
-          <p>A conversation with room to remember.</p>
+          <p>LOCAL CHARACTER SYSTEM</p>
         </div>
         <span className="status" role="status">
           {connected ? "Connected" : "Disconnected"}
@@ -415,6 +441,7 @@ export function App() {
           {connected ? "Disconnect" : "Connect"}
         </button>
       </header>
+      <SystemStatus snapshot={monitor.snapshot} online={monitor.online} />
       {state?.transport === "http" && (
         <p role="status">
           {state.text_available
@@ -442,34 +469,71 @@ export function App() {
           {error}
         </div>
       )}
-      {state?.tasks_available && <Tools />}
-      {state?.tasks_available && (
-        <Tasks
-          summaries={state.summary_tasks_available}
-          recall={state.recall_tasks_available}
-          delegation={state.delegation_available}
-          connected={connected}
-        />
-      )}
-      {state?.prompts_available && (
-        <PromptEditor
-          busy={
-            busy ||
-            Boolean(
-              details &&
-              [
-                "preparing",
-                "generating",
-                "thinking",
-                "answering",
-                "awaiting_delivery",
-              ].includes(details.stage),
-            )
-          }
-        />
-      )}
-      <div className="layout">
+      <div className="layout workspace">
+        <nav className="workspace-nav" aria-label="Dashboard navigation">
+          <span className="eyebrow">WORKSPACE</span>
+          <button
+            className={view === "conversation" ? "selected" : ""}
+            onClick={() => setView("conversation")}
+          >
+            <span aria-hidden="true">◉</span> Conversation
+          </button>
+          <button
+            className={view === "activity" ? "selected" : ""}
+            onClick={() => setView("activity")}
+          >
+            <span aria-hidden="true">↗</span> Activity{" "}
+            <span className="nav-count">{monitor.events.length}</span>
+          </button>
+          <a href="#inference-context">
+            <span aria-hidden="true">✦</span> Inference context
+          </a>
+          <a href="#capabilities">
+            <span aria-hidden="true">◇</span> Capabilities
+          </a>
+          <a href="#memory-controls">
+            <span aria-hidden="true">▤</span> Memory & settings
+          </a>
+          <div className="runtime-card">
+            <i className={monitor.online ? "live-dot" : "offline-dot"} />
+            <strong>
+              {monitor.online ? "Runtime online" : "Connecting to runtime"}
+            </strong>
+            <p>{monitor.snapshot?.model ?? "Local model"}</p>
+            <small>
+              {monitor.snapshot?.system.gpu_name ?? "Local hardware"}
+            </small>
+          </div>
+        </nav>
         <section className="conversation" aria-label="Conversation">
+          <div className="conversation-toolbar">
+            <div>
+              <span className="eyebrow">
+                {view === "conversation"
+                  ? "CHARACTER SESSION"
+                  : "RUNTIME TRANSACTIONS"}
+              </span>
+              <h2>{view === "conversation" ? "Conversation" : "Activity"}</h2>
+            </div>
+            <div
+              className="view-switch"
+              role="group"
+              aria-label="Conversation view"
+            >
+              <button
+                className={view === "conversation" ? "selected" : ""}
+                onClick={() => setView("conversation")}
+              >
+                Chat
+              </button>
+              <button
+                className={view === "activity" ? "selected" : ""}
+                onClick={() => setView("activity")}
+              >
+                Activity
+              </button>
+            </div>
+          </div>
           <div
             className="messages"
             aria-live="polite"
@@ -483,24 +547,73 @@ export function App() {
                 80;
             }}
           >
-            {turns.length === 0 && (
+            {view === "conversation" && turns.length === 0 && (
               <div className="welcome">
-                <div className="glow" />
-                <h2>Tell me what is on your mind.</h2>
+                <div className="welcome-emblem" aria-hidden="true">
+                  ✦
+                </div>
+                <span className="eyebrow">YOUR LOCAL AI WORKSPACE</span>
+                <h2>Start a conversation.</h2>
                 <p>
-                  Ordinary recall stays quick. Choose “Recall deeply” when you
-                  want to investigate a memory.
+                  Talk, search, or explore a memory. Tool calls and context
+                  activity appear here as they happen.
                 </p>
               </div>
             )}
-            {turns.map((turn) => (
-              <article key={turn.id} className={"turn " + turn.role}>
-                <span>{turn.role === "user" ? "You" : "Ember"}</span>
-                <p>{turn.text}</p>
-              </article>
-            ))}
+            {view === "conversation" &&
+              turns.map((turn) => (
+                <Fragment key={turn.id}>
+                  <article className={"turn " + turn.role}>
+                    <span>{turn.role === "user" ? "You" : "Ember"}</span>
+                    <p>{turn.text}</p>
+                  </article>
+                  {turn.role === "user" &&
+                    monitor.events
+                      .filter(
+                        (event) =>
+                          event.request_id &&
+                          event.request_id === turn.requestId &&
+                          event.kind !== "inference" &&
+                          event.kind !== "system",
+                      )
+                      .map((event) => (
+                        <ActivityCard
+                          key={event.id}
+                          event={event}
+                          inspect={inspectRequest}
+                        />
+                      ))}
+                </Fragment>
+              ))}
+            {monitor.events
+              .filter(
+                (event) =>
+                  view === "activity" ||
+                  (["task", "tool", "memory"].includes(event.kind) &&
+                    !turns.some((turn) => turn.requestId === event.request_id)),
+              )
+              .slice(-64)
+              .map((event) => (
+                <ActivityCard
+                  key={event.id}
+                  event={event}
+                  inspect={inspectRequest}
+                />
+              ))}
+            {view === "activity" && monitor.events.length === 0 && (
+              <div className="welcome">
+                <h2>Activity will appear here.</h2>
+                <p>
+                  Memory recall, tools, tasks and inference share one live
+                  timeline.
+                </p>
+              </div>
+            )}
           </div>
-          <TurnDetailsPanel details={details} />
+          <TurnDetailsPanel
+            details={details}
+            inspect={() => setInspectDetails(true)}
+          />
           {state?.speech && (
             <VoiceControls
               options={state.speech}
@@ -547,7 +660,7 @@ export function App() {
                   if (!event.repeat) void send();
                 }
               }}
-              placeholder="Ask about your NAS, Milo, or memories from summer 2026…"
+              placeholder="Message Ember…"
             />
             <div className="actions">
               <button
@@ -649,16 +762,51 @@ export function App() {
             />
           )}
         </section>
-        {state && (
-          <Controls
-            state={state}
-            update={(value) => {
-              setState(value);
-              setResult(null);
-            }}
-            failure={report}
+        <div className="dashboard-side">
+          <PromptInspector
+            snapshot={monitor.snapshot}
+            requestedId={requestedInspection}
+            nonce={inspectionNonce}
           />
-        )}
+          <Capabilities enabled={state !== null} />
+          {state?.tasks_available && <Tools />}
+          {state?.tasks_available && (
+            <Tasks
+              summaries={state.summary_tasks_available}
+              recall={state.recall_tasks_available}
+              delegation={state.delegation_available}
+              connected={connected}
+              provider={state.delegation_provider ?? "Agentic harness"}
+            />
+          )}
+          {state?.prompts_available && (
+            <PromptEditor
+              busy={
+                busy ||
+                Boolean(
+                  details &&
+                  [
+                    "preparing",
+                    "generating",
+                    "thinking",
+                    "answering",
+                    "awaiting_delivery",
+                  ].includes(details.stage),
+                )
+              }
+            />
+          )}
+          {state && (
+            <Controls
+              state={state}
+              update={(value) => {
+                setState(value);
+                setResult(null);
+              }}
+              failure={report}
+            />
+          )}{" "}
+        </div>
       </div>
     </main>
   );

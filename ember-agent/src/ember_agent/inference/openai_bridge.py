@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 from jsonschema import Draft202012Validator, SchemaError
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
+from ..observability import notify
 from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import (
     GatewayError,
@@ -153,6 +154,7 @@ class OpenAIModelBridge:
         *,
         context_id: UUID,
         deadline_at: str,
+        observe_request: Callable[[GatewayRequest], None] | None = None,
     ) -> None:
         self.client = client
         self.config = config
@@ -162,6 +164,10 @@ class OpenAIModelBridge:
             raise ValueError("The model bridge requires an explicit task deadline.")
         self.calls = 0
         self.running = False
+        self.observe_request = observe_request
+        self.observation_failures = 0
+        self.last_input_units = 0
+        self.last_output_units = 0
 
     def models(self) -> dict[str, JsonValue]:
         """Report actual runner capacity separately from this task's stricter prompt budget."""
@@ -264,6 +270,7 @@ class OpenAIModelBridge:
             cost = len(serialized.encode()) + 512 + 64 * len(request.messages)
             if cost > min(self.config.max_input_tokens, self.config.context_tokens - 1192, 16384):
                 raise GatewayError("prompt_overflow")
+            self.last_input_units = cost
             return value, request
         except (ValidationError, ValueError) as error:
             raise GatewayError("invalid_openai_request") from error
@@ -277,6 +284,7 @@ class OpenAIModelBridge:
     ) -> dict[str, JsonValue]:
         """Return one complete response; cancellation detaches the existing owned gateway."""
         value, request = self._request(body)
+        original_units = self.last_input_units
         if tool_policy is not None:
             original = request
             selected = tool_policy(request.tools)
@@ -297,7 +305,9 @@ class OpenAIModelBridge:
         if remaining <= 0:
             raise GatewayError("deadline_exceeded")
         self.calls += 1
+        self.last_input_units = max(original_units, self.last_input_units)
         self.running = True
+        self.observation_failures += not notify(self.observe_request, request)
         stream = self.client.stream(request)
         content: list[str] = []
         size = 0
@@ -353,6 +363,7 @@ class OpenAIModelBridge:
                     }
                     for call in calls
                 ]
+            self.last_output_units = len(json.dumps(message, ensure_ascii=False).encode()) + 64
             return {
                 "id": "chatcmpl-" + str(request.request_id),
                 "object": "chat.completion",

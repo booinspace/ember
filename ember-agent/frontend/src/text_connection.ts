@@ -60,10 +60,13 @@ export class TextConnection {
     }
   }
 
-  async ask(text: string, investigationId?: string): Promise<number> {
+  async ask(
+    text: string,
+    requestId = createRequestId(),
+    investigationId?: string,
+  ): Promise<number> {
     if (!this.identity || this.closed)
       throw new Error("Text connection is closed.");
-    const requestId = createRequestId();
     const value = await control(
       "text/turn",
       reply,
@@ -91,7 +94,7 @@ export class TextConnection {
   }
 
   async answerInvestigation(identity: string, query: string): Promise<void> {
-    await this.ask(query.slice(0, 1600), identity);
+    await this.ask(query.slice(0, 1600), createRequestId(), identity);
   }
 
   async microphone(_enabled: boolean): Promise<void> {

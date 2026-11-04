@@ -317,3 +317,46 @@ def test_runtime_inventory_rejects_nested_links_to_unqualified_code(
     monkeypatch.setattr(setup, "os", SimpleNamespace(name="nt", scandir=os.scandir))
     with pytest.raises(ValueError, match="redirects outside"):
         setup.runtime_assets(profile)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Linux installed dependency inventory.")
+@pytest.mark.parametrize("mutation", ["changed", "added", "redirected"])
+def test_linux_receipt_seals_installed_dependency_bytes(
+    worker: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    setup = importlib.import_module("hermes_setup")
+    prefix = tmp_path / "venv"
+    packages = prefix / "lib/python3.14/site-packages"
+    packages.mkdir(parents=True)
+    dependency = packages / "dependency.py"
+    dependency.write_text("qualified")
+    (prefix / "pyvenv.cfg").write_text("home = /usr/bin")
+    profile = setup.HermesProfile(
+        source=str(tmp_path / "source"),
+        python=str(prefix / "bin/python"),
+        launcher_python=sys.executable,
+        launcher_version=setup.platform.python_version(),
+        git="/usr/bin/git",
+        software={"python": "3.14.4"},
+        files={str(dependency): setup.fingerprint(dependency)},
+    )
+    assets = setup.runtime_assets(profile)
+    profile = profile.model_copy(
+        update={"files": {str(path): setup.fingerprint(path) for path in assets}}
+    )
+    receipt = tmp_path / "profile.json"
+    receipt.write_text(profile.model_dump_json())
+    monkeypatch.setattr(setup, "inventory", lambda *_: profile.software)
+    monkeypatch.setattr(setup, "tracked_files", lambda *_: [])
+    monkeypatch.setattr(setup, "installed_source_files", lambda *_: [])
+    monkeypatch.setattr(setup, "control_sources", lambda *_: [])
+    assert setup.load_profile(receipt)
+    if mutation == "changed":
+        dependency.write_text("unqualified")
+    elif mutation == "added":
+        (packages / "optional.py").write_text("unqualified")
+    else:
+        dependency.unlink()
+        dependency.symlink_to(receipt)
+    with pytest.raises(ValueError, match="changed|redirects outside"):
+        setup.load_profile(receipt)

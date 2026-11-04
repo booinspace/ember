@@ -1,7 +1,8 @@
 # 0021 — Isolated Hermes task delegation
 
-Status: selected native Windows one-shot profile qualified; production adoption
-remains gated by Phase 8A. Acceptance evidence is in
+Status: task provider implemented; the operator-authorized dashboard deployment
+selects the qualified Ubuntu WSL2 one-shot worker. Desktop is deferred and broader
+Phase 8A adoption gates remain open. Acceptance evidence is in
 [Phase 11 validation](../phase-11-validation.md).
 
 Hermes is the selected optional agentic provider. Ember retains its character,
@@ -10,10 +11,10 @@ No upstream framework is vendored or added to either product environment.
 
 The supported profile is one bounded, read-only delegated workflow. An external
 Hermes checkout and its Python 3.14 environment are pinned separately from Ember's
-Python 3.12 runtime. The operator selected native Windows deployment; its
-AppContainer isolation passed native positive/negative and crash-recovery probes. Linux bubblewrap was used
-for initial SDK reconnaissance and is retained as a separate platform adapter,
-not the Windows deployment. The worker has a temporary home, isolated networking
+Python 3.12 runtime. The operator superseded native Windows task-worker deployment
+with Ubuntu WSL2/bubblewrap. Earlier native AppContainer proofs were valid for their
+SSH token/profile, but the normal unelevated app failed boundary startup. The native
+adapter is retained for separately qualified deployments. The worker has a temporary home, isolated networking
 and only brokered tools. Native macOS worker isolation is not claimed; controller
 and model/task contracts remain independent of the worker OS.
 
@@ -99,3 +100,38 @@ Private profile state stays in Hermes' supported user storage. The named profile
 published complete and standalone, preventing its process-global provider hook from
 being adopted by other profiles' shared backend. Old profile/chat data is preserved;
 no transcript merge, capture-owner change or memory/schema migration is introduced.
+
+
+## Neutral harness broker and live dashboard — 4 November 2026
+
+The [amendment](../harness-dashboard-amendment.md) preserves AgenticTaskProvider,
+CharacterCore and gateway authority. A startup factory selects one `[harness]`;
+legacy Hermes settings remain compatible and `delegate_task` is the conversational
+name. Public search has its own installed-command configuration. Desktop is
+optional and its current native startup failure is deferred, without deleting
+existing profiles or chats.
+
+A bounded explicit native/MCP catalog is supplied to the isolated worker. Calls
+return through Ember's existing validation, exact approvals, effect fences and
+receipts; credentials never leave the broker. MCP context is treated as private,
+with no subsequent search/external MCP calls and revocable dependent inspection.
+Read-only remains the default grant; configured writes use the existing UI approval.
+The worker is resealed and qualified after bridge changes.
+
+One content-free event vocabulary supports inline memory/tool/task/inference
+transactions. Monitoring uses cached off-loop sensors and existing terminal usage.
+Exact visible inputs are retained by reference (eight requests, five-minute TTL),
+serialized only on operator inspection and revalidated on each disclosure. No
+prompt logs, hidden reasoning, extra inference or change to the scheduler.
+Phase 12 is replanned toward harness-owned skill loading with thin Ember manifest,
+grant, budget and visibility adapters. Its acceptance outcomes remain open.
+
+The operator subsequently selected **Ubuntu WSL2 for only the Hermes task worker**.
+The existing Linux bubblewrap boundary replaces the failed unelevated Windows launch
+in this deployment; no kernel workaround or elevation is shipped. Windows retains
+Core, voice, canonical memory, broker credentials and model admission. The external
+Linux SDK receives stdio only, not a network model endpoint or Windows filesystem.
+Cross-platform EOF/cancellation/controller-crash proofs qualify namespace cleanup;
+actual search/native/MCP tasks must still pass the gateway acceptance tests.
+See the current [runbook](../phase-11-runbook.md) and
+[validation record](../phase-11-validation.md) for the selected profile.

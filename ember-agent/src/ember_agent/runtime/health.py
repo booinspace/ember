@@ -33,7 +33,7 @@ def readiness(config: DeploymentConfig) -> ReadinessReport:
     """Report validated configuration only, without network probes or runtime startup."""
     return ReadinessReport(
         inference_backend=config.inference.backend,
-        hermes="configured_unprobed" if config.hermes else "disabled",
+        hermes="configured_unprobed" if config.selected_harness else "disabled",
         model_pin="configured_unverified" if config.model_pin_configured else "pending",
         voice=(
             "disabled"

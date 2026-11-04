@@ -25,8 +25,10 @@ from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
+from .capabilities import capability_catalog
 from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, PromptControls, RuntimeControls
+from .dashboard import Dashboard
 from .hermes_chat import HermesChats
 from .mcp_contracts import MCPDiscovery
 from .speech_settings import SpeechOptions, SpeechSelection
@@ -132,8 +134,10 @@ class BrowserControl:
         prompt_controls: PromptControls | None = None,
         prompt_idle: Callable[[], None] | None = None,
         hermes_chat: HermesChats | None = None,
+        dashboard: Dashboard | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
+        self.dashboard = dashboard
         self.lan_origin = lan_origin
         self.trusted_proxy = trusted_proxy
         self._origins = {
@@ -211,6 +215,8 @@ class BrowserControl:
             if request.url.path.startswith("/api/"):
                 if self._closed:
                     return JSONResponse({"error": "runtime_closing"}, status_code=503)
+                if request.headers.get("origin", request_origin) != request_origin:
+                    return JSONResponse({"error": "invalid_origin"}, status_code=403)
                 if request.method != "GET":
                     if request.headers.get("origin") != request_origin:
                         return JSONResponse({"error": "invalid_origin"}, status_code=403)
@@ -392,6 +398,9 @@ class BrowserControl:
                 "summary_tasks_available": bool(self.task_router and self.task_router.summary),
                 "recall_tasks_available": bool(self.task_router and self.task_router.recall),
                 "delegation_available": bool(self.task_router and self.task_router.delegate),
+                "delegation_provider": self.task_router.delegate_label
+                if self.task_router
+                else None,
                 "hermes_chat_available": self.hermes_chat is not None,
                 "hermes_private_recall": self.hermes_chat is not None
                 and self.hermes_chat.private_recall,
@@ -469,11 +478,55 @@ class BrowserControl:
             self.core.thinking_enabled = value.enabled
             return {"enabled": value.enabled}
 
+        @app.get("/api/capabilities")
+        async def capabilities() -> JSONResponse:
+            return JSONResponse(
+                {
+                    "capabilities": [
+                        value.model_dump(mode="json")
+                        for value in capability_catalog(self.core, self.task_router)
+                    ]
+                },
+                headers={"Cache-Control": "no-store"},
+            )
+
+        @app.get("/api/dashboard")
+        async def dashboard(after: int = 0) -> JSONResponse:
+            if self.dashboard is None:
+                raise GatewayError("dashboard_unavailable")
+            if after < 0:
+                raise GatewayError("invalid_dashboard_cursor")
+            return JSONResponse(
+                await self.dashboard.snapshot(after), headers={"Cache-Control": "no-store"}
+            )
+
+        @app.get("/api/inference/requests/{identity}")
+        async def inspect_request(identity: UUID, validate_only: bool = False) -> JSONResponse:
+            if self.dashboard is None:
+                raise GatewayError("dashboard_unavailable")
+            return JSONResponse(
+                await self.dashboard.inspect(identity, validate_only=validate_only),
+                headers={"Cache-Control": "no-store"},
+            )
+
         @app.get("/api/turn-details")
-        async def turn_details() -> JSONResponse:
+        async def turn_details(metadata_only: bool = False) -> JSONResponse:
             entry = self.core.turn_view.entry
             if entry is None:
                 response = JSONResponse({"turn": None})
+            elif metadata_only:
+                response = JSONResponse(
+                    {
+                        "turn": entry.value.model_dump(
+                            mode="json", exclude={"thinking", "memories"}
+                        )
+                        | {
+                            "thinking": "",
+                            "memories": [],
+                            "retained_memory_count": len(entry.value.memories),
+                        }
+                    }
+                )
             else:
                 if not await self.core.current(entry.dependencies, entry.certificate):
                     self.core.turn_view.invalidate(entry.value.request_id)

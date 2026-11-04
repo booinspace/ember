@@ -154,3 +154,12 @@ adoption gate, stable processing identity and [native qualification](../vllm-imp
 records Phase 11 delegation, paired native chat, shared recall, search and speech-stop
 amendments with their qualification evidence, plus the tool-provider simplification
 and repository-owned Desktop launcher.
+
+The [neutral harness broker and live dashboard amendment](../harness-dashboard-amendment.md)
+extends Root ADR 0021 and component ADR 0011; Phase 12 skill loading is planned
+inside the selected harness, with Ember retaining grants, budgets and visibility.
+
+The selected PC task worker now uses Ubuntu WSL2/bubblewrap while Ember's Core,
+voice, canonical memory, task broker and model gateway stay native Windows.
+The [current qualification](../benchmarks/2026-11-04-harness-dashboard/README.md)
+supersedes the earlier Windows-worker adoption claim; Desktop remains deferred.

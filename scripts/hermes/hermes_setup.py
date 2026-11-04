@@ -180,7 +180,9 @@ def control_sources(profile: HermesProfile) -> list[Path]:
 def runtime_assets(profile: HermesProfile) -> list[Path]:
     """Seal installed native SDK/interpreter bytes, including bytecode and package data."""
     if os.name != "nt":
-        return []
+        # Linux venv bin/lib64 contain standard interpreter links; inventory actual imports.
+        prefix = Path(profile.python).parent.parent
+        return [prefix / "pyvenv.cfg", *installed_files(prefix / "lib")]
     base = profile.software.get("base_prefix")
     if not isinstance(base, str):
         raise ValueError("Missing worker interpreter root.")

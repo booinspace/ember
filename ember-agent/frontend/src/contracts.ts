@@ -60,6 +60,7 @@ export const runtimeState = z.object({
   summary_tasks_available: z.boolean().default(false),
   recall_tasks_available: z.boolean().default(false),
   delegation_available: z.boolean().default(false),
+  delegation_provider: z.string().nullable().default(null),
   voice: z.boolean().default(false),
   voice_status: z.string().default("disabled"),
   speech: speechOptions.nullable().default(null),
@@ -97,6 +98,12 @@ export const turnDetails = z.object({
     )
     .max(100),
   memories_truncated: z.boolean(),
+  retained_memory_count: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullable()
+    .default(null),
 });
 export type TurnDetails = z.infer<typeof turnDetails>;
 export const turnInspection = z.object({ turn: turnDetails.nullable() });

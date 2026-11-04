@@ -169,6 +169,21 @@ class InterpretationSettings(RuntimeModel):
     timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 8.0
 
 
+def _harness_inputs(command: tuple[str, ...], origin: str) -> None:
+    endpoint = urlsplit(origin)
+    if (
+        endpoint.scheme not in {"http", "https"}
+        or not endpoint.hostname
+        or endpoint.username is not None
+        or endpoint.password is not None
+        or endpoint.path not in {"", "/"}
+        or endpoint.query
+        or endpoint.fragment
+        or any(not argument or len(argument) > 4096 for argument in command)
+    ):
+        raise ValueError("A harness requires an explicit search origin and installed command.")
+
+
 class HermesSettings(RuntimeModel):
     """Explicit installed isolated worker; its launcher never receives runner credentials."""
 
@@ -177,21 +192,47 @@ class HermesSettings(RuntimeModel):
     profile_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     search_endpoint: str
     private_recall: bool = False
+    tools: tuple[str, ...] = Field(default=(), max_length=8)
 
     @model_validator(mode="after")
     def installed_origin(self) -> Self:
-        endpoint = urlsplit(self.search_endpoint)
-        if (
-            endpoint.scheme not in {"http", "https"}
-            or not endpoint.hostname
-            or endpoint.username is not None
-            or endpoint.password is not None
-            or endpoint.path not in {"", "/"}
-            or endpoint.query
-            or endpoint.fragment
-            or any(not argument or len(argument) > 4096 for argument in self.command)
+        _harness_inputs(self.command, self.search_endpoint)
+        return self
+
+
+class HarnessSettings(RuntimeModel):
+    """One selected task adapter; SDK compatibility is validated by that adapter."""
+
+    provider: str = Field(default="hermes", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
+    command: Annotated[tuple[str, ...], Field(min_length=1, max_length=32)]
+    revision: str = Field(min_length=1, max_length=128)
+    profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    search_endpoint: str
+    private_recall: bool = False
+    tools: tuple[str, ...] = Field(default=(), max_length=8)
+
+    @model_validator(mode="after")
+    def installed_inputs(self) -> Self:
+        """Retain legacy installation checks without importing a provider SDK."""
+        _harness_inputs(self.command, self.search_endpoint)
+        if len(set(self.tools)) != len(self.tools) or any(len(tool) > 128 for tool in self.tools):
+            raise ValueError("Harness tool grants must be unique bounded identities.")
+        return self
+
+
+class PublicSearchSettings(RuntimeModel):
+    """Explicit installed search-only command, independent of any Desktop client."""
+
+    provider: str = Field(default="command", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
+
+    command: Annotated[tuple[str, ...], Field(min_length=1, max_length=32)]
+
+    @model_validator(mode="after")
+    def installed_command(self) -> Self:
+        if not Path(self.command[0]).is_absolute() or any(
+            not part or len(part) > 4096 for part in self.command
         ):
-            raise ValueError("Hermes requires an explicit search origin and installed command.")
+            raise ValueError("Public search requires an absolute installed command.")
         return self
 
 
@@ -233,6 +274,17 @@ class DeploymentConfig(RuntimeModel):
     inference: InferenceSettings = InferenceSettings()
     hermes: HermesSettings | None = None
     hermes_client: HermesClientSettings | None = None
+    harness: HarnessSettings | None = None
+    public_search: PublicSearchSettings | None = None
+
+    @property
+    def selected_harness(self) -> HarnessSettings | None:
+        """Normalize the legacy declaration at composition, keeping callers provider-neutral."""
+        if self.harness is not None:
+            return self.harness
+        if self.hermes is not None:
+            return HarnessSettings.model_validate_json(self.hermes.model_dump_json())
+        return None
 
     @property
     def model_pin_configured(self) -> bool:
@@ -312,6 +364,8 @@ class _DeploymentSettings(RuntimeModel):
     inference: InferenceSettings = InferenceSettings()
     hermes: dict[str, JsonValue] | None = None
     hermes_client: dict[str, JsonValue] | None = None
+    harness: dict[str, JsonValue] | None = None
+    public_search: dict[str, JsonValue] | None = None
     mcp_servers: list[dict[str, JsonValue]] = Field(
         default_factory=list[dict[str, JsonValue]], max_length=8
     )
@@ -545,6 +599,18 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     except (ValidationError, ValueError) as error:
         raise ConfigurationError("MCP server configuration is invalid.") from error
     try:
+        if settings.harness is not None and settings.hermes is not None:
+            raise ValueError("Use either harness or the legacy Hermes section.")
+        harness = (
+            HarnessSettings.model_validate_json(json.dumps(settings.harness))
+            if settings.harness is not None
+            else None
+        )
+        public_search = (
+            PublicSearchSettings.model_validate_json(json.dumps(settings.public_search))
+            if settings.public_search is not None
+            else None
+        )
         hermes = (
             HermesSettings.model_validate_json(json.dumps(settings.hermes))
             if settings.hermes is not None
@@ -555,11 +621,20 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             if settings.hermes_client is not None
             else None
         )
+        if (
+            public_search
+            and hermes_client
+            and hermes_client.search_command
+            and public_search.command != hermes_client.search_command
+        ):
+            raise ValueError("Conflicting public-search and legacy client search commands.")
         if hermes_client is not None and not settings.browser.enabled:
             raise ValueError("The Hermes client requires the application control listener.")
     except (ValidationError, ValueError) as error:
         raise ConfigurationError("Hermes configuration is invalid.") from error
     return DeploymentConfig(
+        harness=harness,
+        public_search=public_search,
         hermes=hermes,
         hermes_client=hermes_client,
         mcp_servers=mcp_servers,

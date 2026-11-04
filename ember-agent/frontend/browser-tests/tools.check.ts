@@ -119,7 +119,7 @@ test("MCP requests retain progress, cancellation, safe output and idempotent ret
     return route.fulfill({ json: {} });
   });
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-  await page.getByText("External tools", { exact: true }).click();
+  await page.getByText("Run an MCP tool", { exact: true }).click();
   await expect(
     page.getByText("offline: unavailable (0 tools)", { exact: true }),
   ).toBeVisible();

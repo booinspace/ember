@@ -362,6 +362,17 @@ class MCPTools:
                 return MCPToolDefinition.model_validate_json(tool.model_dump_json())
         raise TaskConflict("mcp_tool_unavailable")
 
+    def authority_tag(self, identity: str) -> str:
+        """Bind copied result access to known metadata, local grants and current credentials."""
+        definition = self.definition(identity)
+        server = next(server for server in self.settings if server.id == definition.server_id)
+        _, _, tag = self._credentials(server)
+        return hmac.new(
+            self._key,
+            _encoded([definition.metadata_sha256, server.model_dump(mode="json"), tag]),
+            hashlib.sha256,
+        ).hexdigest()
+
     def _credentials(self, settings: MCPServerSettings) -> tuple[dict[str, str], str | None, str]:
         environment = {
             "PATH": str(Path(settings.command).parent),

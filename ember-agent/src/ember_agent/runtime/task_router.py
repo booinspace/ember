@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import re
 from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 from datetime import UTC, datetime, timedelta
@@ -17,9 +18,10 @@ from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.evidence import SourceRef
 from ember_memory_abi.related import ContextDependencies
 
-from ..inference.contracts import GatewayRequest, ModelClient, PromptMessage
+from ..inference.contracts import GatewayError, GatewayRequest, ModelClient, PromptMessage
 from ..memory.deep_contracts import DeepRecallRequest
 from ..memory.deep_recall import DeepRecallService
+from ..observability import ActivityLog, ActivityStatus, notify
 from .config import RuntimeModel
 from .task_artifacts import TaskArtifact, TaskArtifacts
 from .task_store import (
@@ -105,11 +107,46 @@ class TextInspectionProvider:
 class ToolRouter:
     """Enforce installed capability, scoped authority, deadline and receipt identity."""
 
-    def __init__(self, provider: ToolProvider, character_id: UUID) -> None:
+    def __init__(
+        self, provider: ToolProvider, character_id: UUID, *, activity: ActivityLog | None = None
+    ) -> None:
         self.provider = provider
         self.character_id = character_id
+        self.activity = activity
 
     async def invoke(
+        self,
+        name: str,
+        arguments: dict[str, JsonValue],
+        context: ToolContext,
+        *,
+        allowed: frozenset[str],
+    ) -> ToolReceipt:
+        """Observe a broker transaction without recording its private arguments or result."""
+        span = (
+            self.activity.begin(
+                "tool",
+                name,
+                request_id=context.turn_id,
+                task_id=context.task_id,
+                provider="mcp" if name.startswith("mcp.") else "ember",
+            )
+            if self.activity
+            else None
+        )
+        try:
+            receipt = await self._invoke(name, arguments, context, allowed=allowed)
+        except BaseException as error:
+            if self.activity and span:
+                self.activity.update(
+                    span, "cancelled" if isinstance(error, asyncio.CancelledError) else "failed"
+                )
+            raise
+        if self.activity and span:
+            self.activity.update(span, "succeeded" if receipt.outcome == "success" else "failed")
+        return receipt
+
+    async def _invoke(
         self,
         name: str,
         arguments: dict[str, JsonValue],
@@ -142,10 +179,54 @@ class EffectUncertain(TaskConflict):
 class ConfirmedEffectRouter:
     """Fence one exact approved effect before invoking an installed provider."""
 
-    def __init__(self, store: TaskStore, provider: ToolProvider, character_id: UUID) -> None:
+    def __init__(
+        self,
+        store: TaskStore,
+        provider: ToolProvider,
+        character_id: UUID,
+        *,
+        activity: ActivityLog | None = None,
+    ) -> None:
         self.store, self.provider, self.character_id = store, provider, character_id
+        self.activity = activity
 
     async def invoke(
+        self,
+        confirmation: Confirmation,
+        arguments: dict[str, JsonValue],
+        context: ToolContext,
+        *,
+        allowed: frozenset[str],
+    ) -> ToolReceipt:
+        span = (
+            self.activity.begin(
+                "tool",
+                confirmation.tool,
+                request_id=context.turn_id,
+                task_id=context.task_id,
+                provider="mcp",
+            )
+            if self.activity
+            else None
+        )
+        try:
+            receipt = await self._invoke(confirmation, arguments, context, allowed=allowed)
+        except BaseException as error:
+            if self.activity and span:
+                self.activity.update(
+                    span,
+                    "uncertain"
+                    if isinstance(error, EffectUncertain)
+                    else "cancelled"
+                    if isinstance(error, asyncio.CancelledError)
+                    else "failed",
+                )
+            raise
+        if self.activity and span:
+            self.activity.update(span, "succeeded" if receipt.outcome == "success" else "failed")
+        return receipt
+
+    async def _invoke(
         self,
         confirmation: Confirmation,
         arguments: dict[str, JsonValue],
@@ -223,6 +304,13 @@ class ConfirmedEffectRouter:
         return receipt
 
 
+class ToolDependency(RuntimeModel):
+    """Opaque runtime authority identity; copied tool findings fail closed after restart."""
+
+    tool_id: str = Field(min_length=1, max_length=64)
+    authority_tag: str = Field(pattern=r"^[a-f0-9]{64}$", repr=False)
+
+
 class TaskResult(RuntimeModel):
     """Bounded result with a single authoritative native receipt."""
 
@@ -230,6 +318,7 @@ class TaskResult(RuntimeModel):
     receipt: ToolReceipt
     citations: tuple[SourceRef, ...] = Field(default=(), max_length=24)
     dependencies: ContextDependencies | None = None
+    tool_dependencies: tuple[ToolDependency, ...] = Field(default=(), max_length=8)
 
 
 class AgenticTaskProvider(Protocol):
@@ -275,9 +364,17 @@ class TextInspectionTask:
 class SummaryTask:
     """One buffered P2 step over operator text, without memory or tools."""
 
-    def __init__(self, client: ModelClient, model_tag: str) -> None:
+    def __init__(
+        self,
+        client: ModelClient,
+        model_tag: str,
+        *,
+        observe: Callable[[GatewayRequest], None] | None = None,
+    ) -> None:
         self.client = client
         self.model_tag = model_tag
+        self.observe = observe
+        self.observation_failures = 0
 
     async def execute(
         self,
@@ -301,6 +398,7 @@ class SummaryTask:
                 PromptMessage(role="user", content=request.goal),
             ),
         )
+        self.observation_failures += not notify(self.observe, step)
         parts: list[str] = []
         size = 0
         async with aclosing(self.client.stream(step)) as events:
@@ -493,21 +591,26 @@ class MCPTask:
     """Use existing durable task/approval ownership for explicit direct MCP requests."""
 
     def __init__(
-        self, store: TaskStore, events: EventBus, tools: "MCPTools", character: UUID
+        self,
+        store: TaskStore,
+        events: EventBus,
+        tools: "MCPTools",
+        character: UUID,
+        *,
+        activity: ActivityLog | None = None,
     ) -> None:
         self.store, self.events, self.tools = store, events, tools
-        self.reads = ToolRouter(tools, character)
-        self.writes = ConfirmedEffectRouter(store, tools, character)
+        self.activity = activity
+        self.reads = ToolRouter(tools, character, activity=activity)
+        self.writes = ConfirmedEffectRouter(store, tools, character, activity=activity)
 
-    async def execute(
+    async def invoke(
         self,
-        request: TaskSubmission,
+        invocation: ToolInvocation,
         context: ToolContext,
         progress: Callable[[TaskState], Awaitable[None]],
-    ) -> TaskResult:
-        invocation = request.tool
-        if invocation is None:
-            raise TaskConflict("tool_request_missing")
+    ) -> ToolReceipt:
+        """Use the same exact approval and effect fence for direct and harness calls."""
         try:
             definition = self.tools.definition(invocation.tool_id)
             from jsonschema import Draft202012Validator
@@ -573,9 +676,107 @@ class MCPTask:
                 outcome="failure",
                 code="tool_request_rejected",
             )
+        return receipt
+
+    async def execute(
+        self,
+        request: TaskSubmission,
+        context: ToolContext,
+        progress: Callable[[TaskState], Awaitable[None]],
+    ) -> TaskResult:
+        if request.tool is None:
+            raise TaskConflict("tool_request_missing")
+        receipt = await self.invoke(request.tool, context, progress)
         return TaskResult(
             summary="Tool " + receipt.outcome + ". Open its receipt for details.", receipt=receipt
         )
+
+
+class BrokerTool(RuntimeModel):
+    """A bounded, explicitly granted tool description; metadata never confers authority."""
+
+    id: str = Field(max_length=128)
+    description: str = Field(max_length=2048)
+    input_schema: dict[str, JsonValue]
+    effect: Literal["read", "write"]
+    authority_tag: str = Field(default="", exclude=True, repr=False)
+
+
+class HarnessToolBroker:
+    """Project explicit native/MCP grants into a task and retain execution in Ember."""
+
+    def __init__(
+        self, character: UUID, mcp: MCPTask | None, activity: ActivityLog | None = None
+    ) -> None:
+        self.native = ToolRouter(TextInspectionProvider(), character, activity=activity)
+        self.mcp = mcp
+
+    def catalog(self, grants: tuple[str, ...]) -> tuple[BrokerTool, ...]:
+        values: list[BrokerTool] = []
+        if len(grants) > 8 or len(set(grants)) != len(grants):
+            raise TaskConflict("harness_tool_grant_invalid")
+        for identity in grants:
+            if identity == "native.inspect_text":
+                values.append(
+                    BrokerTool(
+                        id=identity,
+                        description="Count words and characters in supplied text.",
+                        input_schema=cast(dict[str, JsonValue], InspectText.model_json_schema()),
+                        effect="read",
+                    )
+                )
+            elif self.mcp is not None:
+                definition = self.mcp.tools.definition(identity)
+                if not definition.available or definition.effect == "denied":
+                    raise TaskConflict("harness_tool_not_granted")
+                values.append(
+                    BrokerTool(
+                        id=identity,
+                        description=definition.description,
+                        input_schema=definition.input_schema,
+                        effect=definition.effect,
+                        authority_tag=self.mcp.tools.authority_tag(identity),
+                    )
+                )
+            else:
+                raise TaskConflict("harness_tool_not_granted")
+        if len(json.dumps([value.model_dump(mode="json") for value in values]).encode()) > 8192:
+            raise TaskConflict("harness_tool_catalog_too_large")
+        return tuple(values)
+
+    def valid(self, catalog: tuple[BrokerTool, ...], used: tuple[str, ...]) -> bool:
+        """Bind copied MCP context to current grants and credential identity."""
+        if not set(used) <= {tool.id for tool in catalog}:
+            return False
+        try:
+            current = {tool.id: tool for tool in self.catalog(used)}
+            return all(current.get(tool.id) == tool for tool in catalog if tool.id in used)
+        except TaskConflict:
+            return False
+
+    async def invoke(
+        self,
+        catalog: tuple[BrokerTool, ...],
+        identity: str,
+        arguments: dict[str, JsonValue],
+        context: ToolContext,
+        progress: Callable[[TaskState], Awaitable[None]],
+    ) -> ToolReceipt:
+        if identity not in {value.id for value in catalog}:
+            raise TaskConflict("harness_tool_scope_denied")
+        if identity == "native.inspect_text":
+            await progress("waiting_for_tool")
+            return await self.native.invoke(
+                "inspect_text", arguments, context, allowed=frozenset({"inspect_text"})
+            )
+        if self.mcp is None:
+            raise TaskConflict("harness_tool_not_granted")
+        receipt = await self.mcp.invoke(
+            ToolInvocation(tool_id=identity, arguments=arguments), context, progress
+        )
+        if receipt.outcome == "unknown_effect":
+            raise EffectUncertain("harness_tool_effect_uncertain")
+        return receipt
 
 
 class TaskRouter:
@@ -593,8 +794,12 @@ class TaskRouter:
         delegate: AgenticTaskProvider | None = None,
         validate: Callable[[ContextDependencies], Awaitable[bool]] | None = None,
         mcp: "MCPTools | None" = None,
+        activity: ActivityLog | None = None,
     ) -> None:
         self.store = TaskStore(root)
+        self.activity = activity
+        self.delegate_label = "Agentic harness"
+        self.delegate_unavailable: str | None = None
         self.artifacts = TaskArtifacts(root)
         self.character_id = character_id
         self.session_id = session_id
@@ -617,8 +822,9 @@ class TaskRouter:
             self.store, self.events, self.artifacts, character_id
         )
         self.providers["tool"] = (
-            MCPTask(self.store, self.events, mcp, character_id) if mcp else None
+            MCPTask(self.store, self.events, mcp, character_id, activity=activity) if mcp else None
         )
+        self.broker = HarnessToolBroker(character_id, self.providers["tool"], activity)
         self._worker: asyncio.Task[None] | None = None
         self._closing = False
         self._active: tuple[UUID, asyncio.Task[TaskResult]] | None = None
@@ -683,16 +889,30 @@ class TaskRouter:
             try:
                 ToolReceipt.model_validate_json(value.receipt)
             except ValueError:
-                return value.model_copy(update={"result": None})
+                return value.model_copy(update={"result": None, "receipt": None})
             return value
-        if result.dependencies is None:
-            return value if not result.citations else value.model_copy(update={"result": None})
-        if self.validate is None or not await self.validate(result.dependencies):
-            return value.model_copy(update={"result": None})
-        authorized = {source.identity_key() for source in result.dependencies.sources}
-        if any(source.identity_key() not in authorized for source in result.citations):
-            return value.model_copy(update={"result": None})
+        if result.dependencies is not None:
+            if self.validate is None or not await self.validate(result.dependencies):
+                return value.model_copy(update={"result": None, "receipt": None})
+            authorized = {source.identity_key() for source in result.dependencies.sources}
+            if any(source.identity_key() not in authorized for source in result.citations):
+                return value.model_copy(update={"result": None, "receipt": None})
+        elif result.citations:
+            return value.model_copy(update={"result": None, "receipt": None})
+        if not self._tool_context_current(result):
+            return value.model_copy(update={"result": None, "receipt": None})
         return value
+
+    def _tool_context_current(self, result: TaskResult) -> bool:
+        try:
+            return all(
+                self.mcp is not None
+                and self.mcp.definition(item.tool_id).available
+                and self.mcp.authority_tag(item.tool_id) == item.authority_tag
+                for item in result.tool_dependencies
+            )
+        except TaskConflict:
+            return False
 
     async def status(self, task_id: UUID) -> TaskSnapshot | None:
         """Inspect operational state after revalidating any memory dependencies."""
@@ -721,6 +941,8 @@ class TaskRouter:
             artifact = await self.artifacts.save(snapshot)
         except OSError as error:
             raise TaskConflict("task_artifact_unavailable") from error
+        if (current := await self.status(task_id)) is None or current.result != snapshot.result:
+            raise TaskConflict("task_context_invalidated")
         await self.store.authorize_artifact(
             task_id, self.character_id, artifact.sha256, artifact.size_bytes
         )
@@ -737,6 +959,8 @@ class TaskRouter:
         data = await self.artifacts.read(snapshot)
         if (hashlib.sha256(data).hexdigest(), len(data)) != identity:
             raise TaskConflict("task_artifact_invalid")
+        if (current := await self.status(task_id)) is None or current.result != snapshot.result:
+            raise TaskConflict("task_context_invalidated")
         return data
 
     async def cancel(self, task_id: UUID) -> None:
@@ -827,6 +1051,18 @@ class TaskRouter:
 
     async def _execute(self, identity: UUID, request: TaskSubmission, deadline: float) -> None:
         state: TaskState = "running"
+        failure_code: str | None = None
+        span = (
+            self.activity.begin(
+                "task",
+                request.operation,
+                request_id=request.turn_id,
+                task_id=identity,
+                provider=self.delegate_label if request.operation == "delegate" else "ember",
+            )
+            if self.activity
+            else None
+        )
         context = ToolContext(
             character_id=request.character_id,
             session_id=request.session_id,
@@ -860,6 +1096,14 @@ class TaskRouter:
                     raise
                 state = next_state
                 self.events.publish()
+                if self.activity and span:
+                    stages: dict[str, ActivityStatus] = {
+                        "waiting_for_inference": "waiting_for_model",
+                        "waiting_for_tool": "waiting_for_tool",
+                        "waiting_for_user": "waiting_for_user",
+                        "running": "running",
+                    }
+                    self.activity.update(span, stages.get(next_state, "running"))
 
         async def execute_provider() -> TaskResult:
             status = await self.store.status(identity, self.character_id)
@@ -899,6 +1143,8 @@ class TaskRouter:
             if result.dependencies is not None:
                 if self.validate is None or not await self.validate(result.dependencies):
                     raise TaskConflict("task_context_invalidated")
+            if not self._tool_context_current(result):
+                raise TaskConflict("task_tool_context_invalidated")
             artifact: tuple[str, int] | None = None
             if request.operation == "review":
                 data = result.summary.encode("utf-8")
@@ -923,7 +1169,17 @@ class TaskRouter:
             await self.store.finish(identity, state, "cancelled")
         except TimeoutError:
             await self.store.finish(identity, state, "timed_out")
-        except Exception:
+        except Exception as error:
+            candidate = (
+                error.code
+                if isinstance(error, GatewayError)
+                else str(error)
+                if isinstance(error, TaskConflict)
+                else "task_provider_failed"
+            )
+            failure_code = (
+                candidate if re.fullmatch(r"[a-z0-9_]{1,64}", candidate) else "task_provider_failed"
+            )
             await self.store.finish(identity, state, "failed")
         else:
             outcome: dict[str, TerminalState] = {
@@ -940,6 +1196,17 @@ class TaskRouter:
                 receipt=receipt,
                 artifact=artifact,
             )
+
+        if self.activity and span:
+            finished = await self.store.status(identity, self.character_id)
+            if finished and finished.state in {
+                "succeeded",
+                "failed",
+                "cancelled",
+                "timed_out",
+                "uncertain",
+            }:
+                self.activity.update(span, cast(ActivityStatus, finished.state), code=failure_code)
 
     async def aclose(self) -> None:
         """Stop taking work and wait for the active read-only operation."""

@@ -1,0 +1,15 @@
+{
+  "https_dashboard": true,
+  "browser": "installed Edge",
+  "harness_visible": true,
+  "voice_transport_connected": true,
+  "public_search_event": true,
+  "public_search_in_exact_p0_input": true,
+  "context_input_units": 9878,
+  "input_budget_units": 24576,
+  "visible_text_while_speech_active": true,
+  "stop_speaking_exercised": true,
+  "ui_page_errors": 0,
+  "physical_microphone_tested": false,
+  "screenshot_private_not_committed": true
+}

@@ -301,3 +301,36 @@ def test_explicit_vllm_profile_is_local_offline_and_keeps_ollama_default(
         config_path.write_text(original + invalid)
         with pytest.raises(ConfigurationError):
             load_config(config_path)
+
+
+def test_neutral_harness_and_search_do_not_require_desktop_client(config_path: Path) -> None:
+    config_path.write_text(
+        config_path.read_text()
+        + '\n[harness]\nprovider="hermes"\ncommand=['
+        + json.dumps(sys.executable)
+        + ']\nrevision="71736c9f32597bbca9d89cede5aa136e55946b2f"\nprofile_sha256="'
+        + "a" * 64
+        + '"\nsearch_endpoint="http://nas.example:8095"\ntools=["native.inspect_text"]\n[public_search]\nprovider="hermes"\ncommand=['
+        + json.dumps(sys.executable)
+        + ',"search.py"]\n'
+    )
+    config = load_config(config_path)
+    assert config.hermes is None and config.hermes_client is None
+    assert config.selected_harness and config.selected_harness.tools == ("native.inspect_text",)
+    assert config.public_search and config.public_search.provider == "hermes"
+    assert readiness(config).hermes == "configured_unprobed"
+
+
+def test_conflicting_search_commands_fail_instead_of_silently_selecting_one(
+    config_path: Path,
+) -> None:
+    config_path.write_text(
+        config_path.read_text()
+        + "\n[hermes_client]\nsearch_command=["
+        + json.dumps(sys.executable)
+        + ',"old.py"]\n[public_search]\ncommand=['
+        + json.dumps(sys.executable)
+        + ',"new.py"]\n'
+    )
+    with pytest.raises(ConfigurationError):
+        load_config(config_path)

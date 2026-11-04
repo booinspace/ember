@@ -55,11 +55,13 @@ export function Tasks({
   recall,
   delegation,
   connected,
+  provider = "Agentic harness",
 }: {
   summaries: boolean;
   recall: boolean;
   delegation: boolean;
   connected: boolean;
+  provider?: string;
 }) {
   const retry = useRef<{ key: string; text: string; operation: string } | null>(
     null,
@@ -226,6 +228,7 @@ export function Tasks({
   return (
     <details
       className="controls"
+      id="tasks"
       onToggle={(event) => {
         setOpen(event.currentTarget.open);
         if (!event.currentTarget.open) {
@@ -262,7 +265,7 @@ export function Tasks({
             {summaries && <option value="summarize">Summarize</option>}
             {recall && <option value="recall">Recall deeply</option>}
             {delegation && (
-              <option value="delegate">Research with Hermes</option>
+              <option value="delegate">Delegate to {provider}</option>
             )}
             <option value="review">Review a draft</option>
           </select>

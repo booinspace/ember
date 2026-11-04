@@ -12,7 +12,7 @@ text client with [`start-hermes.ps1`](../../start-hermes.ps1).
 | `hermes_client_plugin.py`, `hermes_client_transport.py` | Native Desktop hooks send original chat input to Ember, apply bounded history and token limits, and constrain the installed search provider. | Hermes Desktop's Ember profile. |
 | `hermes_search.py` | Calls Hermes' installed SearXNG provider for a literal public voice-search request; creates no Hermes chat or extra model generation. | An explicit search in Ember's web voice UI. |
 | `hermes_setup.py` | Verifies/seals the installed SDK and isolation assets. | Explicit delegated-worker setup/verification. |
-| `hermes_worker.py`, `hermes_transport.py`, `hermes_windows.py` | One-shot delegated tasks, model messages over owned stdio, and native Windows AppContainer/process cleanup. Linux uses its existing separate adapter. | An asynchronous delegated task. |
+| `hermes_worker.py`, `hermes_transport.py`, `hermes_windows.py` | One-shot tasks over owned stdio. Selected PC worker uses WSL2/Linux bubblewrap; the Windows AppContainer adapter remains separate. | An asynchronous delegated task. |
 
 The source is grouped here; the worker's sealed installed copies may remain in its
 external installation. Editing those copies invalidates its qualification receipt.
@@ -30,3 +30,11 @@ Hermes as a tool provider; it does not mirror voice messages into Desktop. The
 asynchronous worker remains P2 and may wait while realtime voice owns the gateway.
 
 See the [runbook](../../docs/phase-11-runbook.md) for configuration, setup and limits.
+
+Current dashboard amendment: use neutral `[harness]` for task delegation and
+`[public_search]` for voice search. Desktop's current backend verification issue is
+deferred; its profile/chat data and adapter remain separate. The sealed worker's
+new `ember_tool` callback routes only explicit native/MCP grants through Ember's
+broker and existing approvals. The selected PC task worker uses Ubuntu WSL2/bubblewrap; Ember and its gateway
+stay Windows-native. A bridge update requires a new seal and platform
+qualification; startup never installs or auto-reseals it.

@@ -7,6 +7,7 @@ import shutil
 import socket
 import sqlite3
 import sys
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -20,7 +21,7 @@ from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.related import ContextDependencies, RelatedRequest
 
 from ..inference.client import HttpGatewayClient
-from ..inference.contracts import GatewayError
+from ..inference.contracts import GatewayError, GatewayRequest
 from ..memory.deep_contracts import DeepRecallBudget, DeepRecallRequest, DeepRecallResult
 from ..memory.deep_prompt import condense
 from ..realtime.client import RoomClient
@@ -50,6 +51,7 @@ from .task_router import (
     ToolContext,
     ToolRouter,
 )
+from .task_store import TaskConflict
 from .text_session import DirectTextSession
 
 
@@ -67,13 +69,6 @@ async def _start_hermes_client(runtime: LocalRuntime) -> HermesChats | None:
             path.chmod(0o600)
         return read_token(path)
 
-    if settings.search_command:
-        from .native_search import NativeSearch
-
-        runtime.core.public_search = NativeSearch(
-            settings.search_command, runtime.config.runtime_root / "hermes-search-homes"
-        )
-
     async def reserve(identity: UUID, connected: bool) -> None:
         await runtime.model.session(identity, connected=connected)
 
@@ -88,6 +83,23 @@ async def _start_hermes_client(runtime: LocalRuntime) -> HermesChats | None:
         state_root=runtime.config.runtime_root / "hermes-client",
         reserve=reserve,
     )
+
+
+async def _start_public_search(runtime: LocalRuntime) -> None:
+    """Search is a foreground tool capability, independent of a native Desktop client."""
+    settings = runtime.config.public_search
+    legacy = runtime.config.hermes_client
+    command = settings.command if settings else legacy.search_command if legacy else ()
+    if command:
+        from .native_search import NativeSearch
+
+        if not await asyncio.to_thread(Path(command[0]).is_file):
+            runtime.core.search_unavailable = "public_search_executable_unavailable"
+            return
+        runtime.core.public_search = NativeSearch(
+            command, runtime.config.runtime_root / "public-search-homes"
+        )
+        runtime.core.search_provider = settings.provider if settings else "hermes"
 
 
 async def _start_tasks(
@@ -106,7 +118,7 @@ async def _start_tasks(
     except OSError:
         token = ""
     summary = None
-    delegate = None
+    client: HttpGatewayClient | None = None
 
     async def validate_task_dependencies(dependencies: ContextDependencies) -> bool:
         checked = await runtime.memory.lookup_related(
@@ -117,61 +129,82 @@ async def _start_tasks(
         return checked.valid is True
 
     if 32 <= len(token) <= 128:
-        client = HttpGatewayClient(runtime.config.services.gateway.endpoint, token)
+        client = HttpGatewayClient(
+            runtime.config.services.gateway.endpoint, token, observe_event=runtime.dashboard.event
+        )
         cleanup.push_async_callback(client.aclose)
-        summary = SummaryTask(client, runtime.config.model_tag)
-        if runtime.config.hermes is not None:
-            from .hermes_tasks import HermesTask, PersonalContext
-            from .searx_tools import SearXNGTools
-
-            search = SearXNGTools(runtime.config.hermes.search_endpoint)
-            cleanup.push_async_callback(search.aclose)
-
-            async def recall_context(query: str, context: ToolContext) -> PersonalContext | None:
-                result = await runtime.deep.investigate(
-                    DeepRecallRequest(
-                        request_id=context.task_id,
-                        context_id=context.task_id,
-                        character_id=context.character_id,
-                        query=query,
-                        reference_at=timestamp_from_datetime(runtime.core.reference_clock()),
-                        timezone=runtime.config.recall_timezone,
-                        budget=DeepRecallBudget(
-                            hops=0,
-                            memories=6,
-                            archive_chunks=0,
-                            excerpts=0,
-                            result_bytes=16384,
-                        ),
-                    )
-                )
-                selected = condense(result)
-                if not selected.memories or result.dependencies is None:
-                    return None
-                text = "\n".join(message.content for message in selected.messages)
-                return PersonalContext(text, result.dependencies, selected.memory_sources)
-
-            delegate = HermesTask(
-                runtime.config,
-                client,
-                ToolRouter(search, binding.character_id),
-                recall=recall_context,
-                validate=validate_task_dependencies,
-            )
+        summary = SummaryTask(client, runtime.config.model_tag, observe=runtime.dashboard.capture)
 
     router = TaskRouter(
         runtime.config.runtime_root,
         binding.character_id,
         binding.instance_id,
-        TextInspectionTask(ToolRouter(TextInspectionProvider(), binding.character_id)),
+        TextInspectionTask(
+            ToolRouter(
+                TextInspectionProvider(), binding.character_id, activity=runtime.dashboard.activity
+            )
+        ),
         summary=summary,
         mcp=mcp,
         validate=validate_task_dependencies,
         recall=RecallTask(
             runtime.deep, runtime.core.reference_clock, runtime.core.calendar.timezone
         ),
-        delegate=delegate,
+        activity=runtime.dashboard.activity,
     )
+    settings = runtime.config.selected_harness
+    if settings is not None:
+        from .harness import create_task_provider
+        from .hermes_tasks import PersonalContext
+        from .searx_tools import SearXNGTools
+
+        router.delegate_label = settings.provider.title()
+        search = SearXNGTools(settings.search_endpoint)
+        cleanup.push_async_callback(search.aclose)
+
+        async def recall_context(query: str, context: ToolContext) -> PersonalContext | None:
+            result = await runtime.deep.investigate(
+                DeepRecallRequest(
+                    request_id=context.task_id,
+                    context_id=context.task_id,
+                    character_id=context.character_id,
+                    query=query,
+                    reference_at=timestamp_from_datetime(runtime.core.reference_clock()),
+                    timezone=runtime.config.recall_timezone,
+                    budget=DeepRecallBudget(
+                        hops=0,
+                        memories=6,
+                        archive_chunks=0,
+                        excerpts=0,
+                        result_bytes=16384,
+                    ),
+                )
+            )
+            selected = condense(result)
+            if not selected.memories or result.dependencies is None:
+                return None
+            text = "\n".join(message.content for message in selected.messages)
+            return PersonalContext(text, result.dependencies, selected.memory_sources)
+
+        def observe(step: GatewayRequest, validate: Callable[[], Awaitable[bool]]) -> None:
+            runtime.dashboard.capture(step, validate=validate)
+
+        if client is None:
+            router.delegate_unavailable = "gateway_task_credentials_unavailable"
+        else:
+            try:
+                router.delegate = create_task_provider(
+                    runtime.config,
+                    client,
+                    ToolRouter(search, binding.character_id, activity=runtime.dashboard.activity),
+                    broker=router.broker,
+                    recall=recall_context,
+                    validate=validate_task_dependencies,
+                    observe=observe,
+                )
+                router.providers["delegate"] = router.delegate
+            except TaskConflict as error:
+                router.delegate_unavailable = str(error)
     try:
         await router.start()
     except (OSError, sqlite3.Error):
@@ -200,13 +233,13 @@ async def _start_tasks(
             "When the user requests a summary, queue text quoted exactly by the user.",
             summarize,
         )
-    if delegate is not None:
+    if router.delegate is not None:
 
         async def delegate_task(text: str, turn_id: UUID) -> str:
             return await router.submit_turn(text, turn_id, operation="delegate")
 
-        runtime.core.task_tools["delegate_hermes_task"] = (
-            "Queue an explicit research request with Hermes using approved search tools. "
+        runtime.core.task_tools["delegate_task"] = (
+            "Queue an explicit request with the configured harness and granted broker tools. "
             "Quote the user's goal exactly. Model steps wait while voice is connected.",
             delegate_task,
         )
@@ -733,12 +766,14 @@ async def _run_room(
         if config.browser.enabled:
             if await asyncio.to_thread(port_open, config.browser.endpoint):
                 raise ConfigurationError("Browser control port is already occupied.")
+            await _start_public_search(runtime)
             task_router = await _start_tasks(runtime, binding, cleanup)
             if task_router is not None:
                 host.start_task_announcements(task_router)
                 cleanup.push_async_callback(host.stop_task_announcements)
             control = BrowserControl(
                 hermes_chat=await _start_hermes_client(runtime),
+                dashboard=runtime.dashboard,
                 task_router=task_router,
                 origin=config.browser.endpoint,
                 lan_origin=config.browser.public_origin
@@ -819,9 +854,11 @@ async def _run_text_browser(
         async def room_answer(_: DeepRecallResult) -> str:
             raise GatewayError("use_browser_text_transport")
 
+        await _start_public_search(runtime)
         task_router = await _start_tasks(runtime, binding, cleanup)
         control = BrowserControl(
             hermes_chat=await _start_hermes_client(runtime),
+            dashboard=runtime.dashboard,
             task_router=task_router,
             origin=config.browser.endpoint,
             lan_origin=config.browser.public_origin

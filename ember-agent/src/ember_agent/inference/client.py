@@ -1,11 +1,12 @@
 """Strict gateway transport; no alternate upstream or automatic generation retry."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from uuid import UUID
 
 import httpx
 from pydantic import ValidationError
 
+from ..observability import notify
 from .contracts import GatewayError, GatewayEvent, GatewayHealth, GatewayRequest
 from .frames import bounded_lines
 
@@ -14,10 +15,17 @@ class HttpGatewayClient:
     """Owned local authenticated transport; closing a stream only detaches its subscriber."""
 
     def __init__(
-        self, endpoint: str, token: str, *, client: httpx.AsyncClient | None = None
+        self,
+        endpoint: str,
+        token: str,
+        *,
+        client: httpx.AsyncClient | None = None,
+        observe_event: Callable[[GatewayEvent], None] | None = None,
     ) -> None:
         self.client = client or httpx.AsyncClient(base_url=endpoint, timeout=190, trust_env=False)
         self.headers = {"Authorization": "Bearer " + token}
+        self.observe_event = observe_event
+        self.observation_failures = 0
 
     async def health(self) -> GatewayHealth:
         """Return validated content-free gateway state."""
@@ -68,6 +76,8 @@ class HttpGatewayClient:
                         raise GatewayError("gateway_stream_order")
                     started = True
                     sequence += 1
+                    if event.kind == "end" and self.observe_event is not None:
+                        self.observation_failures += not notify(self.observe_event, event)
                     yield event
                     if event.kind == "end":
                         return
