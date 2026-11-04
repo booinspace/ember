@@ -4090,7 +4090,18 @@ Sources: [Phonon-2 model](https://www.fermionresearch.com/models/phonon-2/),
 |---|---|
 | Native Windows Ollama | Baseline and default until beaten. Measure existing non-MTP and MTP variants; sweep Flash Attention, supported KV precision and single-request residency. |
 | Native CUDA llama.cpp | First challenger. Use the existing GGUF and compare explicit GPU offload, cache precision and context controls. Test MTP only after verifying the exact architecture, draft weights and build support. Include server/gateway latency in addition to llama-bench. |
-| vLLM under WSL2/Linux | Defer unless a supported checkpoint fits and concurrency becomes a goal. A different weight format/quantization is a separate experiment, not a matched GGUF comparison. |
+| vLLM under WSL2/Linux | Optional challenger for the requested future concurrency work, after the exact hybrid IQ3_S GGUF passes pinned plugin/kernel and memory qualification. Keep admission serial for the first adapter comparison. A different weight format/quantization is a separate experiment, not a matched GGUF comparison. |
+
+The [RTX 3090 backend evaluation](docs/inference-backend-evaluation.md) records the
+2026-11-04 deployment inspection, current experimental vLLM GGUF support, adapter
+scope, memory-job identity requirements and proposed benchmark methodology. No
+backend switch or concurrent generation is implemented by that review. Preserve
+bounded character context and Phase 9 task ownership. Future inference work must
+preserve a replaceable upstream boundary and backend-neutral metrics. vLLM is an
+intended future backend, but production adoption and concurrent scheduling are
+gated on Phase 13 proving cancellation and actual capacity release for its pinned
+model/runner/GPU profile. Do not enable vLLM before that acceptance. Measure queue/first-visible/decode timing, warm voice turns, dedicated/shared
+VRAM and audible interruption separately from cancellation-to-capacity-release.
 
 - **P8A-AC-01:** Pin Hermes and document tested Windows/WSL launch, dashboard chat,
   API streaming and one test-only app adapter. Verify identity, session isolation,

@@ -2,6 +2,13 @@
 
 Status: proposed; no runtime changes or benchmark results.
 
+The [2026-11-04 RTX 3090 review](../inference-backend-evaluation.md) expands the
+runner evaluation with a conditional vLLM GGUF/plugin trial and explicit voice,
+VRAM and cancellation benchmarks. Native Ollama remains the baseline and native
+CUDA llama.cpp the first matched-artifact challenger. A backend adapter preserves
+serial admission; multi-model concurrency and measured abort/release require
+separate acceptance. This proposal does not complete or reorder Phase 9.
+
 Use [Phase 8A](../../PLAN.md#phase-8a-acceptance-criteria-hermes-and-windows-runner-evaluation)
 to qualify Hermes as the preferred harness. Reuse Hermes chat and app adapters,
 with Ember retaining realtime voice, canonical memory and model admission.
