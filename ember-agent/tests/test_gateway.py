@@ -302,6 +302,127 @@ def test_authenticated_http_uses_same_gateway_and_safe_errors(tmp_path: Path) ->
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("thinking", [False, True])
+def test_both_reply_modes_admit_with_desktop_output_reserve(tmp_path: Path, thinking: bool) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path).model_copy(
+            update={
+                "context_tokens": 131072,
+                "max_input_tokens": 126976,
+                "output_reserve_tokens": 4096,
+            }
+        )
+        upstream = FakeUpstream()
+        gateway = P0Gateway(config, upstream)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=create_app(gateway, "token")),
+            base_url="http://local",
+        ) as http:
+            client = HttpGatewayClient("http://local", "token", client=http)
+            value = request(
+                config,
+                version="0.4.0" if thinking else "0.3.0",
+                thinking=thinking,
+                max_output_tokens=4096 if thinking else 512,
+            )
+            events = [event async for event in client.stream(value)]
+            assert events[-1].kind == "end" and upstream.count == 1
+        await gateway.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "busy",
+        "prompt_overflow",
+        "model_pin_mismatch",
+        "quiescence_required",
+        "invalid_request",
+        "unauthorized",
+    ],
+)
+def test_client_preserves_known_rejection_without_retry_or_body_disclosure(
+    tmp_path: Path, code: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        seen = []
+        observed = []
+
+        def reject(value: httpx.Request) -> httpx.Response:
+            seen.append(value)
+            return httpx.Response(409, json={"code": code})
+
+        async with httpx.AsyncClient(
+            base_url="http://local", transport=httpx.MockTransport(reject)
+        ) as http:
+            client = HttpGatewayClient(
+                "http://local", "PRIVATE_TOKEN", client=http, observe_event=observed.append
+            )
+            with pytest.raises(GatewayError) as failure:
+                _ = [event async for event in client.stream(request(config))]
+            assert failure.value.code == code and len(seen) == 1
+            assert len(observed) == 1 and observed[0].code == code
+            assert "HTTP 409" in caplog.text and "PRIVATE_TOKEN" not in caplog.text
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"code":"private_secret_value"}',
+        b'{"code":"busy","detail":"PRIVATE_BODY"}',
+        b"<html>PRIVATE_BODY</html>",
+        b'{"code":null}',
+        b'{"code":"busy"}' + b" " * 1024,
+    ],
+)
+def test_client_does_not_echo_unrecognized_or_oversized_error_bodies(
+    tmp_path: Path, body: bytes, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        async with httpx.AsyncClient(
+            base_url="http://local",
+            transport=httpx.MockTransport(lambda _: httpx.Response(502, content=body)),
+        ) as http:
+            client = HttpGatewayClient("http://local", "token", client=http)
+            with pytest.raises(GatewayError) as failure:
+                _ = [event async for event in client.stream(request(config))]
+            assert failure.value.code == "gateway_rejected"
+            assert "PRIVATE_BODY" not in caplog.text and "private_secret_value" not in caplog.text
+
+    asyncio.run(run())
+
+
+def test_client_bounds_slow_rejection_body_and_isolates_observer_failure(tmp_path: Path) -> None:
+    class SlowError(httpx.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            await asyncio.Event().wait()
+            yield b"PRIVATE_BODY"
+
+    async def run() -> None:
+        config = configuration(tmp_path)
+
+        def broken(_: object) -> None:
+            raise RuntimeError("PRIVATE_OBSERVER")
+
+        async with httpx.AsyncClient(
+            base_url="http://local",
+            transport=httpx.MockTransport(lambda _: httpx.Response(503, stream=SlowError())),
+        ) as http:
+            client = HttpGatewayClient("http://local", "token", client=http, observe_event=broken)
+            async with asyncio.timeout(3):
+                with pytest.raises(GatewayError) as failure:
+                    _ = [event async for event in client.stream(request(config))]
+            assert failure.value.code == "gateway_rejected" and client.observation_failures == 1
+
+    asyncio.run(run())
+
+
 def test_gateway_restart_requires_quiescence_and_holds_os_lock(tmp_path: Path) -> None:
     config = configuration(tmp_path)
     owner = ServiceOwner(tmp_path / "runtime")

@@ -10,6 +10,7 @@ import pytest
 
 from ember_agent.inference.contracts import (
     GatewayError,
+    GatewayEvent,
     GatewayHealth,
     GatewayRequest,
     PromptMessage,
@@ -67,6 +68,25 @@ def test_capture_is_lazy_exact_bounded_and_replacement_retires_disclosure() -> N
         assert not monitor.requests and not monitor.activity.entries
 
     asyncio.run(run())
+
+
+def test_rejection_diagnostic_survives_core_cleanup_without_private_content() -> None:
+    monitor = dashboard()
+    step = request()
+    monitor.capture(step)
+    monitor.event(
+        GatewayEvent(
+            request_id=step.request_id,
+            context_id=step.context_id,
+            sequence=0,
+            kind="error",
+            code="prompt_overflow",
+        )
+    )
+    monitor.finish(step.request_id, complete=False)
+    event = monitor.activity.since(0)[-1]
+    assert event.status == "failed" and event.code == "prompt_overflow"
+    assert "FULL_SYNTHETIC" not in event.model_dump_json()
 
 
 def test_inspection_cannot_return_after_replacement_during_authorization() -> None:

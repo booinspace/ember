@@ -50,6 +50,7 @@ class RequestView:
     activity_id: UUID
     input_units: int | None = None
     usage: GenerationUsage | None = None
+    failure_code: str | None = None
     expires_at: float = 0.0
 
 
@@ -165,12 +166,17 @@ class Dashboard:
             self.last_usage = event.usage
             self.activity.update(entry.activity_id, "succeeded")
         elif event.kind == "error":
-            self.activity.update(entry.activity_id, "failed")
+            entry.failure_code = event.code
+            self.activity.update(entry.activity_id, "failed", code=event.code)
 
     def finish(self, identity: UUID, complete: bool) -> None:
         """Stream cancellation is separate from the gateway's physical release state."""
         if entry := self.requests.get(identity):
-            self.activity.update(entry.activity_id, "succeeded" if complete else "cancelled")
+            self.activity.update(
+                entry.activity_id,
+                "failed" if entry.failure_code else "succeeded" if complete else "cancelled",
+                code=entry.failure_code,
+            )
 
     async def sample(self) -> None:
         if self.closed or monotonic() - self.sampled_at < 3:

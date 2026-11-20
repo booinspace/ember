@@ -200,7 +200,7 @@ def test_real_qwen_native_acceptance_and_query_independent_profile(tmp_path: Pat
                                         if event.kind == "end":
                                             usage = event.usage
                                 except GatewayError as error:
-                                    if error.code != "gateway_rejected" or output:
+                                    if error.code not in {"busy", "gateway_rejected"} or output:
                                         raise
                                     await asyncio.sleep(0.1)
                                     continue
