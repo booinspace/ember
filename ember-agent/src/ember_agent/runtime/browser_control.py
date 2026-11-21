@@ -31,6 +31,8 @@ from .controls import CaptureControl, GraphInput, PromptControls, RuntimeControl
 from .dashboard import Dashboard
 from .hermes_chat import HermesChats
 from .mcp_contracts import MCPDiscovery
+from .skills import Skills
+from .skills_contracts import SkillBundle, SkillCatalog, SkillDocument, SkillSelection
 from .speech_settings import SpeechOptions, SpeechSelection
 from .task_artifacts import TaskArtifact
 from .task_router import TaskNotifications, TaskReceiptView, TaskRouter
@@ -223,7 +225,8 @@ class BrowserControl:
                     if request.headers.get("origin") != request_origin:
                         return JSONResponse({"error": "invalid_origin"}, status_code=403)
                     size = request.headers.get("content-length", "")
-                    if len(size) > 5 or not size.isdecimal() or int(size) > 32768:
+                    limit = 262144 if request.url.path == "/api/skills/import" else 32768
+                    if len(size) > 6 or not size.isdecimal() or int(size) > limit:
                         return JSONResponse({"error": "control_body_bound"}, status_code=413)
                 if request.url.path != "/api/bootstrap" and not secrets.compare_digest(
                     request.cookies.get(COOKIE, ""), self._session
@@ -257,6 +260,7 @@ class BrowserControl:
                     "/api/task-confirmations",
                     "/api/tools",
                     "/api/memory-graph",
+                    "/api/skills",
                 )
             ):
                 response.headers["Cache-Control"] = "no-store"
@@ -485,6 +489,48 @@ class BrowserControl:
                 raise GatewayError("thinking_unavailable")
             self.core.thinking_enabled = value.enabled
             return {"enabled": value.enabled}
+
+        def skill_owner() -> Skills:
+            if self.task_router is None or self.task_router.skills is None:
+                raise HTTPException(status_code=503, detail="skills_provider_unavailable")
+            return self.task_router.skills
+
+        @app.get("/api/skills")
+        async def skill_catalog() -> SkillCatalog:
+            if self.task_router is None or self.task_router.skills is None:
+                return SkillCatalog(
+                    provider="none",
+                    revision="unavailable",
+                    unavailable="skills_provider_unconfigured",
+                )
+            return self.task_router.skills.catalog
+
+        @app.post("/api/skills/refresh")
+        async def refresh_skills() -> SkillCatalog:
+            return await skill_owner().refresh()
+
+        @app.get("/api/skills/document")
+        async def skill_document(identity: str) -> SkillDocument:
+            return await skill_owner().inspect(identity)
+
+        @app.post("/api/skills/select")
+        async def select_skill(value: SkillSelection) -> SkillCatalog:
+            return await skill_owner().select(value)
+
+        @app.post("/api/skills/import")
+        async def import_skill(value: SkillBundle) -> SkillCatalog:
+            return await skill_owner().install(value)
+
+        @app.get("/api/skills/export")
+        async def export_skill(identity: str) -> JSONResponse:
+            value = await skill_owner().export(identity)
+            return JSONResponse(
+                value.model_dump(mode="json"),
+                headers={
+                    "Content-Disposition": 'attachment; filename="ember-skill.json"',
+                    "Cache-Control": "no-store",
+                },
+            )
 
         @app.get("/api/capabilities")
         async def capabilities() -> JSONResponse:

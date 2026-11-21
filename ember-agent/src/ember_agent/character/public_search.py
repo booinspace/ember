@@ -21,3 +21,25 @@ def public_search_query(text: str) -> str | None:
     if not query or len(query) > 400:
         raise GatewayError("public_search_query_bound")
     return query
+
+
+_PAGE_REQUEST = re.compile(
+    r"^\s*(?:(?:please|can you|could you|would you|will you)\s+)*"
+    r"(?:summari[sz]e|read|explain|give me (?:a )?summary of)\b",
+    re.IGNORECASE,
+)
+
+
+def public_page_url(text: str) -> str | None:
+    """Fetch only one literal URL in an explicit read request, never recalled/model-derived text."""
+    if not _PAGE_REQUEST.match(text):
+        return None
+    # A Markdown link's label is display text; only its literal destination is requested.
+    destinations = re.sub(r"\[[^\]\n]*\]\(\s*(?=<?https?://)", "", text)
+    urls = re.findall(r"https?://[^\s<>]+", destinations)
+    if len(urls) != 1:
+        return None
+    url = urls[0].rstrip(".,!?;")
+    while url.endswith(")") and url.count(")") > url.count("("):
+        url = url[:-1]
+    return url

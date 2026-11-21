@@ -175,9 +175,13 @@ export function ActivityCard({
   const name =
     event.name === "web_search"
       ? "Web search"
-      : event.kind === "memory"
-        ? "Memory & context"
-        : event.name.replaceAll("_", " ");
+      : event.name === "read_page"
+        ? "Read public page"
+        : event.name === "ember_skill_view"
+          ? "Load skill"
+          : event.kind === "memory"
+            ? "Memory & context"
+            : event.name.replaceAll("_", " ");
   return (
     <details
       className={`activity-card ${event.kind} ${active ? "is-active" : ""}`}

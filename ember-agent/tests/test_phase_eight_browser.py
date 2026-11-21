@@ -81,6 +81,8 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
         with TestClient(owner.app, base_url=ORIGIN, headers={"origin": ORIGIN}) as client:
             assert client.get("/api/state").status_code == 401
             assert client.post("/api/memory-graph", json={}).status_code == 401
+            assert client.get("/api/skills").status_code == 401
+            assert client.post("/api/skills/refresh", json={}).status_code == 401
             assert client.get("/").status_code == 503
             assert client.post("/api/bootstrap", json={"token": "x" * 48}).status_code == 401
             response = client.post("/api/bootstrap", json={"token": owner.activation})
@@ -94,6 +96,23 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
             assert client.post("/api/memory-graph", json={"cursor": "invalid"}).status_code == 400
             assert client.get("/memory-graph").status_code == 503
 
+            catalog = client.get("/api/skills")
+            assert catalog.status_code == 200
+            assert catalog.headers["cache-control"] == "no-store"
+            assert catalog.json()["unavailable"] == "skills_provider_unconfigured"
+            assert client.get("/api/skills/document?identity=shared/brief").status_code == 503
+            assert client.post("/api/skills/refresh", json={}).status_code == 503
+            assert (
+                client.post(
+                    "/api/skills/refresh", json={}, headers={"origin": "http://unrelated.example"}
+                ).status_code
+                == 403
+            )
+            # Portable bundles have their own bounded envelope; unrelated controls stay small.
+            bundle = {"name": "brief", "files": {"SKILL.md": "a" * 40000}}
+            assert client.post("/api/skills/import", json=bundle).status_code == 503
+            bundle["files"]["SKILL.md"] = "a" * 262144
+            assert client.post("/api/skills/import", json=bundle).status_code == 413
             assert (
                 client.post("/api/room-token", json={}).json()["token"]
                 == "synthetic_room_capability"

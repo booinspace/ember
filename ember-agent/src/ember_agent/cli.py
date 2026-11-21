@@ -60,6 +60,15 @@ class _DoctorArguments(BaseModel):
     json_output: bool
 
 
+class _SkillArguments(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+    command: Literal["skills"]
+    config: Path
+    action: Literal["list", "inspect", "import", "export"]
+    target: str | None
+    output: Path | None
+
+
 type _Arguments = Annotated[
     _StartArguments
     | _DoctorArguments
@@ -67,7 +76,8 @@ type _Arguments = Annotated[
     | _ChatArguments
     | _BaselineArguments
     | _LiveKitChatArguments
-    | _NetworkArguments,
+    | _NetworkArguments
+    | _SkillArguments,
     Field(discriminator="command"),
 ]
 
@@ -106,6 +116,11 @@ def _arguments(argv: list[str] | None) -> _Arguments:
     baseline = commands.add_parser("baseline", help="Measure synthetic foreground gateway cases")
     baseline.add_argument("--config", type=Path, required=True)
     baseline.add_argument("--output", type=Path, required=True)
+    skills = commands.add_parser("skills", help="Browse/manage the running harness skill catalog")
+    skills.add_argument("action", choices=("list", "inspect", "import", "export"))
+    skills.add_argument("target", nargs="?")
+    skills.add_argument("--config", type=Path, required=True)
+    skills.add_argument("--output", type=Path)
     adapter: TypeAdapter[_Arguments] = TypeAdapter(_Arguments)
     return adapter.validate_python(vars(parser.parse_args(argv)))
 
@@ -138,6 +153,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Configuration error: {error}", file=sys.stderr)
             return 2
         return 0
+    if arguments.command == "skills":
+        from .runtime.skills_cli import skill_command
+
+        return skill_command(config, arguments.action, arguments.target, arguments.output)
     if arguments.command != "doctor":
         return _runtime(arguments, config)
     report = readiness(config)

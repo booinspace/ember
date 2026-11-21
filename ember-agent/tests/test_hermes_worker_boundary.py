@@ -181,7 +181,9 @@ def test_recovery_identity_cannot_select_other_objects(worker: ModuleType, name:
         importlib.import_module("hermes_windows").job_name(name)
 
 
-@pytest.mark.parametrize("asset", ["hermes_transport.py", "hermes_windows.py"])
+@pytest.mark.parametrize(
+    "asset", ["hermes_transport.py", "hermes_windows.py", "hermes_skills.py", "hermes_web.py"]
+)
 @pytest.mark.parametrize("mutation", ["missing", "changed"])
 def test_receipt_requires_all_executable_boundary_assets(
     worker: ModuleType,
@@ -198,6 +200,8 @@ def test_receipt_requires_all_executable_boundary_assets(
             "hermes_worker.py",
             "hermes_transport.py",
             "hermes_windows.py",
+            "hermes_skills.py",
+            "hermes_web.py",
         ]
     ]
     for path in paths:
@@ -360,3 +364,53 @@ def test_linux_receipt_seals_installed_dependency_bytes(
         dependency.symlink_to(receipt)
     with pytest.raises(ValueError, match="changed|redirects outside"):
         setup.load_profile(receipt)
+
+
+@pytest.mark.parametrize(
+    "failure,expected",
+    [
+        ("timeout", "page_fetch_timeout"),
+        ("status", "page_http_429"),
+        ("network", "page_fetch_failed"),
+    ],
+)
+def test_page_transport_errors_emit_fixed_codes_without_remote_content(
+    worker: ModuleType, monkeypatch: pytest.MonkeyPatch, failure: str, expected: str
+) -> None:
+    import httpx
+
+    skills = importlib.import_module("hermes_skills")
+    web = importlib.import_module("hermes_web")
+    monkeypatch.setattr(skills, "HermesSkills", lambda *args: object())
+    request = httpx.Request("GET", "https://public.example/PRIVATE_CANARY")
+
+    def fail(url: str) -> object:
+        if failure == "timeout":
+            raise httpx.ReadTimeout("PRIVATE_CANARY", request=request)
+        if failure == "status":
+            raise httpx.HTTPStatusError(
+                "PRIVATE_CANARY", request=request, response=httpx.Response(429, request=request)
+            )
+        raise httpx.ConnectError("PRIVATE_CANARY", request=request)
+
+    monkeypatch.setattr(web, "read_page", fail)
+    output = io.StringIO()
+    monkeypatch.setattr(
+        worker.sys,
+        "stdin",
+        io.StringIO(
+            json.dumps(
+                {
+                    "action": "read_page",
+                    "value": "https://public.example/",
+                    "capabilities": ["web.read_page"],
+                }
+            )
+            + "\n"
+        ),
+    )
+    monkeypatch.setattr(worker.sys, "stdout", output)
+    worker.catalog_command(SimpleNamespace(source="/unused", skills_root="/unused"), "a" * 64)
+    response = json.loads(output.getvalue())
+    assert response["ok"] is False and response["code"] == expected
+    assert "PRIVATE_CANARY" not in output.getvalue()

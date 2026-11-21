@@ -193,6 +193,7 @@ class HermesSettings(RuntimeModel):
     search_endpoint: str
     private_recall: bool = False
     tools: tuple[str, ...] = Field(default=(), max_length=8)
+    skills: bool = False
 
     @model_validator(mode="after")
     def installed_origin(self) -> Self:
@@ -210,6 +211,7 @@ class HarnessSettings(RuntimeModel):
     search_endpoint: str
     private_recall: bool = False
     tools: tuple[str, ...] = Field(default=(), max_length=8)
+    skills: bool = False
 
     @model_validator(mode="after")
     def installed_inputs(self) -> Self:

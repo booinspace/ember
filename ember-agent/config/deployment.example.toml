@@ -122,4 +122,5 @@ system_file = "prompts/system.md"
 # profile_sha256 = "<verified SHA-256>"
 # search_endpoint = "http://your-installed-searxng:8095"
 # private_recall = false
-# tools = ["native.inspect_text"] # At most eight explicit native/MCP IDs; no implicit grants.
+# skills = true # Requires an explicitly sealed --skills-root profile; false by default.
+# tools = ["native.inspect_text", "web.read_page"] # Explicit IDs; requirements never grant tools.

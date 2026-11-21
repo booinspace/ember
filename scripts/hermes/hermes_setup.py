@@ -38,6 +38,7 @@ class HermesProfile(BaseModel):
     launcher_python: str
     launcher_version: str
     git: str
+    skills_root: str | None = None
     python_flags: list[str] = Field(default_factory=lambda: ["-B"])
     software: dict[str, JsonValue] = Field(min_length=1)
     files: dict[str, str] = Field(min_length=1)
@@ -120,6 +121,8 @@ def bridge_sources() -> list[Path]:
             "hermes_worker.py",
             "hermes_transport.py",
             "hermes_windows.py",
+            "hermes_skills.py",
+            "hermes_web.py",
         )
     ]
 
@@ -198,6 +201,17 @@ def load_profile(path: Path) -> tuple[HermesProfile, str]:
     if profile.version != "ember-hermes-worker-v1" or profile.revision != REVISION:
         raise ValueError("Unsupported Hermes compatibility profile.")
     source = Path(profile.source)
+    if profile.skills_root is not None:
+        root = Path(profile.skills_root)
+        if (
+            not root.is_absolute()
+            or root.is_relative_to(source)
+            or source.is_relative_to(root)
+            or not (root / "packages").is_dir()
+            or any(node.is_symlink() for node in (root / "packages", *(root / "packages").parents))
+            or (root / "enabled.json").is_symlink()
+        ):
+            raise ValueError("Unsafe shared skills repository.")
     if (
         Path(profile.launcher_python).absolute() != Path(sys.executable).absolute()
         or profile.launcher_version != platform.python_version()
@@ -228,6 +242,7 @@ def main() -> None:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--python", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--skills-root", type=Path)
     args = parser.parse_args()
     source = args.source.resolve(strict=True)
     if args.output.absolute().is_relative_to(source):
@@ -256,6 +271,7 @@ def main() -> None:
         assets.append(args.python.parent.parent / "pyvenv.cfg")
     profile = HermesProfile(
         source=str(source),
+        skills_root=str(args.skills_root.resolve(strict=True)) if args.skills_root else None,
         python=str(args.python.absolute()),
         launcher_python=str(Path(sys.executable).absolute()),
         launcher_version=platform.python_version(),

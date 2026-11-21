@@ -233,22 +233,29 @@ evidence and gateway performance measurements.
 [OpenCode memory](docs/opencode-memory.md) offers private MCP recall for the active
 Ember character and optional automatic note writes to a dedicated `OpenCode` library.
 
-Optional Hermes delegation runs natively on Windows through an isolated worker.
+Optional Hermes delegation runs in an isolated selected harness. The current Windows
+deployment uses Ubuntu WSL2/bubblewrap for the Hermes worker; Ember stays Windows-native.
 It uses the existing Tasks UI, brokered SearXNG search and P2 gateway, with no second memory
 owner. It stays default-off while the original adoption gates remain open. See
 the [setup/runbook](docs/phase-11-runbook.md) and
 [acceptance record](docs/phase-11-validation.md) for tested capabilities and limits.
 
-A separately paired native Hermes Desktop profile can now send ordinary chat through
-Ember's CharacterCore and sole gateway, with separate bounded history per chat and
-shared prompt files and optional canonical recall. Explicit public search uses the
-installed Hermes SearXNG provider. The web voice UI also supports explicit search and
-**Stop speaking** for replies and task notices. See the [native-client runbook](docs/phase-11-runbook.md#native-desktop-chat-and-voice-search-amendment)
-for setup, restart/new-chat behavior and the user-authorized deferred deletion of
-Hermes transcript copies. Hermes messaging accounts are not connected by this setup.
+The separate Hermes Desktop client adapter is retained for later qualification;
+its current backend-startup issue is deferred. Desktop is not required for Ember's
+skills, public search or delegated tasks. Its intended bounded per-chat histories
+and shared CharacterCore/memory ownership are described in the
+[native-client runbook](docs/phase-11-runbook.md#native-desktop-chat-and-voice-search-amendment).
+The repository-owned [`start-hermes.ps1`](start-hermes.ps1) launcher and explicit
+setup adapters remain in [`scripts/hermes/`](scripts/hermes/README.md).
 
-Open the paired Windows text client with [`start-hermes.ps1`](start-hermes.ps1) from
-this repository, then select **Ember** in Hermes' regular profile picker. Setup and
-the retained external adapters are documented in [`scripts/hermes/`](scripts/hermes/README.md).
-Voice searches use Hermes as a tool provider; voice transcripts are not mirrored
-into Hermes Desktop chats.
+The web voice UI supports independent public search and **Stop speaking** for
+replies and task notices. Voice transcripts are not mirrored into Hermes Desktop;
+Hermes messaging accounts are not connected by this setup.
+
+Phase 12 adds the **Skills** dashboard: browse the selected harness's installed and
+shared portable packages, inspect original Markdown/resources, explicitly enable
+reviewed hashes and use a skill from conversation. Two shared examples cover text
+briefs and public-page summaries. Tools retain Ember's existing broker, grants and
+receipts. See the [skills runbook](docs/phase-12-runbook.md) and
+[acceptance record](docs/phase-12-validation.md). Hermes Desktop is currently deferred
+and is not required for skills or delegation; OpenClaw needs a future runtime adapter.
