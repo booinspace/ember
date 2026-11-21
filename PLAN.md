@@ -5335,6 +5335,7 @@ this amendment must not misrepresent subscriber cancellation as GPU release.
 ## OpenCode memory recall amendment
 
 [Root ADR 0022](docs/adr/0022-opencode-memory-recall.md) records the opt-in,
-loopback-only read adapter for the active character's ordinary recall. This does
+loopback-only read adapter for the active character's ordinary and deep recall.
+Deep MCP returns bounded claims, not raw archive or evidence excerpts. This does
 not add a memory owner, schema change, or mutation surface and does not advance
 Phases 12 or 13. See the [runbook](docs/opencode-memory.md) for deployment.

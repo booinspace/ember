@@ -1,6 +1,13 @@
 # Use Ember memory in OpenCode
 
-Ember serves one opt-in, read-only MCP tool: `recall(query)`. It searches all memories eligible for ordinary recall in the active character, with no extra project filter. Existing recall selection, grants, and suppression still apply. Results contain up to eight compact claims with memory IDs, revisions, and coverage status. Raw transcripts, source quotes, other characters, and writes are not exposed. Ember uses its existing memory engine and does not call a generation model for this tool.
+Ember serves two read-only tools on the same opt-in MCP endpoint:
+
+| Tool | Use it for | Returns |
+| --- | --- | --- |
+| `recall(query)` | A quick topic lookup | Up to eight ranked claims, with memory IDs, revisions, and coverage. |
+| `deep_recall(query)` | An explicit investigation across related memories, optionally scoped by date | Up to 24 claims, bounded links between returned revisions, any resolved date scope, and an outcome with reasons for limits. |
+
+Both use the active character’s eligible memories with no extra project filter. Recall selection, grants, and suppression still apply. Neither tool returns raw transcripts, source quotes, or other characters’ data. Neither writes memory or calls a generation model. Deep recall reuses Ember’s existing investigation service, but the browser’s source inspection remains separate.
 
 ## Windows: enable the listener
 
@@ -51,7 +58,13 @@ Ember serves one opt-in, read-only MCP tool: `recall(query)`. It searches all me
    }
    ```
 
-3. Run `opencode mcp list` from that project and confirm `ember` is connected. In a fresh session, using a local model, ask OpenCode to recall a known, non-sensitive note from Ember. The MCP server tells OpenCode when recall is appropriate; there is no automatic session ingestion or plugin hook.
+3. Run `opencode mcp list` from that project and confirm `ember` is connected. After upgrading Ember on Windows, restart it and reconnect `ember` in OpenCode’s `/mcps` to refresh the tool list. No new tunnel, token, or OpenCode configuration is needed.
+
+## Use deep recall
+
+In a fresh session with a verified local model, ask: “Use Ember deep recall to investigate a known, non-sensitive topic during summer 2025. Separate recalled claims from inference.” OpenCode can call `tools.ember.deep_recall({ query: "…" })` in Code Mode. Include any dates in the query; separate calls do not inherit Ember’s conversation date scope.
+
+Run recall calls sequentially: the MCP listener accepts one at a time. Deep recall also shares Ember’s investigation worker and may return partial or deferred results. `complete_within_budget` is not exhaustive, and a missing result does not prove no memory exists. There is no automatic session ingestion or plugin hook.
 
 **Model privacy:** A loopback tunnel and local SQLite do not keep recalled text local if OpenCode sends it to a hosted model. Enable this connection only in projects using trusted local inference if memories must stay on your machines. OpenCode may retain tool results in its own session history; revoking a memory in Ember doesn't erase copies already delivered to OpenCode.
 

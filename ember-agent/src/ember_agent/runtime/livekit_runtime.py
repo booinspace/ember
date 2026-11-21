@@ -660,7 +660,13 @@ async def run_runtime(
             port = config.memory_mcp.port
             try:
                 await cleanup.enter_async_context(
-                    serve_memory_mcp(runtime.memory, config.runtime_root, port)
+                    serve_memory_mcp(
+                        runtime.memory,
+                        config.runtime_root,
+                        port,
+                        deep=runtime.deep,
+                        timezone=config.recall_timezone,
+                    )
                 )
             except (ConfigurationError, TimeoutError) as error:
                 detail = (

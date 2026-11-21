@@ -139,12 +139,17 @@ class DeepRecallService:
         self.validation = validation
         self._results: dict[UUID, tuple[float, DeepRecallResult]] = {}
 
-    async def investigate(self, request: DeepRecallRequest) -> DeepRecallResult:
+    async def investigate(
+        self, request: DeepRecallRequest, *, retain_for_inspection: bool = True
+    ) -> DeepRecallResult:
         """Explicit invocation only; the trusted character binding cannot be broadened."""
         if request.character_id != self.character_id:
             return self._empty(request, "unavailable", "character_scope_mismatch")
         started = monotonic()
         result = await self.admission.submit(request, lambda: self._run(request, started))
+        # One-shot consumers validate their own delivery and never enter the inspector cache.
+        if not retain_for_inspection:
+            return result
         self._prune()
         if result.outcome in {
             "complete_within_budget",
