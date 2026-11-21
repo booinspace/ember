@@ -76,33 +76,15 @@
     radial-gradient(circle, #84749135 0.75px, transparent 0.9px) 0 0 / 22px 22px,
     #100d18;
 }
-.constellation svg {
+.constellation canvas {
   width: 100%;
   height: clamp(330px, 55vw, 630px);
   display: block;
   cursor: grab;
   touch-action: none;
 }
-.constellation svg:active {
+.constellation canvas:active {
   cursor: grabbing;
-}
-.constellation line,
-.constellation text {
-  pointer-events: none;
-}
-.constellation-node {
-  cursor: pointer;
-}
-.constellation-node text {
-  fill: #eee0f4;
-  stroke: #15101c;
-  stroke-width: 4px;
-  paint-order: stroke;
-  font-size: 11px;
-}
-.constellation-node:hover circle:last-of-type {
-  stroke: white;
-  stroke-width: 1.4;
 }
 .constellation-tools {
   position: absolute;

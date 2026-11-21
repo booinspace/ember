@@ -28,7 +28,7 @@ def test_graph_pages_expands_and_rechecks_visibility(
     )
     store.configure_profile(ProfileSettings(subject_id=source_fixture.subject.entity_id))
     references = []
-    for index in range(40):
+    for index in range(205):
         content = draft.content.model_copy(
             update={
                 "kind": "episode",
@@ -51,7 +51,7 @@ def test_graph_pages_expands_and_rechecks_visibility(
         relationship_id=uuid4(),
         kind="supports",
         source=MemoryReference(memory_id=references[0].memory_id, revision=1),
-        target=MemoryReference(memory_id=references[2].memory_id, revision=1),
+        target=MemoryReference(memory_id=references[-1].memory_id, revision=1),
         evidence=draft.content.evidence,
     )
     store.submit(
@@ -82,16 +82,24 @@ def test_graph_pages_expands_and_rechecks_visibility(
             second = await client.memory_graph(GraphQuery(cursor=first.next_cursor))
             first_ids = {node.id for node in first.nodes if node.category == "memory"}
             second_ids = {node.id for node in second.nodes if node.category == "memory"}
-            assert len(first_ids) == 36 and len(second_ids) == 4
+            assert first.total_memories == 205 and second.total_memories is None
+            assert len(first_ids) == 200 and len(second_ids) == 5
             assert first_ids.isdisjoint(second_ids) and second.next_cursor is None
             assert all(link.target != references[3].memory_id for link in second.links)
-            filtered = await client.memory_graph(GraphQuery(text="visited", kind="episode"))
-            assert len([node for node in filtered.nodes if node.category == "memory"]) == 36
+            assert any(
+                link.kind == "supports" and link.source in second_ids and link.target in first_ids
+                for link in first.links
+            )
+            filtered = await client.memory_graph(GraphQuery(text="204", kind="episode"))
+            assert filtered.total_memories == 1
+            assert all(link.kind != "supports" for link in filtered.links)
             query = GraphQuery(anchor=references[0].memory_id)
             focused = await client.memory_graph(query)
             assert focused.nodes[0].id == references[0].memory_id
             assert {node.id for node in focused.nodes} == {
-                *(reference.memory_id for reference in references[:3]),
+                references[0].memory_id,
+                references[1].memory_id,
+                references[-1].memory_id,
                 shared.entity_id,
                 source_fixture.subject.entity_id,
             }

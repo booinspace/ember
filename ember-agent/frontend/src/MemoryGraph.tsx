@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { activate, control } from "./contracts";
 import "./MemoryGraph.css";
@@ -15,7 +15,7 @@ const graphSchema = z.object({
         recorded_at: z.string().nullable(),
       }),
     )
-    .max(156),
+    .max(600),
   links: z
     .array(
       z.object({
@@ -30,15 +30,19 @@ const graphSchema = z.object({
         ]),
       }),
     )
-    .max(240),
+    .max(520),
   next_cursor: z.string().nullable(),
   truncated: z.boolean(),
+  total_memories: z.number().int().nonnegative().nullable(),
 });
 type Graph = z.infer<typeof graphSchema>;
 type Node = Graph["nodes"][number];
 type Lens = { x: number; y: number; zoom: number };
 const field = { w: 900, h: 560 };
 const home: Lens = { x: field.w / 2, y: field.h / 2, zoom: 1 };
+const initialCount = 1_000;
+const nodePageSize = 100;
+const formatCount = new Intl.NumberFormat();
 const colors: Record<string, string> = {
   fact: "#f5ad76",
   episode: "#72dacc",
@@ -56,51 +60,48 @@ const edgeColors: Record<Graph["links"][number]["kind"], string> = {
 const color = (node: Node): string =>
   colors[node.category === "entity" ? "entity" : node.kind] ?? "#c7afb8";
 
-// Start in a spiral, then pull linked nodes together. The result stays put while inspecting.
 function positions(graph: Graph) {
-  const points = graph.nodes.map((node, index) => {
-    const angle = index * 2.4;
-    const radius = Math.sqrt((index + 1) / graph.nodes.length);
-    return {
-      node,
-      x: home.x + Math.cos(angle) * (field.w / 2 - 65) * radius,
-      y: home.y + Math.sin(angle) * (field.h / 2 - 38) * radius,
-    };
-  });
-  const byId = new Map(points.map((p) => [p.node.id, p]));
-  for (let iteration = 0; iteration < 44; iteration++) {
-    for (const a of points) {
-      for (const b of points) {
-        if (a === b) break;
-        const dx = a.x - b.x;
-        const dy = a.y - b.y;
-        const distance = Math.max(10, Math.hypot(dx, dy));
-        const force = Math.min(4, 1500 / (distance * distance));
-        a.x += (dx / distance) * force;
-        a.y += (dy / distance) * force;
-        b.x -= (dx / distance) * force;
-        b.y -= (dy / distance) * force;
-      }
-    }
-    for (const link of graph.links) {
-      const a = byId.get(link.source);
-      const b = byId.get(link.target);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const distance = Math.max(1, Math.hypot(dx, dy));
-      const pull = (distance - 96) * 0.022;
-      a.x += (dx / distance) * pull;
-      a.y += (dy / distance) * pull;
-      b.x -= (dx / distance) * pull;
-      b.y -= (dy / distance) * pull;
-    }
-    for (const p of points) {
-      p.x = Math.min(field.w - 32, Math.max(32, p.x));
-      p.y = Math.min(field.h - 32, Math.max(32, p.y));
+  const points = new Map(
+    graph.nodes.map((node, index) => {
+      const angle = index * 2.399963;
+      const radius = Math.sqrt((index + 1) / graph.nodes.length);
+      return [
+        node.id,
+        {
+          node,
+          x: home.x + Math.cos(angle) * (field.w / 2 - 35) * radius,
+          y: home.y + Math.sin(angle) * (field.h / 2 - 30) * radius,
+        },
+      ];
+    }),
+  );
+  const degrees = new Map<string, number>();
+  for (const link of graph.links) {
+    if (link.kind === "entity")
+      degrees.set(link.target, (degrees.get(link.target) ?? 0) + 1);
+  }
+  const hubs = new Map<string, string>();
+  for (const link of graph.links) {
+    const degree = degrees.get(link.target) ?? Infinity;
+    const previous = hubs.get(link.source);
+    if (
+      link.kind === "entity" &&
+      degree > 1 &&
+      degree <= 40 &&
+      (!previous || degree < (degrees.get(previous) ?? Infinity))
+    ) {
+      hubs.set(link.source, link.target);
     }
   }
-  return byId;
+  for (const [source, target] of hubs) {
+    const p = points.get(source);
+    const hub = points.get(target);
+    if (p && hub) {
+      p.x = p.x * 0.58 + hub.x * 0.42;
+      p.y = p.y * 0.58 + hub.y * 0.42;
+    }
+  }
+  return points;
 }
 
 function Constellation({
@@ -113,102 +114,172 @@ function Constellation({
   select: (id: string) => void;
 }) {
   const points = useMemo(() => positions(graph), [graph]);
+  const canvas = useRef<HTMLCanvasElement>(null);
   const [lens, setLens] = useState(home);
   const [hovered, setHovered] = useState<string | null>(null);
   const focus = hovered ?? selected;
-  const drag = useRef<{ x: number; y: number } | null>(null);
-  const neighbors = useMemo(
-    () =>
-      new Set(
-        graph.links.flatMap(({ source, target }) =>
-          source === focus ? [target] : target === focus ? [source] : [],
-        ),
-      ),
-    [graph, focus],
-  );
-  const width = field.w / lens.zoom;
-  const height = field.h / lens.zoom;
+  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const neighbors = useMemo(() => {
+    const ids = new Set<string>();
+    if (focus) {
+      for (const { source, target } of graph.links) {
+        if (source === focus) ids.add(target);
+        if (target === focus) ids.add(source);
+      }
+    }
+    return ids;
+  }, [graph, focus]);
+  const scaleFor = (width: number, height: number) =>
+    Math.min(width / field.w, height / field.h) * lens.zoom;
+  const radius = points.size <= 100 ? 4 : points.size <= 1500 ? 2.3 : 1.5;
+
+  useEffect(() => {
+    const element = canvas.current;
+    const context = element?.getContext("2d");
+    if (!element || !context) return;
+    function draw(
+      element: HTMLCanvasElement,
+      context: CanvasRenderingContext2D,
+    ) {
+      const { clientWidth: width, clientHeight: height } = element;
+      if (!width || !height) return;
+      const density = Math.min(2, window.devicePixelRatio || 1);
+      const pixelWidth = Math.round(width * density);
+      const pixelHeight = Math.round(height * density);
+      if (element.width !== pixelWidth) element.width = pixelWidth;
+      if (element.height !== pixelHeight) element.height = pixelHeight;
+      context.resetTransform();
+      context.clearRect(0, 0, pixelWidth, pixelHeight);
+      const scale = Math.min(width / field.w, height / field.h) * lens.zoom;
+      context.setTransform(
+        scale * density,
+        0,
+        0,
+        scale * density,
+        (width / 2 - lens.x * scale) * density,
+        (height / 2 - lens.y * scale) * density,
+      );
+      // Stroke each kind as a batch, keeping dense graphs inexpensive to repaint.
+      for (const [kind, ink] of Object.entries(edgeColors)) {
+        for (const highlighted of focus ? [false, true] : [false]) {
+          context.beginPath();
+          context.globalAlpha = highlighted ? 0.85 : focus ? 0.12 : 0.34;
+          context.strokeStyle = ink;
+          context.lineWidth = (highlighted ? 1.3 : 0.65) / scale;
+          for (const link of graph.links) {
+            if (
+              link.kind !== kind ||
+              (focus === link.source || focus === link.target) !== highlighted
+            )
+              continue;
+            const from = points.get(link.source);
+            const to = points.get(link.target);
+            if (!from || !to) continue;
+            context.moveTo(from.x, from.y);
+            context.lineTo(to.x, to.y);
+          }
+          context.stroke();
+        }
+      }
+      for (const [id, p] of points) {
+        const active = id === focus;
+        const size =
+          radius + (p.node.category === "entity" ? 1.6 : 0) + (active ? 2 : 0);
+        context.globalAlpha = focus && !active && !neighbors.has(id) ? 0.36 : 1;
+        context.fillStyle = color(p.node);
+        context.beginPath();
+        context.arc(p.x, p.y, size, 0, 2 * Math.PI);
+        context.fill();
+      }
+      const point = focus ? points.get(focus) : undefined;
+      if (point) {
+        const label =
+          point.node.label.length > 42
+            ? point.node.label.slice(0, 41) + "…"
+            : point.node.label;
+        context.globalAlpha = 1;
+        context.font = `${13 / scale}px system-ui`;
+        context.textBaseline = "middle";
+        context.lineWidth = 4 / scale;
+        context.strokeStyle = "#15101c";
+        context.fillStyle = "#eee0f4";
+        const x =
+          point.x +
+          (context.measureText(label).width * scale + 14 >
+          width / 2 + (lens.x - point.x) * scale
+            ? -context.measureText(label).width - 8 / scale
+            : 8 / scale);
+        context.strokeText(label, x, point.y);
+        context.fillText(label, x, point.y);
+      }
+    }
+    const observer = new ResizeObserver(() => draw(element, context));
+    observer.observe(element);
+    draw(element, context);
+    return () => observer.disconnect();
+  }, [graph, points, lens, focus, neighbors, radius]);
+
+  function nodeAt(event: React.PointerEvent<HTMLCanvasElement>): string | null {
+    const box = event.currentTarget.getBoundingClientRect();
+    const scale = scaleFor(box.width, box.height);
+    const x = lens.x + (event.clientX - box.left - box.width / 2) / scale;
+    const y = lens.y + (event.clientY - box.top - box.height / 2) / scale;
+    let distance = (Math.max(6, (radius + 2) * scale) / scale) ** 2;
+    let nearest = null;
+    for (const [id, point] of points) {
+      const squared = (x - point.x) ** 2 + (y - point.y) ** 2;
+      if (squared < distance) {
+        nearest = id;
+        distance = squared;
+      }
+    }
+    return nearest;
+  }
 
   return (
     <div className="constellation">
-      <svg
+      <canvas
+        ref={canvas}
+        role="img"
         aria-label="Memory and entity connections"
-        viewBox={`${lens.x - width / 2} ${lens.y - height / 2} ${width} ${height}`}
         onPointerDown={(event) => {
-          if (event.target !== event.currentTarget || event.button !== 0)
-            return;
-          drag.current = { x: event.clientX, y: event.clientY };
+          if (event.button !== 0) return;
+          drag.current = { x: event.clientX, y: event.clientY, moved: false };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
           const start = drag.current;
-          if (!start) return;
-          const scale = Math.max(
-            width / event.currentTarget.clientWidth,
-            height / event.currentTarget.clientHeight,
+          if (!start) {
+            setHovered(nodeAt(event));
+            return;
+          }
+          const dx = event.clientX - start.x;
+          const dy = event.clientY - start.y;
+          if (!start.moved && Math.hypot(dx, dy) < 3) return;
+          setHovered(null);
+          const scale = scaleFor(
+            event.currentTarget.clientWidth,
+            event.currentTarget.clientHeight,
           );
           setLens((old) => ({
             ...old,
-            x: old.x - (event.clientX - start.x) * scale,
-            y: old.y - (event.clientY - start.y) * scale,
+            x: old.x - dx / scale,
+            y: old.y - dy / scale,
           }));
-          drag.current = { x: event.clientX, y: event.clientY };
+          drag.current = { x: event.clientX, y: event.clientY, moved: true };
         }}
+        onPointerUp={(event) => {
+          if (drag.current && !drag.current.moved) {
+            const id = nodeAt(event);
+            if (id) select(id);
+          }
+          drag.current = null;
+        }}
+        onPointerLeave={() => setHovered(null)}
         onLostPointerCapture={() => {
           drag.current = null;
         }}
-      >
-        {graph.links.map((link, index) => {
-          const source = points.get(link.source);
-          const target = points.get(link.target);
-          if (!source || !target) return null;
-          const highlighted = focus === link.source || focus === link.target;
-          return (
-            <line
-              key={index}
-              x1={source.x}
-              y1={source.y}
-              x2={target.x}
-              y2={target.y}
-              stroke={edgeColors[link.kind]}
-              strokeWidth={highlighted ? 2 : 1}
-              opacity={highlighted ? 0.9 : focus ? 0.19 : 0.52}
-            />
-          );
-        })}
-        {[...points.values()].map(({ node, x, y }, index) => {
-          const active = node.id === focus;
-          const near = neighbors.has(node.id);
-          const radius = node.category === "entity" ? 8 : 5.5;
-          return (
-            <g
-              key={node.id}
-              className="constellation-node"
-              transform={`translate(${x} ${y})`}
-              onClick={() => select(node.id)}
-              onPointerEnter={() => setHovered(node.id)}
-              onPointerLeave={() => setHovered(null)}
-              data-selected={node.id === selected}
-              opacity={focus && !active && !near ? 0.58 : 1}
-            >
-              <title>{`${node.kind}: ${node.label}`}</title>
-              <circle
-                r={radius + (active ? 8 : 5)}
-                fill={color(node)}
-                opacity={active ? 0.27 : 0.13}
-              />
-              <circle r={radius + (active ? 2 : 0)} fill={color(node)} />
-              {(active || near || (!focus && index < 8)) && (
-                <text x={radius + 7} y={4}>
-                  {node.label.length > 24
-                    ? node.label.slice(0, 23) + "…"
-                    : node.label}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+      />
       <div className="constellation-tools" aria-label="Graph zoom">
         <button
           type="button"
@@ -226,12 +297,40 @@ function Constellation({
           type="button"
           aria-label="Zoom in"
           onClick={() =>
-            setLens((v) => ({ ...v, zoom: Math.min(4, v.zoom * 1.3) }))
+            setLens((v) => ({ ...v, zoom: Math.min(16, v.zoom * 1.3) }))
           }
         >
           +
         </button>
       </div>
+    </div>
+  );
+}
+
+function ListPager({
+  name,
+  page,
+  total,
+  change,
+}: {
+  name: string;
+  page: number;
+  total: number;
+  change: (page: number) => void;
+}) {
+  if (total <= nodePageSize) return null;
+  return (
+    <div className="graph-page-controls">
+      <button type="button" disabled={!page} onClick={() => change(page - 1)}>
+        Previous {name}
+      </button>
+      <button
+        type="button"
+        disabled={(page + 1) * nodePageSize >= total}
+        onClick={() => change(page + 1)}
+      >
+        Next {name}
+      </button>
     </div>
   );
 }
@@ -243,12 +342,39 @@ export function MemoryGraphPage() {
   const [term, setTerm] = useState("");
   const [kind, setKind] = useState("");
   const [anchor, setAnchor] = useState<string | null>(null);
-  const [cursors, setCursors] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [revision, refresh] = useState(0);
-  const cursor = cursors.at(-1);
-  const selection = graph?.nodes.find((node) => node.id === selected);
+  const [loading, setLoading] = useState(false);
+  const [nodePage, setNodePage] = useState(0);
+  const [linkPage, setLinkPage] = useState(0);
+  const activeRead = useRef<AbortController | null>(null);
+  const nodeById = useMemo(
+    () => new Map(graph?.nodes.map((node) => [node.id, node])),
+    [graph],
+  );
+  const drawn = useMemo(() => {
+    if (!graph) return null;
+    const displayed = new Set(graph.nodes.map(({ id }) => id));
+    return {
+      ...graph,
+      links: graph.links.filter(
+        ({ source, target }) => displayed.has(source) && displayed.has(target),
+      ),
+    };
+  }, [graph]);
+  const visibleLinks = useMemo(
+    () =>
+      drawn?.links.filter(
+        ({ source, target }) => source === selected || target === selected,
+      ) ?? [],
+    [drawn, selected],
+  );
+  const selection = selected ? nodeById.get(selected) : undefined;
+  function selectNode(id: string) {
+    setSelected(id);
+    setLinkPage(0);
+  }
   const memoryCount =
     graph?.nodes.filter((node) => node.category === "memory").length ?? 0;
 
@@ -260,22 +386,61 @@ export function MemoryGraphPage() {
       );
   }, []);
 
-  useEffect(() => {
-    if (!authorized) return;
-    const abort = new AbortController();
-    setGraph(null);
-    setError("");
-    setSelected(anchor);
-    void control(
-      "memory-graph",
-      graphSchema,
-      { text: term, kind, cursor: cursor ?? null, anchor },
-      abort.signal,
-    )
-      .then((result) => {
-        if (!abort.signal.aborted) setGraph(result);
-      })
-      .catch((reason: unknown) => {
+  const load = useCallback(
+    async (previous: Graph | null, amount: number) => {
+      activeRead.current?.abort();
+      const abort = new AbortController();
+      activeRead.current = abort;
+      setLoading(true);
+      setError("");
+      const nodes = new Map(previous?.nodes.map((node) => [node.id, node]));
+      const links = new Map(
+        previous?.links.map((link) => [
+          link.source + link.target + link.kind,
+          link,
+        ]),
+      );
+      let cursor = previous?.next_cursor ?? null;
+      let total = previous?.total_memories ?? null;
+      let truncated = previous?.truncated ?? false;
+      let loaded = 0;
+      let published = 0;
+      try {
+        do {
+          const batch: Graph = await control(
+            "memory-graph",
+            graphSchema,
+            { text: term, kind, cursor, anchor },
+            abort.signal,
+          );
+          if (abort.signal.aborted) return;
+          if (cursor && batch.next_cursor === cursor)
+            throw Error("Graph cursor did not advance.");
+          cursor = batch.next_cursor;
+          total = batch.total_memories ?? total;
+          truncated ||= batch.truncated;
+          for (const node of batch.nodes) {
+            if (node.category === "memory" && !nodes.has(node.id)) loaded++;
+            nodes.set(node.id, node);
+          }
+          for (const link of batch.links)
+            links.set(link.source + link.target + link.kind, link);
+          if (
+            !cursor ||
+            loaded >= amount ||
+            loaded - published >= initialCount
+          ) {
+            setGraph({
+              nodes: [...nodes.values()],
+              links: [...links.values()],
+              next_cursor: cursor,
+              total_memories: total,
+              truncated,
+            });
+            published = loaded;
+          }
+        } while (cursor && loaded < amount);
+      } catch (reason: unknown) {
         if (abort.signal.aborted) return;
         setError(
           reason instanceof Error &&
@@ -283,15 +448,22 @@ export function MemoryGraphPage() {
             ? "Ember is recalling memories for a reply. Refresh when it finishes."
             : "The memory graph is unavailable. Refresh to try again.",
         );
-      });
-    return () => abort.abort();
-  }, [authorized, cursor, anchor, kind, term, revision]);
+      } finally {
+        if (!abort.signal.aborted) setLoading(false);
+      }
+    },
+    [anchor, kind, term],
+  );
 
-  function resetFocus() {
-    setAnchor(null);
-    setCursors([]);
-    setSelected(null);
-  }
+  useEffect(() => {
+    if (!authorized) return;
+    setGraph(null);
+    setSelected(anchor);
+    setNodePage(0);
+    setLinkPage(0);
+    void load(null, initialCount);
+    return () => activeRead.current?.abort();
+  }, [authorized, anchor, load, revision]);
 
   return (
     <main className="dashboard-shell graph-page">
@@ -310,7 +482,7 @@ export function MemoryGraphPage() {
         className="graph-filters"
         onSubmit={(event) => {
           event.preventDefault();
-          resetFocus();
+          setAnchor(null);
           setTerm(input.trim());
         }}
       >
@@ -328,7 +500,7 @@ export function MemoryGraphPage() {
           <select
             value={kind}
             onChange={(event) => {
-              resetFocus();
+              setAnchor(null);
               setKind(event.target.value);
             }}
           >
@@ -344,7 +516,7 @@ export function MemoryGraphPage() {
           Refresh
         </button>
         {anchor && (
-          <button type="button" onClick={resetFocus}>
+          <button type="button" onClick={() => setAnchor(null)}>
             Exit neighborhood
           </button>
         )}
@@ -355,7 +527,7 @@ export function MemoryGraphPage() {
         </p>
       )}
       {!graph && !error && <p role="status">Loading the memory graph…</p>}
-      {graph && (
+      {graph && drawn && (
         <>
           <div className="graph-workspace">
             <section className="graph-panel" aria-label="Memory constellation">
@@ -369,9 +541,9 @@ export function MemoryGraphPage() {
               </div>
               {graph.nodes.length ? (
                 <Constellation
-                  graph={graph}
+                  graph={drawn}
                   selected={selected}
-                  select={setSelected}
+                  select={selectNode}
                 />
               ) : (
                 <div className="graph-empty">
@@ -381,28 +553,43 @@ export function MemoryGraphPage() {
                 </div>
               )}
               <footer className="graph-page-controls">
-                <span>
-                  {memoryCount} {memoryCount === 1 ? "memory" : "memories"} ·{" "}
-                  {graph.links.length}{" "}
-                  {graph.links.length === 1 ? "link" : "links"}
+                <span role="status">
+                  {formatCount.format(memoryCount)}
+                  {graph.total_memories !== null &&
+                    ` of ${formatCount.format(graph.total_memories)}`}{" "}
+                  {(graph.total_memories ?? memoryCount) === 1
+                    ? "memory"
+                    : "memories"}{" "}
+                  · {formatCount.format(drawn.links.length)}{" "}
+                  {drawn.links.length === 1 ? "link" : "links"}
                 </span>
-                <button
-                  type="button"
-                  disabled={!cursor}
-                  onClick={() => setCursors((pages) => pages.slice(0, -1))}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={!graph.next_cursor}
-                  onClick={() => {
-                    if (graph.next_cursor)
-                      setCursors([...cursors, graph.next_cursor]);
-                  }}
-                >
-                  Next
-                </button>
+                {loading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      activeRead.current?.abort();
+                      setLoading(false);
+                    }}
+                  >
+                    Stop loading
+                  </button>
+                )}
+                {graph.next_cursor && !loading && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void load(graph, initialCount)}
+                    >
+                      Load more
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void load(graph, Infinity)}
+                    >
+                      Load all
+                    </button>
+                  </>
+                )}
               </footer>
               {graph.truncated && (
                 <p className="quiet graph-limit">
@@ -437,7 +624,6 @@ export function MemoryGraphPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setCursors([]);
                           setAnchor(selection.id);
                         }}
                       >
@@ -446,24 +632,22 @@ export function MemoryGraphPage() {
                     )}
                   <h3>Visible links</h3>
                   <ul className="graph-links">
-                    {graph.links
-                      .filter(
-                        ({ source, target }) =>
-                          source === selection.id || target === selection.id,
+                    {visibleLinks
+                      .slice(
+                        linkPage * nodePageSize,
+                        (linkPage + 1) * nodePageSize,
                       )
-                      .map((link, index) => {
-                        const other = graph.nodes.find(
-                          ({ id }) =>
-                            id ===
-                            (link.source === selection.id
-                              ? link.target
-                              : link.source),
+                      .map((link) => {
+                        const other = nodeById.get(
+                          link.source === selection.id
+                            ? link.target
+                            : link.source,
                         );
                         return other ? (
-                          <li key={index}>
+                          <li key={link.source + link.target + link.kind}>
                             <button
                               type="button"
-                              onClick={() => setSelected(other.id)}
+                              onClick={() => selectNode(other.id)}
                             >
                               <small style={{ color: edgeColors[link.kind] }}>
                                 {link.kind}
@@ -474,6 +658,12 @@ export function MemoryGraphPage() {
                         ) : null;
                       })}
                   </ul>
+                  <ListPager
+                    name="links"
+                    page={linkPage}
+                    change={setLinkPage}
+                    total={visibleLinks.length}
+                  />
                 </>
               ) : (
                 <p className="quiet">
@@ -481,23 +671,34 @@ export function MemoryGraphPage() {
                 </p>
               )}
               <details>
-                <summary>Nodes on this page</summary>
+                <summary>Loaded nodes</summary>
                 <ul className="graph-links">
-                  {graph.nodes.map((node) => (
-                    <li key={node.id}>
-                      <button
-                        type="button"
-                        aria-pressed={node.id === selected}
-                        onClick={() => setSelected(node.id)}
-                      >
-                        <small style={{ color: color(node) }}>
-                          {node.kind}
-                        </small>
-                        {node.label}
-                      </button>
-                    </li>
-                  ))}
+                  {graph.nodes
+                    .slice(
+                      nodePage * nodePageSize,
+                      (nodePage + 1) * nodePageSize,
+                    )
+                    .map((node) => (
+                      <li key={node.id}>
+                        <button
+                          type="button"
+                          aria-pressed={node.id === selected}
+                          onClick={() => selectNode(node.id)}
+                        >
+                          <small style={{ color: color(node) }}>
+                            {node.kind}
+                          </small>
+                          {node.label}
+                        </button>
+                      </li>
+                    ))}
                 </ul>
+                <ListPager
+                  name="nodes"
+                  page={nodePage}
+                  change={setNodePage}
+                  total={graph.nodes.length}
+                />
               </details>
             </aside>
           </div>

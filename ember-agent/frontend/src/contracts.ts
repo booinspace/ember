@@ -216,7 +216,7 @@ export async function control<T>(
         }),
   });
   const text = await response.text();
-  if (text.length > 524288)
+  if (text.length > (path === "memory-graph" ? 2_097_152 : 524_288))
     throw new Error("Control response exceeds its bound.");
   const value: unknown = JSON.parse(text);
   if (!response.ok) {

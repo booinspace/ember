@@ -23,8 +23,10 @@ from .database import load_model, row_int, row_text
 from .retrieval import memory_scope
 from .word_recall import register_word_match
 
-_PAGE = 36
-_LINKS = 120
+_BATCH = 200
+_NEIGHBORHOOD = 36
+_ENTITY_LINKS = 400
+_RELATIONSHIPS = 120
 _NEIGHBOR_ENTITY_SCOPE = (
     "d.target_kind='entity' AND d.target_key<>COALESCE((SELECT subject_id FROM profile_policy),'')"
 )
@@ -66,6 +68,7 @@ class MemoryGraph(ContractModel):
     links: tuple[GraphLink, ...] = ()
     next_cursor: str | None = None
     truncated: bool = False
+    total_memories: int | None = None
 
 
 def _select(
@@ -74,13 +77,17 @@ def _select(
     query: MemoryQuery,
     clause: str = "",
     values: tuple[str | int, ...] = (),
+    *,
+    limit: int | None = None,
+    metadata_only: bool = False,
 ) -> list[sqlite3.Row]:
-    sql, bindings = memory_scope(state, query, include_text=bool(query.text), recent_first=True)
+    sql, bindings = memory_scope(
+        state, query, include_text=bool(query.text), recent_first=True, metadata_only=metadata_only
+    )
     if clause:
         start = sql.index(" ORDER BY ")
         sql = sql[:start] + " AND (" + clause + ")" + sql[start:]
-        bindings = (*bindings[:-1], *values, bindings[-1])
-    return connection.execute(sql, bindings).fetchall()
+    return connection.execute(sql, (*bindings[:-1], *values, limit or query.limit)).fetchall()
 
 
 def _label(memory: Memory, names: dict[UUID, str]) -> str:
@@ -118,7 +125,8 @@ def read_graph(
     text = request.text.strip()
     if text:
         register_word_match(connection, text)
-    query = MemoryQuery(text=text, kinds=(request.kind,) if request.kind else (), limit=_PAGE + 1)
+    query = MemoryQuery(text=text, kinds=(request.kind,) if request.kind else ())
+    limit = _NEIGHBORHOOD if request.anchor is not None else _BATCH
     anchor_rows: list[sqlite3.Row] = []
     clause = ""
     anchor_truncated = False
@@ -133,11 +141,11 @@ def read_graph(
             "SELECT * FROM memory_relationships WHERE "
             "(source_id=? AND source_revision=?) OR (target_id=? AND target_revision=?) "
             "ORDER BY relationship_id LIMIT ?",
-            (anchor, revision, anchor, revision, _LINKS + 1),
+            (anchor, revision, anchor, revision, _RELATIONSHIPS + 1),
         ).fetchall()
-        anchor_truncated = len(linked) > _LINKS
+        anchor_truncated = len(linked) > _RELATIONSHIPS
         neighbors: dict[tuple[str, int], None] = {}
-        for row in linked[:_LINKS]:
+        for row in linked[:_RELATIONSHIPS]:
             edge = load_model(row, MemoryRelationship)
             if edge.target is not None and _permitted(state, connection, edge):
                 other = edge.target if edge.source.memory_id == request.anchor else edge.source
@@ -157,11 +165,19 @@ def read_graph(
         clause = "r.recorded_at_us<? OR (r.recorded_at_us=? AND r.memory_id>?)"
         values = (timestamp, timestamp, identity)
 
-    found = _select(state, connection, query, clause, values)
-    page = found[: _PAGE - len(anchor_rows)]
+    total = None
+    if request.anchor is None and request.cursor is None:
+        sql, bindings = memory_scope(state, query, include_text=bool(text), metadata_only=True)
+        scope = sql.split(" FROM ", 1)[1].rsplit(" ORDER BY ", 1)[0]
+        count = connection.execute(
+            "SELECT COUNT(*) AS total FROM " + scope, bindings[:-1]
+        ).fetchone()
+        total = row_int(count, "total")
+    found = _select(state, connection, query, clause, values, limit=limit + 1)
+    page = found[: limit - len(anchor_rows)]
     rows = [*anchor_rows, *page]
     if not rows:
-        return MemoryGraph()
+        return MemoryGraph(total_memories=total)
     more = len(found) > len(page)
     memories = [load_model(row, Memory) for row in rows]
     references = tuple((str(memory.memory_id), memory.revision) for memory in memories)
@@ -176,25 +192,53 @@ def read_graph(
         "WHERE (d.memory_id,d.revision) IN ("
         + pairs
         + ") AND d.target_kind='entity' ORDER BY d.memory_id,d.target_key LIMIT ?",
-        (*parameters, _LINKS + 1),
+        (*parameters, _ENTITY_LINKS + 1),
     ).fetchall()
     names: dict[UUID, str] = {}
     links: list[GraphLink] = []
-    for row in entity_rows[:_LINKS]:
+    for row in entity_rows[:_ENTITY_LINKS]:
         entity = UUID(row_text(row, "entity_id"))
         names.setdefault(entity, row_text(row, "name"))
         links.append(
             GraphLink(source=UUID(row_text(row, "memory_id")), target=entity, kind="entity")
         )
     relationship_rows = connection.execute(
-        "SELECT l.* FROM memory_relationships l "
-        "WHERE (source_id,source_revision) IN (" + pairs + ") "
-        "AND (target_id,target_revision) IN (" + pairs + ") ORDER BY relationship_id LIMIT ?",
-        (*parameters, *parameters, _LINKS + 1),
+        "WITH page(id,revision) AS (VALUES " + pairs + ") "
+        "SELECT l.* FROM memory_relationships l WHERE target_id IS NOT NULL AND ("
+        "source_id IN (SELECT id FROM page) OR target_id IN (SELECT id FROM page)) "
+        "AND ((source_id,source_revision) IN page OR (target_id,target_revision) IN page) "
+        "ORDER BY relationship_id LIMIT ?",
+        (*parameters, _RELATIONSHIPS + 1),
     ).fetchall()
-    for row in relationship_rows[:_LINKS]:
-        edge = load_model(row, MemoryRelationship)
-        if edge.target and _permitted(state, connection, edge):
+    visible = set(references)
+    edges = [load_model(row, MemoryRelationship) for row in relationship_rows[:_RELATIONSHIPS]]
+    outside = {
+        (str(endpoint.memory_id), endpoint.revision)
+        for edge in edges
+        for endpoint in (edge.source, edge.target)
+        if endpoint is not None and (str(endpoint.memory_id), endpoint.revision) not in visible
+    }
+    if outside and request.anchor is None:
+        wanted = ",".join("(?,?)" for _ in outside)
+        identities = tuple(identity for identity, _ in outside)
+        eligible = _select(
+            state,
+            connection,
+            query,
+            "r.memory_id IN (" + ",".join("?" for _ in identities) + ") "
+            "AND (r.memory_id,r.revision) IN (" + wanted + ")",
+            (*identities, *(value for pair in outside for value in pair)),
+            limit=len(outside),
+            metadata_only=True,
+        )
+        visible.update((row_text(row, "memory_id"), row_int(row, "revision")) for row in eligible)
+    for edge in edges:
+        if (
+            edge.target
+            and (str(edge.source.memory_id), edge.source.revision) in visible
+            and (str(edge.target.memory_id), edge.target.revision) in visible
+            and _permitted(state, connection, edge)
+        ):
             links.append(
                 GraphLink(
                     source=edge.source.memory_id, target=edge.target.memory_id, kind=edge.kind
@@ -224,8 +268,9 @@ def read_graph(
         nodes=tuple(nodes),
         links=tuple(links),
         next_cursor=cursor,
+        total_memories=total,
         truncated=anchor_truncated
         or (more and request.anchor is not None)
-        or len(entity_rows) > _LINKS
-        or len(relationship_rows) > _LINKS,
+        or len(entity_rows) > _ENTITY_LINKS
+        or len(relationship_rows) > _RELATIONSHIPS,
     )

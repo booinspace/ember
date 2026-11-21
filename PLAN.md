@@ -5103,8 +5103,10 @@ The operator can browse the active character's current memories by kind, search
 extracted values, and explore stored relationships or shared entities. The
 existing React workspace serves the graph as a separate page. The memory engine
 owns the read through its bounded deep worker and applies recall eligibility
-and relationship evidence permissions on every request. Each page has up to 36
-memories. Neighborhoods show one hop and report truncation at the read limits.
+and relationship evidence permissions on every request. The constellation starts
+with 1,000 eligible memories and can load all matches in batches of 200. It shows
+both the loaded count and the eligible total. Neighborhoods still show one hop,
+with up to 36 memories, and report truncation at the read limits.
 The profile subject is visible as an entity and does not expand neighborhoods.
 Browsing is independent of the conversation's recall, prompt, and reply budgets.
 

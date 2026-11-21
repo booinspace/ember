@@ -174,7 +174,7 @@ class InProcessAsyncMemoryClient:
 
     async def memory_graph(self, request: GraphQuery) -> MemoryGraph:
         """Browse canonical connections on the bounded deep reader, yielding to dialogue."""
-        budget = ReadBudget(deadline=monotonic() + 1, rows=1024, materialized_bytes=2**20)
+        budget = ReadBudget(deadline=monotonic() + 2)
         budget.foreground_busy = lambda: self._store.database.readers.pending > 0
 
         def snapshot(connection: sqlite3.Connection) -> MemoryGraph:

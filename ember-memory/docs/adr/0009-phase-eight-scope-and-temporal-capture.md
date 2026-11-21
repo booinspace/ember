@@ -179,3 +179,8 @@ apply before the page limit. An explicit relationship needs visible current
 endpoints and permission to read its evidence. The operator sees extracted labels
 and relationship types without source excerpts. The graph defers to foreground
 recall and has no model or derived-index dependency.
+
+The overview returns at most 200 memories per canonical snapshot and supplies
+the eligible total with the first batch. Cross-batch relationships are checked
+against the same current query scope for both endpoints before they are returned.
+Neighborhoods keep their 36-memory limit.

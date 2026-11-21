@@ -2,8 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const memory = "11111111-1111-4111-8111-111111111111";
 const entity = "22222222-2222-4222-8222-222222222222";
-const next = "33333333-3333-4333-8333-333333333333";
-const cursor = "1762000000:" + memory;
+const total = 12_564;
+const memoryId = (index: number) =>
+  index
+    ? "33333333-3333-4333-8333-" + index.toString(16).padStart(12, "0")
+    : memory;
 const firstPage = {
   nodes: [
     {
@@ -24,7 +27,8 @@ const firstPage = {
     },
   ],
   links: [{ source: memory, target: entity, kind: "entity" }],
-  next_cursor: cursor,
+  next_cursor: null,
+  total_memories: null,
   truncated: false,
 };
 
@@ -58,18 +62,40 @@ test("browse, inspect, navigate and filter the memory graph", async ({
       expect(route.request().method()).toBe("POST");
       const request = route.request().postDataJSON();
       if (request.text === "missing") {
-        payload = { nodes: [], links: [], next_cursor: null, truncated: false };
-      } else if (request.cursor === cursor) {
         payload = {
-          nodes: [{ ...firstPage.nodes[0], id: next, label: "Older memory" }],
+          nodes: [],
           links: [],
           next_cursor: null,
+          total_memories: 0,
           truncated: false,
         };
       } else if (request.anchor === memory) {
-        payload = { ...firstPage, next_cursor: null };
-      } else {
         payload = firstPage;
+      } else {
+        const offset = Number(request.cursor ?? 0);
+        const end = Math.min(total, offset + 200);
+        const nodes = Array.from({ length: end - offset }, (_, index) => {
+          const position = offset + index;
+          return {
+            ...firstPage.nodes[0],
+            id: memoryId(position),
+            label: position
+              ? `Synthetic memory ${position}`
+              : "Visited the synthetic lab",
+          };
+        });
+        payload = {
+          nodes: offset ? nodes : [...nodes, firstPage.nodes[1]],
+          links: offset
+            ? []
+            : [
+                ...firstPage.links,
+                { source: memory, target: memoryId(2204), kind: "supports" },
+              ],
+          next_cursor: end < total ? String(end) : null,
+          total_memories: offset ? null : total,
+          truncated: false,
+        };
       }
     }
     await route.fulfill({ json: payload });
@@ -82,18 +108,34 @@ test("browse, inspect, navigate and filter the memory graph", async ({
   await expect(
     page.getByRole("heading", { name: "Memory graph" }),
   ).toBeVisible();
-  await expect(page.getByText("1 memory · 1 link")).toBeVisible();
+  await expect(
+    page.getByText("1,000 of 12,564 memories · 1 link"),
+  ).toBeVisible();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
-  const svg = page.locator("svg[aria-label='Memory and entity connections']");
-  const original = await svg.getAttribute("viewBox");
+  const canvas = page.getByRole("img", {
+    name: "Memory and entity connections",
+  });
+  const pixels = () =>
+    canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
+  const original = await pixels();
   await page.getByRole("button", { name: "Zoom in" }).click();
-  await expect(svg).not.toHaveAttribute("viewBox", original ?? "");
+  await expect.poll(pixels).not.toBe(original);
   await page.getByRole("button", { name: "Reset view" }).click();
-  await expect(svg).toHaveAttribute("viewBox", original ?? "");
+  await expect.poll(pixels).toBe(original);
 
-  await page.getByText("Nodes on this page").click();
+  await page.getByRole("button", { name: "Load more" }).click();
+  await expect(
+    page.getByText("2,000 of 12,564 memories · 1 link"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Load all" }).click();
+  await expect(
+    page.getByText("12,564 of 12,564 memories · 2 links"),
+  ).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByRole("button", { name: "Load all" })).toHaveCount(0);
+
+  await page.getByText("Loaded nodes").click();
   await page.getByRole("button", { name: /Visited the synthetic lab/ }).click();
   await expect(
     page.getByText("factual assertion", { exact: true }),
@@ -106,16 +148,9 @@ test("browse, inspect, navigate and filter the memory graph", async ({
     page.getByRole("heading", { name: "Visible links" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Exit neighborhood" }).click();
-  await page.getByRole("button", { name: "Next" }).click();
   await expect(
-    svg.locator("title").filter({ hasText: "episode: Older memory" }),
-  ).toBeAttached();
-  await page.getByRole("button", { name: "Previous" }).click();
-  await expect(
-    svg
-      .locator("title")
-      .filter({ hasText: "episode: Visited the synthetic lab" }),
-  ).toBeAttached();
+    page.getByText("1,000 of 12,564 memories · 1 link"),
+  ).toBeVisible();
 
   await page.getByRole("textbox", { name: "Search memories" }).fill("missing");
   await page.getByRole("button", { name: "Search", exact: true }).click();

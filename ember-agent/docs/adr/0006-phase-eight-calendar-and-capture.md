@@ -304,6 +304,9 @@ The existing React build serves `/memory-graph` in both browser modes. The opera
 session and origin checks protect the read-only endpoint. Search text stays in
 the request body and graph responses use `Cache-Control: no-store`. The runtime
 passes the operator's query to the active character's engine through composition.
+The canvas combines completed batches, deduplicates entity nodes and links, and
+draws a relationship when both ends are loaded. The inspector pages its keyboard-
+accessible list independently of the canvas.
 
 ## Voice delivery recovery
 

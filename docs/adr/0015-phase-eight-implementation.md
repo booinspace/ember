@@ -446,7 +446,10 @@ remaining real-device acceptance. Runtime, memory and provider boundaries are un
 
 The workspace links to a read-only graph of the active character's current
 eligible memories. Composition connects the authenticated browser route to a
-bounded engine read without expanding the public ABI. See
+bounded engine read without expanding the public ABI. The canvas starts with
+1,000 eligible memories. Load more adds 1,000 and Load all continues from the
+same cursor until the query is exhausted. Search and type filters apply across
+the eligible store. See
 [Agent ADR 0006](../../ember-agent/docs/adr/0006-phase-eight-calendar-and-capture.md#memory-graph-browser)
 and [Memory ADR 0009](../../ember-memory/docs/adr/0009-phase-eight-scope-and-temporal-capture.md#memory-graph-browser).
 
