@@ -1,8 +1,8 @@
-# 0012 — Harness-owned skills, Ember-owned authority
+# 0013 — Harness-owned skills, Ember-owned authority
 
 Status: Accepted, 4 November 2026.
 
-Adopt [root ADR 0022](../../../docs/adr/0022-shared-harness-skills.md).
+Adopt [root ADR 0023](../../../docs/adr/0023-shared-harness-skills.md).
 `Skills` caches metadata only; the selected `SkillProvider` validates and loads
 packages outside Core. Conversation delegates through the existing neutral task
 operation; no SDK import, shell, dependency resolver or harness registry is added

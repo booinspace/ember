@@ -1,4 +1,4 @@
-# 0022 — Shared harness skill catalog
+# 0023 — Shared harness skill catalog
 
 Status: Accepted, 4 November 2026.
 

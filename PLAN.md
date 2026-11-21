@@ -5341,7 +5341,7 @@ writes to the canonical `OpenCode` library, with ordinary seed and recall policy
 No new owner, schema change, or Phase 12/13 advancement. See the
 [runbook](docs/opencode-memory.md) for deployment.
 
-### Phase 12 implementation — 4 November 2026
+## Phase 12 implementation — 4 November 2026
 
 The operator authorized Phase 12 and a unified skills/tools catalog shared across
 Ember and its selected harness. [Implementation scope and acceptance](docs/phase-12-implementation.md)

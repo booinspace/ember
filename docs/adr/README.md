@@ -160,7 +160,8 @@ and repository-owned Desktop launcher.
 
 The [neutral harness broker and live dashboard amendment](../harness-dashboard-amendment.md)
 extends Root ADR 0021 and component ADR 0011; Phase 12 skill loading is implemented
-inside the selected harness under Root ADR 0022, with Ember retaining grants, budgets and visibility.
+inside the selected harness under Root ADR 0023, with Ember retaining grants,
+budgets and visibility.
 
 The selected PC task worker now uses Ubuntu WSL2/bubblewrap while Ember's Core,
 voice, canonical memory, task broker and model gateway stay native Windows.
@@ -169,4 +170,6 @@ supersedes the earlier Windows-worker adoption claim; Desktop remains deferred.
 
 [Root ADR 0022 — OpenCode memory](0022-opencode-memory-recall.md) records the
 private recall listener and opt-in note writes; see the [setup runbook](../opencode-memory.md).
-[Root ADR 0022 — Shared harness skills](0022-shared-harness-skills.md) records Phase 12 ownership, the portable repository and bounded native loading.
+
+[Root ADR 0023 — Shared harness skills](0023-shared-harness-skills.md) records
+Phase 12 ownership, the portable repository and bounded native loading.
