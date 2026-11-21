@@ -137,7 +137,8 @@ def test_memory_mcp_auth_read_scope_and_live_policy(tmp_path: Path) -> None:
                             assert not result.is_error and result.structured_content is not None
                             assert result.structured_content["memories"] == []
                 async with httpx2.AsyncClient(trust_env=False, timeout=2) as http:
-                    with pytest.raises(httpx2.ConnectError):
+                    # Windows may drop SYNs to a recently closed exclusive listener.
+                    with pytest.raises((httpx2.ConnectError, httpx2.ConnectTimeout)):
                         await http.get(url, headers=auth)
             finally:
                 await memory.aclose()
