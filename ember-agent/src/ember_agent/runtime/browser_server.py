@@ -4,8 +4,6 @@ import asyncio
 import json
 import socket
 import webbrowser
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -13,13 +11,7 @@ import uvicorn
 
 from .browser_control import BrowserControl
 from .config import ConfigurationError
-
-
-class _EmbeddedServer(uvicorn.Server):
-    @contextmanager
-    def capture_signals(self) -> Generator[None]:
-        # The application runner owns Ctrl+C; an embedded web task must not replace it.
-        yield
+from .http_server import EmbeddedServer
 
 
 class BrowserServer:
@@ -29,7 +21,7 @@ class BrowserServer:
         self.control = control
         self.root = root
         address = urlsplit(control.origin)
-        self.server = _EmbeddedServer(
+        self.server = EmbeddedServer(
             uvicorn.Config(
                 control.app,
                 host="0.0.0.0" if control.lan_origin else address.hostname or "127.0.0.1",

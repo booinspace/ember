@@ -5331,3 +5331,10 @@ actual supported-provider, malicious-input, missing-provider and offline-resourc
 coverage. Autonomous skill learning is a separate future reviewed amendment.
 Phase 13 still owns cancellation/release and realtime/background scheduling;
 this amendment must not misrepresent subscriber cancellation as GPU release.
+
+## OpenCode memory recall amendment
+
+[Root ADR 0022](docs/adr/0022-opencode-memory-recall.md) records the opt-in,
+loopback-only read adapter for the active character's ordinary recall. This does
+not add a memory owner, schema change, or mutation surface and does not advance
+Phases 12 or 13. See the [runbook](docs/opencode-memory.md) for deployment.

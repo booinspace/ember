@@ -62,3 +62,6 @@ selection, stable profile identity, transport semantics and qualification.
 [Agent ADR 0011 — Hermes task delegation](0011-hermes-delegation.md) records the
 optional provider, task-local model mapping, paired native-client amendment and
 original Phase 11 acceptance.
+
+[Agent ADR 0012 — Private memory MCP](0012-memory-mcp.md) records the inbound
+read-only listener and its runtime ownership.

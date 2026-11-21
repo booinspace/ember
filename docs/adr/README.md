@@ -166,3 +166,6 @@ The selected PC task worker now uses Ubuntu WSL2/bubblewrap while Ember's Core,
 voice, canonical memory, task broker and model gateway stay native Windows.
 The [current qualification](../benchmarks/2026-11-04-harness-dashboard/README.md)
 supersedes the earlier Windows-worker adoption claim; Desktop remains deferred.
+
+[Root ADR 0022 — OpenCode memory recall](0022-opencode-memory-recall.md) records the
+opt-in read-only listener; see the [setup runbook](../opencode-memory.md).

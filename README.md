@@ -230,6 +230,9 @@ describes installed-service configuration, exact write approvals and supported
 bounds; the [validation record](docs/phase-10-validation.md) includes acceptance
 evidence and gateway performance measurements.
 
+[OpenCode memory recall](docs/opencode-memory.md) is an opt-in, read-only MCP
+listener for the active Ember character, with SSH tunnel setup for remote clients.
+
 Optional Hermes delegation runs natively on Windows through an isolated worker.
 It uses the existing Tasks UI, brokered SearXNG search and P2 gateway, with no second memory
 owner. It stays default-off while the original adoption gates remain open. See

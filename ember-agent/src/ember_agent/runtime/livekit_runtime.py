@@ -654,6 +654,21 @@ async def run_runtime(
         )
         cleanup.push_async_callback(asyncio.to_thread, runtime.close_workers)
         cleanup.push_async_callback(runtime.aclose)
+        if config.memory_mcp is not None:
+            from .memory_mcp import serve_memory_mcp
+
+            port = config.memory_mcp.port
+            try:
+                await cleanup.enter_async_context(
+                    serve_memory_mcp(runtime.memory, config.runtime_root, port)
+                )
+            except (ConfigurationError, TimeoutError) as error:
+                detail = (
+                    str(error) if isinstance(error, ConfigurationError) else "Startup timed out."
+                )
+                print(f"Memory MCP unavailable: {detail}")
+            else:
+                print(f"Memory MCP ready on http://127.0.0.1:{port}/mcp")
         binding = RoomBinding(
             instance_id=services.instance,
             character_id=runtime.memory.character_id,

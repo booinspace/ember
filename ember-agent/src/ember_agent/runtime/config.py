@@ -252,6 +252,12 @@ class HermesClientSettings(RuntimeModel):
         return self
 
 
+class MemoryMCPSettings(RuntimeModel):
+    """Opt-in read-only listener; host and credential location are not configurable."""
+
+    port: Annotated[int, Field(ge=1024, le=65535)] = 8790
+
+
 class DeploymentConfig(RuntimeModel):
     """Resolved deployment configuration, distinct from verified service/model health."""
 
@@ -271,6 +277,7 @@ class DeploymentConfig(RuntimeModel):
     audio: AudioSettings = Field(default_factory=AudioSettings)
     interpretation: InterpretationSettings = Field(default_factory=InterpretationSettings)
     mcp_servers: tuple[MCPServerSettings, ...] = ()
+    memory_mcp: MemoryMCPSettings | None = None
     inference: InferenceSettings = InferenceSettings()
     hermes: HermesSettings | None = None
     hermes_client: HermesClientSettings | None = None
@@ -361,6 +368,7 @@ class _DeploymentSettings(RuntimeModel):
     browser: _BrowserSettings = _BrowserSettings()
     interpretation: InterpretationSettings = InterpretationSettings()
     prompts: _PromptSettings = _PromptSettings()
+    memory_mcp: MemoryMCPSettings | None = None
     inference: InferenceSettings = InferenceSettings()
     hermes: dict[str, JsonValue] | None = None
     hermes_client: dict[str, JsonValue] | None = None
@@ -638,6 +646,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         hermes=hermes,
         hermes_client=hermes_client,
         mcp_servers=mcp_servers,
+        memory_mcp=settings.memory_mcp,
         inference=settings.inference,
         active_profile=settings.active_profile,
         system_prompt_file=(path.resolve().parent / settings.prompts.system_file).absolute(),
