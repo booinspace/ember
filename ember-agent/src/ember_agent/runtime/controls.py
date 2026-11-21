@@ -1,6 +1,7 @@
 """Application controls remain separate from model tools and backend implementation types."""
 
-from typing import Protocol
+from typing import Annotated, Protocol
+from uuid import UUID
 
 from pydantic import UUID4, Field
 
@@ -31,6 +32,15 @@ class ProcessingStatus(RuntimeModel):
     counts: dict[str, int] = Field(max_length=10)
     failure_codes: tuple[str, ...] = Field(max_length=8)
     index_status: str
+
+
+class GraphInput(RuntimeModel):
+    """A private, bounded operator query over current eligible memories."""
+
+    text: str = Field(default="", max_length=128)
+    kind: str = Field(default="", max_length=64)
+    cursor: Annotated[str, Field(pattern=r"^[0-9]{1,19}:[0-9a-f-]{36}$")] | None = None
+    anchor: Annotated[UUID, Field(strict=False)] | None = None
 
 
 class RuntimeControls(Protocol):

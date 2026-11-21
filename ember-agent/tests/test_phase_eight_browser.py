@@ -11,7 +11,7 @@ from ember_agent.character.core import CharacterCore
 from ember_agent.memory.deep_recall import DeepRecallService
 from ember_agent.realtime.contracts import RoomBinding
 from ember_agent.runtime.browser_control import BrowserControl
-from ember_agent.runtime.controls import CaptureControl, LibraryChoice, ProcessingStatus
+from ember_agent.runtime.controls import CaptureControl, GraphInput, LibraryChoice, ProcessingStatus
 from ember_memory_abi.selection import RecallSelection
 from ember_memory_engine import CanonicalEngine
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
@@ -58,6 +58,9 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
         async def answer(_: object) -> str:
             return "synthetic_receipt"
 
+        async def graph(_: GraphInput) -> str:
+            return '{"nodes":[],"links":[],"next_cursor":null,"truncated":false}'
+
         owner = BrowserControl(
             origin=ORIGIN,
             assets=tmp_path / "unbuilt",
@@ -73,9 +76,11 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
             room_token=lambda: "synthetic_room_capability",
             answer=answer,
             capture_changed=lambda: capture_changes.append(True),
+            memory_graph=graph,
         )
         with TestClient(owner.app, base_url=ORIGIN, headers={"origin": ORIGIN}) as client:
             assert client.get("/api/state").status_code == 401
+            assert client.post("/api/memory-graph", json={}).status_code == 401
             assert client.get("/").status_code == 503
             assert client.post("/api/bootstrap", json={"token": "x" * 48}).status_code == 401
             response = client.post("/api/bootstrap", json={"token": owner.activation})
@@ -83,6 +88,12 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
             assert "httponly" in response.headers["set-cookie"].lower()
             assert "samesite=strict" in response.headers["set-cookie"].lower()
             assert client.get("/api/state").json()["binding"]["character_id"] == str(identity)
+            result = client.post("/api/memory-graph", json={})
+            assert result.status_code == 200 and result.headers["cache-control"] == "no-store"
+            assert result.json()["nodes"] == []
+            assert client.post("/api/memory-graph", json={"cursor": "invalid"}).status_code == 400
+            assert client.get("/memory-graph").status_code == 503
+
             assert (
                 client.post("/api/room-token", json={}).json()["token"]
                 == "synthetic_room_capability"

@@ -19,6 +19,7 @@ from ember_memory_engine.capture import CaptureService, CaptureSettings
 from ember_memory_engine.deep_profile import DeepSources
 from ember_memory_engine.embedding import BgeEncoder
 from ember_memory_engine.errors import EmbeddingError
+from ember_memory_engine.memory_graph import GraphQuery
 from ember_memory_engine.processing_contracts import (
     ExtractionSpec,
     ProcessingError,
@@ -37,7 +38,7 @@ from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
 from .config import DeploymentConfig, RuntimeModel
 from .console import read_line
-from .controls import CaptureControl, LibraryChoice, ProcessingStatus
+from .controls import CaptureControl, GraphInput, LibraryChoice, ProcessingStatus
 from .dashboard import Dashboard
 from .prompt_files import PromptFiles
 
@@ -294,6 +295,15 @@ class LocalRuntime:
             )
         )
         return CaptureControl(enabled=settings.enabled, revision=settings.revision)
+
+    async def memory_graph(self, request: GraphInput) -> str:
+        """Project the current character's graph into the private browser response."""
+        graph = await self.memory.memory_graph(
+            GraphQuery(
+                text=request.text, kind=request.kind, cursor=request.cursor, anchor=request.anchor
+            )
+        )
+        return graph.model_dump_json()
 
     async def recall_settings(self) -> RecallSelection:
         """Inspect controls using existing ABI workers."""

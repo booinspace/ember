@@ -62,6 +62,9 @@ export function Controls({
     >
       <h2>Memory sources</h2>
       <p>
+        <a href="/memory-graph">Memory graph</a>
+      </p>
+      <p>
         Choose what Ember may recall. Changing sources does not approve imports.
       </p>
       <label className="toggle">

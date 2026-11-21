@@ -298,6 +298,13 @@ The browser adapts its existing controls and conversation to narrow and short
 viewports, with accessible names and larger touch targets. It uses existing runtime
 contracts; see the [root design](../../../docs/phase-8-mobile-ui.md).
 
+## Memory graph browser
+
+The existing React build serves `/memory-graph` in both browser modes. The operator
+session and origin checks protect the read-only endpoint. Search text stays in
+the request body and graph responses use `Cache-Control: no-store`. The runtime
+passes the operator's query to the active character's engine through composition.
+
 ## Voice delivery recovery
 
 The hosted room retains and fences the LiveKit speech handle and its linked tasks

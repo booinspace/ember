@@ -27,7 +27,7 @@ from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
 from .capabilities import capability_catalog
 from .config import RuntimeModel, private_lan_address
-from .controls import CaptureControl, PromptControls, RuntimeControls
+from .controls import CaptureControl, GraphInput, PromptControls, RuntimeControls
 from .dashboard import Dashboard
 from .hermes_chat import HermesChats
 from .mcp_contracts import MCPDiscovery
@@ -135,9 +135,11 @@ class BrowserControl:
         prompt_idle: Callable[[], None] | None = None,
         hermes_chat: HermesChats | None = None,
         dashboard: Dashboard | None = None,
+        memory_graph: Callable[[GraphInput], Awaitable[str]] | None = None,
     ) -> None:
         self.origin = origin.rstrip("/")
         self.dashboard = dashboard
+        self.memory_graph = memory_graph
         self.lan_origin = lan_origin
         self.trusted_proxy = trusted_proxy
         self._origins = {
@@ -235,7 +237,7 @@ class BrowserControl:
                 and request_origin == self.lan_origin
                 and request.method == "GET"
                 and response.status_code == 200
-                and request.url.path == "/"
+                and request.url.path in {"/", "/memory-graph"}
                 and not self._closed
             ):
                 response.set_cookie(
@@ -249,7 +251,13 @@ class BrowserControl:
                 )
                 response.headers["Cache-Control"] = "no-store"
             if request.url.path.startswith(
-                ("/api/tasks", "/api/task-notifications", "/api/task-confirmations", "/api/tools")
+                (
+                    "/api/tasks",
+                    "/api/task-notifications",
+                    "/api/task-confirmations",
+                    "/api/tools",
+                    "/api/memory-graph",
+                )
             ):
                 response.headers["Cache-Control"] = "no-store"
             return response
@@ -547,6 +555,12 @@ class BrowserControl:
                 raise HTTPException(status_code=404, detail="lan_not_configured")
             return {"url": self.lan_origin + "/#activate=" + self.activation}
 
+        @app.post("/api/memory-graph")
+        async def graph(request: GraphInput) -> Response:
+            if self.memory_graph is None:
+                raise HTTPException(status_code=503, detail="memory_graph_unavailable")
+            return Response(await self.memory_graph(request), media_type="application/json")
+
         @app.post("/api/recall")
         async def recall(value: RecallSelection) -> RecallSelection:
             return await self.controls.configure_recall(value)
@@ -661,11 +675,13 @@ class BrowserControl:
             app.mount("/assets", StaticFiles(directory=self.assets / "assets"), name="assets")
 
             @app.get("/")
+            @app.get("/memory-graph")
             async def frontend() -> FileResponse:
                 return FileResponse(index)
         else:
 
             @app.get("/")
+            @app.get("/memory-graph")
             async def unavailable() -> JSONResponse:
                 return JSONResponse({"error": "frontend_setup_required"}, status_code=503)
 

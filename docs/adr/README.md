@@ -124,6 +124,9 @@ its remaining physical-microphone acceptance gate.
 The [mobile browser layout](../phase-8-mobile-ui.md) records responsive and semantic
 frontend changes and the outstanding real-device checks.
 
+The [memory graph](0015-phase-eight-implementation.md#memory-graph-browser) records
+operator access, canonical relationship visibility and the separate recall budgets.
+
 The [voice delivery recovery](../phase-8-voice-delivery-recovery.md) records the
 missing-receipt fix and LiveKit handle/task coupling.
 

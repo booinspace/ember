@@ -774,6 +774,7 @@ async def _run_room(
             control = BrowserControl(
                 hermes_chat=await _start_hermes_client(runtime),
                 dashboard=runtime.dashboard,
+                memory_graph=runtime.memory_graph,
                 task_router=task_router,
                 origin=config.browser.endpoint,
                 lan_origin=config.browser.public_origin
@@ -859,6 +860,7 @@ async def _run_text_browser(
         control = BrowserControl(
             hermes_chat=await _start_hermes_client(runtime),
             dashboard=runtime.dashboard,
+            memory_graph=runtime.memory_graph,
             task_router=task_router,
             origin=config.browser.endpoint,
             lan_origin=config.browser.public_origin

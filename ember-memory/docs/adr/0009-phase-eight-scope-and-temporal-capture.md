@@ -170,3 +170,12 @@ index schema is rewritten; existing generations need no rebuild. See
 [Root ADR 0015](../../../docs/adr/0015-phase-eight-implementation.md) and the
 [design](../../../docs/phase-8-word-recall.md). Historical performance reports need
 new measurements for the expanded ordinary candidate bound.
+
+## Memory graph browser
+
+The engine reads each graph page from a single canonical snapshot on the bounded
+deep worker. Current source selection, grants, temporal eligibility and suppression
+apply before the page limit. An explicit relationship needs visible current
+endpoints and permission to read its evidence. The operator sees extracted labels
+and relationship types without source excerpts. The graph defers to foreground
+recall and has no model or derived-index dependency.

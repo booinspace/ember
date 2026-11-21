@@ -442,6 +442,19 @@ short screens and exposes semantic names and microphone state. The
 [mobile design](../phase-8-mobile-ui.md) records synthetic browser checks and the
 remaining real-device acceptance. Runtime, memory and provider boundaries are unchanged.
 
+## Memory graph browser
+
+The workspace links to a read-only graph of the active character's current
+eligible memories. Composition connects the authenticated browser route to a
+bounded engine read without expanding the public ABI. See
+[Agent ADR 0006](../../ember-agent/docs/adr/0006-phase-eight-calendar-and-capture.md#memory-graph-browser)
+and [Memory ADR 0009](../../ember-memory/docs/adr/0009-phase-eight-scope-and-temporal-capture.md#memory-graph-browser).
+
+Hindsight's [link expansion](https://github.com/vectorize-io/hindsight/blob/80bd005fc2be5c9604a1a0c9741ea93d5ac85156/hindsight-api-slim/hindsight_api/engine/memories/pg/link_expansion.py)
+suggests a bounded one-hop candidate arm for ordinary recall. Evaluating that
+change would require recall-quality and latency measurements within the existing
+150 ms soft deadline. The graph is available independently of prompt packing.
+
 ## Voice delivery recovery
 
 The realtime owner reconciles a missing speech receipt only after fencing the

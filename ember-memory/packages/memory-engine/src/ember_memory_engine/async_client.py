@@ -7,6 +7,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from copy import copy
 from threading import Lock
+from time import monotonic
 from typing import cast
 
 from ember_memory_abi.common import (
@@ -53,6 +54,7 @@ from .character import SqliteMemoryStore
 from .database import check_deadline
 from .errors import EngineClosedError, WriteOutcomeUnknownError
 from .indexed_retrieval import IndexedRetriever
+from .memory_graph import GraphQuery, MemoryGraph, read_graph
 from .read_budget import ReadBudget, bounded_connection
 
 
@@ -169,6 +171,25 @@ class InProcessAsyncMemoryClient:
     def read_usage(self) -> ReadUsage:
         """Content-free metrics for this deep handle; ordinary handles have no meter."""
         return self._state.read_budget.usage() if self._state.read_budget else ReadUsage()
+
+    async def memory_graph(self, request: GraphQuery) -> MemoryGraph:
+        """Browse canonical connections on the bounded deep reader, yielding to dialogue."""
+        budget = ReadBudget(deadline=monotonic() + 1, rows=1024, materialized_bytes=2**20)
+        budget.foreground_busy = lambda: self._store.database.readers.pending > 0
+
+        def snapshot(connection: sqlite3.Connection) -> MemoryGraph:
+            try:
+                with budget.bind(connection):
+                    connection.execute("BEGIN")
+                    try:
+                        return read_graph(self._state, connection, request)
+                    finally:
+                        connection.rollback()
+            except sqlite3.Error as error:
+                budget.check()
+                raise SourceUnavailableError() from error
+
+        return await self._invoke(snapshot, deep=True)
 
     async def lookup_related(self, request: RelatedRequest) -> RelatedResponse:
         """Optional canonical lookup/validation; running work keeps worker ownership."""

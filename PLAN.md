@@ -5097,6 +5097,17 @@ retained LiveKit speech handle and linked SDK tasks before resolving missing
 receipts. It preserves delivered-prefix semantics; physical interruption
 acceptance remains open. Phase 8 remains in progress.
 
+### Memory graph browser
+
+The operator can browse the active character's current memories by kind, search
+extracted values, and explore stored relationships or shared entities. The
+existing React workspace serves the graph as a separate page. The memory engine
+owns the read through its bounded deep worker and applies recall eligibility
+and relationship evidence permissions on every request. Each page has up to 36
+memories. Neighborhoods show one hop and report truncation at the read limits.
+The profile subject is visible as an entity and does not expand neighborhoods.
+Browsing is independent of the conversation's recall, prompt, and reply budgets.
+
 ## Independent voice/UI amendment
 
 The operator requested CPU Phonon voice/speed controls and immediate browser reply
