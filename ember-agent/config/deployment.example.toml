@@ -86,10 +86,11 @@ endpoint = "http://127.0.0.1:8787"
 # Build ember-agent/frontend during setup, then point to its production dist directory.
 assets = "../frontend/dist"
 
-# Optional read-only OpenCode recall. Omit this section to keep it off.
-# See docs/opencode-memory.md for credential and SSH tunnel setup.
+# Optional OpenCode memory. Omit this section to keep the listener off.
+# See docs/opencode-memory.md for credentials, SSH forwarding, and local model privacy.
 # [memory_mcp]
 # port = 8790
+# write_enabled = false # Set true to allow short notes in the OpenCode library.
 
 [interpretation]
 # Independent of deep recall. Common calendar queries always resolve locally.

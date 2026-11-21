@@ -13,6 +13,13 @@ Source imports and model generation never call approval. An operator may propose
 library-owned candidate, review its exact evidence, explicitly approve it, and seed
 specified immutable knowledge revisions into existing independent characters.
 
+[Root ADR 0022](../../../docs/adr/0022-opencode-memory-recall.md) adds a separate
+runtime opt-in for delegated OpenCode notes. Only server-built notes in the
+reserved `OpenCode` library use this path; generic approve and seed still require
+`confirmed_user`. Delegated acceptance records its own policy and audit authority,
+never an exact-evidence human review. The engine reuses exact source spans, seed
+transactions, and suppression without granting archive search.
+
 The ABI already defines candidates, approvals, entities, evidence and origins. No
 provider, SQLite, bundle format or maintenance capability is added to the public ABI.
 

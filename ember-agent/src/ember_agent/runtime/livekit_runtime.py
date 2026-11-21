@@ -18,6 +18,7 @@ from livekit import api, rtc
 from pydantic import ValidationError
 
 from ember_memory_abi.common import timestamp_from_datetime
+from ember_memory_abi.errors import MemoryError
 from ember_memory_abi.related import ContextDependencies, RelatedRequest
 
 from ..inference.client import HttpGatewayClient
@@ -659,6 +660,12 @@ async def run_runtime(
 
             port = config.memory_mcp.port
             try:
+                write_note = None
+                if config.memory_mcp.write_enabled:
+                    try:
+                        write_note = await runtime.opencode_note_writer()
+                    except MemoryError as error:
+                        print(f"OpenCode memory writes unavailable: {error.info.code}")
                 await cleanup.enter_async_context(
                     serve_memory_mcp(
                         runtime.memory,
@@ -666,6 +673,7 @@ async def run_runtime(
                         port,
                         deep=runtime.deep,
                         timezone=config.recall_timezone,
+                        write_note=write_note,
                     )
                 )
             except (ConfigurationError, TimeoutError) as error:
@@ -675,6 +683,8 @@ async def run_runtime(
                 print(f"Memory MCP unavailable: {detail}")
             else:
                 print(f"Memory MCP ready on http://127.0.0.1:{port}/mcp")
+                if write_note is not None:
+                    print("OpenCode memory writes enabled for the OpenCode library.")
         binding = RoomBinding(
             instance_id=services.instance,
             character_id=runtime.memory.character_id,

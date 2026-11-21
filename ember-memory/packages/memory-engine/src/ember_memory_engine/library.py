@@ -1,4 +1,4 @@
-"""Explicit operator approval and independent character seeding; no model authority."""
+"""Operator approval, independent seeding, and scoped delegation for OpenCode notes."""
 
 import sqlite3
 from typing import Annotated
@@ -6,19 +6,33 @@ from uuid import UUID, uuid4
 
 from pydantic import Field
 
-from ember_memory_abi.archive import ProcessingSpecRef
+from ember_memory_abi.archive import (
+    ContentPart,
+    Document,
+    ImportCursor,
+    NormalizedArchiveBatch,
+    ProcessingSpecRef,
+)
 from ember_memory_abi.common import (
     CanonicalId,
     ContractModel,
     Revision,
     WireString,
     canonical_object_sha256,
+    timestamp_from_datetime,
 )
 from ember_memory_abi.errors import (
     AccessDeniedError,
     InvalidEvidenceError,
     NotFoundError,
     RevisionConflictError,
+)
+from ember_memory_abi.evidence import (
+    Evidence,
+    EvidenceAssertion,
+    SourceRef,
+    make_evidence_span,
+    source_text_sha256,
 )
 from ember_memory_abi.interfaces import MutationReceipt, RecordRevision
 from ember_memory_abi.memory import (
@@ -30,6 +44,7 @@ from ember_memory_abi.memory import (
     EpisodePayload,
     FactPayload,
     Memory,
+    MemoryContent,
     MemoryDraft,
     OriginMapping,
     PlanPayload,
@@ -40,14 +55,17 @@ from ember_memory_abi.predicates import (
     phase_seven_predicates,
     validate_memory_write,
 )
-from ember_memory_abi.temporal import TemporalMetadata
+from ember_memory_abi.temporal import SourceTimestamp, TemporalBounds, TemporalMetadata
 
 from .database import load_model, model_bytes, payload_hash, row_int, row_text
 from .engine import CanonicalEngine
-from .errors import IdempotencyConflictError
-from .models import MutationAuthority
+from .errors import CorruptStoreError, IdempotencyConflictError
+from .models import MutationAuthority, SourceKey
 from .source_access import source_keys
 from .specifications import specification_rows
+
+OPENCODE_LIBRARY = "OpenCode"
+OPENCODE_NOTE_CHARS = 512
 
 
 class ApprovalRequest(ContractModel):
@@ -131,13 +149,152 @@ class LibraryService:
             raise AccessDeniedError()
         self.engine.put_owned_entity(library_id, entity)
 
-    def approve(self, library_id: CanonicalId, request: ApprovalRequest) -> ApprovedKnowledge:
-        """Validate exact evidence and persist an immutable, manually approved snapshot.
+    def ensure_opencode_library(self) -> CanonicalId:
+        """Provision the reserved library through the runtime's serialized owner."""
+        if self.authority.mode != "opencode_notes":
+            raise AccessDeniedError()
+        library = next(
+            (
+                info
+                for info in self.engine.stores()
+                if info.kind == "library" and info.namespace == OPENCODE_LIBRARY
+            ),
+            None,
+        ) or self.engine.create_library(OPENCODE_LIBRARY)
+        self.engine.maintenance_store(library.store_id)
+        return library.store_id
 
-        Source import never calls this. Candidate, approval, receipt and audit commit
-        together; equal key/input replays, and altered content fails closed.
-        """
+    def save_opencode_note(self, character_id: CanonicalId, note: str) -> MutationReceipt:
+        """Append an attributed note to the fixed library and adopt it into this character."""
+        if self.authority.mode != "opencode_notes":
+            raise AccessDeniedError()
+        note = note.strip()
+        if not 1 <= len(note) <= OPENCODE_NOTE_CHARS or not note.isprintable():
+            raise ValueError("Expected a short, single-line OpenCode note.")
+        character = self.engine.character(character_id)
+        library_id = self.ensure_opencode_library()
+        writer = self.engine.archive(library_id)
+        digest = canonical_object_sha256({"character": str(character_id), "note": note})
+        key = SourceKey(adapter="opencode_note", record_kind="document", external_id=digest)
+        assigned = writer.prepare_keys((key,))
+        record_id = assigned[0].record_id
+        existing = writer.latest_record("document", record_id)
+        if existing is not None and not isinstance(existing, Document):
+            raise CorruptStoreError()
+        stamp = timestamp_from_datetime(self.engine.clock.now())
+        document = (
+            existing
+            if existing is not None
+            else Document(
+                source=SourceRef(
+                    source_store_id=library_id,
+                    record_kind="document",
+                    record_id=record_id,
+                    record_revision=1,
+                ),
+                recorded_at=stamp,
+                title="Delegated OpenCode session note",
+                created_time=SourceTimestamp(value=stamp, basis="opencode_note_received"),
+                parts=(
+                    ContentPart(
+                        part_id=uuid4(),
+                        kind="text",
+                        status="available",
+                        text=note,
+                        content_sha256=source_text_sha256(note),
+                    ),
+                ),
+            )
+        )
+        if len(document.parts) != 1 or document.parts[0].text != note:
+            raise IdempotencyConflictError()
+        # A replay uses the stored record and original clocks rather than rebuilding a source.
+        if existing is None:
+            writer.write_batch(
+                NormalizedArchiveBatch(
+                    source_store_id=library_id,
+                    source_namespace=OPENCODE_LIBRARY,
+                    idempotency_key="opencode-note:" + digest,
+                    processing_spec=ProcessingSpecRef(
+                        name="ember.opencode_note",
+                        version="0.1.0",
+                        specification_sha256=canonical_object_sha256(
+                            {"policy": "delegated-opencode-note-v1"}
+                        ),
+                    ),
+                    records=(document,),
+                    resume_cursor=ImportCursor(
+                        logical_inventory_sha256=digest,
+                        component_sha256=digest,
+                        next_record_index=1,
+                        adapter="opencode_note",
+                        adapter_version="0.1.0",
+                    ),
+                ),
+                keys=assigned,
+            )
+        part = document.parts[0]
+        observed_at = document.created_time.value
+        if observed_at is None:
+            raise CorruptStoreError()
+        candidate = CandidateMemory(
+            candidate_id=record_id,
+            owner_store_id=library_id,
+            revision=1,
+            recorded_at=observed_at,
+            draft=MemoryDraft(
+                temporal=TemporalBounds(observed_at=observed_at, basis="opencode_note_received"),
+                content=MemoryContent(
+                    kind="episode",
+                    payload=EpisodePayload(event=note),
+                    modality="BELIEF",
+                    confidence=0.5,
+                    importance=0.7,
+                    evidence=(
+                        EvidenceAssertion(
+                            evidence=Evidence(
+                                evidence_id=part.part_id,
+                                source=document.source.model_copy(update={"part_id": part.part_id}),
+                                span=make_evidence_span(note, 0, len(note)),
+                            ),
+                            relation="supports",
+                            modality="BELIEF",
+                            authority="delegated_opencode",
+                            verdict="delegated_note",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        approved = self._approve(
+            library_id,
+            ApprovalRequest(idempotency_key="opencode-note:" + digest, candidate=candidate),
+        )
+        receipt = self._seed(
+            character_id,
+            SeedRequest(
+                idempotency_key="opencode-note:" + digest,
+                library_id=library_id,
+                selections=(
+                    KnowledgeSelection(
+                        knowledge_id=approved.knowledge_id, revision=approved.revision
+                    ),
+                ),
+            ),
+        )
+        # A replay must not report a forgotten note as newly saved or resurrect it.
+        memory = character.get(receipt.affected[0].memory_id)
+        if memory.lifecycle != "active":
+            raise AccessDeniedError()
+        return receipt
+
+    def approve(self, library_id: CanonicalId, request: ApprovalRequest) -> ApprovedKnowledge:
+        """Validate exact evidence and persist an immutable, manually approved snapshot."""
         self._authorize()
+        return self._approve(library_id, request)
+
+    def _approve(self, library_id: CanonicalId, request: ApprovalRequest) -> ApprovedKnowledge:
+        delegated = self.authority.mode == "opencode_notes"
         request = ApprovalRequest.model_validate_json(request.model_dump_json())
         info, database = self.engine.maintenance_store(library_id)
         if info.kind != "library" or request.candidate.owner_store_id != library_id:
@@ -146,10 +303,15 @@ class LibraryService:
             raise AccessDeniedError()
         digest = canonical_object_sha256(request)
         candidate = request.candidate
+        operation = "accept_opencode_note" if delegated else "approve"
+        policy = "delegated-opencode-note-v1" if delegated else "exact-evidence-human-review-v1"
+        reason = (
+            "operator_enabled_opencode_notes" if delegated else "operator_reviewed_exact_evidence"
+        )
 
         def write(connection: sqlite3.Connection) -> ApprovedKnowledge:
             with database.transaction(connection):
-                replay = _receipt(connection, request.idempotency_key, "approve", digest)
+                replay = _receipt(connection, request.idempotency_key, operation, digest)
                 if replay is not None:
                     return ApprovedKnowledge.model_validate_json(replay)
                 validate_memory_write(
@@ -209,16 +371,16 @@ class LibraryService:
                     recorded_at=stamp,
                     approval=ValidationVerdict(
                         policy=ProcessingSpecRef(
-                            name="ember.manual_library_approval",
+                            name="ember.opencode_note"
+                            if delegated
+                            else "ember.manual_library_approval",
                             version="0.1.0",
-                            specification_sha256=canonical_object_sha256(
-                                {"policy": "exact-evidence-human-review-v1"}
-                            ),
+                            specification_sha256=canonical_object_sha256({"policy": policy}),
                         ),
                         verdict="approved",
-                        reasons=("operator_reviewed_exact_evidence",),
+                        reasons=(reason,),
                         evaluated_at=stamp,
-                        manual_override=True,
+                        manual_override=not delegated,
                     ),
                 )
                 for table, snapshot in (
@@ -250,16 +412,16 @@ class LibraryService:
                         (str(approved.knowledge_id), approved.revision, str(identity), revision),
                     )
                 _save_receipt(
-                    connection, request.idempotency_key, "approve", digest, model_bytes(approved)
+                    connection, request.idempotency_key, operation, digest, model_bytes(approved)
                 )
                 connection.execute(
                     "INSERT INTO audit_events VALUES(?,?,?,?,?)",
                     (
                         str(uuid4()),
-                        "approve_library",
+                        "accept_opencode_note" if delegated else "approve_library",
                         str(approved.knowledge_id),
                         recorded,
-                        "confirmed_user",
+                        self.authority.mode,
                     ),
                 )
                 return approved
@@ -322,6 +484,9 @@ class LibraryService:
         checked after remapping, including origin dependencies, before commit.
         """
         self._authorize()
+        return self._seed(character_id, request)
+
+    def _seed(self, character_id: CanonicalId, request: SeedRequest) -> MutationReceipt:
         request = SeedRequest.model_validate_json(request.model_dump_json())
         if len({item.knowledge_id for item in request.selections}) != len(request.selections):
             raise ValueError("Duplicate seed selection.")
@@ -465,7 +630,7 @@ class LibraryService:
                 )
                 connection.execute(
                     "INSERT INTO audit_events VALUES(?,?,?,?,?)",
-                    (str(operation), "seed", None, recorded, "confirmed_user"),
+                    (str(operation), "seed", None, recorded, self.authority.mode),
                 )
                 return receipt
 

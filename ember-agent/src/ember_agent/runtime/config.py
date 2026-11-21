@@ -253,9 +253,10 @@ class HermesClientSettings(RuntimeModel):
 
 
 class MemoryMCPSettings(RuntimeModel):
-    """Opt-in read-only listener; host and credential location are not configurable."""
+    """Opt-in listener with separately enabled, fixed-destination note writes."""
 
     port: Annotated[int, Field(ge=1024, le=65535)] = 8790
+    write_enabled: bool = False
 
 
 class DeploymentConfig(RuntimeModel):

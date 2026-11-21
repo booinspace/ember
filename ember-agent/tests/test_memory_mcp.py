@@ -38,6 +38,10 @@ def test_memory_mcp_config_is_opt_in_and_loopback_only(tmp_path: Path) -> None:
     deployment.write_text(example + "\n[memory_mcp]\nport = 8791\n", encoding="utf-8")
     config = load_config(deployment)
     assert config.memory_mcp is not None and config.memory_mcp.port == 8791
+    assert not config.memory_mcp.write_enabled
+    deployment.write_text(example + "\n[memory_mcp]\nwrite_enabled = true\n", encoding="utf-8")
+    enabled = load_config(deployment).memory_mcp
+    assert enabled is not None and enabled.write_enabled
     deployment.write_text(example + '\n[memory_mcp]\nhost = "0.0.0.0"\n', encoding="utf-8")
     with pytest.raises(ConfigurationError):
         load_config(deployment)

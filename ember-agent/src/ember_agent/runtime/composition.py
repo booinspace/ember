@@ -1,7 +1,7 @@
 """Only local composition constructs concrete memory; character and adapters receive contracts."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from functools import partial
@@ -11,6 +11,7 @@ from uuid import uuid4
 from pydantic import UUID4, ValidationError
 
 from ember_memory_abi.errors import MemoryError
+from ember_memory_abi.interfaces import MutationReceipt
 from ember_memory_abi.selection import RecallSelection
 from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
@@ -19,6 +20,7 @@ from ember_memory_engine.capture import CaptureService, CaptureSettings
 from ember_memory_engine.deep_profile import DeepSources
 from ember_memory_engine.embedding import BgeEncoder
 from ember_memory_engine.errors import EmbeddingError
+from ember_memory_engine.library import LibraryService
 from ember_memory_engine.memory_graph import GraphQuery
 from ember_memory_engine.processing_contracts import (
     ExtractionSpec,
@@ -315,6 +317,23 @@ class LocalRuntime:
             self.memory.character_id, authority=MutationAuthority(mode="confirmed_user")
         )
         return await asyncio.wrap_future(self.pool.submit(store.configure_recall, value))
+
+    async def opencode_note_writer(self) -> Callable[[str], Awaitable[MutationReceipt]]:
+        """Prepare one delegated writer, bound to the current character and runtime worker."""
+        service = LibraryService(self.engine, authority=MutationAuthority(mode="opencode_notes"))
+        await asyncio.wrap_future(self.pool.submit(service.ensure_opencode_library))
+        save = partial(service.save_opencode_note, self.memory.character_id)
+
+        async def write(note: str) -> MutationReceipt:
+            future = asyncio.wrap_future(self.pool.submit(save, note))
+            try:
+                return await asyncio.shield(future)
+            except asyncio.CancelledError:
+                # Keep MCP admission held until the accepted write drains.
+                await asyncio.shield(future)
+                raise
+
+        return write
 
     async def remember(self, key: str, text: str) -> str:
         """Explicit human entry shared by terminal and room composition; never model-invoked."""

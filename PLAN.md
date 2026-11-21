@@ -5332,10 +5332,11 @@ coverage. Autonomous skill learning is a separate future reviewed amendment.
 Phase 13 still owns cancellation/release and realtime/background scheduling;
 this amendment must not misrepresent subscriber cancellation as GPU release.
 
-## OpenCode memory recall amendment
+## OpenCode memory amendment
 
-[Root ADR 0022](docs/adr/0022-opencode-memory-recall.md) records the opt-in,
-loopback-only read adapter for the active character's ordinary and deep recall.
-Deep MCP returns bounded claims, not raw archive or evidence excerpts. This does
-not add a memory owner, schema change, or mutation surface and does not advance
-Phases 12 or 13. See the [runbook](docs/opencode-memory.md) for deployment.
+[Root ADR 0022](docs/adr/0022-opencode-memory-recall.md) records the private
+loopback MCP listener. Both reads return bounded, eligible claims from the active
+character, not archive excerpts. Separate opt-in delegates short, append-only note
+writes to the canonical `OpenCode` library, with ordinary seed and recall policy.
+No new owner, schema change, or Phase 12/13 advancement. See the
+[runbook](docs/opencode-memory.md) for deployment.
