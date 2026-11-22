@@ -335,6 +335,12 @@ class OpenAIStreamUpstream:
     async def _attest(self) -> tuple[str, str]:
         raise NotImplementedError
 
+    def _request_options(self, request: GatewayRequest) -> dict[str, JsonValue]:
+        return {}
+
+    async def _check_generation_status(self, response: httpx.Response) -> None:
+        response.raise_for_status()
+
     async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
         """Translate OpenAI deltas without completing before terminal usage and DONE."""
         if self._instance_id is None:
@@ -385,6 +391,7 @@ class OpenAIStreamUpstream:
                 _JSON.validate_python(tool.model_dump(mode="json")) for tool in request.tools
             ]
             body["tool_choice"] = "auto"
+        body.update(self._request_options(request))
         names: dict[int, str] = {}
         tool_size = 0
         identifier: str | None = None
@@ -397,7 +404,7 @@ class OpenAIStreamUpstream:
             async with self.client.stream(
                 "POST", "/v1/chat/completions", json=body, headers=self._headers()
             ) as response:
-                response.raise_for_status()
+                await self._check_generation_status(response)
                 _identity_encoding(response)
                 if response.headers.get("content-type", "").split(";", 1)[0] != "text/event-stream":
                     raise GatewayError("invalid_upstream_stream")

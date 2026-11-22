@@ -469,11 +469,14 @@ class RuntimeServices:
             ready_file = private / "ready.json"
             token = secrets.token_urlsafe(32)
             print("Loading Strata model.", flush=True)
+            entrypoint = [settings.server_script]
+            if self.config.inference.coding_api:
+                entrypoint.insert(0, str(Path(__file__).with_name("strata_coding_runner.py")))
             child = await self._spawn_strata_child(
                 [
                     settings.python_executable,
                     "-I",
-                    settings.server_script,
+                    *entrypoint,
                     "--engine",
                     "strata",
                     "--config",

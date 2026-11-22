@@ -39,6 +39,14 @@ def sse(value: dict[str, JsonValue]) -> bytes:
 
 def openai_error(code: str) -> dict[str, JsonValue]:
     """Return only fixed, content-free gateway diagnostics."""
+    if code == "prompt_overflow":
+        return {
+            "error": {
+                "message": "The prompt exceeds the context window. Shorten the conversation.",
+                "type": "invalid_request_error",
+                "code": "context_length_exceeded",
+            }
+        }
     return {"error": {"message": code, "type": "gateway_error", "code": code}}
 
 
@@ -217,10 +225,10 @@ class OpenAIModelBridge:
         self.config = config
         self.coding = coding
         self.output_limit = min(config.output_reserve_tokens, 8192 if coding else 1192)
-        self.input_limit = min(
-            config.max_input_tokens,
-            config.context_tokens - max(1192, config.output_reserve_tokens if coding else 1192),
-            config.context_tokens if coding else 16384,
+        self.input_limit = (
+            config.max_input_tokens
+            if coding and config.inference.backend == "strata"
+            else min(config.max_input_tokens, config.context_tokens - 1192, 16384)
         )
         self.context_id = context_id
         self.deadline = datetime.fromisoformat(deadline_at.replace("Z", "+00:00"))
@@ -347,7 +355,10 @@ class OpenAIModelBridge:
                 allow_nan=False,
             )
             cost = len(serialized.encode()) + 512 + 64 * len(request.messages)
-            if cost > self.input_limit:
+            if (
+                not (self.coding and self.config.inference.backend == "strata")
+                and cost > self.input_limit
+            ):
                 raise GatewayError("prompt_overflow")
             self.last_input_units = cost
             return value, request

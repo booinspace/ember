@@ -5250,6 +5250,10 @@ bounded completion requests cross to the loopback gateway. The gateway owns one
 native generation at a time, prefers queued voice/text work, and allows coding
 work during an idle realtime reservation without relaxing background admission.
 Coding receives no character context, memory, tools to execute, or lifecycle authority.
+Strata counts coding prompts after rendering the chat template, including tools
+and message history, and enforces the configured input budget before generation.
+An oversized coding prompt returns `context_length_exceeded` and leaves the
+gateway ready for the next request.
 
 ### Hermes integration simplification — 4 November 2026
 

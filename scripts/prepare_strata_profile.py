@@ -85,10 +85,7 @@ def main() -> None:
         },
         "services.tts": {"mode": "disabled"},
         "gateway": {"endpoint": "http://127.0.0.1:18111"},
-        "browser": {
-            "assets": "../../ember-agent/frontend/dist",
-            "endpoint": "http://127.0.0.1:18787",
-        },
+        "browser": {"assets": "../../ember-agent/frontend/dist"},
         "inference": {"backend": "strata"},
         "inference.strata": {
             "endpoint": "http://127.0.0.1:18110",

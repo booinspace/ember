@@ -55,6 +55,7 @@ def test_prepare_strata_on_fresh_checkout(tmp_path: Path) -> None:
     deployment = tmp_path / ".local/config/deployment.strata.toml"
     config = load_config(deployment, require_model_pin=True)
     assert config.context_tokens == 131072
+    assert config.browser.endpoint == "http://127.0.0.1:8787"
     assert config.inference.strata is not None
     prepare_strata_config(config, config.inference.strata, tmp_path / "verified.json")
     old = deployment.read_bytes()

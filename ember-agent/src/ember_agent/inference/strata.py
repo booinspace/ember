@@ -4,11 +4,13 @@ import os
 import re
 
 import httpx
-from pydantic import ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from ..runtime.config import DeploymentConfig
-from .contracts import GatewayError
+from .contracts import GatewayError, GatewayRequest, UpstreamPromptOverflow
 from .vllm import OpenAIStreamUpstream
+
+_REJECTION = TypeAdapter(dict[str, dict[str, str]])
 
 
 class StrataUpstream(OpenAIStreamUpstream):
@@ -23,6 +25,36 @@ class StrataUpstream(OpenAIStreamUpstream):
             raise GatewayError("upstream_configuration_mismatch")
         super().__init__(config, settings.endpoint, client)
         self.settings = settings
+
+    def _request_options(self, request: GatewayRequest) -> dict[str, JsonValue]:
+        if request.workload != "P5":
+            return {}
+        return {"ember_coding_input_limit": self.config.max_input_tokens}
+
+    async def _check_generation_status(self, response: httpx.Response) -> None:
+        if (
+            response.status_code == 400
+            and response.headers.get("content-encoding", "identity") == "identity"
+        ):
+            body = bytearray()
+            async for chunk in response.aiter_raw():
+                if len(body) + len(chunk) > 1024:
+                    break
+                body.extend(chunk)
+            else:
+                try:
+                    failure = _REJECTION.validate_json(body)
+                except ValidationError:
+                    pass
+                else:
+                    if failure == {
+                        "error": {
+                            "type": "invalid_request_error",
+                            "message": "ember_coding_context_length_exceeded",
+                        }
+                    }:
+                        raise UpstreamPromptOverflow()
+        response.raise_for_status()
 
     async def _attest(self) -> tuple[str, str]:
         try:

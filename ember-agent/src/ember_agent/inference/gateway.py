@@ -21,6 +21,7 @@ from .contracts import (
     GatewayRequest,
     GenerationUsage,
     ToolCall,
+    UpstreamPromptOverflow,
 )
 from .upstream import NativeFrame, NativeTool, Upstream
 from .visible import VisibleText
@@ -169,11 +170,14 @@ class P0Gateway:
         deadline = datetime.fromisoformat(request.deadline_at.replace("Z", "+00:00"))
         if deadline <= datetime.now(UTC):
             raise GatewayError("deadline_exceeded")
-        reserve = max(1192, self.config.output_reserve_tokens)
+        native_budget = request.workload == "P5" and self.config.inference.backend == "strata"
+        reserve = self.config.output_reserve_tokens
+        if not native_budget:
+            reserve = max(1192, reserve)
         if request.max_output_tokens > reserve:
             raise GatewayError("output_budget_exceeded")
         ceiling = min(self.config.max_input_tokens, self.config.context_tokens - reserve)
-        if self.input_cost(request) > ceiling or request.max_output_tokens > reserve:
+        if not native_budget and self.input_cost(request) > ceiling:
             raise GatewayError("prompt_overflow")
         if request.request_id in self.used_ids:
             raise GatewayError("duplicate_request")
@@ -259,8 +263,10 @@ class P0Gateway:
             return
         if self._foreground_waiters:
             return
-        if self._live_job() is None and not self.pending["P5"] and (
-            self.sessions or not any(self.pending[name] for name in ("P2", "P3", "P4"))
+        if (
+            self._live_job() is None
+            and not self.pending["P5"]
+            and (self.sessions or not any(self.pending[name] for name in ("P2", "P3", "P4")))
         ):
             return
         self.dispatcher = asyncio.create_task(self._dispatch(), name="ember-background-dispatch")
@@ -486,9 +492,11 @@ class P0Gateway:
                 except GatewayError:
                     self.uncertain = True
                     raise
-                if frame.prompt_eval_count > min(
-                    self.config.max_input_tokens, self.config.context_tokens - 1192
-                ):
+                # The Strata coding guard measures the prompt with its actual output reserve.
+                input_limit = self.config.max_input_tokens
+                if request.workload != "P5" or self.config.inference.backend != "strata":
+                    input_limit = min(input_limit, self.config.context_tokens - 1192)
+                if frame.prompt_eval_count > input_limit:
                     self.uncertain = True
                     raise GatewayError("upstream_budget_mismatch")
                 if frame.eval_count > request.max_output_tokens:
@@ -551,7 +559,7 @@ class P0Gateway:
             job.emit("error", code="shutdown_outcome_unknown")
             raise
         except Exception as error:
-            if not complete:
+            if not complete and not isinstance(error, UpstreamPromptOverflow):
                 self.uncertain = True
             if self.record:
                 try:

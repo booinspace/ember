@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,9 +26,21 @@ from ember_agent.inference.gateway import P0Gateway
 from ember_agent.inference.ollama import OllamaUpstream
 from ember_agent.inference.openai_bridge import OpenAIModelBridge
 from ember_agent.inference.service import create_app
-from ember_agent.inference.upstream import NativeFrame, NativeFunction, NativeMessage, NativeTool
+from ember_agent.inference.strata import StrataUpstream
+from ember_agent.inference.upstream import (
+    NativeFrame,
+    NativeFunction,
+    NativeMessage,
+    NativeTool,
+    Upstream,
+)
 from ember_agent.runtime.coding_api import coding_routes
-from ember_agent.runtime.config import DeploymentConfig, load_config
+from ember_agent.runtime.config import (
+    DeploymentConfig,
+    InferenceSettings,
+    StrataSettings,
+    load_config,
+)
 
 _EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
 
@@ -155,7 +168,7 @@ class _Upstream:
 
 
 def _bridge(
-    config: DeploymentConfig, upstream: _Upstream
+    config: DeploymentConfig, upstream: Upstream
 ) -> tuple[OpenAIModelBridge, P0Gateway, HttpGatewayClient]:
     gateway = P0Gateway(config, upstream)
     client = HttpGatewayClient(
@@ -305,6 +318,132 @@ def test_bridge_uses_real_gateway_p2_admission_and_server_owned_identity(tmp_pat
         assert request.model == config.model_tag and not request.thinking
         await gateway.aclose()
         await client.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_strata_coding_context_uses_native_tokens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bool
+) -> None:
+    async def run() -> None:
+        config = _config(tmp_path)
+        settings = StrataSettings(
+            endpoint="http://127.0.0.1:18110",
+            python_executable=sys.executable,
+            server_script=str(tmp_path / "server.py"),
+            runner_config=str(tmp_path / "runner.json"),
+            runner_config_sha256="a" * 64,
+        )
+        config = config.model_copy(
+            update={
+                "context_tokens": 131072,
+                "max_input_tokens": 126976,
+                "output_reserve_tokens": 4096,
+                "inference": InferenceSettings(backend="strata", strata=settings, coding_api=True),
+            }
+        )
+        instance = "b" * 32
+        monkeypatch.setenv("EMBER_STRATA_INSTANCE_ID", instance)
+        monkeypatch.setenv("EMBER_STRATA_API_KEY", "synthetic")
+        content = "long fixture line\n" * 4800
+        messages = [{"role": "user", "content": content}, {"role": "user", "content": content}]
+        assert len(json.dumps(messages).encode()) > config.max_input_tokens
+        completion_calls = 0
+
+        def json_response(status: int, body: dict[str, object]) -> httpx.Response:
+            return httpx.Response(status, stream=httpx.ByteStream(json.dumps(body).encode()))
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            nonlocal completion_calls
+            if request.url.path == "/v1/status":
+                return json_response(
+                    200,
+                    {
+                        "service": "strata",
+                        "loaded": True,
+                        "model": config.model_tag,
+                        "context": {"native": 131072},
+                    },
+                )
+            if request.url.path == "/v1/telemetry":
+                return json_response(200, {"instance": {"id": instance}})
+            assert request.url.path == "/v1/chat/completions"
+            body = json.loads(request.content)
+            assert body["messages"] == messages
+            assert body["ember_coding_input_limit"] == 126976
+            assert body["max_completion_tokens"] == 4096
+            completion_calls += 1
+            if completion_calls == 1:
+                return json_response(
+                    400,
+                    {
+                        "error": {
+                            "type": "invalid_request_error",
+                            "message": "ember_coding_context_length_exceeded",
+                        }
+                    },
+                )
+            base = {"id": "fixture", "object": "chat.completion.chunk", "model": config.model_tag}
+            chunks = [
+                {"choices": [{"index": 0, "delta": {"content": "Yes"}, "finish_reason": None}]},
+                {
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    "usage": {
+                        "prompt_tokens": 126976,
+                        "completion_tokens": 1,
+                        "total_tokens": 126977,
+                    },
+                },
+            ]
+            text = "".join(f"data: {json.dumps(base | chunk)}\n\n" for chunk in chunks)
+            return httpx.Response(
+                200,
+                stream=httpx.ByteStream((text + "data: [DONE]\n\n").encode()),
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        upstream = StrataUpstream(
+            config,
+            httpx.AsyncClient(base_url=settings.endpoint, transport=httpx.MockTransport(respond)),
+        )
+        bridge, gateway, client = _bridge(config, upstream)
+        app = FastAPI()
+        app.include_router(coding_routes(config, client, "separate-key"))
+        body = {
+            "model": config.model_tag,
+            "messages": messages,
+            "stream": stream,
+            "stream_options": {"include_usage": True},
+        }
+        route = "/coding/v1/chat/completions"
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://127.0.0.1",
+                headers={"Authorization": "Bearer separate-key"},
+            ) as lan:
+                refused = await lan.post(route, json=body)
+                assert refused.status_code == (200 if stream else 400)
+                assert "context_length_exceeded" in refused.text
+                assert "ember_coding_context_length_exceeded" not in refused.text
+                assert not gateway.uncertain
+
+                accepted = await lan.post(route, json=body)
+                assert accepted.status_code == 200
+                if stream:
+                    assert '"prompt_tokens": 126976' in accepted.text
+                    assert "data: [DONE]" in accepted.text
+                else:
+                    assert accepted.json()["usage"]["prompt_tokens"] == 126976
+                assert completion_calls == 2
+
+            with pytest.raises(GatewayError, match="prompt_overflow"):
+                await bridge.complete(body)
+            assert completion_calls == 2
+        finally:
+            await client.aclose()
+            await gateway.aclose()
 
     asyncio.run(run())
 
