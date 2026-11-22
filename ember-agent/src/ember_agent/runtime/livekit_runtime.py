@@ -21,6 +21,7 @@ from pydantic import ValidationError
 from ember_memory_abi.errors import MemoryError
 from ember_memory_abi.related import ContextDependencies, RelatedRequest
 
+from ..character.core import ConversationTask
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
@@ -155,17 +156,17 @@ async def _start_tasks(
         return await router.submit_turn(text, turn_id, operation="recall")
 
     runtime.core.task_tools = {
-        "inspect_user_text": (
+        "inspect_user_text": ConversationTask(
             "When the user requests a word count, queue text quoted exactly by the user.",
             router.submit_turn,
         ),
-        "investigate_memory": (
+        "investigate_memory": ConversationTask(
             "When the user requests a deep memory investigation, queue their exact query.",
             investigate,
         ),
     }
     if summary is not None:
-        runtime.core.task_tools["summarize_user_text"] = (
+        runtime.core.task_tools["summarize_user_text"] = ConversationTask(
             "When the user requests a summary, queue text quoted exactly by the user.",
             summarize,
         )
@@ -174,10 +175,13 @@ async def _start_tasks(
         async def delegate_task(text: str, turn_id: UUID) -> str:
             return await router.submit_turn(text, turn_id, operation="delegate")
 
-        runtime.core.task_tools["delegate_task"] = (
-            "Queue an explicit request for read-only investigation in the configured workspace. "
-            "Quote the user's goal exactly. Model steps wait while voice is connected.",
+        runtime.core.task_tools["delegate_task"] = ConversationTask(
+            "Use only for explicit read-only inspection of synthetic workspace files. "
+            "Never use for secrets, private data, writing files, running commands, or hosting. "
+            "Call with an empty object. Ember forwards the entire current user message and "
+            "reports whether it queued. Do not announce a queue or promise success yourself.",
             delegate_task,
+            use_current_turn=True,
         )
     runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)

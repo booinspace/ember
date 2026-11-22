@@ -10,7 +10,7 @@ from uuid import UUID
 import pytest
 from livekit.agents import llm
 
-from ember_agent.character.core import CharacterCore, Personality, prompt_cost
+from ember_agent.character.core import CharacterCore, ConversationTask, Personality, prompt_cost
 from ember_agent.inference.contracts import (
     GatewayError,
     GatewayEvent,
@@ -389,14 +389,27 @@ def test_text_composition_human_entry_and_stable_identity(
 
 
 @pytest.mark.parametrize(
-    "name, trigger", [("inspect_user_text", "count"), ("investigate_memory", "investigate")]
-)
-@pytest.mark.parametrize(
-    "value, allowed, advertised",
-    [("hello world", True, True), ("invented text", False, True), ("hello world", False, False)],
+    ("name", "user", "value", "allowed", "advertised"),
+    [
+        ("inspect_user_text", "Please count hello world", "hello world", True, True),
+        ("inspect_user_text", "Please count hello world", "invented text", False, True),
+        ("investigate_memory", "Investigate hello world", "hello world", True, True),
+        ("investigate_memory", "Investigate hello world", "invented text", False, True),
+        ("investigate_memory", "Investigate hello world", "hello world", False, False),
+        (
+            "delegate_task",
+            "Find the line mentioning ‘video error’ in fixture.txt.",
+            None,
+            True,
+            True,
+        ),
+        ("delegate_task", "Read fixture.txt", "text from earlier turns", False, True),
+        ("delegate_task", "Read fixture.txt", None, False, False),
+        ("delegate_task", "Read " + "x" * 1600, None, False, False),
+    ],
 )
 def test_model_selected_task_is_bound_to_user_text(
-    tmp_path: Path, value: str, allowed: bool, advertised: bool, name: str, trigger: str
+    tmp_path: Path, name: str, user: str, value: str | None, allowed: bool, advertised: bool
 ) -> None:
     from dataclasses import replace
     from uuid import uuid4
@@ -406,6 +419,13 @@ def test_model_selected_task_is_bound_to_user_text(
     class ToolModel:
         async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
             assert bool(request.tools) is advertised
+            if advertised and name == "delegate_task":
+                assert request.tools[0].function.parameters == {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False,
+                }
             yield GatewayEvent(
                 request_id=request.request_id,
                 context_id=request.context_id,
@@ -417,7 +437,13 @@ def test_model_selected_task_is_bound_to_user_text(
                 context_id=request.context_id,
                 sequence=1,
                 kind="tools",
-                calls=(ToolCall(call_id=uuid4(), name=name, arguments={"text": value}),),
+                calls=(
+                    ToolCall(
+                        call_id=uuid4(),
+                        name=name,
+                        arguments={} if value is None else {"text": value},
+                    ),
+                ),
             )
             yield GatewayEvent(
                 request_id=request.request_id,
@@ -445,15 +471,18 @@ def test_model_selected_task_is_bound_to_user_text(
                 submitted.append(text)
                 return "Queued."
 
-            core.task_tools[name] = ("Queue a task.", submit)
+            current_turn = name == "delegate_task"
+            core.task_tools[name] = ConversationTask(
+                "Queue a task.", submit, use_current_turn=current_turn
+            )
             try:
-                turn = await core.prepare(f"Please {trigger} hello world for me")
-                if not advertised:
+                turn = await core.prepare(user)
+                if not advertised and len(user) <= 1600:
                     turn = replace(turn, request=turn.request.model_copy(update={"tools": ()}))
                 if allowed:
                     events = [event async for event in core.stream(turn)]
                     assert "".join(event.text for event in events) == "Queued."
-                    assert submitted == [value]
+                    assert submitted == [user if current_turn else value]
                 else:
                     with pytest.raises(
                         GatewayError,

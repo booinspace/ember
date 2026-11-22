@@ -12,7 +12,10 @@ import httpx
 import pytest
 from pydantic import JsonValue
 
+from ember_agent.character.core import CharacterCore, ConversationTask
+from ember_agent.inference.client import HttpGatewayClient
 from ember_agent.inference.contracts import GatewayRequest
+from ember_agent.inference.service import create_app
 from ember_agent.inference.upstream import NativeFrame, NativeFunction, NativeMessage, NativeTool
 from ember_agent.runtime.config import HarnessSettings
 from ember_agent.runtime.harness import open_harness
@@ -24,6 +27,8 @@ from ember_agent.runtime.task_router import (
     ToolRouter,
 )
 from ember_agent.runtime.task_store import TaskConflict, TaskSnapshot
+from ember_memory_engine import CanonicalEngine
+from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 
 from .test_openai_bridge import _bridge, _config, _Upstream
 
@@ -128,9 +133,17 @@ def test_installed_opencode_runs_and_revokes_read_only_tasks(tmp_path: Path) -> 
     external = tmp_path / "outside.txt"
     external.write_text("not-in-workspace", encoding="utf-8")
 
+    chat_goal = "Please find the contents of both pin files in the workspace."
+
     class FixtureUpstream(_Upstream):
         async def generate(self, request: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
             self.requests.append(request)
+            if request.workload == "P0":
+                assert request.messages[-1].content == chat_goal
+                assert [tool.function.name for tool in request.tools] == ["delegate_task"]
+                yield _call("delegate_task", {})
+                yield NativeFrame(done=True, done_reason="tool_calls")
+                return
             self.started.set()
             await self.release.wait()
             assert {tool.function.name for tool in request.tools} == {"read", "glob", "grep"}
@@ -210,22 +223,69 @@ def test_installed_opencode_runs_and_revokes_read_only_tasks(tmp_path: Path) -> 
                         await asyncio.shield(owned_job.task)
                     assert gateway.active is None and not gateway.uncertain
 
-                    for index in range(2):
-                        start = len(upstream.requests)
-                        task = await router.submit(
-                            f"read-{index}", "Read fixture", operation="delegate"
-                        )
-                        result = await _terminal(router, task.task_id)
+                    start = len(upstream.requests)
+                    endpoint = config.services.gateway.endpoint
+                    async with httpx.AsyncClient(
+                        base_url=endpoint,
+                        transport=httpx.ASGITransport(app=create_app(gateway, "foreground")),
+                    ) as http:
+                        foreground = HttpGatewayClient(endpoint, "foreground", client=http)
+                        with CanonicalEngine(tmp_path / "canonical") as engine:
+                            memory = InProcessAsyncMemoryClient(
+                                engine.character(
+                                    engine.create_character(character_id=character).store_id
+                                )
+                            )
+                            try:
+                                core = CharacterCore(
+                                    memory,
+                                    foreground,
+                                    model_tag=config.model_tag,
+                                    recall_enabled=False,
+                                )
+
+                                async def delegate(text: str, turn_id: UUID) -> str:
+                                    return await router.submit_turn(
+                                        text, turn_id, operation="delegate"
+                                    )
+
+                                core.task_tools["delegate_task"] = ConversationTask(
+                                    "Read the workspace using the current message.",
+                                    delegate,
+                                    use_current_turn=True,
+                                )
+                                turn = await core.prepare(chat_goal)
+                                events = [event async for event in core.stream(turn)]
+                                assert "".join(event.text for event in events) == (
+                                    "Task queued. Disconnect Conversation to let it run, "
+                                    "then check Tasks."
+                                )
+                            finally:
+                                await memory.aclose()
+
+                    async with asyncio.timeout(8):
+                        while len(upstream.requests) < start + 2:
+                            await asyncio.sleep(0.02)
+                    p0, first_p2 = upstream.requests[start : start + 2]
+                    assert p0.request_id == turn.request.request_id
+                    assert first_p2.workload == "P2"
+                    assert any(
+                        message.role == "user" and message.content == chat_goal
+                        for message in first_p2.messages
+                    )
+                    task = await router.submit("direct-read", "Read fixture", operation="delegate")
+                    for task_id in (first_p2.context_id, task.task_id):
+                        result = await _terminal(router, task_id)
                         assert result.state == "succeeded" and result.result == " ".join(markers)
-                        receipt = await router.receipt(task.task_id)
+                        receipt = await router.receipt(task_id)
                         assert receipt.receipt
                         assert receipt.receipt.data["tools"] == [
                             {"name": name, "status": "completed"}
                             for name in ("glob", "grep", "read", "read")
                         ]
-                        assert [request.context_id for request in upstream.requests[start:]] == [
-                            task.task_id
-                        ] * 5
+                    assert [request.context_id for request in upstream.requests[start + 1 :]] == (
+                        [first_p2.context_id] * 5 + [task.task_id] * 5
+                    )
 
                     for goal in ("outside", "forbidden"):
                         start = len(upstream.requests)

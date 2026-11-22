@@ -10,7 +10,10 @@ operator setup, evidence and open acceptance gates.
   `AgenticTaskProvider`, `TaskRouter`, `ToolContext`, `TaskResult` and the existing
   receipt/attention path. CharacterCore sees optional neutral `delegate_task`, not
   an OpenCode session API. Missing task credentials, a failed pin or a failed
-  startup leaves delegation unavailable, not a different provider.
+  startup leaves delegation unavailable, not a different provider. The foreground
+  model selects `delegate_task` with an empty argument object. CharacterCore binds
+  the bounded current user message as the goal, never model-generated text or
+  history. The native literal-text tools keep their existing checks.
 - `runtime/opencode_harness.py` starts the pinned executable as a child on an
   ephemeral loopback port, using a temporary home, separate credentials, and
   in-memory OpenCode DB. Startup checks the executable digest, authentication,

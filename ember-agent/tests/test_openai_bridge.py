@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from PIL import Image
 from pydantic import JsonValue, ValidationError
 
+from ember_agent.character.core import ConversationTask
 from ember_agent.inference.client import HttpGatewayClient
 from ember_agent.inference.contracts import (
     GatewayError,
@@ -451,6 +452,102 @@ def test_bridge_uses_real_gateway_p2_admission_and_server_owned_identity(tmp_pat
         assert request.model == config.model_tag and not request.thinking
         await gateway.aclose()
         await client.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("arguments", ["{}", '{"text":"not authorized"}'])
+def test_strata_p0_accepts_only_empty_delegation_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: str
+) -> None:
+    async def run() -> None:
+        config = _config(tmp_path)
+        settings = StrataSettings(
+            endpoint="http://127.0.0.1:18110",
+            python_executable=sys.executable,
+            server_script=str(tmp_path / "server.py"),
+            runner_config=str(tmp_path / "runner.json"),
+            runner_config_sha256="a" * 64,
+        )
+        config = config.model_copy(
+            update={"inference": InferenceSettings(backend="strata", strata=settings)}
+        )
+        instance = "b" * 32
+        monkeypatch.setenv("EMBER_STRATA_INSTANCE_ID", instance)
+        monkeypatch.setenv("EMBER_STRATA_API_KEY", "synthetic")
+
+        async def unused_submit(text: str, turn_id: UUID) -> str:
+            pytest.fail("Gateway validates tool calls but does not execute them")
+
+        definition = ConversationTask("Inspect fixture files.", unused_submit, True).definition(
+            "delegate_task"
+        )
+
+        def metadata(body: dict[str, object]) -> httpx.Response:
+            return httpx.Response(200, stream=httpx.ByteStream(json.dumps(body).encode()))
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/v1/status":
+                return metadata(
+                    {
+                        "service": "strata",
+                        "loaded": True,
+                        "model": config.model_tag,
+                        "context": {"native": config.context_tokens},
+                    }
+                )
+            if request.url.path == "/v1/telemetry":
+                return metadata({"instance": {"id": instance}})
+            assert request.url.path == "/v1/chat/completions"
+            body = json.loads(request.content)
+            assert body["tool_choice"] == "auto"
+            assert body["tools"] == [definition.model_dump(mode="json")]
+            base = {"id": "fixture", "object": "chat.completion.chunk", "model": config.model_tag}
+            functions = [
+                {"name": "delegate_task", "arguments": arguments[:1]},
+                {"arguments": arguments[1:]},
+            ]
+            choices = [
+                {"index": 0, "delta": {"tool_calls": [{"index": 0, "function": function}]}}
+                for function in functions
+            ]
+            terminal = {
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105},
+            }
+            chunks = [{"choices": [choice]} for choice in choices] + [terminal]
+            text = "".join(f"data: {json.dumps(base | chunk)}\n\n" for chunk in chunks)
+            return httpx.Response(
+                200,
+                stream=httpx.ByteStream((text + "data: [DONE]\n\n").encode()),
+                headers={"Content-Type": "text/event-stream"},
+            )
+
+        gateway = P0Gateway(
+            config,
+            StrataUpstream(
+                config,
+                httpx.AsyncClient(
+                    base_url=settings.endpoint,
+                    transport=httpx.MockTransport(respond),
+                ),
+            ),
+        )
+        request = _request(config, (PromptMessage(role="user", content="Read fixture.txt"),))
+        request = request.model_copy(update={"workload": "P0", "tools": (definition,)})
+        try:
+            events = [event async for event in (await gateway.admit(request)).events()]
+            if arguments == "{}":
+                assert [event.kind for event in events] == ["start", "tools", "end"], events[
+                    -1
+                ].code
+                (call,) = events[1].calls
+                assert call.name == "delegate_task" and call.arguments == {}
+            else:
+                assert [event.kind for event in events] == ["start", "error"]
+                assert events[-1].code == "invalid_tool_arguments"
+        finally:
+            await gateway.aclose()
 
     asyncio.run(run())
 

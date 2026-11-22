@@ -911,6 +911,8 @@ class TaskRouter:
             await self.submit(str(turn_id), text, turn_id=turn_id, operation=operation)
         except TaskConflict:
             return "I couldn't queue that task. Please try again."
+        if operation == "delegate":
+            return "Task queued. Disconnect Conversation to let it run, then check Tasks."
         return "I queued the task. Its result will appear in Tasks."
 
     async def _validated(self, value: TaskSnapshot) -> TaskSnapshot:

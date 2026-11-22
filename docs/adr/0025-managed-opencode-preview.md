@@ -65,8 +65,10 @@ still governs the separate listener.
    ```
 
 3. Validate the config with `ember doctor --config <deployment.toml>`; this is not
-   runtime readiness. Use **Tasks** when OpenCode is reported available. Use synthetic
-   goals and files only. Task text and bounded results can enter Ember's operational
+   runtime readiness. Use **Tasks** when OpenCode is reported available, or ask in
+   Conversation with Thinking off. If the model selects `delegate_task`, Ember
+   uses the current message directly instead of model-written arguments. Use
+   synthetic goals and files only. Task text and bounded results can enter Ember's operational
    task records, even though OpenCode uses fresh sessions. Do not pass secrets, private
    repositories, or personal context. To disable the preview, remove `[harness]` and
    relaunch; do not change the memory stores or copy prior task/chat data.
@@ -97,6 +99,10 @@ runner release, denied tools and paths, and an active worker crash without disab
 native tasks. Observed P2 requests were bound to the task. This does not qualify live
 Strata, production process ownership, or browser/voice operation. Linux was not tested.
 There is no OS sandbox or enforced egress boundary on any platform.
+
+The macOS installed-binary regression also starts a task from Conversation through
+P0 and verifies the exact current message reaches OpenCode via P2. The upstream
+is deterministic, not evidence of live Strata tool selection.
 
 | PLAN gate | Evidence and disposition for this preview |
 |---|---|

@@ -108,6 +108,36 @@ class PreparedTurn:
     prompts: PromptSnapshot | None = None
 
 
+_TASK_TEXT_LIMIT = 1600
+
+
+@dataclass(frozen=True)
+class ConversationTask:
+    """A model-selectable operation with a runtime-owned input scope."""
+
+    description: str
+    submit: Callable[[str, UUID], Awaitable[str]]
+    use_current_turn: bool = False
+
+    def definition(self, name: str) -> ToolDefinition:
+        return ToolDefinition(
+            function=ToolFunction(
+                name=name,
+                description=self.description,
+                parameters={
+                    "type": "object",
+                    "properties": {}
+                    if self.use_current_turn
+                    else {
+                        "text": {"type": "string", "minLength": 1, "maxLength": _TASK_TEXT_LIMIT}
+                    },
+                    "required": [] if self.use_current_turn else ["text"],
+                    "additionalProperties": False,
+                },
+            )
+        )
+
+
 def prompt_cost(messages: tuple[PromptMessage, ...]) -> int:
     """Match the gateway's conservative serialized UTF-8 guard and role/template allowance."""
     value = json.dumps(
@@ -177,7 +207,7 @@ class CharacterCore:
         self.last_scope: CalendarScope | None = None
         self.context_id = uuid4()
         self.submit_task: Callable[[str, UUID], Awaitable[str]] | None = None
-        self.task_tools: dict[str, tuple[str, Callable[[str, UUID], Awaitable[str]]]] = {}
+        self.task_tools: dict[str, ConversationTask] = {}
         self.task_notice: Callable[[], Awaitable[str]] | None = None
         self.public_search: Callable[[str], Awaitable[str]] | None = None
         self.public_page: Callable[[str], Awaitable[str]] | None = None
@@ -874,25 +904,21 @@ class CharacterCore:
             max_output_tokens=self.output_ceiling if thinking else 512,
             deadline_at=timestamp_from_datetime(datetime.now(UTC) + timedelta(seconds=180)),
         )
-        definitions = tuple(
-            ToolDefinition(
-                function=ToolFunction(
-                    name=name,
-                    description=description,
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "text": {"type": "string", "minLength": 1, "maxLength": 1600}
-                        },
-                        "required": ["text"],
-                        "additionalProperties": False,
-                    },
-                )
-            )
-            for name, (description, _) in self.task_tools.items()
-            if not thinking
+        literal_tools = tuple(
+            task.definition(name)
+            for name, task in self.task_tools.items()
+            if not thinking and not task.use_current_turn
         )
-        if definitions:
+        turn_tools = tuple(
+            task.definition(name)
+            for name, task in self.task_tools.items()
+            if not thinking and task.use_current_turn and len(text) <= _TASK_TEXT_LIMIT
+        )
+        for definitions in (
+            (literal_tools + turn_tools, literal_tools) if turn_tools else (literal_tools,)
+        ):
+            if not definitions:
+                break
             candidate = request.model_copy(update={"tools": definitions})
             serialized = json.dumps(
                 {
@@ -903,6 +929,7 @@ class CharacterCore:
             )
             if len(serialized.encode("utf-8")) + 512 + 64 * len(messages) <= self.input_ceiling:
                 request = candidate
+                break
         prepared = PreparedTurn(
             request=request,
             user=text,
@@ -1108,18 +1135,22 @@ class CharacterCore:
                             tool.function.name == call.name for tool in turn.request.tools
                         ):
                             raise GatewayError("task_tool_not_authorized")
-                        _, submit = selected
                         arguments = call.arguments
-                        value = arguments.get("text")
-                        if (
-                            set(arguments) != {"text"}
-                            or not isinstance(value, str)
-                            or not value
-                            or len(value) > 1600
-                            or value not in turn.user
-                        ):
-                            raise GatewayError("task_tool_scope_denied")
-                        text = await submit(value, turn.request.request_id)
+                        if selected.use_current_turn:
+                            if arguments or not 0 < len(turn.user) <= _TASK_TEXT_LIMIT:
+                                raise GatewayError("task_tool_scope_denied")
+                            value = turn.user
+                        else:
+                            value = arguments.get("text")
+                            if (
+                                set(arguments) != {"text"}
+                                or not isinstance(value, str)
+                                or not value
+                                or len(value) > _TASK_TEXT_LIMIT
+                                or value not in turn.user
+                            ):
+                                raise GatewayError("task_tool_scope_denied")
+                        text = await selected.submit(value, turn.request.request_id)
                         event = GatewayEvent.model_validate_json(
                             event.model_copy(
                                 update={"kind": "text", "text": text, "calls": ()}
