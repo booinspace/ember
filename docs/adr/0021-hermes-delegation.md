@@ -1,5 +1,10 @@
 # 0021 — Isolated Hermes task delegation
 
+**Current status:** Historical. Hermes delegation and Desktop integrations were
+removed by [Root ADR 0025](0025-managed-opencode-preview.md). Earlier qualification
+applies only to the retired implementation. Do not follow its setup instructions or
+migrate private profiles, chats, credentials, or notes.
+
 Status: task provider implemented; the operator-authorized dashboard deployment
 selects the qualified Ubuntu WSL2 one-shot worker. Desktop is deferred and broader
 Phase 8A adoption gates remain open. Acceptance evidence is in

@@ -1,32 +1,61 @@
-"""Bounded public search through an explicit installed Hermes provider command."""
+"""Bounded public search through an installed command or SearXNG service."""
 
 import asyncio
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import httpx
 from pydantic import JsonValue, TypeAdapter
 
 from ..inference.contracts import GatewayError
-from .searx_tools import plain, public_url
+from .searx_tools import SearchQuery, SearXNGTools, plain, public_url
 from .task_store import TaskConflict
 from .worker_process import owned_stdio
 
 _OBJECT = TypeAdapter(dict[str, JsonValue])
 
 
+def _validate_query(query: str) -> None:
+    if not query.strip() or len(query) > 400:
+        raise GatewayError("public_search_query_bound")
+
+
+class SearXNGSearch:
+    """Send only an explicit query to a configured origin, without fetching results' URLs."""
+
+    def __init__(self, endpoint: str, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self.endpoint = endpoint
+        self.transport = transport
+
+    async def __call__(self, query: str) -> str:
+        _validate_query(query)
+        try:
+            async with (
+                asyncio.timeout(4),
+                httpx.AsyncClient(
+                    timeout=4.0, trust_env=False, follow_redirects=False, transport=self.transport
+                ) as client,
+            ):
+                rows = await SearXNGTools(self.endpoint, client=client).search(
+                    SearchQuery(query=query)
+                )
+        except (httpx.HTTPError, ValueError, TimeoutError, TaskConflict) as error:
+            raise GatewayError("public_search_unavailable") from error
+        return _bounded_context(rows)
+
+
 class NativeSearch:
-    """Reuse the native plugin; Ember retains process ownership and copied-context bounds."""
+    """Run an installed search command with owned lifetime and copied-context bounds."""
 
     def __init__(self, command: tuple[str, ...], root: Path) -> None:
         self.command = command
         self.root = root
 
     async def __call__(self, query: str) -> str:
-        if not query.strip() or len(query) > 400:
-            raise GatewayError("public_search_query_bound")
-        self.root.mkdir(parents=True, exist_ok=True)
+        _validate_query(query)
         try:
+            self.root.mkdir(parents=True, exist_ok=True)
             with TemporaryDirectory(prefix="search-", dir=self.root) as home:
                 async with asyncio.timeout(18):
                     async with owned_stdio((*self.command, "--home", home)) as process:
@@ -52,7 +81,7 @@ def copy_results(value: dict[str, JsonValue]) -> str:
     rows = data.get("web") if isinstance(data, dict) else None
     if value.get("success") is not True or not isinstance(rows, list):
         raise GatewayError("public_search_unavailable")
-    copied: list[JsonValue] = []
+    normalized: list[JsonValue] = []
     for row in rows[:3]:
         if not isinstance(row, dict):
             continue
@@ -64,11 +93,18 @@ def copy_results(value: dict[str, JsonValue]) -> str:
             or not isinstance(description, str)
         ):
             continue
-        item: JsonValue = {
-            "url": url,
-            "title": plain(title, 128),
-            "snippet": plain(description, 256),
-        }
+        normalized.append(
+            {"url": url, "title": plain(title, 128), "snippet": plain(description, 256)}
+        )
+    return _bounded_context(normalized)
+
+
+def _bounded_context(rows: list[JsonValue]) -> str:
+    copied: list[JsonValue] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item: JsonValue = {name: row[name] for name in ("url", "title", "snippet")}
         candidate = json.dumps({"results": [*copied, item]}, ensure_ascii=False)
         if len(candidate.encode()) <= 2048:
             copied.append(item)

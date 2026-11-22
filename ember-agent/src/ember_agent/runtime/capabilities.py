@@ -68,17 +68,17 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             name="Agentic delegation",
             provider=router.delegate_label if router else "Agentic harness",
             status="enabled"
-            if router and router.delegate
+            if router and router.delegation_available
             else "unavailable"
-            if router and router.delegate_unavailable
+            if router and (router.delegate or router.delegate_unavailable)
             else "unconfigured",
             operations=("delegate", "skills.list", "skills.view")
             if router and router.skills
             else ("delegate",),
             reason=(
-                "Configured; each task verifies the sealed worker profile."
-                if router.delegate
-                else router.delegate_unavailable
+                "Configured for read-only workspace investigation."
+                if router.delegation_available
+                else router.delegate_unavailable or "Task provider is unavailable."
             )
             if router
             else "Task provider is unavailable.",

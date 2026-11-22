@@ -20,7 +20,7 @@ test("shared catalog inspects raw Markdown and binds enablement to exact package
     diagnostics: [],
   });
   const catalog = () => ({
-    provider: "hermes",
+    provider: "fixture",
     revision,
     skills: [summary()],
     unavailable: null,

@@ -11,7 +11,7 @@ const event = activityEvent.parse({
   started_at: "2026-11-04T12:00:00Z",
   kind: "tool",
   name: "web_search",
-  provider: "hermes",
+  provider: "fixture",
   status: "running",
   request_id: null,
   task_id: null,

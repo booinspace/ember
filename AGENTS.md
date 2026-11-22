@@ -81,33 +81,27 @@ Do not vendor external agent frameworks into either core.
   qualifies native tasks; physical audio remains unmeasured.
 - **Direct MCP (10; root ADR 0019).** Optional, operator-configured atomic/stateless tools use
   existing grants, actor-bound clients, exact write confirmations and task receipts. No implicit
-  tool loop or OS sandbox. Keep direct MCP distinct from Ember's inbound coding-memory endpoint.
+  tool loop or OS sandbox. Keep direct MCP distinct from Ember's inbound memory MCP listener.
   [Phase 10 validation](docs/phase-10-validation.md) scopes evidence to the supported profile.
-- **Runner and harness (root ADRs 0016, 0020–0021).** Ollama is the code default; vLLM and
-  managed Strata are selectable through the same gateway. The vLLM qualification superseded
-  the earlier wait-for-Phase-13 plan for serial use, not for live abort. No automatic model/backend
-  fallback. Hermes is an opt-in, one-shot task provider behind the neutral broker. The selected PC
-  profile uses an isolated Ubuntu WSL2/bubblewrap worker; Ember retains Windows-native core,
-  voice, memory and gateway. Broker grants, output bounds and receipts still apply. Public
-  search is separately configured. Keep dashboard prompt inspection ephemeral and revalidate
-  authority before disclosure. [Phase 11 validation](docs/phase-11-validation.md) qualifies the
-  selected worker; broader Phase 8A adoption, Desktop startup and copied-chat purge remain open.
-  Voice-to-Desktop mirroring and messaging are not part of this integration.
-- **Coding memory (root ADR 0022 and PLAN's Strata coding amendment).** Optional memory MCP is
-  loopback by default, with explicit trusted-proxy HTTPS support. Separate opt-in append-only
-  notes go to `OpenCode`. Strata's opt-in gateway-hosted coding memory is mutually exclusive
-  with memory MCP and uses `Coding` for optional notes. Both reuse the active character's
-  recall policy and canonical owner; recall returns claims, not archive excerpts. Coding
-  admission counts rendered prompt tokens, including history/tools. New 128K Strata profiles
-  reserve 8,192 output tokens; setup does not rewrite existing deployments. Keep opt-in
-  thinking separate from visible text and drop replayed reasoning from input history. Synthetic
-  note tests and HTTPS completion smoke do not establish live OpenCode note/recall acceptance.
-  See [OpenCode memory](docs/opencode-memory.md) and [Strata setup](ember-agent/docs/strata.md).
-- **Skills (12; root ADR 0023).** Shared portable packages and reviewed-hash enablement are
-  [qualified on Windows/WSL Hermes](docs/phase-12-validation.md). Hermes loads metadata first;
-  mandatory procedures/resources must fit whole. Ember owns grants, budgets and receipts.
-  OpenClaw metadata can round-trip, but no OpenClaw runtime, autonomous learning, automatic
-  installation or new shell/file authority is provided.
+- **Runner and harness (root ADRs 0020, 0025).** Ollama is the code default; vLLM and managed
+  Strata are selectable through the same gateway, with no automatic fallback. Managed OpenCode
+  2.3.2 is a default-off P2 task preview for synthetic, non-sensitive goals and files only.
+  Only workspace `read`, `glob`, and `grep` are offered. No OS sandbox or egress enforcement.
+  A real macOS tool loop used a deterministic upstream, not live Strata; Windows reuses Job
+  Objects but is unqualified; Linux is unqualified. Keep prompt inspection ephemeral and
+  revalidate authority before disclosure. Hermes tasks and Desktop are removed. Do not migrate
+  private data or transfer earlier Hermes evidence to this preview. See the
+  [acceptance mapping](docs/adr/0025-managed-opencode-preview.md#acceptance-mapping).
+- **Coding completions and independent memory MCP (root ADRs 0022, 0024–0025).** The optional
+  Strata coding route still uses rendered token accounting and P5 admission but has no hosted
+  memory tools. Keep opt-in thinking separate from visible text; drop replayed reasoning from
+  input history. The existing [operator-managed memory MCP](docs/opencode-memory.md) is unchanged,
+  loopback by default with explicit trusted-proxy HTTPS support. Use read-only with verified
+  local inference; never wire it into managed OpenCode. Do not copy or migrate existing notes.
+- **Skills and public search (root ADRs 0023, 0025).** No live skills provider or page reader is
+  installed by the preview. Portable contracts/assets and prior Hermes qualification are not
+  evidence of current execution. Public SearXNG search is independently configured and returns
+  snippets, not page contents. No skill or search authority is granted to managed OpenCode.
 - **Inference hardening (13; root ADR 0024).** One gateway owns native generation through
   verified drain/release and durable journal settlement. P2–P4 wait until realtime sessions
   disconnect; P5 can use idle time in a connected session but yields to waiting foreground

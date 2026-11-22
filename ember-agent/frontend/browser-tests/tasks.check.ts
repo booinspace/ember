@@ -92,7 +92,7 @@ test("draft approval shows exact text and binds the decision to its action hash"
   ).toHaveCount(0);
 });
 
-test("Hermes research keeps the durable task handle and cancellation", async ({
+test("Delegated research keeps the durable task handle and cancellation", async ({
   page,
 }) => {
   let submitted = false;

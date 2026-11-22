@@ -1,115 +1,90 @@
-# Use Ember memory in OpenCode
+# Independent Ember memory MCP for operator-managed clients
 
-Ember serves these tools on one private MCP endpoint:
+The existing `[memory_mcp]` listener and its settings are unchanged. Use it
+**read-only, only with verified local inference**, from an independently managed
+client such as the operator's own OpenCode installation. Do not configure it in,
+or pass its bearer, recalled claims, or notes to, Ember's [managed OpenCode preview](adr/0025-managed-opencode-preview.md).
+That preview is synthetic/non-sensitive only and has no memory connection.
 
-| Tool | Use it for | Returns |
+| Read-only tool | Use | Returns |
 | --- | --- | --- |
-| `recall(query)` | Quick topic lookup | Up to eight ranked claims, with IDs, revisions, and coverage. |
-| `deep_recall(query)` | Related-memory investigation, optionally scoped by date | Up to 24 claims, bounded associations, any resolved date scope, and outcome. |
-| `save_memory(note)` | Optional automatic capture of a durable decision, preference, or unfinished task | A receipt with library name, memory ID, revision, and outcome. |
+| `recall(query)` | Focused topic lookup | Up to eight ranked claims, IDs, revisions, and coverage. |
+| `deep_recall(query)` | Related-memory investigation, optionally date-scoped | Up to 24 claims, bounded associations, date scope when resolved, and outcome. |
 
-Both recall tools search all eligible memories for the active character, with no extra project or library filter. Recall selection, grants, and suppression still apply. Neither tool returns raw archives, evidence excerpts, or another character’s data.
+Both tools search eligible memories of the active character under current recall
+selection, grants, and suppression. They do not return raw archives, evidence
+excerpts, or another character's data. Use focused search terms, include dates in
+individual queries, and run calls sequentially. An empty or partial result does
+not prove absence.
 
-## OpenCode through Ember completions
+## Existing listener
 
-Use the [Strata coding endpoint](../ember-agent/docs/strata.md#share-strata-with-9router).
-In the deployment's existing `[inference]` section, set `coding_memory = true` and remove
-the `[memory_mcp]` section. To allow saves, set `coding_memory_write = true` as well.
-OpenCode keeps the same model, completion URL, and coding bearer. Start a fresh coding
-chat and ask it to recall a known decision. To test writes, ask it to save one short
-synthetic note, then recall it in a new chat.
+For a new read-only setup, or to verify an existing one, check the deployment TOML:
 
-Ember uses the existing memory search across the active character's eligible libraries.
-Relevance leads the ranking, with bounded boosts for confidence and recency. The deep tool
-option supports dates and related-memory lookup. Results contain claims and their qualifiers.
-They fit the remaining context and gateway transport budget, which can carry more than the
-voice memory slice. Strata verifies the exact rendered context on each model call.
-A completion can run up to two internal memory tool rounds while keeping OpenCode's tools
-available. Each internal round uses the same gateway and can add latency.
+```toml
+[memory_mcp]
+port = 8790
+write_enabled = false
+```
 
-Coding saves append to the reserved `Coding` library. Only the submitted note is stored.
-Existing recall source selection governs when these notes appear in recall. Enable access
-only for clients trusted with the active character's memories. The coding bearer authorizes
-this access while the option is enabled.
+The listener is opt-in and defaults to loopback when enabled. It uses the private
+bearer in `<paths.runtime_root>/memory-mcp.token`; resolve `paths.runtime_root`
+relative to the deployment TOML. Retain any existing token and do not print or
+commit it. If creating a listener and no token exists, create one at the resolved
+path with exclusive file creation and restrict its permissions. For example, from
+Windows PowerShell with the root environment installed (replace the path):
 
-## Windows: enable the MCP listener
+```powershell
+.\.venv\Scripts\python.exe -c "import secrets, sys; from pathlib import Path; p = Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); p.open('x', encoding='ascii').write(secrets.token_urlsafe(32))" 'C:\path\to\runtime\memory-mcp.token'
+```
 
-1. Deploy to `C:\Users\operator\repos\ember`. Add or update this section in the deployment TOML used to launch Ember:
+After an authorized Ember relaunch, check for `Memory MCP listening` at the
+expected loopback address. If the listener cannot start, Ember reports it without
+blocking normal operation. Existing operator-managed SSH forwarding or explicitly
+configured [trusted-proxy LAN HTTPS](phase-8-lan-https-design.md) can still be used;
+neither makes inference local. Keep the endpoint private. A bearer holder who can
+reach it can read eligible character memories.
 
-   ```toml
-   [memory_mcp]
-   port = 8790
-   # Optional. Default is read-only.
-   write_enabled = true
-   ```
+## Separately managed OpenCode V2
 
-2. If you don't already have a token, create one at `<paths.runtime_root>\memory-mcp.token`. Resolve `paths.runtime_root` relative to the deployment TOML. Run this from the Ember checkout, replacing the example path. It won't print the token or overwrite an existing one:
+Leave an existing read-only connection unchanged if inference locality is verified.
+For a new connection, configure it **in the operator's own OpenCode configuration**,
+not Ember's managed `[harness]` profile. Example for direct loopback or a trusted SSH
+forward to Ember's loopback listener (the bearer is supplied outside the config):
 
-   ```powershell
-   .\.venv\Scripts\python.exe -c "import secrets; import sys; pathlib import Path; p = Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); p.open('x', encoding='ascii').write(secrets.token_urlsafe(32))" 'C:\path\to\runtime\memory-mcp.token'
-   ```
-
-   Keep the token private. Anyone who holds it and can reach the listener can recall private memories and, if enabled, append notes.
-
-3. Relaunch Ember using the same profile (`.\start.ps1` for Miku’s default). Look for `Memory MCP listening for http://127.0.0.1:8790/mcp`. With writes enabled, Ember also reports `OpenCode memory writes enabled for the OpenCode library.` If the MCP listener cannot start, Ember prints a diagnostic and keeps normal operation available.
-
-## OpenCode machine: connect through SSH
-
-1. On the machine running the OpenCode backend, start and keep this tunnel open:
-
-   ```sh
-   ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:8790:127.0.0.1:8790 nathalie@10.254.254.11
-   ```
-
-   If local port `8790` is occupied, change only the first port in `-L` and the port in the OpenCode URL.
-
-2. Copy the token over a trusted channel to `~/.config/opencode/ember-memory.token` and restrict access with `chmod 600 ~/.config/opencode/ember-memory.token`. Don't paste it into a prompt or commit it. Merge this configuration into the OpenCode project’s `opencode.jsonc` (V2):
-
-   ```jsonc
-   {
-     "$schema": "https://opencode.ai/config.json",
-     "mcp": {
-       "servers": {
-         "ember": {
-           "type": "remote",
-           "url": "http://127.0.0.1:8790/mcp",
-           "oauth": false,
-           "headers": {
-             "Authorization": "Bearer {file:~/.config/opencode/ember-memory.token}"
-           }
-         }
-       }
-     }
-   }
-   ```
-
-3. Run `opencode mcp list` in the project and confirm `ember` is connected. After changing Ember’s tools, reconnect `ember` in OpenCode’s `/mcps` to refresh discovery. No new tunnel or token is needed.
-
-## OpenCode machine via LAN HTTPS
-
-Use the existing [Nginx HTTPS setup](phase-8-lan-https-design.md). Set `lan_bind = true` under `[memory_mcp]`. Ember binds the MCP port to `browser.lan_address` and accepts HTTP requests on that port from `browser.trusted_proxy` when the proxy marks the client connection as HTTPS. Run `.\start.ps1` with the updated profile to apply the Windows rule for that proxy and port.
-
-Add this location to the HTTPS virtual host. Use the Ember host’s LAN address and configured MCP port.
-
-```nginx
-location = /mcp {
-    proxy_pass http://10.254.254.11:8790;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_buffering off;
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "ember": {
+        "type": "remote",
+        "url": "http://127.0.0.1:8790/mcp",
+        "oauth": false,
+        "headers": { "Authorization": "Bearer {env:EMBER_MEMORY_MCP_TOKEN}" }
+      }
+    }
+  }
 }
 ```
 
-Use `https://ember.example.test/mcp` in the OpenCode configuration above with the same bearer and trusted certificate. Restrict the HTTPS route to your intended clients. The proxy-to-Ember hop uses private HTTP.
+Make `EMBER_MEMORY_MCP_TOKEN` available securely to the operator-managed OpenCode
+backend. Check `opencode mcp list` for connection state and use `/mcps` to reconnect
+after changing listener settings. Confirm only the recall tools are exposed before
+use. A localhost URL, tunnel, TLS, or connected status proves neither model locality
+nor where session history is retained. If inference or fallback locality is unknown,
+disconnect and do not recall. Never move a session containing recalled text to hosted
+inference; revocation does not erase copies already returned to the client.
 
-## Recall and automatic notes
+The existing listener's optional `save_memory` implementation and `OpenCode` notes
+are unchanged, but automatic saves are not recommended here: keep `write_enabled`
+false. Setting it false leaves existing notes in place. To disable listener access
+entirely, remove `[memory_mcp]` and relaunch Ember. Neither change migrates private data.
 
-- Use `recall` for focused topic searches and `deep_recall` for investigations. Include dates in each query; calls don't share date scope. Run Ember calls sequentially. Partial or empty results do not prove absence.
-- With writes enabled, Ember creates or reopens the reserved `OpenCode` library. OpenCode is instructed to save useful notes during chat without per-note approval, unless you opt out. Each call accepts one printable line, up to 512 characters. This is model-led capture, not a transcript hook or a guarantee that every decision will be saved. The server cannot tell whether submitted text contains a secret or was copied from a transcript; only allow trusted clients to write.
-- Notes use the active character and fixed library. Other libraries and recall settings are untouched. If the character’s Recall Sources settings exclude `OpenCode`, notes still save but won't appear in recall until you enable that library. Exact retries for the same character are safe; paraphrases can create separate notes.
-- To smoke-test, start a fresh session with verified local inference. Share a non-sensitive durable preference, confirm OpenCode got a save receipt, then ask about the preference in a second session. If your OpenCode permissions ask before tool use, allow `ember_save_memory` in that trusted project only.
+## Removed: gateway-hosted coding memory
 
-**Model privacy:** The transport protects access to Ember. A hosted model can still receive any text OpenCode recalls. Use Ember tools only with verified local inference. OpenCode may retain note inputs and tool results in session history; don't switch those sessions to hosted inference. Revoking access in Ember does not erase copies already delivered to OpenCode.
-
-To stop saves but keep recall, set `write_enabled = false`, relaunch Ember, and reconnect in `/mcps`. Existing notes remain. To stop server-side MCP access, remove `[memory_mcp]` and relaunch Ember.
+Delete `inference.coding_memory` and `inference.coding_memory_write` from old
+deployments; the keys are rejected even if set to `false`. Strata's optional
+coding completions route remains separate and no longer supplies Ember memory
+tools. Existing `Coding` notes, MCP notes, and Hermes private profiles or chats
+are not migrated, copied, or deleted by this change.

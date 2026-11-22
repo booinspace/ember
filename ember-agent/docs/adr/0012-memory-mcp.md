@@ -1,5 +1,9 @@
 # Agent ADR 0012: private memory MCP listener
 
+This operator-managed listener is unchanged and independent of the
+[managed OpenCode preview](0015-managed-opencode-preview.md). Use read-only
+with verified local inference; never attach the listener to the managed worker.
+
 See [Root ADR 0022](../../../docs/adr/0022-opencode-memory-recall.md) for scope and deployment status.
 
 `ember start` optionally starts a separate IPv4 loopback listener using the pinned MCP SDK and the existing character-bound client. Startup requires a bearer secret; allowed Host headers are loopback, and browser origins are rejected. Missing credentials or a busy port leave normal Ember operation available. The runtime closes the listener before closing its memory client and engine.

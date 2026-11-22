@@ -2,14 +2,12 @@
 
 import asyncio
 import os
-import re
 import secrets
 import shutil
 import socket
 import sqlite3
 import sys
 import tempfile
-from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -20,14 +18,12 @@ from fastapi import APIRouter
 from livekit import api, rtc
 from pydantic import ValidationError
 
-from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.errors import MemoryError
 from ember_memory_abi.related import ContextDependencies, RelatedRequest
 
 from ..inference.client import HttpGatewayClient
-from ..inference.contracts import GatewayError, GatewayRequest
-from ..memory.deep_contracts import DeepRecallBudget, DeepRecallRequest, DeepRecallResult
-from ..memory.deep_prompt import condense
+from ..inference.contracts import GatewayError
+from ..memory.deep_contracts import DeepRecallResult
 from ..realtime.client import RoomClient
 from ..realtime.contracts import (
     AGENT_IDENTITY,
@@ -43,7 +39,6 @@ from .coding_api import coding_routes, coding_token
 from .composition import LocalRuntime
 from .config import ConfigurationError, DeploymentConfig
 from .console import read_line
-from .hermes_chat import HermesChats
 from .livekit_config import LiveKitCredentials, credentials, server_yaml
 from .processes import OwnedProcess, RuntimeLease
 from .speech_health import check_voice
@@ -54,7 +49,6 @@ from .task_router import (
     TaskRouter,
     TextInspectionProvider,
     TextInspectionTask,
-    ToolContext,
     ToolRouter,
 )
 from .task_store import TaskConflict
@@ -62,51 +56,22 @@ from .text_session import DirectTextSession
 from .worker_process import settled
 
 
-async def _start_hermes_client(runtime: LocalRuntime) -> HermesChats | None:
-    """Bind one optional local client to the existing character, gateway and ABI owner."""
-    settings = runtime.config.hermes_client
-    if settings is None:
-        return None
-
-    def client_token() -> str:
-        path = runtime.config.runtime_root / "hermes-client.token"
-        if not path.exists():
-            with path.open("x", encoding="utf-8") as output:
-                output.write(secrets.token_urlsafe(32))
-            path.chmod(0o600)
-        return read_token(path)
-
-    async def reserve(identity: UUID, connected: bool) -> None:
-        await runtime.model.session(identity, connected=connected)
-
-    return HermesChats(
-        lambda: runtime.new_text_core(
-            input_ceiling=settings.input_ceiling, recall_enabled=settings.private_recall
-        ),
-        runtime.model,
-        client_token=await asyncio.to_thread(client_token),
-        model_context_tokens=runtime.config.context_tokens,
-        private_recall=settings.private_recall,
-        state_root=runtime.config.runtime_root / "hermes-client",
-        reserve=reserve,
-    )
-
-
 async def _start_public_search(runtime: LocalRuntime) -> None:
-    """Search is a foreground tool capability, independent of a native Desktop client."""
+    """Keep explicit public search independent of the agentic harness."""
     settings = runtime.config.public_search
-    legacy = runtime.config.hermes_client
-    command = settings.command if settings else legacy.search_command if legacy else ()
-    if command:
-        from .native_search import NativeSearch
+    if settings is None:
+        return
+    from .native_search import NativeSearch, SearXNGSearch
 
-        if not await asyncio.to_thread(Path(command[0]).is_file):
-            runtime.core.search_unavailable = "public_search_executable_unavailable"
-            return
+    runtime.core.search_provider = settings.provider
+    if settings.searxng_url is not None:
+        runtime.core.public_search = SearXNGSearch(settings.searxng_url)
+    elif await asyncio.to_thread(Path(settings.command[0]).is_file):
         runtime.core.public_search = NativeSearch(
-            command, runtime.config.runtime_root / "public-search-homes"
+            settings.command, runtime.config.runtime_root / "public-search-homes"
         )
-        runtime.core.search_provider = settings.provider if settings else "hermes"
+    else:
+        runtime.core.search_unavailable = "public_search_executable_unavailable"
 
 
 async def _start_tasks(
@@ -161,85 +126,21 @@ async def _start_tasks(
     )
     settings = runtime.config.selected_harness
     if settings is not None:
-        from .harness import create_skill_provider, create_task_provider
-        from .hermes_tasks import PersonalContext
-        from .searx_tools import SearXNGTools
+        from .harness import open_harness
 
-        router.delegate_label = settings.provider.title()
-        try:
-            router.skills = create_skill_provider(runtime.config)
-            if router.skills is not None:
-                router.skills.activity = runtime.dashboard.activity
-                await router.skills.refresh()
-                if "web.read_page" in settings.tools:
-                    from .public_page import PublicPageProvider
-
-                    pages = PublicPageProvider(router.skills)
-                    router.broker.web = ToolRouter(
-                        pages, binding.character_id, activity=runtime.dashboard.activity
-                    )
-
-                    async def read_public_page(url: str) -> str:
-                        try:
-                            return await pages.read(url)
-                        except TaskConflict as error:
-                            code = str(error)
-                            if not re.fullmatch(r"(?:page|skills)_[a-z0-9_]{1,48}", code):
-                                code = "public_page_unavailable"
-                            raise GatewayError(code) from error
-                        except TimeoutError as error:
-                            raise GatewayError("page_fetch_timeout") from error
-
-                    runtime.core.public_page = read_public_page
-        except (TaskConflict, TimeoutError):
-            router.skills = None
-        search = SearXNGTools(settings.search_endpoint)
-        cleanup.push_async_callback(search.aclose)
-
-        async def recall_context(query: str, context: ToolContext) -> PersonalContext | None:
-            result = await runtime.deep.investigate(
-                DeepRecallRequest(
-                    request_id=context.task_id,
-                    context_id=context.task_id,
-                    character_id=context.character_id,
-                    query=query,
-                    reference_at=timestamp_from_datetime(runtime.core.reference_clock()),
-                    timezone=runtime.config.recall_timezone,
-                    budget=DeepRecallBudget(
-                        hops=0,
-                        memories=6,
-                        archive_chunks=0,
-                        excerpts=0,
-                        result_bytes=16384,
-                    ),
-                )
-            )
-            selected = condense(result)
-            if not selected.memories or result.dependencies is None:
-                return None
-            text = "\n".join(message.content for message in selected.messages)
-            return PersonalContext(text, result.dependencies, selected.memory_sources)
-
-        def observe(step: GatewayRequest, validate: Callable[[], Awaitable[bool]]) -> None:
-            runtime.dashboard.capture(step, validate=validate)
-
+        router.delegate_label = "OpenCode" if settings.provider == "opencode" else settings.provider
         if client is None:
             router.delegate_unavailable = "gateway_task_credentials_unavailable"
         else:
             try:
-                router.delegate = create_task_provider(
-                    runtime.config,
-                    client,
-                    ToolRouter(search, binding.character_id, activity=runtime.dashboard.activity),
-                    broker=router.broker,
-                    recall=recall_context,
-                    validate=validate_task_dependencies,
-                    observe=observe,
-                    skills=router.skills,
+                router.delegate, router.delegate_health = await cleanup.enter_async_context(
+                    open_harness(runtime.config, client, runtime.dashboard.capture)
                 )
                 router.providers["delegate"] = router.delegate
             except TaskConflict as error:
                 router.delegate_unavailable = str(error)
+            except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
+                router.delegate_unavailable = "harness_startup_failed"
     try:
         await router.start()
     except (OSError, sqlite3.Error):
@@ -274,29 +175,10 @@ async def _start_tasks(
             return await router.submit_turn(text, turn_id, operation="delegate")
 
         runtime.core.task_tools["delegate_task"] = (
-            "Queue an explicit request with the configured harness and granted broker tools. "
+            "Queue an explicit request for read-only investigation in the configured workspace. "
             "Quote the user's goal exactly. Model steps wait while voice is connected.",
             delegate_task,
         )
-        if router.skills is not None:
-
-            def update_skills() -> None:
-                assert router.skills is not None
-                names = "; ".join(
-                    item.id + " (" + item.name + "): " + item.description[:160]
-                    for item in router.skills.enabled
-                )
-                runtime.core.task_tools["delegate_task"] = (
-                    "Delegate the user's exact explicit goal. Enabled skills: "
-                    + (names or "none")
-                    + ". Name the selected skill in the goal. Skills grant no tools. "
-                    "Background model steps wait until voice disconnects.",
-                    delegate_task,
-                )
-
-            router.skills.changed = update_skills
-            update_skills()
-
     runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)
     return router
@@ -935,21 +817,7 @@ async def _coding_api(
     key = await asyncio.to_thread(read_token, config.runtime_root / "gateway-agent.token")
     client = HttpGatewayClient(config.services.gateway.endpoint, key)
     cleanup.push_async_callback(client.aclose)
-    if not config.inference.coding_memory:
-        return coding_routes(config, client, token)
-    from .coding_memory import coding_memory_tools
-    from .memory_tools import MemoryTools
-
-    writer = None
-    if config.inference.coding_memory_write:
-        try:
-            writer = await runtime.coding_note_writer()
-        except MemoryError as error:
-            print(f"Coding memory writes unavailable: {error.info.code}")
-    tools = MemoryTools(
-        runtime.memory, runtime.deep, config.recall_timezone, writer, library="Coding"
-    )
-    return coding_routes(config, client, token, hosted_tools=coding_memory_tools(tools))
+    return coding_routes(config, client, token)
 
 
 async def _run_room(
@@ -1043,7 +911,6 @@ async def _run_room(
                 cleanup.push_async_callback(host.stop_task_announcements)
             control = BrowserControl(
                 coding_api=await _coding_api(config, runtime, cleanup),
-                hermes_chat=await _start_hermes_client(runtime),
                 dashboard=runtime.dashboard,
                 memory_graph=runtime.memory_graph,
                 task_router=task_router,
@@ -1130,7 +997,6 @@ async def _run_text_browser(
         task_router = await _start_tasks(runtime, binding, cleanup)
         control = BrowserControl(
             coding_api=await _coding_api(config, runtime, cleanup) if gateway_available else None,
-            hermes_chat=await _start_hermes_client(runtime),
             dashboard=runtime.dashboard,
             memory_graph=runtime.memory_graph,
             task_router=task_router,

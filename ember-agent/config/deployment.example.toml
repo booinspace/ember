@@ -105,25 +105,21 @@ timeout_seconds = 8.0
 [prompts]
 system_file = "prompts/system.md"
 
-# Optional, independent of Hermes Desktop. Installed command speaks the bounded
-# public-search JSON protocol; provider is its display identity (no dynamic import).
+# Optional public search; configure exactly one transport.
 # [public_search]
-# provider = "hermes"
-# command = ["C:/installed/python.exe", "-B", "C:/ember/scripts/hermes/hermes_search.py", ...]
+# provider = "searxng" # Display label, not a code import.
+# searxng_url = "http://your-installed-searxng:8095" # Requires SearXNG JSON format.
+# For an independent installed command, use these fields instead:
+# provider = "command"
+# command = ["C:/installed/python.exe", "-B", "C:/installed/public_search.py"]
 
-# Optional single task provider. Explicit setup seals the worker before enabling it.
-# Legacy [hermes] is supported, but cannot be combined with [harness].
+# Optional OpenCode task delegation. Omit [harness] to keep delegation disabled.
 # [harness]
-# provider = "hermes"
-# command = ["C:/ember/.venv/Scripts/python.exe", "-B", "C:/installed/bridge/hermes_worker.py",
-#            "--profile", "C:/installed/profile.json"]
-# For a qualified Linux task worker on a Windows host, command can instead be:
-# ["C:/Windows/System32/wsl.exe", "--distribution", "Ubuntu", "--user", "you", "--exec",
-#  "/installed/sdk/.venv/bin/python", "-B", "/installed/bridge/hermes_worker.py",
-#  "--profile", "/installed/profile.json"]
-# revision = "71736c9f32597bbca9d89cede5aa136e55946b2f"
-# profile_sha256 = "<verified SHA-256>"
-# search_endpoint = "http://your-installed-searxng:8095"
+# provider = "opencode"
+# command = ["C:/installed/opencode.exe"]
+# revision = "2.3.2" # Installed binary version.
+# profile_sha256 = "<lowercase SHA-256 of executable>"
+# workspace = "C:/ember-harness-workspace" # Dedicated directory, not Ember data or runtime root.
 # private_recall = false
-# skills = true # Requires an explicitly sealed --skills-root profile; false by default.
-# tools = ["native.inspect_text", "web.read_page"] # Explicit IDs; requirements never grant tools.
+# skills = false
+# tools = []

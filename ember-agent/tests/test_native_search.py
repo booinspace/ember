@@ -3,11 +3,12 @@ import json
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 from ember_agent.character.public_search import public_search_query
 from ember_agent.inference.contracts import GatewayError
-from ember_agent.runtime.native_search import NativeSearch, copy_results
+from ember_agent.runtime.native_search import NativeSearch, SearXNGSearch, copy_results
 
 
 @pytest.mark.parametrize(
@@ -66,6 +67,70 @@ def test_owned_native_provider_handles_maximum_unicode_query_and_removes_home(
 def test_invalid_native_provider_result_is_not_search_success() -> None:
     with pytest.raises(GatewayError, match="public_search_unavailable"):
         copy_results({"success": False, "data": {"web": []}})
+
+
+def test_direct_searxng_only_sends_query_and_copies_safe_bounded_results() -> None:
+    requests: list[httpx.Request] = []
+
+    def serve(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "application/json"},
+            stream=httpx.ByteStream(
+                json.dumps(
+                    {
+                        "results": [
+                            {"url": "http://127.0.0.1/private", "title": "Denied"},
+                            {
+                                "url": "https://public.example/a",
+                                "title": "<b>A</b>",
+                                "content": "🦊" * 300,
+                            },
+                            {
+                                "url": "https://public.example/b",
+                                "title": "B",
+                                "content": "🦊" * 300,
+                            },
+                            {"url": "https://public.example/c", "title": "C", "content": "Later"},
+                        ]
+                    }
+                ).encode()
+            ),
+        )
+
+    provider = SearXNGSearch("http://nas.example:8095/", transport=httpx.MockTransport(serve))
+    raw = asyncio.run(provider("a & b"))
+    assert len(raw.encode()) <= 2048
+    assert [item["title"] for item in json.loads(raw)["results"]] == ["A", "C"]
+    (request,) = requests
+    assert request.method == "GET" and request.url.host == "nas.example"
+    assert request.url.path == "/search" and dict(request.url.params) == {
+        "q": "a & b",
+        "format": "json",
+    }
+    assert "authorization" not in request.headers and "cookie" not in request.headers
+
+
+@pytest.mark.parametrize("status,body", [(302, b"{}"), (200, b"bad json"), (200, b"x" * 131073)])
+def test_direct_searxng_fails_closed_without_following_redirects(status: int, body: bytes) -> None:
+    requests: list[httpx.Request] = []
+
+    def serve(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            status,
+            headers={"Content-Type": "application/json", "Location": "https://elsewhere.example/"},
+            stream=httpx.ByteStream(body),
+        )
+
+    provider = SearXNGSearch("http://nas.example", transport=httpx.MockTransport(serve))
+    with pytest.raises(GatewayError, match="public_search_query_bound"):
+        asyncio.run(provider("🦊" * 401))
+    assert requests == []
+    with pytest.raises(GatewayError, match="public_search_unavailable"):
+        asyncio.run(provider("synthetic query"))
+    assert len(requests) == 1
 
 
 def test_search_query_is_rejected_before_execution_when_too_large() -> None:

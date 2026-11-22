@@ -1,5 +1,9 @@
 # 0023 — Shared harness skill catalog
 
+**Current status:** Historical for live loading and page reads. Portable assets and
+contracts remain, but [Root ADR 0025](0025-managed-opencode-preview.md) removes the
+Hermes provider and supplies no live replacement for skills or page reading.
+
 Status: Accepted, 4 November 2026.
 
 Phase 12 uses one portable operational package repository and the selected harness's

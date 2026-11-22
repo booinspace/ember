@@ -823,6 +823,7 @@ class TaskRouter:
         self.skills: Skills | None = None
         self.delegate_label = "Agentic harness"
         self.delegate_unavailable: str | None = None
+        self.delegate_health: Callable[[], bool] | None = None
         self.artifacts = TaskArtifacts(root)
         self.character_id = character_id
         self.session_id = session_id
@@ -853,6 +854,13 @@ class TaskRouter:
         self._closing = False
         self._active: tuple[UUID, asyncio.Task[TaskResult]] | None = None
 
+    @property
+    def delegation_available(self) -> bool:
+        """Do not advertise a failed or absent harness."""
+        return self.delegate is not None and (
+            self.delegate_health is None or self.delegate_health()
+        )
+
     async def start(self) -> None:
         """Reconcile interrupted work before accepting new work."""
         if self._worker is not None or self._closing:
@@ -876,7 +884,9 @@ class TaskRouter:
             raise TaskConflict("task_router_unavailable")
         if (operation == "tool") != (tool is not None):
             raise TaskConflict("invalid_tool_submission")
-        if self.providers[operation] is None:
+        if self.providers[operation] is None or (
+            operation == "delegate" and not self.delegation_available
+        ):
             raise TaskConflict("task_provider_unavailable")
         handle = await self.store.submit(
             TaskSubmission(
@@ -1140,7 +1150,9 @@ class TaskRouter:
             if status is None or status.cancellation_requested:
                 raise TaskCancelled()
             provider = self.providers[request.operation]
-            if provider is None:
+            if provider is None or (
+                request.operation == "delegate" and not self.delegation_available
+            ):
                 raise TaskConflict("task_provider_unavailable")
             return await provider.execute(request, context, progress)
 

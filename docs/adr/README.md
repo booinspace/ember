@@ -108,7 +108,7 @@ The [browser turn-details amendment](../phase-8-turn-details-ui.md) adds ephemer
 thinking/selected-recall expansions and keyboard/scroll controls. Root ADR 0015 and
 Agent ADR 0006 record its passing checks and pending UI deployment authorization.
 
-Planned: [Root ADR 0017 — Hermes and Windows runner evaluation](0016-planned-hermes-and-runner-evaluation.md).
+Historical: [Root ADR 0016 — Hermes and Windows runner evaluation](0016-planned-hermes-and-runner-evaluation.md). The Hermes plan is superseded by Root ADR 0025.
 In progress: [Phase 9 operational tasks](0017-phase-nine-operational-tasks.md).
 
 The [LAN HTTPS reverse-proxy extension](../phase-8-lan-https-design.md) uses
@@ -154,27 +154,22 @@ scoped atomic tools, operator UI and [acceptance evidence](../phase-10-validatio
 adoption gate, stable processing identity and [native qualification](../vllm-implementation.md).
 
 [Root ADR 0021 — Isolated Hermes task delegation](0021-hermes-delegation.md)
-records Phase 11 delegation, paired native chat, shared recall, search and speech-stop
-amendments with their qualification evidence, plus the tool-provider simplification
-and repository-owned Desktop launcher.
+records historical Phase 11 provider and Desktop work, including the former
+Windows/WSL2 qualification. [Root ADR 0023 — Shared harness skills](0023-shared-harness-skills.md)
+records historical live skill loading and the retained portable contract. Neither
+prior qualification transfers to the managed OpenCode preview.
 
-The [neutral harness broker and live dashboard amendment](../harness-dashboard-amendment.md)
-extends Root ADR 0021 and component ADR 0011; Phase 12 skill loading is implemented
-inside the selected harness under Root ADR 0023, with Ember retaining grants,
-budgets and visibility.
-
-The selected PC task worker now uses Ubuntu WSL2/bubblewrap while Ember's Core,
-voice, canonical memory, task broker and model gateway stay native Windows.
-The [current qualification](../benchmarks/2026-11-04-harness-dashboard/README.md)
-supersedes the earlier Windows-worker adoption claim; Desktop remains deferred.
-
-[Root ADR 0022 — OpenCode memory](0022-opencode-memory-recall.md) records the
-private recall listener, opt-in LAN HTTPS and note writes; see the [setup runbook](../opencode-memory.md).
-
-[Root ADR 0023 — Shared harness skills](0023-shared-harness-skills.md) records
-Phase 12 ownership, the portable repository and bounded native loading.
+[Root ADR 0022 — Independent memory MCP](0022-opencode-memory-recall.md) governs
+the unchanged optional listener; use it [read-only with verified local inference](../opencode-memory.md)
+in a separately managed client, not the managed preview.
 
 [Root ADR 0024 — Phase 13 inference hardening](0024-phase-thirteen-inference-hardening.md)
 records conservative runner ownership, admission race fixes and the profile gates
 for live preemption. See [Phase 13 validation](../phase-13-validation.md) and
 [opt-in Strata screenshot setup](../../ember-agent/docs/strata-vision.md).
+
+[Root ADR 0025 — Managed OpenCode preview](0025-managed-opencode-preview.md)
+records the default-off OpenCode 2.3.2 preview, Hermes and hosted coding-memory
+removal, independent public search/MCP, and the open Phase 11/12 gates. The
+[agent record](../../ember-agent/docs/adr/0015-managed-opencode-preview.md)
+owns runtime composition and process/model boundaries.

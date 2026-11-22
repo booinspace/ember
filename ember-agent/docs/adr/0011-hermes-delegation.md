@@ -1,5 +1,9 @@
 # 0011 — Task-local Hermes provider and model mapping
 
+**Current status:** Historical. Task and Desktop adapters are removed; see
+[Agent ADR 0015](0015-managed-opencode-preview.md). No existing private Hermes
+state is migrated.
+
 Status: task provider implemented; selected PC deployment uses the qualified WSL2
 worker under the operator-authorized harness/dashboard amendment. Desktop is deferred;
 the broader original Phase 8A adoption gate remains open.

@@ -6,7 +6,7 @@ import re
 import tomllib
 from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -100,8 +100,6 @@ class InferenceSettings(RuntimeModel):
     backend: InferenceBackend = "ollama"
     coding_api: bool = False
     coding_vision: bool = False
-    coding_memory: bool = False
-    coding_memory_write: bool = False
     vllm: VLLMSettings | None = None
     strata: StrataSettings | None = None
 
@@ -109,10 +107,6 @@ class InferenceSettings(RuntimeModel):
     def _selected_runner(self) -> Self:
         if self.coding_vision and (not self.coding_api or self.backend != "strata"):
             raise ValueError("Coding vision requires managed Strata and the coding API.")
-        if self.coding_memory and not self.coding_api:
-            raise ValueError("Coding memory requires the coding API.")
-        if self.coding_memory_write and not self.coding_memory:
-            raise ValueError("Coding memory writes require coding memory.")
         if self.backend == "vllm" and self.vllm is None:
             raise ValueError("vLLM requires an explicit installed runner profile.")
         if self.backend == "strata" and self.strata is None:
@@ -218,88 +212,79 @@ class InterpretationSettings(RuntimeModel):
     timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 8.0
 
 
-def _harness_inputs(command: tuple[str, ...], origin: str) -> None:
-    endpoint = urlsplit(origin)
-    if (
-        endpoint.scheme not in {"http", "https"}
-        or not endpoint.hostname
-        or endpoint.username is not None
-        or endpoint.password is not None
-        or endpoint.path not in {"", "/"}
-        or endpoint.query
-        or endpoint.fragment
-        or any(not argument or len(argument) > 4096 for argument in command)
-    ):
-        raise ValueError("A harness requires an explicit search origin and installed command.")
+_HERMES_TASK_REMOVED = (
+    "Hermes task support was removed. Remove [hermes] or replace the Hermes [harness] "
+    "configuration with an explicit OpenCode pin or omit [harness] to disable delegation."
+)
+_HERMES_SEARCH_REMOVED = (
+    "Hermes public search was removed. Replace its [public_search] configuration with "
+    "searxng_url or an independent search command, or remove [public_search]."
+)
 
 
-class HermesSettings(RuntimeModel):
-    """Explicit installed isolated worker; its launcher never receives runner credentials."""
-
-    command: Annotated[tuple[str, ...], Field(min_length=1, max_length=32)]
-    revision: Literal["71736c9f32597bbca9d89cede5aa136e55946b2f"]
-    profile_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    search_endpoint: str
-    private_recall: bool = False
-    tools: tuple[str, ...] = Field(default=(), max_length=8)
-    skills: bool = False
-
-    @model_validator(mode="after")
-    def installed_origin(self) -> Self:
-        _harness_inputs(self.command, self.search_endpoint)
-        return self
+def _absolute_command(command: tuple[str, ...]) -> bool:
+    return Path(command[0]).is_absolute() and all(
+        part and len(part) <= 4096 and "\0" not in part for part in command
+    )
 
 
 class HarnessSettings(RuntimeModel):
-    """One selected task adapter; SDK compatibility is validated by that adapter."""
+    """One selected task adapter with an executable pin and explicit workspace."""
 
-    provider: str = Field(default="hermes", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
-    command: Annotated[tuple[str, ...], Field(min_length=1, max_length=32)]
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,31}$")
+    command: tuple[str, ...] = Field(min_length=1, max_length=1)
     revision: str = Field(min_length=1, max_length=128)
     profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    search_endpoint: str
+    workspace: Path
     private_recall: bool = False
     tools: tuple[str, ...] = Field(default=(), max_length=8)
     skills: bool = False
 
     @model_validator(mode="after")
     def installed_inputs(self) -> Self:
-        """Retain legacy installation checks without importing a provider SDK."""
-        _harness_inputs(self.command, self.search_endpoint)
-        if len(set(self.tools)) != len(self.tools) or any(len(tool) > 128 for tool in self.tools):
+        """Validate the declaration offline; the adapter verifies the installation."""
+        if self.provider == "hermes":
+            raise ValueError(_HERMES_TASK_REMOVED)
+        if not _absolute_command(self.command) or not self.workspace.is_absolute():
+            raise ValueError("Harness executable and workspace must be absolute paths.")
+        if "\0" in str(self.workspace) or not self.revision.strip() or "\0" in self.revision:
+            raise ValueError("Harness requires a valid workspace and explicit revision.")
+        if len(set(self.tools)) != len(self.tools) or any(
+            not tool or len(tool) > 128 for tool in self.tools
+        ):
             raise ValueError("Harness tool grants must be unique bounded identities.")
         return self
 
 
 class PublicSearchSettings(RuntimeModel):
-    """Explicit installed search-only command, independent of any Desktop client."""
+    """Exactly one search transport; the provider label does not load code."""
 
     provider: str = Field(default="command", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
-
-    command: Annotated[tuple[str, ...], Field(min_length=1, max_length=32)]
+    command: tuple[str, ...] = Field(default=(), max_length=32)
+    searxng_url: str | None = None
 
     @model_validator(mode="after")
-    def installed_command(self) -> Self:
-        if not Path(self.command[0]).is_absolute() or any(
-            not part or len(part) > 4096 for part in self.command
-        ):
+    def installed_transport(self) -> Self:
+        """Accept an absolute installed command or an unauthenticated HTTP(S) origin."""
+        if self.provider == "hermes":
+            raise ValueError(_HERMES_SEARCH_REMOVED)
+        if bool(self.command) == (self.searxng_url is not None):
+            raise ValueError("Configure either a public search command or searxng_url.")
+        if self.command and not _absolute_command(self.command):
             raise ValueError("Public search requires an absolute installed command.")
-        return self
-
-
-class HermesClientSettings(RuntimeModel):
-    """Optional paired native client; recalled replies remain in its separate local history."""
-
-    private_recall: bool = False
-    search_command: Annotated[tuple[str, ...], Field(max_length=32)] = ()
-    input_ceiling: Annotated[int, Field(ge=4096, le=24576)] = 16384
-
-    @model_validator(mode="after")
-    def installed_command(self) -> Self:
-        if any(not part or len(part) > 4096 for part in self.search_command):
-            raise ValueError("The native search adapter requires explicit installed arguments.")
-        if self.search_command and not Path(self.search_command[0]).is_absolute():
-            raise ValueError("The native search adapter executable must be absolute.")
+        if self.searxng_url is not None:
+            endpoint = urlsplit(self.searxng_url)
+            if (
+                endpoint.scheme not in {"http", "https"}
+                or not endpoint.hostname
+                or endpoint.username is not None
+                or endpoint.password is not None
+                or endpoint.path not in {"", "/"}
+                or any(char in self.searxng_url for char in "?#\\")
+                or any(ord(char) <= 32 or ord(char) == 127 for char in self.searxng_url)
+                or endpoint.port == 0
+            ):
+                raise ValueError("searxng_url must be an HTTP(S) origin without credentials.")
         return self
 
 
@@ -334,19 +319,13 @@ class DeploymentConfig(RuntimeModel):
     memory_mcp: MemoryMCPSettings | None = None
     inference: InferenceSettings = InferenceSettings()
     preemption_enabled: bool = False
-    hermes: HermesSettings | None = None
-    hermes_client: HermesClientSettings | None = None
     harness: HarnessSettings | None = None
     public_search: PublicSearchSettings | None = None
 
     @property
     def selected_harness(self) -> HarnessSettings | None:
-        """Normalize the legacy declaration at composition, keeping callers provider-neutral."""
-        if self.harness is not None:
-            return self.harness
-        if self.hermes is not None:
-            return HarnessSettings.model_validate_json(self.hermes.model_dump_json())
-        return None
+        """Return the configured task harness, if any."""
+        return self.harness
 
     @property
     def model_pin_configured(self) -> bool:
@@ -426,8 +405,6 @@ class _DeploymentSettings(RuntimeModel):
     prompts: _PromptSettings = _PromptSettings()
     memory_mcp: MemoryMCPSettings | None = None
     inference: InferenceSettings = InferenceSettings()
-    hermes: dict[str, JsonValue] | None = None
-    hermes_client: dict[str, JsonValue] | None = None
     harness: dict[str, JsonValue] | None = None
     public_search: dict[str, JsonValue] | None = None
     mcp_servers: list[dict[str, JsonValue]] = Field(
@@ -435,12 +412,37 @@ class _DeploymentSettings(RuntimeModel):
     )
 
 
+def _reject_removed_settings(parsed: dict[str, object]) -> None:
+    if "hermes" in parsed:
+        raise ConfigurationError(_HERMES_TASK_REMOVED)
+    if "hermes_client" in parsed:
+        raise ConfigurationError(
+            "Hermes Desktop support was removed. Remove [hermes_client] and use Ember's "
+            "browser for chat; configure [public_search] separately if needed."
+        )
+    harness = parsed.get("harness")
+    if isinstance(harness, dict) and cast(dict[str, object], harness).get("provider") == "hermes":
+        raise ConfigurationError(_HERMES_TASK_REMOVED)
+    search = parsed.get("public_search")
+    if isinstance(search, dict) and cast(dict[str, object], search).get("provider") == "hermes":
+        raise ConfigurationError(_HERMES_SEARCH_REMOVED)
+    inference = parsed.get("inference")
+    if isinstance(inference, dict) and (
+        "coding_memory" in inference or "coding_memory_write" in inference
+    ):
+        raise ConfigurationError(
+            "Gateway-hosted coding memory was removed. Delete inference.coding_memory "
+            "and inference.coding_memory_write; configure [memory_mcp] separately if needed."
+        )
+
+
 def _read_settings(path: Path) -> _DeploymentSettings:
     try:
         with path.open("rb") as stream:
-            parsed: object = tomllib.load(stream)
+            parsed = tomllib.load(stream)
     except (OSError, tomllib.TOMLDecodeError) as error:
         raise ConfigurationError("Cannot read a valid deployment TOML file.") from error
+    _reject_removed_settings(parsed)
     try:
         settings = _DeploymentSettings.model_validate(parsed)
         raw_services: object = parsed["services"]
@@ -675,8 +677,6 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         or urlsplit(settings.services.livekit.endpoint).hostname == "::1"
     ):
         raise ConfigurationError("LAN access requires an enabled browser and managed IPv4 LiveKit.")
-    if settings.inference.coding_memory and settings.memory_mcp is not None:
-        raise ConfigurationError("Choose coding memory or memory MCP for this deployment.")
     if settings.inference.coding_api and (
         settings.inference.backend != "strata" or not settings.browser.enabled or not public_origin
     ):
@@ -699,39 +699,27 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     except (ValidationError, ValueError) as error:
         raise ConfigurationError("MCP server configuration is invalid.") from error
     try:
-        if settings.harness is not None and settings.hermes is not None:
-            raise ValueError("Use either harness or the legacy Hermes section.")
         harness = (
             HarnessSettings.model_validate_json(json.dumps(settings.harness))
             if settings.harness is not None
             else None
         )
+    except (ValidationError, ValueError) as error:
+        raise ConfigurationError(
+            "Invalid [harness]: specify provider, absolute executable and "
+            "workspace, revision, and executable SHA-256."
+        ) from error
+    try:
         public_search = (
             PublicSearchSettings.model_validate_json(json.dumps(settings.public_search))
             if settings.public_search is not None
             else None
         )
-        hermes = (
-            HermesSettings.model_validate_json(json.dumps(settings.hermes))
-            if settings.hermes is not None
-            else None
-        )
-        hermes_client = (
-            HermesClientSettings.model_validate_json(json.dumps(settings.hermes_client))
-            if settings.hermes_client is not None
-            else None
-        )
-        if (
-            public_search
-            and hermes_client
-            and hermes_client.search_command
-            and public_search.command != hermes_client.search_command
-        ):
-            raise ValueError("Conflicting public-search and legacy client search commands.")
-        if hermes_client is not None and not settings.browser.enabled:
-            raise ValueError("The Hermes client requires the application control listener.")
     except (ValidationError, ValueError) as error:
-        raise ConfigurationError("Hermes configuration is invalid.") from error
+        raise ConfigurationError(
+            "Invalid [public_search]: specify either searxng_url as an "
+            "HTTP(S) origin or an absolute installed command."
+        ) from error
     services = _validate_services(settings, path.resolve().parent, runtime_root)
     if settings.memory_mcp is not None and settings.memory_mcp.lan_bind:
         if not public_origin:
@@ -746,8 +734,6 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     return DeploymentConfig(
         harness=harness,
         public_search=public_search,
-        hermes=hermes,
-        hermes_client=hermes_client,
         mcp_servers=mcp_servers,
         memory_mcp=settings.memory_mcp,
         inference=settings.inference,

@@ -1,5 +1,8 @@
 # 0013 — Harness-owned skills, Ember-owned authority
 
+**Current status:** Historical for live loading. [Agent ADR 0015](0015-managed-opencode-preview.md)
+replaces Hermes with a preview that does not compose a live skill or page provider.
+
 Status: Accepted, 4 November 2026.
 
 Adopt [root ADR 0023](../../../docs/adr/0023-shared-harness-skills.md).

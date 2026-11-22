@@ -122,6 +122,8 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
                 == 200
             )
             state = client.get("/api/state").json()
+            assert "hermes_chat_available" not in state and "hermes_private_recall" not in state
+            assert client.get("/hermes/v1/models").status_code == 404
             assert not state["capture"]["enabled"] and state["recall"]["local_enabled"]
             assert capture_changes == [True]
             assert (

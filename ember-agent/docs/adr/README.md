@@ -59,16 +59,20 @@ existing task/confirmation ownership and Phase 10 acceptance evidence.
 [Agent ADR 0010 — vLLM upstream](0010-vllm-upstream.md) records explicit backend
 selection, stable profile identity, transport semantics and qualification.
 
-[Agent ADR 0011 — Hermes task delegation](0011-hermes-delegation.md) records the
-optional provider, task-local model mapping, paired native-client amendment and
-original Phase 11 acceptance.
+[Agent ADR 0011 — Hermes task delegation](0011-hermes-delegation.md) records
+historical provider and Desktop evidence; both integrations have been removed.
 
 [Agent ADR 0012 — Private memory MCP](0012-memory-mcp.md) records the inbound
 listener, opt-in LAN HTTPS and its runtime ownership.
 
 [Agent ADR 0013 — Shared harness skills](0013-shared-harness-skills.md) records the
-neutral catalog, native loading and existing broker/context contracts.
+neutral catalog and historical Hermes loading. No live skills provider is composed.
 
 [Agent ADR 0014 — Gateway release and realtime ownership](0014-gateway-release-and-realtime-ownership.md)
 records Phase 13 admission, journal and native stream ownership, including
 opt-in P5 screenshots.
+
+[Agent ADR 0015 — Managed OpenCode preview](0015-managed-opencode-preview.md)
+records the default-off process, task-scoped P2 ingress and synthetic-only policy.
+[Root ADR 0025](../../../docs/adr/0025-managed-opencode-preview.md) maps evidence and
+unqualified platforms to the still-open Phase 11/12 gates.

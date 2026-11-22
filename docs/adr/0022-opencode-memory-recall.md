@@ -1,5 +1,10 @@
 # Root ADR 0022: private Ember memory for OpenCode
 
+**Current scope:** This record applies only to the unchanged operator-managed
+listener. Use read-only with verified local inference; do not attach it to
+[managed OpenCode](0025-managed-opencode-preview.md). Gateway-hosted coding memory
+was a separate integration and has been removed. No private data migration.
+
 **Status:** Recall deployed on Miku. Delegated notes implemented and tested on synthetic memory; live write deployment and OpenCode validation pending.
 
 The operator opted to share all ordinary recall-eligible memories for Ember's active character with OpenCode. Keep the existing engine and SQLite on the Ember host. The [agent runtime adapter](../../ember-agent/docs/adr/0012-memory-mcp.md) is a separate listener that defaults to loopback when enabled. The LAN option requires the configured HTTPS reverse proxy and the same bearer. The [runbook](../opencode-memory.md) covers both transports and model privacy.

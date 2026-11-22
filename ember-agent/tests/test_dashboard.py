@@ -1,6 +1,8 @@
 """Inspect exact, revocable input without recording prompts or affecting generation."""
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -8,6 +10,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 
+from ember_agent.character.core import CharacterCore
 from ember_agent.inference.contracts import (
     GatewayError,
     GatewayEvent,
@@ -17,6 +20,23 @@ from ember_agent.inference.contracts import (
 )
 from ember_agent.observability import ActivityLog
 from ember_agent.runtime.dashboard import Dashboard, SystemSample
+from ember_memory_engine import CanonicalEngine
+from ember_memory_engine.async_client import InProcessAsyncMemoryClient
+
+from .test_character import FakeModel
+
+
+@asynccontextmanager
+async def dashboard_core(
+    root: Path,
+) -> AsyncIterator[tuple[CharacterCore, InProcessAsyncMemoryClient, UUID]]:
+    with CanonicalEngine(root / "memory") as engine:
+        character = engine.create_character().store_id
+        memory = InProcessAsyncMemoryClient(engine.character(character))
+        try:
+            yield CharacterCore(memory, FakeModel(), model_tag="pinned-model"), memory, character
+        finally:
+            await memory.aclose()
 
 
 def request(context: UUID | None = None) -> GatewayRequest:
@@ -185,7 +205,7 @@ def test_host_sampling_is_cached_and_does_not_enter_capture(
 
 def test_activity_coalesces_updates_without_content_and_has_a_hard_bound() -> None:
     log = ActivityLog()
-    identity = log.begin("tool", "web_search", request_id=uuid4(), provider="hermes")
+    identity = log.begin("tool", "web_search", request_id=uuid4(), provider="fixture")
     log.update(identity, "succeeded", count=3)
     assert len(log.since(0)) == 1 and log.since(0)[0].status == "succeeded"
     assert not log.since(log.revision)
@@ -195,11 +215,9 @@ def test_activity_coalesces_updates_without_content_and_has_a_hard_bound() -> No
 
 
 def test_observer_failures_do_not_lose_core_delivery_or_leave_it_busy(tmp_path: Path) -> None:
-    from .test_hermes_chat import application
 
     async def run() -> None:
-        async with application(tmp_path) as env:
-            core = env.factory()
+        async with dashboard_core(tmp_path) as (core, _, _):
 
             def broken(*args: object) -> None:
                 raise RuntimeError("SYNTHETIC_OBSERVER_ERROR")
@@ -221,11 +239,9 @@ def test_observer_failures_do_not_lose_core_delivery_or_leave_it_busy(tmp_path: 
 
 
 def test_prepare_keeps_explicit_observation_identity_validation(tmp_path: Path) -> None:
-    from .test_hermes_chat import application
 
     async def run() -> None:
-        async with application(tmp_path) as env:
-            core = env.factory()
+        async with dashboard_core(tmp_path) as (core, _, _):
             observed = await core.observe_input("Synthetic question")
             with pytest.raises(GatewayError, match="turn_observation_mismatch"):
                 await core.prepare(observed.text, observation=observed, request_id=uuid4())
@@ -240,23 +256,21 @@ def test_dashboard_api_uses_operator_auth_lazy_disclosure_and_current_authority(
     from ember_agent.realtime.contracts import RoomBinding
     from ember_agent.runtime.browser_control import BrowserControl
 
-    from .test_hermes_chat import application
     from .test_phase_eight_browser import ORIGIN, Controls
 
     async def run() -> None:
-        async with application(tmp_path) as env:
-            core = env.factory()
+        async with dashboard_core(tmp_path) as (core, memory, character):
             monitor = dashboard()
             valid = AsyncMock(return_value=True)
             step = request()
             monitor.capture(step, validate=valid)
-            deep = DeepRecallService(env.character, lambda _: env.memory, validation=env.memory)
+            deep = DeepRecallService(character, lambda _: memory, validation=memory)
             owner = BrowserControl(
                 origin=ORIGIN,
                 assets=tmp_path / "unbuilt",
                 binding=RoomBinding(
                     instance_id=uuid4(),
-                    character_id=env.character,
+                    character_id=character,
                     room="ember-" + uuid4().hex,
                     endpoint="ws://127.0.0.1:7880",
                 ),

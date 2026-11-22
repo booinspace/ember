@@ -1,5 +1,9 @@
 # 0016 — Evaluate Hermes Agent and Windows inference runners
 
+**Current status:** Historical for Hermes evaluation and Desktop adoption, superseded
+by [Root ADR 0025](0025-managed-opencode-preview.md). Independent runner evidence
+and acceptance remain separate. The proposal below is retained as written.
+
 Status: proposed; no runtime changes or benchmark results.
 
 The [2026-11-04 RTX 3090 review](../inference-backend-evaluation.md) expands the

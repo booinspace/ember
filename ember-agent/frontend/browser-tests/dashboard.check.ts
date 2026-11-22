@@ -41,7 +41,7 @@ async function mock(page: Page) {
     started_at: "2026-11-04T12:00:00Z",
     kind: "tool",
     name: "web_search",
-    provider: "hermes",
+    provider: "fixture",
     status: "succeeded",
     request_id: id,
     task_id: null,
@@ -74,7 +74,7 @@ async function mock(page: Page) {
         summary_tasks_available: true,
         recall_tasks_available: true,
         delegation_available: true,
-        delegation_provider: "Hermes",
+        delegation_provider: "Fixture harness",
         transport: "http",
         text_available: true,
       };
@@ -146,7 +146,7 @@ async function mock(page: Page) {
             id: "public_search",
             kind: "public_search",
             name: "Public web search",
-            provider: "hermes",
+            provider: "fixture",
             status: "enabled",
             operations: ["web_search"],
             reason: null,
@@ -156,7 +156,7 @@ async function mock(page: Page) {
             id: "harness",
             kind: "harness",
             name: "Agentic delegation",
-            provider: "Hermes",
+            provider: "Fixture harness",
             status: "enabled",
             operations: ["delegate"],
             reason: null,
@@ -308,7 +308,7 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".activity-card.tool")).toHaveCount(1);
   await page.locator(".activity-card.tool summary").click();
-  await expect(page.locator(".activity-body")).toContainText("hermes");
+  await expect(page.locator(".activity-body")).toContainText("fixture");
   await page
     .getByRole("button", { name: "Inspect request", exact: true })
     .click();

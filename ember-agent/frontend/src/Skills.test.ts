@@ -28,7 +28,7 @@ test("skill contracts retain explicit readiness, original metadata and complete 
 test("malformed metadata cannot masquerade as an enabled available catalog", () => {
   expect(
     skillCatalog.safeParse({
-      provider: "hermes",
+      provider: "fixture",
       revision: "one",
       skills: [{ ...summary, enabled: "true" }],
       unavailable: null,
@@ -36,7 +36,7 @@ test("malformed metadata cannot masquerade as an enabled available catalog", () 
   ).toBe(false);
   expect(
     skillCatalog.safeParse({
-      provider: "hermes",
+      provider: "fixture",
       revision: "one",
       skills: [{ ...summary, content_sha256: "invalid" }],
       unavailable: null,

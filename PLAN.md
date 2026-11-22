@@ -9,7 +9,7 @@ Build one local character application from two first-party repositories:
 
 The character’s identity, personality, conversation continuity, and memories remain independent of external agent frameworks.
 
-**Hermes Agent is the preferred agentic harness, subject to Phase 8A acceptance.** It is the proposed home for agentic chat, tool loops and messaging integrations, with production delegation through an isolated adapter. Removing it leaves ordinary conversation, memory, native tools, and independently configured MCP tools functional.
+**Managed OpenCode 2.3.2 is a default-off, synthetic/non-sensitive-only task preview.** It is not a production or private-data harness: there is no OS sandbox or enforced egress boundary. Hermes, including Desktop, and gateway-hosted coding memory are removed without private data migration. Browser text and voice, native tools, public SearXNG search and independently configured MCP remain Ember-owned and independent. See [current scope and acceptance](#managed-opencode-preview-and-phase-1112-status).
 
 All primary-Qwen generation uses **one inference gateway**, implemented incrementally. Ollama owns the loaded model weights; the gateway owns request admission and scheduling.
 
@@ -24,7 +24,7 @@ The remaining model unknowns are:
 - Cancellation and preemption.
 - Context-switching cost.
 - GPU/VRAM characteristics.
-- Hermes compatibility through the gateway, including the effective 64K context gate.
+- Managed OpenCode compatibility with real upstream model inference and actual gateway budgets.
 
 ### Initial deployment choices
 
@@ -42,7 +42,7 @@ The remaining model unknowns are:
 | Memory deployment | In-process engine behind dependency injection |
 | Gateway deployment | Launcher-owned local child process by default |
 | Concurrency | One speaking character and one active delegated workflow initially |
-| External harness | Preferred isolated Hermes Agent profile; Odysseus retained as a historical alternative |
+| Optional task harness | Managed OpenCode 2.3.2 preview, default-off; synthetic/non-sensitive only |
 | Cloud AI dependency | None |
 
 ---
@@ -131,16 +131,16 @@ flowchart TD
 
     Core --> Tasks["TaskRouter"]
     Tasks --> Provider["AgenticTaskProvider"]
-    Provider --> Hermes["Optional Hermes Agent worker"]
+    Provider --> OpenCode["Optional managed OpenCode preview"]
     Provider --> Future["Future provider adapters"]
 
-    Hermes --> WorkerTools["Authorized tools / MCP"]
+    OpenCode --> WorkerTools["Synthetic workspace read / glob / grep"]
     Provider --> Events["EventBus"]
     Events --> Attention["AttentionPolicy"]
     Attention --> Core
 
     Core --> Gateway["One inference gateway"]
-    Hermes --> Gateway
+    OpenCode --> Gateway
     Memory --> ExtractionClient["Injected extraction ModelClient"]
     ExtractionClient --> Gateway
     Gateway --> Ollama["Ollama"]
@@ -221,7 +221,7 @@ The browser frontend is served by the application. A production launch does not 
 | ToolRouter, TaskRouter, prompt composer | In-process | Application-owned |
 | Operational-store client | In-process | Application-owned |
 | Inference gateway | Local child process by default | Application-owned |
-| Odysseus worker bridge | Optional separate process/profile | Start/connect only when configured |
+| Managed OpenCode preview | Optional owned child and task-local P2 ingress | Start pinned executable only when explicitly configured |
 | MCP servers | In-process client plus natural external server processes | Per-server configuration |
 | Frontend | Browser application | Served/opened by `ember-agent` |
 
@@ -302,7 +302,7 @@ Dependencies are installed during setup. Startup does not silently download mode
 9. Start/connect the gateway and verify its model/profile configuration.
 10. Perform configured warmup through the gateway.
 11. Start runtime API, browser backend, and LiveKit worker.
-12. Optionally start/connect the Odysseus bridge.
+12. Optionally start the managed OpenCode preview if configured.
 13. Discover MCP tools and refresh provider health.
 14. Expose/open the browser UI.
 15. Report overall and feature-specific readiness.
@@ -325,7 +325,7 @@ Qwen .......... ready — configured digest, warm/cold
 Gateway ....... ready — conservative/preemptive mode
 LiveKit ....... ready
 Kokoro ........ ready
-Odysseus ...... disabled / ready / unavailable / unsupported
+Task harness .. disabled / ready / unavailable / unsupported
 MCP ........... N available tools; M unavailable servers
 Character ..... ready
 Voice ......... ready
@@ -338,7 +338,7 @@ Expose separate states for application, character, and voice readiness. Do not l
 | Unavailable component | Result |
 |---|---|
 | Semantic/FTS index | Character starts with canonical fallback; rebuilding reported |
-| Odysseus | Core continues; delegation unavailable |
+| Optional task harness | Core continues; delegation unavailable |
 | One MCP server | Other tools/core continue |
 | Kokoro | Spoken output unavailable; browser text output remains available |
 | LiveKit Server | Voice transport unavailable; browser text/control path remains available |
@@ -660,7 +660,8 @@ Typed errors include not-found, revision conflict, access denied, unsupported wr
 
 ### Harness memory access
 
-A worker may receive a task-bound read-only broker capability with:
+Managed OpenCode has no memory access. A future qualified worker may receive a
+task-bound read-only broker capability with:
 
 - Bound character.
 - Allowed records/source scope.
@@ -2153,7 +2154,8 @@ A timeout does not authorize repeating an uncertain write.
 
 ### MCP independence
 
-Character and harness may use the same reusable service through distinct scoped clients.
+The managed preview does not use MCP. A future qualified harness and CharacterCore
+may use the same reusable service through distinct scoped clients.
 
 Network servers use separate credentials. Stdio servers use separate processes or a policy relay; stdin is not shared between clients.
 
@@ -2275,6 +2277,9 @@ Initial defaults:
 
 ### Context package
 
+Managed OpenCode gets only the task goal, not Ember recall, history, or private
+context. The following package is for future qualified providers.
+
 Include goal-relevant constraints, selected facts with modality/time/provenance, authorized artifacts, optional read capability, and revision/dependency manifest.
 
 Initial selected personal-context budget: about 1,024 tokens.
@@ -2291,8 +2296,9 @@ Worker prompts are functional. The character remains the social interface.
 
 ## 18. External harness adapter and empirical gateway compatibility
 
-The Odysseus design below is retained as prior research. Phase 8A evaluates Hermes
-first; the Phase 11 transport mapping must follow the selected pinned harness.
+See [Agent ADR 0015](ember-agent/docs/adr/0015-managed-opencode-preview.md) for
+the current managed OpenCode adapter. The Odysseus design below is historical
+research, not an installed transport or qualification for OpenCode.
 
 ### Inspected reference
 
@@ -2564,6 +2570,9 @@ Serve owner-bound escaped content. No arbitrary model-supplied paths or executab
 ---
 
 ## 23. Portable skills and authority
+
+Provider requirements below are not current capabilities. No live skill loader
+or page reader is composed with OpenCode.
 
 Support:
 
@@ -3359,7 +3368,7 @@ Retain portable resources, provider metadata round trips, duplicate IDs, require
 
 ### A. Core startup without harness
 
-Run `ember start` with valid memory, model, LiveKit, and Kokoro; Odysseus absent.
+Run `ember start` with valid memory, model, LiveKit, and Kokoro; omit `[harness]`.
 
 Verify memory, voice, native tools, configured direct MCP, browser readiness, and unavailable-provider reporting.
 
@@ -3371,7 +3380,7 @@ Verify ownership, capabilities, gateway-only model routing, no second server, an
 
 ### C. Degraded startup
 
-Individually remove indexes, Odysseus, an MCP server, Kokoro, LiveKit, Ollama, and gateway.
+Individually remove indexes, the optional harness, an MCP server, Kokoro, LiveKit, Ollama, and gateway.
 
 Verify the documented feature matrix, truthful health, UI availability, and no hidden model fallback.
 
@@ -3432,7 +3441,7 @@ Buying B alone does not end A ownership.
 
 ### Deep Associative Recall scenario (Phase 8)
 
-With MCP/Odysseus/task runtime disabled, ask the NAS question against sanitized native
+With MCP, the optional harness, and task runtime disabled, ask the NAS question against sanitized native
 and independently seeded library memories plus explicitly granted archive passages.
 Request last-year scope, inspect separate plausible incidents, follow an exact quote,
 and produce a compact P0 answer. Revoke a source or forget an anchor during a second
@@ -3468,7 +3477,7 @@ Real export
 
 Also require temporal corrections, suppression, derived rebuild, embedding replacement, selective export, and Windows/Linux compatibility.
 
-Odysseus is not part of this gate.
+Optional harness qualification is not part of this gate.
 
 ---
 
@@ -3487,11 +3496,11 @@ Each phase leaves working, tested behavior.
 | **6 — Full extraction** | Structured model extraction, resumable jobs, policies/summary import; **same gateway gains P3/P4 queues and conservative admission** |
 | **7 — Consolidation/time + user profile** | Duplicate redirects, conflicts/supersession, recorded history, safe re-extraction; policy-controlled native acceptance, bounded source-backed profile pins in terminal/LiveKit text, origin preservation and bounded relationship/temporal prerequisites for Phase 8 |
 | **8 — Stable application integration** | Browser/audio/memory, automatic native capture and source controls, **ordinary conversational temporal recall** with supported event dates, reviewed existing-memory enrichment and historical delivery validation; **Deep Associative Recall** with explicit invocation/inspection/cancellation and measured fast-path isolation, prompt budgets, **single-command composition/startup/shutdown**, health and portability |
-| **8A — Hermes and local runner evaluation** | Isolated Hermes chat/UI and app integration, tool and memory boundary proof, RTX 3090 runner comparison, go/no-go ADR |
+| **8A — Local runner evaluation and historical Hermes spike** | RTX 3090 runner/voice comparison; former Hermes-specific evaluation is historical |
 | **9 — Generic agent foundations** | Events/attention, ToolProvider/TaskRouter foundations, operational store; **same gateway gains P1/P2, reservation, fairness/accounting** |
 | **10 — Direct MCP** | Discovery, normalization, credentials, scoped authority, UI |
-| **11 — Harness delegation (Hermes preferred)** | Real transport reconnaissance, compatibility profile, isolated bridge, async lifecycle/results/security |
-| **12 — Portable skills** | Harness-owned progressive loading; Ember manifests, grants, budgets and UI |
+| **11 — Harness delegation** | Managed OpenCode preview only; production compatibility, isolation, lifecycle and results gates remain open |
+| **12 — Portable skills** | Harness-owned progressive loading; Ember manifests, grants, budgets and UI; no current live provider |
 | **13 — Preemption hardening** | Actual cancellation/runner/GPU/context-switch contention testing; enable live preemption only after acceptance |
 
 Phase 1's generic ABI/archive 0.1 core advanced while the personal export was
@@ -4004,9 +4013,15 @@ dates, reviewed enrichment and historical delivery; they are distinct from deep 
 
 ### Phase 8A acceptance criteria: Hermes and Windows runner evaluation
 
-**Status: planned.** Run after the current Phase 8 work as an isolated feasibility
-phase. Preserve Phase 8 acceptance and Phase 9/10 ownership. Phase 11 ships the
-production adapter only after this gate and the relevant task/tool foundations.
+**Historical Hermes design, not deployment instructions.** The Hermes-specific
+P8A-AC-01–03 and P8A-AC-06 Desktop adoption path is superseded by
+[Root ADR 0025](docs/adr/0025-managed-opencode-preview.md); these checks are not
+passed or carried forward onto OpenCode. Independent runner (P8A-AC-04–05) and
+speech (P8A-AC-07) requirements are not changed by this decision.
+
+**Original scope:** Isolated feasibility work after Phase 8, without changing Phase 8
+acceptance or Phase 9/10 ownership. The original plan gated a Hermes production
+adapter on this spike and the task/tool foundations.
 Start with synthetic data and a separate Hermes profile. Do not switch the live
 runner or enable a real messaging account as part of the evaluation.
 
@@ -4140,7 +4155,7 @@ References: [Hermes quickstart](https://hermes-agent.nousresearch.com/docs/getti
 [Ollama tuning](https://docs.ollama.com/faq), [llama.cpp](https://github.com/ggml-org/llama.cpp),
 [speculative decoding](https://github.com/ggml-org/llama.cpp/blob/master/docs/speculative.md),
 and [vLLM GPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/).
-See [Root ADR 0017](docs/adr/0016-planned-hermes-and-runner-evaluation.md).
+See [Root ADR 0016](docs/adr/0016-planned-hermes-and-runner-evaluation.md) for the original proposal.
 
 ### Phase 9 acceptance criteria: generic agent foundations
 
@@ -4192,6 +4207,8 @@ Owner: ember-agent tool adapters; MCP services retain their natural boundaries.
 
 ### Phase 11 acceptance criteria: harness delegation
 
+Production gates, not preview claims. See [current evidence](docs/adr/0025-managed-opencode-preview.md#acceptance-mapping).
+
 Owner: ember-agent provider adapter and isolated bridge; provider never owns memory.
 
 - **P11-AC-01:** Actual pinned-worker reconnaissance identifies discovery, metadata,
@@ -4221,8 +4238,8 @@ Owner: ember-agent provider adapter and isolated bridge; provider never owns mem
 Owner: the selected agentic harness owns skill parsing, progressive loading and
 execution. Ember owns a thin manifest/requirements adapter, explicit grants,
 measured prompt budgets and operator visibility; skills confer no authority.
-The 4 November harness/dashboard amendment changes implementation ownership below,
-not the safety, portability or resource-budget outcomes.
+No current live skill provider; the previous Hermes implementation and its
+qualifications are historical. The safety, portability and budget gates still apply.
 
 - **P12-AC-01:** The supported harness parses portable frontmatter/Markdown with bounded safe resources;
   its Ember adapter exposes
@@ -5181,81 +5198,51 @@ suites and same-profile restart verification passed. The measured current GGUF
 profile remains faster and lower in sampled VRAM on Ollama, which stays default;
 vLLM is an explicit available backend, with results and limits in the runbook.
 
-## Phase 11 implementation status
+## Managed OpenCode preview and Phase 11/12 status
 
-Hermes is the selected provider. The implementation/qualification is recorded in
-[Root ADR 0021](docs/adr/0021-hermes-delegation.md), its
-[runbook](docs/phase-11-runbook.md) and
-[acceptance record](docs/phase-11-validation.md). Original P11-AC-01–07 remain the
-gate; an installed interface or synthetic fixture does not itself prove acceptance.
-The initial supported profile is isolated, read-only and one-shot with bounded
-optional personal context. Interactive input/update/execution-resume are not
-advertised. Character identity, canonical memory, capture and sole gateway remain
-Ember-owned. Desktop/messaging ordinary-chat integration needs explicit sender,
-character/session, prompt/recall and transcript ownership; a shared model endpoint
-does not imply shared conversation memory. Future learning amendments should reuse
-bounded P3 candidate extraction, pre-compression source checkpoints and reviewed
-Phase 12 skills without enlarging ordinary context or granting autonomous belief writes.
+[Root ADR 0025](docs/adr/0025-managed-opencode-preview.md) records the decision,
+[operator setup](docs/adr/0025-managed-opencode-preview.md#operator-setup-and-rollback)
+and [acceptance mapping](docs/adr/0025-managed-opencode-preview.md#acceptance-mapping).
+The default-off OpenCode **2.3.2** preview owns one fresh tool loop per delegated task.
+Only `read`, `glob`, and `grep` in a dedicated synthetic/non-sensitive workspace are
+allowed. Use synthetic/non-sensitive goals and results too. Ember retains task
+records and attention, character continuity, capture, memory, and sole P2 model
+admission. No private recall, external MCP tools, shell, edits, live skills, or
+page reading are provided. There is no OS sandbox or enforced network egress.
 
+A real macOS OpenCode tool loop was observed against a deterministic gateway
+upstream, not live Strata. Windows reuses existing Job Objects for process ownership
+but is unqualified; Linux is also unqualified. P11-AC-01–07 and P12-AC-01–06 remain
+open for a production provider. Offline checks or a narrow real-server test cannot
+close those gates. Phase 13 cancellation and native release remain separate.
 
-The earlier **native Windows** one-shot implementation was qualified under its
-recorded test token/profile (superseded by the WSL selection below): actual
-SearXNG tasks through both gateway backends, native AppContainer isolation/crash
-recovery, bounded 1/2/4-step SDK histories, full Windows/macOS quality gates and
-210 warm gateway trials plus seven cancellation/drain probes per backend passed.
-Exact configuration/source hashes, failed attempts, independent review corrections
-and shutdown limitations are retained in the acceptance record and benchmark
-reports. The original Phase 8A Desktop/dashboard/app-pairing/near-limit/physical
-voice adoption prerequisite remains open. The later dashboard amendment explicitly
-authorizes enabling the selected WSL task provider on this PC. Messaging
-and autonomous memory/skill learning are separate future integrations.
+Hermes delegation, Desktop, launch/setup adapters, and Hermes public search have
+been removed. Browser text and voice remain independent. Remove retired settings
+rather than translating them or migrating private configs, credentials, chats, or
+notes. `[public_search]` configures SearXNG (or an independent installed command)
+without a harness. It returns bounded public search references and snippets, not
+live page contents. Direct MCP tools remain independent. Existing operator-managed
+`[memory_mcp]` is unchanged: use read-only with verified local inference only,
+never attach it to managed OpenCode. See [memory MCP setup](docs/opencode-memory.md).
 
-### Phase 11 native client amendment — 4 November 2026
+[Root ADR 0021](docs/adr/0021-hermes-delegation.md), [Hermes validation](docs/phase-11-validation.md),
+the [harness/dashboard amendment](docs/harness-dashboard-amendment.md), and
+[Root ADR 0023](docs/adr/0023-shared-harness-skills.md) with its
+[Phase 12 validation](docs/phase-12-validation.md) preserve historical Hermes,
+Desktop, WSL2 and skill evidence. Those provider-specific results do not transfer
+to OpenCode. The neutral Skills surface and portable assets are not a live provider.
 
-The user authorized ordinary Hermes Desktop integration now, separate history per
-chat with shared Ember character and canonical memory, and explicitly deferred
-automatic deletion of affected Hermes chat copies. This overrides the private-recall
-purge prerequisite above **for the explicitly paired native client only**. The
-isolated task worker's ephemeral-context purge contract is unchanged. The pinned
-Desktop build's selected renderer can still display deleted chat content; the
-sanitized retention canary records that gap. Do not mark affected-chat purge complete.
-
-The native client uses supported request-only context, middleware and tool-result
-hooks to bind each original user turn to a server-owned CharacterCore context.
-Composition shares the existing prompt files, ABI and capture owner. Native private
-memory/learning, cloud fallback, compression and auxiliary model calls are disabled.
-All final generations use the sole P0 gateway, with a 16 KiB input guard and 512-token
-output limit despite truthful 128K model capacity metadata. Cached and streamed
-replies must revalidate current recall dependencies before new disclosure.
-
-Explicit public search is a host preflight before recall, using only literal user
-terms and Hermes' native SearXNG provider at the configured NAS. Complete public
-reference rows share the existing prompt budget; no later search may use recalled
-context. Voice uses the same provider without waiting on its own blocked P2 queue.
-Stop speaking interrupts the exact owned LiveKit reply or task announcement and
-silences browser playback while preserving the room, microphone and visible text.
-Model draining and scheduling remain Phase 13 work.
-
-The dedicated Desktop profile is opt-in. Separate histories do not imply cross-UI
-or cross-restart continuity; the current bounded controller requires new native
-chats after restart. Messaging providers, autonomous learning, durable client-session
-restoration, affected-chat deletion and remaining Phase 8A adoption measurements
-remain follow-up work. The [runbook](docs/phase-11-runbook.md) and
-[validation](docs/phase-11-validation.md) describe exact setup and observed checks.
-
-### Shared Strata coding endpoint — 22 November 2026
+## Shared Strata coding endpoint — 22 November 2026
 
 An opt-in bearer-authenticated OpenAI Chat Completions endpoint on the existing
 trusted HTTPS ingress shares the managed Strata model. Only model listing and
 bounded completion requests cross to the loopback gateway. The gateway owns one
 native generation at a time, prefers queued voice/text work, and allows coding
 work during an idle realtime reservation without relaxing background admission.
-An explicit coding-memory profile adds read and optional note tools to plain
-completions through the same gateway. It is exclusive with the memory MCP
-listener. The active character's existing recall policies govern all source
-selection. Coding notes use the reserved `Coding` library and a separate
-delegated authority. Hosted results are bounded by the remaining measured
-model context and gateway transport, with at most two hosted tool rounds.
+Gateway-hosted coding memory has been removed. Neither the P5 coding bearer
+nor the P2 managed OpenCode worker grants Ember recall or notes. Existing
+`Coding` notes remain in place; the [independent memory MCP](docs/opencode-memory.md)
+is unchanged and is not wired to the preview.
 Strata counts coding prompts after rendering the chat template, including tools
 and message history, and enforces the configured input budget before generation.
 An oversized coding prompt returns `context_length_exceeded` and leaves the
@@ -5274,122 +5261,6 @@ The gateway keeps thinking separate from visible text. OpenAI clients receive it
 as `reasoning_content`. Ember drops reasoning replayed in assistant history
 before constructing the next prompt. The P0 browser turn view shows its own
 opt-in thinking in memory, while speech receives visible reply text.
-
-### Hermes integration simplification — 4 November 2026
-
-The user superseded the proposed voice-to-Desktop session mirroring. Keep separate
-voice and native text histories. Ember voice invokes Hermes tools (currently the
-installed SearXNG provider); it does not create a Hermes chat for every voice session.
-Native Hermes Desktop chats continue through the paired CharacterCore ingress and
-sole Ember gateway, with the existing bounded history, shared prompts and canonical
-memory. Asynchronous delegated tasks retain the existing P2/isolation contracts.
-No native voice-session controller or second generation path is added.
-
-Group the existing external adapters in `scripts/hermes/`, document their roles,
-and use the tracked repository-root `start-hermes.ps1` with a regular named Ember
-profile instead of a date-stamped external launcher and separate Electron data.
-Runtime tokens and chat databases remain private Hermes data. Preserve existing
-profiles/chats during the change. This amendment does not broaden tool grants,
-implement messaging, copied-chat purge, or Phase 13 cancellation/scheduling.
-
-
-### Harness broker and live dashboard amendment — 4 November 2026
-
-The operator authorized enabling the installed Hermes task provider and deferring
-Hermes Desktop, whose native backend startup is currently not verified. Desktop
-client adapters remain separate from task providers: future clients must bind
-Ember-owned sender/character/session identity, bounded history, prompt/recall and
-validated delivery without replacing CharacterCore. No voice-to-Desktop mirroring
-or Desktop repair belongs to this amendment. The operator selected Ubuntu WSL2
-for only the task worker after the normal unelevated Windows boundary failed startup.
-Reuse the external pinned Python 3.14 SDK and bubblewrap isolation; Windows retains
-Core/voice/memory/gateway, with no additional model or weight copy. Explicit setup
-and cross-Windows/WSL EOF/cancel/controller-crash qualification are required. The
-native Windows adapter stays available for separately qualified deployments; no
-kernel workaround, privileged worker launcher or whole-app elevation is introduced.
-
-One selected `[harness]` is constructed by a startup factory through the existing
-`AgenticTaskProvider` contract. `delegate_task` is the neutral conversational entry;
-Hermes is the first concrete adapter, not an atomic MCP tool. Legacy `[hermes]`
-normalizes into that selection, while ambiguous dual selections fail closed.
-`[public_search]` configures an installed command protocol independently of
-`[hermes_client]`; its provider string identifies that installed command. Legacy
-client `search_command` remains a compatibility path; conflicting commands fail
-configuration. Neither section installs code or expands credentials into a worker.
-
-Explicit harness tool IDs (at most eight, catalog at most 8 KiB) project a bounded
-native/MCP catalog. Native calls use ToolRouter; MCP calls reuse the exact current
-validation, credential identity, approval hash, effect fence and receipt owner.
-Writes require the existing operator confirmation. Revocation invalidates copied
-MCP context and prompt inspection. Treat MCP output as potentially private: no
-public search or further external MCP call after disclosure. A conservative
-pre-effect guard reserves bounded receipt/history space inside the existing
-16 KiB P2 input ceiling. Worker success still requires verified purge and exit.
-No shell, canonical memory writes, independent model server or implicit grants.
-
-The authenticated dashboard lists native operations, search, discovered MCP tools
-and the selected harness with explicit availability. Generic content-free activity
-records render inline tool, recall, task and inference transactions. Terminal
-counters supply the last completed prompt/decode metrics; unknown sensors remain
-unknown. Host/GPU sampling runs off the event loop and is cached for three seconds;
-visible-page metadata polling does not reassemble prompts or validate private data.
-The last eight immutable, already assembled web/Core, summary and harness requests
-may be inspected lazily, without an extra model call. Inspection is memory-only,
-expires after five minutes, is retired on replacement/new Core input/shutdown,
-and revalidates current private-context/tool authority before disclosure. The UI
-clears revoked inspections. It shows exactly visible gateway messages/schemas and
-options, not hidden reasoning. P3/P4 and deferred Desktop requests are not captured
-by this dashboard; their scheduled workload remains visible in gateway metadata.
-
-#### Phase 12 direction (design amendment; implementation recorded below)
-
-Keep Phase 12 because reviewed reusable procedures reduce repeated tool planning
-and make delegated work reproducible. Implement it primarily inside the selected
-harness, initially Hermes, using its metadata-first skill loading. See the
-[official Hermes skills guide](https://hermes-agent.nousresearch.com/docs/guides/work-with-skills).
-Do not build a parallel skill executor or automatic learner in CharacterCore.
-Ember needs only bounded manifest/requirements visibility, selection and grants,
-source/content hashes, current authorization, receipts/events and unchanged prompt
-ceilings. Reviewed skill resources must be installed explicitly into the isolated
-worker's read-only allowed roots; existing shell/file capabilities are not thereby
-granted. A supported pinned profile must prove actual list/select/load behavior
-before any such tools are advertised. Missing skills/providers leave ordinary
-chat, recall and native/direct MCP usable.
-
-P12-AC-01/02 remain portable parsing/provenance/round-trip gates, proved in the
-harness and thin adapter. P12-AC-03 remains progressive disclosure under the actual
-measured task input guard, never the model's advertised 128K capacity alone.
-P12-AC-04/05 stay at Ember's broker boundary: no new authority, mandatory procedure
-truncation, automatic installers or unapproved effects. P12-AC-06 still requires
-actual supported-provider, malicious-input, missing-provider and offline-resource
-coverage. Autonomous skill learning is a separate future reviewed amendment.
-Phase 13 still owns cancellation/release and realtime/background scheduling;
-this amendment must not misrepresent subscriber cancellation as GPU release.
-
-## OpenCode memory amendment
-
-[Root ADR 0022](docs/adr/0022-opencode-memory-recall.md) records the private
-MCP listener. Loopback is the default, with separate opt-in LAN HTTPS through the
-configured trusted proxy. Both reads return bounded, eligible claims from the active
-character, not archive excerpts. Separate opt-in delegates short, append-only note
-writes to the canonical `OpenCode` library, with ordinary seed and recall policy.
-No new owner, schema change, or Phase 12/13 advancement. See the
-[runbook](docs/opencode-memory.md) for deployment.
-
-## Phase 12 implementation — 4 November 2026
-
-The operator authorized Phase 12 and a unified skills/tools catalog shared across
-Ember and its selected harness. [Implementation scope and acceptance](docs/phase-12-implementation.md)
-retain P12-AC-01–06. One portable operational package repository and provider-neutral
-skill contract support future OpenClaw adapters; only Hermes is implemented now.
-Skill loading remains harness-owned, metadata-first, grant-checked and bounded.
-Include operator browsing/enablement and the requested brokered URL-summary path;
-no independent skill executor, automatic installer, memory authority or Phase 13
-scheduling change. Status: implemented and qualified on the selected Windows/WSL
-Hermes profile. [Runbook](docs/phase-12-runbook.md), [acceptance record](docs/phase-12-validation.md)
-and [sanitized qualification/latency evidence](docs/benchmarks/2026-11-04-phase12/README.md)
-record the tests, failures corrected and current limits. Desktop, OpenClaw runtime
-and Phase 13 scheduling/capacity release remain separate work.
 
 ## Phase 13 implementation status
 

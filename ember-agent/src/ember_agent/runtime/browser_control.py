@@ -29,7 +29,6 @@ from .capabilities import capability_catalog
 from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, GraphInput, PromptControls, RuntimeControls
 from .dashboard import Dashboard
-from .hermes_chat import HermesChats
 from .mcp_contracts import MCPDiscovery
 from .skills import Skills
 from .skills_contracts import SkillBundle, SkillCatalog, SkillDocument, SkillSelection
@@ -135,7 +134,6 @@ class BrowserControl:
         configure_speech: Callable[[SpeechSelection], SpeechOptions] | None = None,
         prompt_controls: PromptControls | None = None,
         prompt_idle: Callable[[], None] | None = None,
-        hermes_chat: HermesChats | None = None,
         coding_api: APIRouter | None = None,
         dashboard: Dashboard | None = None,
         memory_graph: Callable[[GraphInput], Awaitable[str]] | None = None,
@@ -164,7 +162,6 @@ class BrowserControl:
         self.configure_speech = configure_speech
         self.prompt_controls = prompt_controls
         self.prompt_idle = prompt_idle
-        self.hermes_chat = hermes_chat
         self.coding_api = coding_api
         self.activation = secrets.token_urlsafe(48)
         self._session = secrets.token_urlsafe(48)
@@ -177,8 +174,6 @@ class BrowserControl:
     async def aclose(self) -> None:
         """Stop admission, cancel owned requests and drain before the runtime engine closes."""
         self._closed = True
-        if self.hermes_chat is not None:
-            await self.hermes_chat.aclose()
         if self.text_session is not None:
             await self.text_session.aclose()
         tasks = tuple(self._tasks.values())
@@ -239,8 +234,6 @@ class BrowserControl:
                     return JSONResponse({"error": "coding_https_required"}, status_code=403)
                 if self._closed:
                     return JSONResponse({"error": "runtime_closing"}, status_code=503)
-            if request.url.path.startswith("/hermes/") and self._closed:
-                return JSONResponse({"error": "runtime_closing"}, status_code=503)
             response = await next_handler(request)
             if (
                 self.trusted_proxy
@@ -289,8 +282,6 @@ class BrowserControl:
         async def task_failure(_: Request, error: TaskConflict) -> JSONResponse:
             return JSONResponse({"error": str(error)}, status_code=409)
 
-        if self.hermes_chat is not None:
-            app.include_router(self.hermes_chat.router)
         if self.coding_api is not None:
             app.include_router(self.coding_api)
 
@@ -418,13 +409,12 @@ class BrowserControl:
                 "tasks_available": self.task_router is not None,
                 "summary_tasks_available": bool(self.task_router and self.task_router.summary),
                 "recall_tasks_available": bool(self.task_router and self.task_router.recall),
-                "delegation_available": bool(self.task_router and self.task_router.delegate),
+                "delegation_available": bool(
+                    self.task_router and self.task_router.delegation_available
+                ),
                 "delegation_provider": self.task_router.delegate_label
                 if self.task_router
                 else None,
-                "hermes_chat_available": self.hermes_chat is not None,
-                "hermes_private_recall": self.hermes_chat is not None
-                and self.hermes_chat.private_recall,
                 "public_search_available": self.core.public_search is not None,
                 "context_id": str(self.core.context_id),
                 "prompts_available": self.prompt_controls is not None,

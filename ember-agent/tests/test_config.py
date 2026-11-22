@@ -15,21 +15,129 @@ from ember_agent.runtime.health import ReadinessReport, readiness
 EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
 
 
-def test_hermes_profile_parses_without_launching_or_claiming_health(config_path: Path) -> None:
+def harness_section(executable: Path, workspace: Path) -> str:
+    return (
+        f'\n[harness]\nprovider="opencode"\ncommand=[{json.dumps(str(executable))}]\n'
+        f'revision="2.3.2"\nprofile_sha256="{"a" * 64}"\nworkspace={json.dumps(str(workspace))}\n'
+    )
+
+
+def test_harness_pin_is_explicit_and_never_probed(config_path: Path, tmp_path: Path) -> None:
+    baseline = load_config(config_path)
+    assert baseline.selected_harness is None and readiness(baseline).harness == "disabled"
+    executable = tmp_path / "not-installed"
+    workspace = tmp_path / "not-created"
+    config_path.write_text(config_path.read_text() + harness_section(executable, workspace))
+    config = load_config(config_path)
+    harness = config.selected_harness
+    assert harness is config.harness and harness is not None
+    assert harness.provider == "opencode" and harness.revision == "2.3.2"
+    assert harness.command == (str(executable),) and harness.workspace == workspace
+    assert harness.profile_sha256 == "a" * 64
+    assert not (harness.tools or harness.private_recall or harness.skills)
+    assert readiness(config).harness == "configured_unprobed"
+    assert not any(
+        path.exists() for path in (executable, workspace, config.runtime_root, config.data_root)
+    )
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        ('provider="opencode"', ""),
+        ('revision="2.3.2"', 'revision=" "'),
+        ("a" * 64, "unverified"),
+        ("command=", "old_command="),
+        ("workspace=", "old_workspace="),
+    ],
+)
+def test_harness_rejects_incomplete_pin(
+    config_path: Path, tmp_path: Path, before: str, after: str
+) -> None:
+    section = harness_section(tmp_path / "opencode", tmp_path / "workspace")
+    config_path.write_text(config_path.read_text() + section.replace(before, after))
+    with pytest.raises(ConfigurationError, match=r"Invalid \[harness\]"):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize(
+    "mode", ["path-command", "relative-workspace", "arguments", "duplicate-grant"]
+)
+def test_harness_rejects_unpinned_paths_arguments_and_duplicate_grants(
+    config_path: Path, tmp_path: Path, mode: str
+) -> None:
+    executable = tmp_path / "opencode"
+    workspace = tmp_path / "workspace"
+    section = harness_section(executable, workspace)
+    match mode:
+        case "path-command":
+            section = section.replace(json.dumps(str(executable)), '"opencode"')
+        case "relative-workspace":
+            section = section.replace(json.dumps(str(workspace)), '"workspace"')
+        case "arguments":
+            section = section.replace("]\nrevision", ', "run"]\nrevision')
+        case "duplicate-grant":
+            section += 'tools=["native.inspect_text", "native.inspect_text"]\n'
+    config_path.write_text(config_path.read_text() + section)
+    with pytest.raises(ConfigurationError, match=r"Invalid \[harness\]"):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize(
+    ("section", "diagnostic"),
+    [
+        ("[hermes]", "Remove \\[hermes\\]"),
+        ("[hermes_client]", "Remove \\[hermes_client\\]"),
+        ('[harness]\nprovider="hermes"', "explicit OpenCode pin"),
+        ('[public_search]\nprovider="hermes"', "searxng_url"),
+        ("[inference]\ncoding_memory = true", "Delete inference\\.coding_memory"),
+        ("[inference]\ncoding_memory_write = false", "Delete inference\\.coding_memory"),
+    ],
+)
+def test_removed_settings_report_migration_instead_of_adopting(
+    config_path: Path, section: str, diagnostic: str
+) -> None:
+    config_path.write_text(config_path.read_text() + "\n" + section + "\n")
+    with pytest.raises(ConfigurationError, match=diagnostic):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize("use_url", [True, False])
+def test_public_search_can_run_independently_of_harness(config_path: Path, use_url: bool) -> None:
+    command = f'command=[{json.dumps(sys.executable)}, "search.py"]'
+    url = 'searxng_url="http://nas.example:8095"'
     config_path.write_text(
-        config_path.read_text()
-        + "\n[hermes]\ncommand=["
-        + json.dumps(sys.executable)
-        + ',"-c","raise AssertionError()"]\n'
-        + 'revision="71736c9f32597bbca9d89cede5aa136e55946b2f"\n'
-        + 'profile_sha256="'
-        + "a" * 64
-        + '"\nsearch_endpoint="http://nas.example:8095"\n'
+        config_path.read_text() + "\n[public_search]\n" + (url if use_url else command)
     )
     config = load_config(config_path)
-    assert config.hermes is not None and not config.hermes.private_recall
-    assert readiness(config).hermes == "configured_unprobed"
-    assert not config.runtime_root.exists() and not config.data_root.exists()
+    assert config.harness is None
+    search = config.public_search
+    assert search is not None
+    assert search.command == (() if use_url else (sys.executable, "search.py"))
+    assert search.searxng_url == ("http://nas.example:8095" if use_url else None)
+    assert not config.runtime_root.exists()
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        "",
+        'command=["search"]',
+        'searxng_url="http://user:secret@nas.example"',
+        'searxng_url="http://nas.example:invalid"',
+        'searxng_url="http://nas.example/search"',
+        'searxng_url="http://nas.example/?"',
+        'searxng_url="file:///etc/hosts"',
+        f'searxng_url="http://nas.example"\ncommand=[{json.dumps(sys.executable)}]',
+    ],
+)
+def test_public_search_rejects_ambiguous_or_unsafe_transport(
+    config_path: Path, fields: str
+) -> None:
+    config_path.write_text(config_path.read_text() + "\n[public_search]\n" + fields)
+    with pytest.raises(ConfigurationError, match=r"Invalid \[public_search\]") as error:
+        load_config(config_path)
+    assert "secret" not in str(error.value)
 
 
 def test_mcp_configuration_is_bounded_explicit_and_does_not_launch_servers(
@@ -312,36 +420,3 @@ def test_explicit_vllm_profile_is_local_offline_and_keeps_ollama_default(
         config_path.write_text(original + invalid)
         with pytest.raises(ConfigurationError):
             load_config(config_path)
-
-
-def test_neutral_harness_and_search_do_not_require_desktop_client(config_path: Path) -> None:
-    config_path.write_text(
-        config_path.read_text()
-        + '\n[harness]\nprovider="hermes"\ncommand=['
-        + json.dumps(sys.executable)
-        + ']\nrevision="71736c9f32597bbca9d89cede5aa136e55946b2f"\nprofile_sha256="'
-        + "a" * 64
-        + '"\nsearch_endpoint="http://nas.example:8095"\ntools=["native.inspect_text"]\n[public_search]\nprovider="hermes"\ncommand=['
-        + json.dumps(sys.executable)
-        + ',"search.py"]\n'
-    )
-    config = load_config(config_path)
-    assert config.hermes is None and config.hermes_client is None
-    assert config.selected_harness and config.selected_harness.tools == ("native.inspect_text",)
-    assert config.public_search and config.public_search.provider == "hermes"
-    assert readiness(config).hermes == "configured_unprobed"
-
-
-def test_conflicting_search_commands_fail_instead_of_silently_selecting_one(
-    config_path: Path,
-) -> None:
-    config_path.write_text(
-        config_path.read_text()
-        + "\n[hermes_client]\nsearch_command=["
-        + json.dumps(sys.executable)
-        + ',"old.py"]\n[public_search]\ncommand=['
-        + json.dumps(sys.executable)
-        + ',"new.py"]\n'
-    )
-    with pytest.raises(ConfigurationError):
-        load_config(config_path)

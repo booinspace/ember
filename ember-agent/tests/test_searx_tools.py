@@ -8,9 +8,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from pydantic import ValidationError
 
-from ember_agent.runtime.config import HermesSettings
 from ember_agent.runtime.searx_tools import SearXNGTools, plain, public_url
 from ember_agent.runtime.task_router import ToolContext, ToolRouter
 from ember_agent.runtime.task_store import TaskConflict
@@ -129,22 +127,3 @@ def test_redirects_compression_and_oversized_wire_fail_closed(
 def test_markup_and_entity_expansion_stay_bounded() -> None:
     assert len(plain("&amp;" * 100000, 128)) <= 128
     assert len(plain("<" * 100000, 128)) <= 128
-
-
-def test_hermes_requires_a_pinned_explicit_service_profile() -> None:
-    base = {
-        "command": ["/installed/launcher"],
-        "revision": "71736c9f32597bbca9d89cede5aa136e55946b2f",
-        "profile_sha256": "a" * 64,
-        "search_endpoint": "http://nas.example:8095",
-    }
-    value = HermesSettings.model_validate_json(json.dumps(base))
-    assert value.private_recall is False
-    for field, invalid in [
-        ("revision", "main"),
-        ("profile_sha256", "unverified"),
-        ("search_endpoint", "http://user:secret@nas.example"),
-        ("search_endpoint", "http://nas.example/search?q=overridden"),
-    ]:
-        with pytest.raises(ValidationError):
-            HermesSettings.model_validate_json(json.dumps({**base, field: invalid}))

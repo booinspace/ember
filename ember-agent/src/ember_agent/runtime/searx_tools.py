@@ -78,6 +78,10 @@ class SearXNGTools:
         if name not in self.capabilities:
             raise TaskConflict("tool_unavailable")
         query = SearchQuery.model_validate(arguments)
+        return ToolReceipt(context=context, tool=name, data={"results": await self.search(query)})
+
+    async def search(self, query: SearchQuery) -> list[JsonValue]:
+        """Return up to three bounded public references without fetching their URLs."""
         payload = bytearray()
         async with self.client.stream(
             "GET",
@@ -120,7 +124,7 @@ class SearXNGTools:
                 )
             if len(results) == 3:
                 break
-        return ToolReceipt(context=context, tool=name, data={"results": results})
+        return results
 
     async def aclose(self) -> None:
         """Close only the transport this provider owns."""

@@ -4,7 +4,7 @@ import asyncio
 import os
 import signal
 import subprocess
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from time import monotonic, sleep
@@ -113,7 +113,12 @@ async def _stop(process: asyncio.subprocess.Process, job: "WindowsJob | None") -
 
 
 @asynccontextmanager
-async def owned_stdio(command: tuple[str, ...]) -> AsyncGenerator[asyncio.subprocess.Process]:
+async def owned_stdio(
+    command: tuple[str, ...],
+    *,
+    cwd: Path | None = None,
+    overrides: Mapping[str, str] | None = None,
+) -> AsyncGenerator[asyncio.subprocess.Process]:
     """Run an installed launcher without a shell or inherited credentials; always reap it."""
     environment = {
         key: value
@@ -121,6 +126,8 @@ async def owned_stdio(command: tuple[str, ...]) -> AsyncGenerator[asyncio.subpro
         if (value := os.environ.get(key)) is not None
     }
     environment.update({"PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1"})
+    if overrides is not None:
+        environment.update(overrides)
     if not Path(command[0]).is_absolute():
         raise TaskConflict("worker_absolute_executable_required")
     creation = asyncio.create_task(
@@ -130,6 +137,7 @@ async def owned_stdio(command: tuple[str, ...]) -> AsyncGenerator[asyncio.subpro
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env=environment,
+            cwd=cwd,
             limit=WIRE_BYTES,
             start_new_session=os.name != "nt",
             creationflags=(0x00000004 | subprocess.CREATE_NEW_PROCESS_GROUP)

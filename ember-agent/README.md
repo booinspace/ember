@@ -80,6 +80,20 @@ Set `EMBER_REAL_CONFIG` to an existing pinned local config to additionally run t
 isolated actual-Qwen room test. That test starts a missing managed gateway or
 authenticates a matching existing one. It uses temporary synthetic memory.
 
+## Optional managed OpenCode preview
+
+Delegation is off unless `[harness]` explicitly pins installed OpenCode 2.3.2.
+Use only synthetic, non-sensitive goals and workspace files. This is a read-only
+Tasks integration over Ember's P2 gateway, with no OS sandbox or enforced egress
+boundary. A real tool loop was observed on macOS with a deterministic upstream,
+not live Strata. Windows Job Object reuse and Linux are unqualified. See
+[preview setup and acceptance](../docs/adr/0025-managed-opencode-preview.md).
+
+Hermes (including Desktop) and gateway-hosted coding memory are removed, without
+private migration. Live skills and page reading are unavailable. Public SearXNG
+search remains separate, as does [operator-managed memory MCP](../docs/opencode-memory.md).
+The managed worker does not receive MCP credentials, recall, or notes.
+
 ## Architecture documentation
 
 [Agent ADR 0003](docs/adr/0003-managed-livekit-text-runtime.md) records the runtime
