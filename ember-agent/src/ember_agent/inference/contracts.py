@@ -10,6 +10,8 @@ from ember_memory_abi.common import UtcTimestamp
 
 from ..runtime.config import RuntimeModel
 
+NON_CODING_MESSAGE_LIMIT = 64
+
 
 class GatewayError(RuntimeError):
     """Safe fixed diagnostics; never include upstream body, prompts, credentials or paths."""
@@ -79,7 +81,7 @@ class GatewayRequest(RuntimeModel):
     context_id: UUID4
     workload: Literal["P0", "P1", "P2", "P3", "P4", "P5"] = "P0"
     model: str
-    messages: Annotated[tuple[PromptMessage, ...], Field(min_length=1, max_length=64)]
+    messages: Annotated[tuple[PromptMessage, ...], Field(min_length=1)]
     max_output_tokens: Annotated[int, Field(gt=0, le=8192)] = 512
     deadline_at: UtcTimestamp
     output: Literal["text", "json"] = "text"
@@ -88,7 +90,9 @@ class GatewayRequest(RuntimeModel):
     thinking: bool = Field(default=False, exclude_if=lambda value: not value)
 
     @model_validator(mode="after")
-    def _thinking_scope(self) -> Self:
+    def _workload_limits(self) -> Self:
+        if self.workload != "P5" and len(self.messages) > NON_CODING_MESSAGE_LIMIT:
+            raise ValueError("Non-coding requests retain the existing message limit.")
         if self.thinking:
             if (
                 self.version != "0.4.0"

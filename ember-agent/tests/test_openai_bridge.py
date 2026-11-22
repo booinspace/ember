@@ -348,6 +348,25 @@ def test_strata_coding_context_uses_native_tokens(
         monkeypatch.setenv("EMBER_STRATA_API_KEY", "synthetic")
         content = "long fixture line\n" * 4800
         messages = [{"role": "user", "content": content}, {"role": "user", "content": content}]
+        for index in range(32):
+            call_id = f"call_fixture_{index}"
+            messages.extend(
+                [
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {"name": "lookup", "arguments": "{}"},
+                            }
+                        ],
+                    },
+                    {"role": "tool", "content": "Synthetic result", "tool_call_id": call_id},
+                ]
+            )
+        assert len(messages) == 66
         assert len(json.dumps(messages).encode()) > config.max_input_tokens
         completion_calls = 0
 
@@ -438,8 +457,10 @@ def test_strata_coding_context_uses_native_tokens(
                     assert accepted.json()["usage"]["prompt_tokens"] == 126976
                 assert completion_calls == 2
 
-            with pytest.raises(GatewayError, match="prompt_overflow"):
+            with pytest.raises(GatewayError, match="invalid_openai_request"):
                 await bridge.complete(body)
+            with pytest.raises(GatewayError, match="prompt_overflow"):
+                await bridge.complete({**body, "messages": messages[:2]})
             assert completion_calls == 2
         finally:
             await client.aclose()

@@ -16,6 +16,7 @@ from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 from ..observability import notify
 from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import (
+    NON_CODING_MESSAGE_LIMIT,
     GatewayError,
     GatewayRequest,
     GenerationUsage,
@@ -196,7 +197,9 @@ class _ToolDefinition(RuntimeModel):
 
 class _Request(RuntimeModel):
     model: str
-    messages: Annotated[tuple[_Message, ...], Field(min_length=1, max_length=64)]
+    messages: Annotated[
+        tuple[_Message, ...], Field(min_length=1, max_length=NON_CODING_MESSAGE_LIMIT)
+    ]
     tools: Annotated[tuple[_ToolDefinition, ...], Field(max_length=16)] | None = None
     tool_choice: Literal["auto", "none"] | None = None
     parallel_tool_calls: bool | None = None
@@ -206,6 +209,11 @@ class _Request(RuntimeModel):
     response_format: _Format | None = None
     stream: bool = False
     stream_options: _StreamOptions | None = None
+
+
+class _CodingRequest(_Request):
+    # Coding history is bounded by request bytes and Strata's rendered token count.
+    messages: Annotated[tuple[_Message, ...], Field(min_length=1)]
 
 
 class OpenAIModelBridge:
@@ -264,7 +272,7 @@ class OpenAIModelBridge:
             raw = body if isinstance(body, bytes) else json.dumps(body, allow_nan=False).encode()
             if len(raw) > _LIMIT:
                 raise GatewayError("request_too_large")
-            value = _Request.model_validate_json(raw)
+            value = (_CodingRequest if self.coding else _Request).model_validate_json(raw)
             if value.model != self.config.model_tag:
                 raise GatewayError("model_not_allowlisted")
             if value.temperature is not None and value.temperature != 0.2:
