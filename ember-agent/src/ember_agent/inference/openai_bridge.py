@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing
 from datetime import UTC, datetime, timedelta
@@ -24,6 +25,7 @@ from .contracts import (
     PromptToolCall,
     ToolCall,
     ToolDefinition,
+    ToolFunction,
 )
 
 _OBJECT = TypeAdapter(dict[str, JsonValue])
@@ -58,8 +60,8 @@ def openai_usage(usage: GenerationUsage) -> dict[str, JsonValue]:
     }
 
 
-def validate_model_schema(schema: dict[str, JsonValue]) -> None:
-    """External workers may supply only bounded schemas without executable regex or references."""
+def validate_model_schema(schema: dict[str, JsonValue], *, literal_prefix: bool = False) -> None:
+    """Allow bounded schemas without references or general regex."""
     if len(json.dumps(schema, allow_nan=False).encode()) > 16384:
         raise GatewayError("unsupported_model_schema")
     allowed = {
@@ -95,7 +97,16 @@ def validate_model_schema(schema: dict[str, JsonValue]) -> None:
     def check(value: dict[str, JsonValue], depth: int) -> None:
         nonlocal nodes
         nodes += 1
-        if depth > 12 or nodes > 256 or set(value) - allowed:
+        extra = set(value) - allowed
+        pattern = value.get("pattern")
+        # ponytail: Accept literal prefixes (e.g. OpenCode session IDs), not arbitrary regex.
+        if (
+            literal_prefix
+            and isinstance(pattern, str)
+            and re.fullmatch(r"\^[A-Za-z0-9_-]{1,64}", pattern)
+        ):
+            extra.discard("pattern")
+        if depth > 12 or nodes > 256 or extra:
             raise GatewayError("unsupported_model_schema")
         properties = value.get("properties", {})
         required = value.get("required", [])
@@ -166,10 +177,19 @@ class _StreamOptions(RuntimeModel):
     include_usage: bool = False
 
 
+class _ToolFunction(ToolFunction):
+    strict: Literal[False] | None = None
+
+
+class _ToolDefinition(RuntimeModel):
+    type: Literal["function"] = "function"
+    function: _ToolFunction
+
+
 class _Request(RuntimeModel):
     model: str
     messages: Annotated[tuple[_Message, ...], Field(min_length=1, max_length=64)]
-    tools: Annotated[tuple[ToolDefinition, ...], Field(max_length=16)] | None = None
+    tools: Annotated[tuple[_ToolDefinition, ...], Field(max_length=16)] | None = None
     tool_choice: Literal["auto", "none"] | None = None
     parallel_tool_calls: bool | None = None
     max_tokens: Annotated[int, Field(gt=0, le=8192)] | None = None
@@ -246,10 +266,21 @@ class OpenAIModelBridge:
             tool_names = [tool.function.name for tool in value.tools or ()]
             if len(tool_names) != len(set(tool_names)):
                 raise GatewayError("invalid_openai_request")
+            tools: list[ToolDefinition] = []
             for tool in value.tools or ():
-                if tool.function.parameters.get("type") != "object":
+                function = tool.function
+                if function.parameters.get("type") != "object":
                     raise GatewayError("unsupported_model_schema")
-                validate_model_schema(tool.function.parameters)
+                validate_model_schema(function.parameters, literal_prefix=self.coding)
+                tools.append(
+                    ToolDefinition(
+                        function=ToolFunction(
+                            name=function.name,
+                            description=function.description,
+                            parameters=function.parameters,
+                        )
+                    )
+                )
             maximum = value.max_completion_tokens or value.max_tokens or self.output_limit
             if maximum > self.output_limit:
                 raise GatewayError("output_budget_exceeded")
@@ -304,7 +335,7 @@ class OpenAIModelBridge:
                 max_output_tokens=maximum,
                 output=output,
                 output_schema=schema,
-                tools=() if value.tool_choice == "none" else value.tools or (),
+                tools=() if value.tool_choice == "none" else tuple(tools),
                 deadline_at=deadline.isoformat(timespec="microseconds").replace("+00:00", "Z"),
             )
             serialized = json.dumps(

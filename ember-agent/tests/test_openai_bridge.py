@@ -250,7 +250,16 @@ def test_coding_api_shares_gateway_during_realtime_and_streams_tools(tmp_path: P
                     tools=[
                         {
                             "type": "function",
-                            "function": {"name": "lookup", "parameters": {"type": "object"}},
+                            "function": {
+                                "name": "lookup",
+                                "strict": False,
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {
+                                        "sessionID": {"type": "string", "pattern": "^ses"}
+                                    },
+                                },
+                            },
                         }
                     ],
                 )
@@ -266,6 +275,11 @@ def test_coding_api_shares_gateway_during_realtime_and_streams_tools(tmp_path: P
                 assert json.loads(call["function"]["arguments"]) == {"query": "x"}
                 assert chunks[2]["choices"][0]["finish_reason"] == "tool_calls"
                 assert chunks[3]["usage"]["total_tokens"] == 15
+                tools = body["tools"]
+                tools[0]["function"]["parameters"]["properties"]["sessionID"]["pattern"] = "^(a+)+$"
+                rejected = await lan.post("/coding/v1/chat/completions", json=body)
+                assert rejected.status_code == 400
+                assert rejected.json()["error"]["code"] == "unsupported_model_schema"
                 assert [req.workload for req in upstream.requests] == ["P5"]
         finally:
             await client.aclose()
