@@ -563,6 +563,13 @@ class RuntimeServices:
                             raise ConfigurationError("Existing gateway context does not match.")
                         self.thinking_available = "live_thinking_v1" in health.features
                         if (
+                            health.status == "quiescence_required"
+                            and self.config.inference.backend == "strata"
+                        ):
+                            raise ConfigurationError(
+                                "Gateway journal requires operator quiescence."
+                            )
+                        if (
                             health.status not in {"ready", "busy"}
                             or health.journal_status != "available"
                         ):
@@ -786,16 +793,14 @@ async def run_runtime(
         try:
             value = await services.start()
         except (ConfigurationError, OSError, api.TwirpError, TimeoutError):
-            if not config.browser.enabled:
+            # Managed Strata startup already cleans up its children on failure.
+            # Retrying here can mask the original error while listeners unwind.
+            if not config.browser.enabled or config.inference.backend == "strata":
                 raise
             value = None
             try:
                 await services.start_gateway()
             except (ConfigurationError, OSError, GatewayError, TimeoutError):
-                # Browser tasks also use gateway credentials; never expose them after an
-                # owned runner/gateway failure that might leave a foreign listener at its port.
-                if config.inference.backend == "strata":
-                    raise
                 gateway_available = False
         foreground_token = (
             await asyncio.to_thread(read_token, config.runtime_root / "gateway.token")

@@ -210,6 +210,24 @@ def test_strata_preflight_rejects_modified_or_unpinned_inputs(tmp_path: Path, ta
     assert not snapshot.exists()
 
 
+def test_strata_startup_preserves_original_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, path = _configured(tmp_path)
+    config = config.model_copy(
+        update={"browser": config.browser.model_copy(update={"enabled": True})}
+    )
+    start = AsyncMock(
+        side_effect=ConfigurationError("Gateway journal requires operator quiescence.")
+    )
+    retry = AsyncMock(side_effect=ConfigurationError("Endpoint occupied."))
+    monkeypatch.setattr(RuntimeServices, "start", start)
+    monkeypatch.setattr(RuntimeServices, "start_gateway", retry)
+    with pytest.raises(ConfigurationError, match="Gateway journal requires operator quiescence"):
+        asyncio.run(livekit_runtime.run_runtime(config, path))
+    retry.assert_not_awaited()
+
+
 def test_occupied_strata_is_not_probed_or_adopted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

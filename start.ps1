@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [string]$Config = ".local/config/deployment.non-mtp.toml",
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$OpenBrowser
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +23,6 @@ if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) {
 & (Join-Path $PSScriptRoot "scripts/setup_lan.ps1") -Config $configFile
 if (-not $?) { throw "Ember LAN firewall setup failed." }
 $emberArguments = @("start", "--config", $configFile)
-if (-not $NoBrowser) { $emberArguments += "--open-browser" }
+if ($OpenBrowser -and -not $NoBrowser) { $emberArguments += "--open-browser" }
 & $emberExecutable @emberArguments
 exit $LASTEXITCODE
