@@ -27,9 +27,13 @@ class StrataUpstream(OpenAIStreamUpstream):
         self.settings = settings
 
     def _request_options(self, request: GatewayRequest) -> dict[str, JsonValue]:
-        if request.workload != "P5":
-            return {}
-        return {"ember_coding_input_limit": self.config.max_input_tokens}
+        options: dict[str, JsonValue] = {}
+        if request.thinking:
+            # Strata treats the template boolean only as an explicit off switch.
+            options["reasoning_effort"] = request.reasoning_effort or "high"
+        if request.workload == "P5":
+            options["ember_coding_input_limit"] = self.config.max_input_tokens
+        return options
 
     async def _check_generation_status(self, response: httpx.Response) -> None:
         if (

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from livekit.agents import llm
 from pydantic import ValidationError
 
 from ember_agent.character.core import CharacterCore
@@ -18,6 +19,7 @@ from ember_agent.inference.ollama import NativeFrame, NativeMessage, OllamaUpstr
 from ember_agent.memory.backends.dialogue import ArchiveDialogueSink
 from ember_agent.memory.deep_recall import DeepRecallService
 from ember_agent.realtime.contracts import RoomBinding
+from ember_agent.realtime.livekit import GatewayLLM
 from ember_agent.runtime.browser_control import BrowserControl
 from ember_memory_abi.interfaces import ForgetRequest
 from ember_memory_abi.memory import FactPayload, PlanPayload, StringValue
@@ -190,7 +192,17 @@ def test_authenticated_details_recheck_revocation_and_thinking_setting(tmp_path:
                         await client.post("/api/thinking", json={"enabled": True})
                     ).status_code == 200
                     turn = await core.prepare("remembered color")
-                    _ = [event async for event in core.stream(turn)]
+                    voice = GatewayLLM(core)
+                    chat = llm.ChatContext()
+                    user = chat.add_message(role="user", content="remembered color")
+                    voice.authorize(user.id, turn)
+                    async with voice.chat(chat_ctx=chat) as speech:
+                        spoken = "".join(
+                            chunk.delta.content or ""
+                            for chunk in [item async for item in speech]
+                            if chunk.delta is not None
+                        )
+                    assert spoken == "Visible reply"
                     state = (await client.get("/api/state")).json()
                     assert state["thinking_enabled"] and state["thinking_available"]
                     response = await client.get("/api/turn-details")

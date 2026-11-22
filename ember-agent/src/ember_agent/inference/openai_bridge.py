@@ -19,6 +19,7 @@ from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import (
     NON_CODING_MESSAGE_LIMIT,
     PROMPT_MESSAGE_CHARS,
+    CodingReasoningEffort,
     GatewayError,
     GatewayEvent,
     GatewayRequest,
@@ -198,10 +199,10 @@ class _ToolDefinition(RuntimeModel):
     function: _ToolFunction
 
 
-class _Request(RuntimeModel):
+class _Request[Message: _Message](RuntimeModel):
     model: str
     messages: Annotated[
-        tuple[_Message, ...], Field(min_length=1, max_length=NON_CODING_MESSAGE_LIMIT)
+        tuple[Message, ...], Field(min_length=1, max_length=NON_CODING_MESSAGE_LIMIT)
     ]
     tools: Annotated[tuple[_ToolDefinition, ...], Field(max_length=16)] | None = None
     tool_choice: Literal["auto", "none"] | None = None
@@ -214,9 +215,20 @@ class _Request(RuntimeModel):
     stream_options: _StreamOptions | None = None
 
 
-class _CodingRequest(_Request):
+class _CodingMessage(_Message):
+    # OpenCode can replay the display field. It never crosses into GatewayRequest.
+    reasoning_content: str | None = Field(default=None, repr=False, exclude=True)
+    reasoning: str | None = Field(default=None, repr=False, exclude=True)
+    reasoning_text: str | None = Field(default=None, repr=False, exclude=True)
+
+
+class _CodingRequest(_Request[_CodingMessage]):
     # Coding history is bounded by request bytes and Strata's rendered token count.
-    messages: Annotated[tuple[_Message, ...], Field(min_length=1)]
+    messages: Annotated[tuple[_CodingMessage, ...], Field(min_length=1)]
+    reasoning_effort: CodingReasoningEffort | Literal["none", "minimal", "off"] | None = None
+
+
+type _CompletionRequest = _Request[_Message] | _CodingRequest
 
 
 @dataclass(frozen=True)
@@ -280,13 +292,15 @@ class OpenAIModelBridge:
             ],
         }
 
-    def _request(self, body: bytes | dict[str, JsonValue]) -> tuple[_Request, GatewayRequest]:
+    def _request(
+        self, body: bytes | dict[str, JsonValue]
+    ) -> tuple[_CompletionRequest, GatewayRequest]:
         """Validate OpenAI input and bind it to the configured model and workload."""
         try:
             raw = body if isinstance(body, bytes) else json.dumps(body, allow_nan=False).encode()
             if len(raw) > _LIMIT:
                 raise GatewayError("request_too_large")
-            value = (_CodingRequest if self.coding else _Request).model_validate_json(raw)
+            value = (_CodingRequest if self.coding else _Request[_Message]).model_validate_json(raw)
             if value.model != self.config.model_tag:
                 raise GatewayError("model_not_allowlisted")
             if value.temperature is not None and value.temperature != 0.2:
@@ -359,14 +373,22 @@ class OpenAIModelBridge:
             if schema is not None:
                 validate_model_schema(schema)
             deadline = min(self.deadline, datetime.now(UTC) + timedelta(seconds=180))
+            effort = value.reasoning_effort if isinstance(value, _CodingRequest) else None
+            match effort:
+                case None | "none" | "minimal" | "off":
+                    active_effort = None
+                case _:
+                    active_effort = effort
             request = GatewayRequest(
-                version="0.3.0",
+                version="0.4.0" if active_effort else "0.3.0",
                 request_id=uuid4(),
                 context_id=self.context_id,
                 model=self.config.model_tag,
                 workload="P5" if self.coding else "P2",
                 messages=tuple(messages),
                 max_output_tokens=maximum,
+                thinking=active_effort is not None,
+                reasoning_effort=active_effort,
                 output=output,
                 output_schema=schema,
                 tools=() if value.tool_choice == "none" else tuple(tools),
@@ -401,7 +423,7 @@ class OpenAIModelBridge:
         return self._stream(value, request)
 
     async def _events(
-        self, value: _Request, request: GatewayRequest
+        self, value: _CompletionRequest, request: GatewayRequest
     ) -> AsyncGenerator[GatewayEvent, None]:
         hosted = self.hosted_tools
         if hosted is None or value.tool_choice == "none" or request.output != "text":
@@ -505,7 +527,9 @@ class OpenAIModelBridge:
                 used.add(call.name)
             messages = (*messages, assistant, tool_result.model_copy(update={"content": result}))
 
-    def _stream(self, value: _Request, request: GatewayRequest) -> AsyncGenerator[bytes, None]:
+    def _stream(
+        self, value: _CompletionRequest, request: GatewayRequest
+    ) -> AsyncGenerator[bytes, None]:
         """Emit only gateway-validated tools."""
         envelope: dict[str, JsonValue] = {
             "id": "chatcmpl-" + str(request.request_id),
@@ -528,6 +552,10 @@ class OpenAIModelBridge:
                             yield chunk({"role": "assistant"})
                         elif event.kind == "progress":
                             yield b": queued\n\n"
+                        elif event.kind == "thinking":
+                            if not request.thinking:
+                                raise GatewayError("unexpected_model_reasoning")
+                            yield chunk({"reasoning_content": event.text})
                         elif event.kind == "text":
                             yield chunk({"content": event.text})
                         elif event.kind == "tools":
@@ -590,6 +618,7 @@ class OpenAIModelBridge:
         self.observation_failures += not notify(self.observe_request, request)
         stream = self._events(value, request)
         content: list[str] = []
+        reasoning: list[str] = []
         size = 0
         calls: tuple[ToolCall, ...] = ()
         usage: GenerationUsage | None = None
@@ -610,13 +639,16 @@ class OpenAIModelBridge:
                     sequence += 1
                     if event.kind == "error":
                         raise GatewayError(event.code or "generation_failed")
-                    if event.kind == "thinking":
-                        raise GatewayError("unexpected_model_reasoning")
-                    if event.kind == "text":
+                    if event.kind in {"text", "thinking"}:
                         size += len(event.text.encode())
                         if size > _LIMIT:
                             raise GatewayError("gateway_frame_too_large")
-                        content.append(event.text)
+                        if event.kind == "thinking":
+                            if not request.thinking:
+                                raise GatewayError("unexpected_model_reasoning")
+                            reasoning.append(event.text)
+                        else:
+                            content.append(event.text)
                     if event.kind == "tools":
                         if calls or len(event.calls) > 16:
                             raise GatewayError("invalid_tool_calls")
@@ -636,6 +668,8 @@ class OpenAIModelBridge:
             if calls:
                 message["tool_calls"] = [openai_tool(call) for call in calls]
             self.last_output_units = len(json.dumps(message, ensure_ascii=False).encode()) + 64
+            if reasoning:
+                message["reasoning_content"] = "".join(reasoning)
             return {
                 "id": "chatcmpl-" + str(request.request_id),
                 "object": "chat.completion",

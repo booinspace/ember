@@ -13,6 +13,8 @@ from ..runtime.config import RuntimeModel
 NON_CODING_MESSAGE_LIMIT = 64
 PROMPT_MESSAGE_CHARS = 100_000
 
+type CodingReasoningEffort = Literal["low", "medium", "high", "xhigh", "max"]
+
 
 class GatewayError(RuntimeError):
     """Safe fixed diagnostics; never include upstream body, prompts, credentials or paths."""
@@ -89,6 +91,9 @@ class GatewayRequest(RuntimeModel):
     output_schema: dict[str, JsonValue] | None = None
     tools: Annotated[tuple[ToolDefinition, ...], Field(max_length=18)] = ()
     thinking: bool = Field(default=False, exclude_if=lambda value: not value)
+    reasoning_effort: CodingReasoningEffort | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def _workload_limits(self) -> Self:
@@ -96,14 +101,13 @@ class GatewayRequest(RuntimeModel):
             raise ValueError("Non-coding requests retain the existing message limit.")
         if self.workload != "P5" and len(self.tools) > 16:
             raise ValueError("Non-coding requests retain the existing tool limit.")
+        if self.reasoning_effort is not None and (self.workload != "P5" or not self.thinking):
+            raise ValueError("Reasoning effort requires an opt-in coding request.")
         if self.thinking:
-            if (
-                self.version != "0.4.0"
-                or self.workload != "P0"
-                or self.output != "text"
-                or self.tools
-            ):
-                raise ValueError("Live thinking requires a version 0.4.0 plain P0 text request.")
+            if self.version != "0.4.0" or self.workload not in {"P0", "P5"}:
+                raise ValueError("Thinking requires a version 0.4.0 P0 or P5 request.")
+            if self.workload == "P0" and (self.output != "text" or self.tools):
+                raise ValueError("Live P0 thinking requires plain text without tools.")
         elif self.workload != "P5" and self.max_output_tokens > 1192:
             raise ValueError("Non-thinking requests retain the existing output limit.")
         return self

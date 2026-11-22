@@ -343,8 +343,9 @@ def test_bridge_uses_real_gateway_p2_admission_and_server_owned_identity(tmp_pat
 
 
 @pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("effort", ["none", "high"])
 def test_strata_coding_context_uses_native_tokens(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bool, effort: str
 ) -> None:
     async def run() -> None:
         config = _config(tmp_path)
@@ -410,6 +411,8 @@ def test_strata_coding_context_uses_native_tokens(
             assert request.url.path == "/v1/chat/completions"
             body = json.loads(request.content)
             assert body["messages"] == messages
+            assert body["chat_template_kwargs"] == {"enable_thinking": effort == "high"}
+            assert body.get("reasoning_effort") == ("high" if effort == "high" else None)
             assert body["ember_coding_input_limit"] == 126976
             assert body["max_completion_tokens"] == 4096
             completion_calls += 1
@@ -425,6 +428,11 @@ def test_strata_coding_context_uses_native_tokens(
                 )
             base = {"id": "fixture", "object": "chat.completion.chunk", "model": config.model_tag}
             chunks = [
+                {
+                    "choices": [
+                        {"index": 0, "delta": {"reasoning_content": "Trace"}, "finish_reason": None}
+                    ]
+                },
                 {"choices": [{"index": 0, "delta": {"content": "Yes"}, "finish_reason": None}]},
                 {
                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
@@ -451,7 +459,13 @@ def test_strata_coding_context_uses_native_tokens(
         app.include_router(coding_routes(config, client, "separate-key"))
         body = {
             "model": config.model_tag,
-            "messages": messages,
+            "messages": [
+                {**message, "reasoning_content": "DISCARDED_PREVIOUS_TRACE"}
+                if message["role"] == "assistant"
+                else message
+                for message in messages
+            ],
+            "reasoning_effort": effort,
             "stream": stream,
             "stream_options": {"include_usage": True},
         }
@@ -473,14 +487,22 @@ def test_strata_coding_context_uses_native_tokens(
                 if stream:
                     assert '"prompt_tokens": 126976' in accepted.text
                     assert "data: [DONE]" in accepted.text
+                    assert ('"reasoning_content": "Trace"' in accepted.text) == (effort == "high")
                 else:
                     assert accepted.json()["usage"]["prompt_tokens"] == 126976
+                    message = accepted.json()["choices"][0]["message"]
+                    assert message["content"] == "Yes"
+                    assert message.get("reasoning_content") == (
+                        "Trace" if effort == "high" else None
+                    )
+                assert "DISCARDED_PREVIOUS_TRACE" not in accepted.text
                 assert completion_calls == 2
 
+            legacy = {"model": config.model_tag, "messages": messages}
             with pytest.raises(GatewayError, match="invalid_openai_request"):
-                await bridge.complete(body)
+                await bridge.complete(legacy)
             with pytest.raises(GatewayError, match="prompt_overflow"):
-                await bridge.complete({**body, "messages": messages[:2]})
+                await bridge.complete({**legacy, "messages": messages[:2]})
             assert completion_calls == 2
         finally:
             await client.aclose()
