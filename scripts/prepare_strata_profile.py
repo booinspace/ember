@@ -14,6 +14,7 @@ from ember_agent.runtime.strata_runtime import (
 )
 
 _ROOT = Path(__file__).resolve().parents[1]
+_OUTPUT_RESERVE = 8192
 
 
 def main() -> None:
@@ -24,8 +25,8 @@ def main() -> None:
     parser.add_argument("server", type=Path, help="Installed Strata serve/server.py")
     parser.add_argument("--context", type=int, default=131072)
     args = parser.parse_args()
-    if args.context <= 4096:
-        parser.error("Context must exceed the 4096-token output reserve.")
+    if args.context <= _OUTPUT_RESERVE:
+        parser.error(f"Context must exceed the {_OUTPUT_RESERVE}-token output reserve.")
     root = _ROOT / ".local/config"
     runner, deployment = (
         root / name for name in ("runner.ember-strata.json", "deployment.strata.toml")
@@ -71,8 +72,8 @@ def main() -> None:
             "tag": profile.model_name,
             "expected_digest": f"sha256:{digest}",
             "context_tokens": args.context,
-            "max_input_tokens": args.context - 4096,
-            "output_reserve_tokens": 4096,
+            "max_input_tokens": args.context - _OUTPUT_RESERVE,
+            "output_reserve_tokens": _OUTPUT_RESERVE,
         },
         "services.ollama": {"mode": "disabled"},
         "services.livekit": {
