@@ -786,6 +786,7 @@ export function App() {
               summaries={state.summary_tasks_available}
               recall={state.recall_tasks_available}
               delegation={state.delegation_available}
+              build={state.build_available}
               connected={connected}
               provider={state.delegation_provider ?? "Agentic harness"}
             />

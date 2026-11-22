@@ -142,6 +142,29 @@ async def _start_tasks(
                 router.delegate_unavailable = str(error)
             except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
                 router.delegate_unavailable = "harness_startup_failed"
+        if settings.build is not None:
+            if client is None:
+                router.build_unavailable = "gateway_task_credentials_unavailable"
+            else:
+                from .opencode_harness import open_build
+
+                try:
+                    build = await cleanup.enter_async_context(
+                        open_build(
+                            runtime.config,
+                            settings,
+                            client,
+                            router.build_artifacts,
+                            router.build_services,
+                            runtime.dashboard.capture,
+                        )
+                    )
+                    router.providers["build"] = build
+                    router.build_health = lambda: build.available
+                except TaskConflict as error:
+                    router.build_unavailable = str(error)
+                except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
+                    router.build_unavailable = "build_startup_failed"
     try:
         await router.start()
     except (OSError, sqlite3.Error):
@@ -182,6 +205,19 @@ async def _start_tasks(
             "reports whether it queued. Do not announce a queue or promise success yourself.",
             delegate_task,
             use_current_turn=True,
+        )
+    if router.build_available:
+
+        async def build_task(text: str, turn_id: UUID) -> str:
+            return await router.submit_turn(text, turn_id, operation="build")
+
+        runtime.core.task_tools["build_task"] = ConversationTask(
+            "Queue the user's Build: goal in an isolated empty workspace using an empty object. "
+            "For a retained HTTP service, direct the user to Tasks to grant a port. "
+            "Do not send private data. Ember reports whether queued; never promise success.",
+            build_task,
+            use_current_turn=True,
+            required_prefix="Build: ",
         )
     runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)

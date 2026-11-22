@@ -168,6 +168,9 @@ records conservative runner ownership, admission race fixes, the coding image
 history budget, and the profile gates for live preemption. See [Phase 13 validation](../phase-13-validation.md) and
 [opt-in Strata screenshot setup](../../ember-agent/docs/strata-vision.md).
 
+[Root ADR 0026 — Isolated OpenCode Build preview](0026-managed-opencode-build.md)
+adds opt-in containerized coding and local service previews. Production gates remain open.
+
 [Root ADR 0025 — Managed OpenCode preview](0025-managed-opencode-preview.md)
 records the default-off OpenCode 2.3.2 preview, Hermes and hosted coding-memory
 removal, independent public search/MCP, and the open Phase 11/12 gates. The

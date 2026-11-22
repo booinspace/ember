@@ -14,7 +14,10 @@ from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
 from .config import RuntimeModel
 
-type TaskOperation = Literal["inspect", "summarize", "recall", "review", "tool", "delegate"]
+type TaskOperation = Literal[
+    "inspect", "summarize", "recall", "review", "tool", "delegate", "build"
+]
+type ServicePort = Annotated[int, Field(ge=1024, le=65535)]
 type TerminalState = Literal["succeeded", "failed", "cancelled", "timed_out", "uncertain"]
 type TaskState = Literal[
     "queued",
@@ -66,11 +69,14 @@ class TaskSubmission(RuntimeModel):
     goal: Annotated[str, Field(min_length=1, max_length=8192, repr=False)]
     operation: TaskOperation = "inspect"
     tool: ToolInvocation | None = None
+    service_port: ServicePort | None = None
 
     @model_validator(mode="after")
     def bound_operation(self) -> Self:
         if (self.operation == "tool") != (self.tool is not None):
             raise ValueError("Tool payload must belong to the tool operation")
+        if self.service_port is not None and self.operation != "build":
+            raise ValueError("Service port requires Build")
         return self
 
 
@@ -111,6 +117,7 @@ class TaskSnapshot(TaskHandle):
     result: str | None = Field(default=None, repr=False)
     receipt: str | None = Field(default=None, repr=False, exclude=True)
     operation: TaskOperation = "inspect"
+    build_artifact: bool = False
 
 
 class TaskStore:
@@ -204,10 +211,11 @@ class TaskStore:
             ).fetchone()
             if row is not None:
                 original = TaskSubmission.model_validate_json(row[1])
-                if (original.goal, original.operation, original.tool) != (
+                if (original.goal, original.operation, original.tool, original.service_port) != (
                     request.goal,
                     request.operation,
                     request.tool,
+                    request.service_port,
                 ):
                     raise TaskConflict("idempotency_key_reused")
                 return TaskHandle.model_validate(
@@ -247,15 +255,17 @@ class TaskStore:
         result: str | None = None,
         receipt: str | None = None,
         artifact: tuple[str, int] | None = None,
-    ) -> None:
-        """Atomically record a terminal state, optional artifact and notification."""
+    ) -> TerminalState:
+        """Atomically settle a task and return its actual terminal state."""
         if expected in TERMINAL_STATES or state not in TERMINAL_STATES:
             raise TaskConflict("invalid_terminal_transition")
         if result is not None and len(result.encode()) > 65536:
             raise TaskConflict("result_too_large")
         if receipt is not None and len(receipt.encode()) > 65536:
             raise TaskConflict("receipt_too_large")
-        await asyncio.to_thread(self._finish, task_id, expected, state, result, receipt, artifact)
+        return await asyncio.to_thread(
+            self._finish, task_id, expected, state, result, receipt, artifact
+        )
 
     def _finish(
         self,
@@ -265,7 +275,7 @@ class TaskStore:
         result: str | None,
         receipt: str | None,
         artifact: tuple[str, int] | None,
-    ) -> None:
+    ) -> TerminalState:
         identity = str(task_id)
         with closing(sqlite3.connect(self.path)) as db, db:
             row = db.execute(
@@ -296,6 +306,7 @@ class TaskStore:
             db.execute(
                 "INSERT INTO terminal_outbox(task_id, state) VALUES (?, ?)", (identity, row[0])
             )
+            return TypeAdapter[TerminalState](TerminalState).validate_python(row[0])
 
     async def claim(self, character_id: UUID) -> tuple[UUID, TaskSubmission, float] | None:
         """Claim the oldest queued task with an atomic compare-and-set."""

@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { libraryIds, recallSelection } from "./contracts";
+import { buildPreviewUrl, libraryIds, recallSelection } from "./contracts";
+
+describe("Build preview links", () => {
+  const host = "build-" + "a".repeat(32) + ".localhost";
+  const url = `http://${host}:49152/`;
+  it("accepts only the isolated, runtime-issued preview URL format", () => {
+    expect(buildPreviewUrl.parse(url)).toBe(url);
+    for (const value of [
+      "javascript:void(0)",
+      "http://127.0.0.1:49152/",
+      `http://${host}.example.test:49152/`,
+      `http://name@${host}:49152/`,
+      `${url}?unexpected=1`,
+      `http://${host}:81/`,
+      `https://${host}:49152/`,
+    ]) {
+      expect(buildPreviewUrl.safeParse(value).success).toBe(false);
+    }
+  });
+});
 
 describe("source controls", () => {
   it("deduplicates selected logical stores without accepting malformed IDs", () => {

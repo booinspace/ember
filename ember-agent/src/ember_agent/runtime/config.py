@@ -228,6 +228,19 @@ def _absolute_command(command: tuple[str, ...]) -> bool:
     )
 
 
+class BuildSettings(RuntimeModel):
+    """Explicit trust in a local Docker daemon and one installed Linux image."""
+
+    docker: Path
+    image: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def installed_launcher(self) -> Self:
+        if not self.docker.is_absolute() or "\0" in str(self.docker):
+            raise ValueError("Build requires an absolute Docker executable path.")
+        return self
+
+
 class HarnessSettings(RuntimeModel):
     """One selected task adapter with an executable pin and explicit workspace."""
 
@@ -236,6 +249,7 @@ class HarnessSettings(RuntimeModel):
     revision: str = Field(min_length=1, max_length=128)
     profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     workspace: Path
+    build: BuildSettings | None = None
     private_recall: bool = False
     tools: tuple[str, ...] = Field(default=(), max_length=8)
     skills: bool = False

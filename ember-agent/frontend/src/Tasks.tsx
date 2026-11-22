@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { control, inspection, type Investigation } from "./contracts";
+import {
+  buildPreviewUrl,
+  buildService,
+  control,
+  inspection,
+  type Investigation,
+} from "./contracts";
 import { Inspector } from "./Inspector";
 import { createRequestId } from "./ids";
 
@@ -16,10 +22,13 @@ const operationSchema = z.enum([
   "review",
   "tool",
   "delegate",
+  "build",
 ]);
+type Operation = z.infer<typeof operationSchema>;
 const snapshot = handle.extend({
   result: z.string().nullable(),
   operation: operationSchema,
+  build_artifact: z.boolean().default(false),
 });
 const notifications = z.object({
   revision: z.number().int(),
@@ -50,27 +59,111 @@ const receiptSchema = z.object({
     .nullable(),
 });
 
+function ActiveBuildService({ expected }: { expected: boolean }) {
+  const [service, setService] = useState<z.infer<typeof buildService> | null>(
+    null,
+  );
+  const [statusError, setStatusError] = useState(false);
+  const [stopError, setStopError] = useState(false);
+  const [stopping, setStopping] = useState(false);
+
+  useEffect(() => {
+    if (stopping) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      try {
+        const value = await control(
+          "tasks/build-service",
+          buildService.nullable(),
+          undefined,
+          controller.signal,
+        );
+        if (!controller.signal.aborted) {
+          setService(value);
+          setStatusError(false);
+        }
+      } catch {
+        if (!controller.signal.aborted) setStatusError(true);
+      } finally {
+        if (!controller.signal.aborted) timer = setTimeout(refresh, 1000);
+      }
+    };
+    void refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [stopping]);
+
+  const stop = async (id: string) => {
+    setStopping(true);
+    setStopError(false);
+    try {
+      await control(`tasks/${id}/stop-service`, acknowledged, {});
+      setService(null);
+    } catch {
+      setStopError(true);
+    } finally {
+      setStopping(false);
+    }
+  };
+
+  if (!service)
+    return expected && statusError ? (
+      <p role="status">Build preview status unavailable.</p>
+    ) : null;
+  const url = buildPreviewUrl.safeParse(service.url);
+  return (
+    <section aria-label="Active Build service">
+      <h2>Active Build service</h2>
+      <p>Preview URL works only in a browser on the Ember host.</p>
+      {!statusError && url.success ? (
+        <p>
+          <a href={url.data} target="_blank" rel="noopener noreferrer">
+            {url.data}
+          </a>
+        </p>
+      ) : (
+        <p role="status">Build preview URL unavailable.</p>
+      )}
+      <p>Expires at {new Date(service.expires_at * 1000).toLocaleString()}.</p>
+      {stopError && <p role="alert">Could not stop Build service.</p>}
+      <button disabled={stopping} onClick={() => void stop(service.task_id)}>
+        Stop service
+      </button>
+    </section>
+  );
+}
+
 export function Tasks({
   summaries,
   recall,
   delegation,
+  build,
   connected,
   provider = "Agentic harness",
 }: {
   summaries: boolean;
   recall: boolean;
   delegation: boolean;
+  build: boolean;
   connected: boolean;
   provider?: string;
 }) {
-  const retry = useRef<{ key: string; text: string; operation: string } | null>(
-    null,
-  );
+  const retry = useRef<{
+    key: string;
+    text: string;
+    operation: Operation;
+    servicePort: number | undefined;
+  } | null>(null);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [operation, setOperation] =
-    useState<z.infer<typeof operationSchema>>("inspect");
-  const [current, setCurrent] = useState<z.infer<typeof handle>>();
+  const [operation, setOperation] = useState<Operation>("inspect");
+  const [port, setPort] = useState("");
+  const [current, setCurrent] = useState<
+    z.infer<typeof handle> & { operation: Operation }
+  >();
   const [pending, setPending] = useState<
     z.infer<typeof notifications>["items"]
   >([]);
@@ -80,9 +173,24 @@ export function Tasks({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [recallResult, setRecallResult] = useState<Investigation>();
-  const [receipt, setReceipt] = useState<z.infer<typeof receiptSchema>>();
+  const [receipt, setReceipt] = useState<
+    z.infer<typeof receiptSchema> & { operation: "build" | "tool" }
+  >();
   const taskId = current?.task_id;
-  const needsInference = operation === "summarize" || operation === "delegate";
+  const isBuild = operation === "build";
+  const servicePort = isBuild && port !== "" ? Number(port) : undefined;
+  const validPort =
+    servicePort === undefined ||
+    (Number.isInteger(servicePort) &&
+      servicePort >= 1024 &&
+      servicePort <= 65535);
+  const needsInference =
+    operation === "summarize" || operation === "delegate" || isBuild;
+  const canSubmit =
+    !busy &&
+    !!text.trim() &&
+    !(connected && needsInference) &&
+    (!isBuild || (build && validPort));
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -114,7 +222,7 @@ export function Tasks({
             undefined,
             controller.signal,
           );
-          setCurrent(status);
+          setCurrent((value) => (value?.task_id === taskId ? status : value));
         }
       } catch {
         if (!controller.signal.aborted) setError("Task status unavailable.");
@@ -133,22 +241,24 @@ export function Tasks({
     if (
       !retry.current ||
       retry.current.text !== text ||
-      retry.current.operation !== operation
+      retry.current.operation !== operation ||
+      retry.current.servicePort !== servicePort
     ) {
-      retry.current = { key: createRequestId(), text, operation };
+      retry.current = { key: createRequestId(), text, operation, servicePort };
     }
     setBusy(true);
     setError("");
     try {
-      setCurrent(
-        await control("tasks", handle, {
-          idempotency_key: retry.current.key,
-          text,
-          operation,
-        }),
-      );
+      const submitted = await control("tasks", handle, {
+        idempotency_key: retry.current.key,
+        text,
+        operation,
+        ...(servicePort === undefined ? {} : { service_port: servicePort }),
+      });
+      setCurrent({ ...submitted, operation });
       retry.current = null;
       setText("");
+      if (isBuild) setPort("");
     } catch {
       setError("Task submission failed.");
     } finally {
@@ -158,8 +268,11 @@ export function Tasks({
   const act = async (id: string, action: "cancel" | "acknowledge") => {
     try {
       await control("tasks/" + id + "/" + action, acknowledged, {});
-      if (action === "acknowledge")
+      if (action === "acknowledge") {
         setPending((items) => items.filter((item) => item.task_id !== id));
+        setCurrent((value) => (value?.task_id === id ? undefined : value));
+        setReceipt((value) => (value?.task_id === id ? undefined : value));
+      }
     } catch {
       setError("Task update failed.");
     }
@@ -207,10 +320,11 @@ export function Tasks({
       setError("Recall unavailable.");
     }
   };
-  const inspectReceipt = async (id: string) => {
+  const inspectReceipt = async (id: string, operation: "build" | "tool") => {
     setReceipt(undefined);
     try {
-      setReceipt(await control("tasks/" + id + "/receipt", receiptSchema));
+      const value = await control(`tasks/${id}/receipt`, receiptSchema);
+      setReceipt({ ...value, operation });
     } catch {
       setError("Receipt is unavailable.");
     }
@@ -241,12 +355,15 @@ export function Tasks({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!busy && text.trim() && !(connected && needsInference))
-            void submit();
+          if (canSubmit) void submit();
         }}
       >
         <label>
-          {operation === "delegate" ? "Research request" : "Text to inspect"}
+          {isBuild
+            ? "Build request"
+            : operation === "delegate"
+              ? "Research request"
+              : "Text to inspect"}
           <textarea
             maxLength={8192}
             value={text}
@@ -265,26 +382,43 @@ export function Tasks({
             {summaries && <option value="summarize">Summarize</option>}
             {recall && <option value="recall">Recall deeply</option>}
             {delegation && (
-              <option value="delegate">Delegate to {provider}</option>
+              <option value="delegate">
+                Inspect with {provider} (read-only)
+              </option>
             )}
+            {build && <option value="build">Build with {provider}</option>}
             <option value="review">Review a draft</option>
           </select>
         </label>
+        {isBuild && (
+          <>
+            <p>Use synthetic, non-sensitive requests and files only.</p>
+            <label>
+              Local service port (optional)
+              <input
+                type="number"
+                min={1024}
+                max={65535}
+                value={port}
+                onChange={(event) => setPort(event.target.value)}
+              />
+            </label>
+            <p>Leave blank to build without starting a local preview.</p>
+          </>
+        )}
         {connected && needsInference && (
           <p>Disconnect from conversation to run this model task.</p>
         )}
-        <button
-          disabled={busy || !text.trim() || (connected && needsInference)}
-        >
-          Queue task
-        </button>
+        <button disabled={!canSubmit}>Queue task</button>
       </form>
       {error && <p role="alert">{error}</p>}
-      {current && (
+      {open && <ActiveBuildService expected={build} />}
+      {current && !pending.some((item) => item.task_id === current.task_id) && (
         <p role="status">
+          {current.operation === "build" && "Build: "}
           {current.cancellation_requested && active
             ? "Cancellation requested"
-            : current.state}
+            : current.state.replaceAll("_", " ")}
           {active && !current.cancellation_requested && (
             <button onClick={() => void act(current.task_id, "cancel")}>
               Cancel task
@@ -309,9 +443,22 @@ export function Tasks({
         </section>
       ))}
       {pending.map((item) => (
-        <p key={item.task_id}>
-          {item.result ?? item.state}
+        <section key={item.task_id}>
+          {item.operation === "build" ? (
+            <>
+              <h2>Build: {item.state.replaceAll("_", " ")}</h2>
+              {item.result && <p>{item.result}</p>}
+              {item.build_artifact && (
+                <a href={`/api/tasks/${item.task_id}/build-artifact`}>
+                  Download ZIP
+                </a>
+              )}
+            </>
+          ) : (
+            <p>{item.result ?? item.state}</p>
+          )}
           {item.operation !== "recall" &&
+            item.operation !== "build" &&
             item.operation !== "tool" &&
             item.state === "succeeded" && (
               <button onClick={() => void download(item.task_id)}>
@@ -323,19 +470,30 @@ export function Tasks({
               View recall
             </button>
           )}
-          {item.operation === "tool" && (
-            <button onClick={() => void inspectReceipt(item.task_id)}>
+          {(item.operation === "tool" || item.operation === "build") && (
+            <button
+              onClick={() =>
+                void inspectReceipt(
+                  item.task_id,
+                  item.operation === "build" ? "build" : "tool",
+                )
+              }
+            >
               View receipt
             </button>
           )}
           <button onClick={() => void act(item.task_id, "acknowledge")}>
             Dismiss
           </button>
-        </p>
+        </section>
       ))}
       {open && recallResult && <Inspector result={recallResult} busy={false} />}
       {open && receipt && (
-        <section aria-label="Tool receipt">
+        <section
+          aria-label={
+            receipt.operation === "build" ? "Build receipt" : "Tool receipt"
+          }
+        >
           <p>Outcome: {receipt.state}</p>
           <pre>
             {receipt.receipt

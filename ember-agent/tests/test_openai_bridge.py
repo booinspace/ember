@@ -148,6 +148,19 @@ def test_ollama_preserves_call_ids_and_correlated_native_tool_name(tmp_path: Pat
     asyncio.run(run())
 
 
+def _call(name: str, arguments: dict[str, JsonValue]) -> NativeFrame:
+    return NativeFrame(
+        message=NativeMessage(
+            tool_calls=[
+                NativeTool(
+                    index=0,
+                    function=NativeFunction(name=name, arguments=json.dumps(arguments)),
+                )
+            ]
+        )
+    )
+
+
 class _Upstream:
     def __init__(self) -> None:
         self.requests: list[GatewayRequest] = []

@@ -75,4 +75,5 @@ opt-in P5 screenshots.
 [Agent ADR 0015 — Managed OpenCode preview](0015-managed-opencode-preview.md)
 records the default-off process, task-scoped P2 ingress and synthetic-only policy.
 [Root ADR 0025](../../../docs/adr/0025-managed-opencode-preview.md) maps evidence and
-unqualified platforms to the still-open Phase 11/12 gates.
+unqualified platforms to the still-open Phase 11/12 gates. [Root ADR 0026](../../../docs/adr/0026-managed-opencode-build.md)
+records the separate opt-in Build extension and its isolation evidence.

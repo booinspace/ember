@@ -406,6 +406,10 @@ def test_text_composition_human_entry_and_stable_identity(
         ("delegate_task", "Read fixture.txt", "text from earlier turns", False, True),
         ("delegate_task", "Read fixture.txt", None, False, False),
         ("delegate_task", "Read " + "x" * 1600, None, False, False),
+        ("build_task", "Tell me about testing", None, False, False),
+        ("build_task", "Build: ", None, False, False),
+        ("build_task", "Build: Write and test a calculator", None, True, True),
+        ("build_task", "Build: Write and test a calculator", "invented", False, True),
     ],
 )
 def test_model_selected_task_is_bound_to_user_text(
@@ -419,7 +423,7 @@ def test_model_selected_task_is_bound_to_user_text(
     class ToolModel:
         async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
             assert bool(request.tools) is advertised
-            if advertised and name == "delegate_task":
+            if advertised and name in {"delegate_task", "build_task"}:
                 assert request.tools[0].function.parameters == {
                     "type": "object",
                     "properties": {},
@@ -471,9 +475,12 @@ def test_model_selected_task_is_bound_to_user_text(
                 submitted.append(text)
                 return "Queued."
 
-            current_turn = name == "delegate_task"
+            current_turn = name in {"delegate_task", "build_task"}
             core.task_tools[name] = ConversationTask(
-                "Queue a task.", submit, use_current_turn=current_turn
+                "Queue a task.",
+                submit,
+                use_current_turn=current_turn,
+                required_prefix="Build: " if name == "build_task" else "",
             )
             try:
                 turn = await core.prepare(user)

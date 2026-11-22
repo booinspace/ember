@@ -286,12 +286,14 @@ class OpenAIModelBridge:
         allowed_tools: frozenset[str] | None = None,
         validate_call: Callable[[ToolCall], Awaitable[None]] | None = None,
         observe_failure: Callable[[str], None] | None = None,
+        on_step: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.client = client
         self.config = config
         self.coding = coding
         self.allowed_tools = allowed_tools
         self.validate_call = validate_call
+        self.on_step = on_step
         self.observe_failure = observe_failure
         self.output_limit = min(config.output_reserve_tokens, 8192 if coding else 1192)
         self.input_limit = (
@@ -497,6 +499,8 @@ class OpenAIModelBridge:
                 if not self.coding:
                     self._begin(request)
                     acquired = True
+                if self.on_step is not None:
+                    await self.on_step()
                 async with aclosing(self.client.stream(request)) as source:
                     async for event in source:
                         if event.kind == "start":

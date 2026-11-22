@@ -61,6 +61,7 @@ export const runtimeState = z.object({
   recall_tasks_available: z.boolean().default(false),
   delegation_available: z.boolean().default(false),
   delegation_provider: z.string().nullable().default(null),
+  build_available: z.boolean().default(false),
   voice: z.boolean().default(false),
   voice_status: z.string().default("disabled"),
   speech: speechOptions.nullable().default(null),
@@ -71,6 +72,24 @@ export const runtimeState = z.object({
   thinking_enabled: z.boolean().default(false),
 });
 export type RuntimeState = z.infer<typeof runtimeState>;
+
+export const buildService = z.object({
+  task_id: z.string().uuid(),
+  url: z.string().max(128),
+  expires_at: z.number().positive().max(8.64e12),
+});
+
+export const buildPreviewUrl = z.url().refine((value) => {
+  const url = new URL(value);
+  const port = Number(url.port);
+  // Only the runtime's isolated preview origin is browser-navigable.
+  return (
+    /^build-[0-9a-f]{32}\.localhost$/.test(url.hostname) &&
+    port >= 1024 &&
+    port <= 65535 &&
+    value === `http://${url.hostname}:${port}/`
+  );
+});
 
 export const turnDetails = z.object({
   request_id: z.string().uuid(),

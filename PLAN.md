@@ -5204,11 +5204,12 @@ vLLM is an explicit available backend, with results and limits in the runbook.
 [operator setup](docs/adr/0025-managed-opencode-preview.md#operator-setup-and-rollback)
 and [acceptance mapping](docs/adr/0025-managed-opencode-preview.md#acceptance-mapping).
 The default-off OpenCode **2.3.2** preview owns one fresh tool loop per delegated task.
-Only `read`, `glob`, and `grep` in a dedicated synthetic/non-sensitive workspace are
-allowed. Use synthetic/non-sensitive goals and results too. Ember retains task
-records and attention, character continuity, capture, memory, and sole P2 model
-admission. No private recall, external MCP tools, shell, edits, live skills, or
-page reading are provided. There is no OS sandbox or enforced network egress.
+Inspect grants only `read`, `glob`, and `grep` in a dedicated synthetic workspace;
+its path checks are not OS isolation. Separately opt-in [Build](docs/adr/0026-managed-opencode-build.md)
+grants edits and shell inside a fresh, offline Linux container with no host mounts.
+Ember retains task records and attention, character continuity, capture, memory,
+and sole P2 model admission. Neither mode grants private recall, external MCP,
+live skills, or page reading. Both are for synthetic, non-sensitive tasks only.
 
 Real macOS and Miku Windows OpenCode tool loops passed with a deterministic gateway
 upstream, not live Strata. Miku's tracked Strata profiles opt into the synthetic

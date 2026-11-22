@@ -83,10 +83,12 @@ Do not vendor external agent frameworks into either core.
   existing grants, actor-bound clients, exact write confirmations and task receipts. No implicit
   tool loop or OS sandbox. Keep direct MCP distinct from Ember's inbound memory MCP listener.
   [Phase 10 validation](docs/phase-10-validation.md) scopes evidence to the supported profile.
-- **Runner and harness (root ADRs 0020, 0025).** Ollama is the code default; vLLM and managed
+- **Runner and harness (root ADRs 0020, 0025–0026).** Ollama is the code default; vLLM and managed
   Strata are selectable through the same gateway, with no automatic fallback. Managed OpenCode
   2.3.2 is a default-off P2 task preview for synthetic, non-sensitive goals and files only.
-  Only workspace `read`, `glob`, and `grep` are offered. No OS sandbox or egress enforcement.
+  Inspect offers only workspace `read`, `glob`, and `grep`, without OS isolation. Separately
+  opt-in Build grants edits and shell in an offline Linux container without host mounts.
+  See [Build evidence](docs/adr/0026-managed-opencode-build.md#verification-and-limits).
   Miku's Strata profiles opt in for a synthetic workspace. macOS and Miku Windows tool loops
   passed with a deterministic upstream, not live Strata. Production Windows and Linux remain
   unqualified. Keep prompt inspection ephemeral and

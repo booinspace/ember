@@ -84,6 +84,23 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             else "Task provider is unavailable.",
         )
     )
+    if router and (router.build_available or router.build_unavailable or router.providers["build"]):
+        values.append(
+            Capability(
+                id="harness.build",
+                kind="harness",
+                name="Isolated coding tasks",
+                provider="OpenCode",
+                status="enabled" if router.build_available else "unavailable",
+                operations=("build",),
+                reason=(
+                    "Configured isolated Build workspace."
+                    if router.build_available
+                    else router.build_unavailable or "Build cleanup could not be verified."
+                ),
+            )
+        )
+
     if router and router.mcp:
         snapshot = router.mcp.snapshot()
         for server in snapshot.servers:

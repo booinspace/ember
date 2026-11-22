@@ -118,6 +118,7 @@ class ConversationTask:
     description: str
     submit: Callable[[str, UUID], Awaitable[str]]
     use_current_turn: bool = False
+    required_prefix: str = ""
 
     def definition(self, name: str) -> ToolDefinition:
         return ToolDefinition(
@@ -912,7 +913,11 @@ class CharacterCore:
         turn_tools = tuple(
             task.definition(name)
             for name, task in self.task_tools.items()
-            if not thinking and task.use_current_turn and len(text) <= _TASK_TEXT_LIMIT
+            if not thinking
+            and task.use_current_turn
+            and len(text) <= _TASK_TEXT_LIMIT
+            and text.startswith(task.required_prefix)
+            and (not task.required_prefix or text[len(task.required_prefix) :].strip())
         )
         for definitions in (
             (literal_tools + turn_tools, literal_tools) if turn_tools else (literal_tools,)
@@ -1137,7 +1142,13 @@ class CharacterCore:
                             raise GatewayError("task_tool_not_authorized")
                         arguments = call.arguments
                         if selected.use_current_turn:
-                            if arguments or not 0 < len(turn.user) <= _TASK_TEXT_LIMIT:
+                            prefix = selected.required_prefix
+                            if (
+                                arguments
+                                or not 0 < len(turn.user) <= _TASK_TEXT_LIMIT
+                                or not turn.user.startswith(prefix)
+                                or (prefix and not turn.user[len(prefix) :].strip())
+                            ):
                                 raise GatewayError("task_tool_scope_denied")
                             value = turn.user
                         else:

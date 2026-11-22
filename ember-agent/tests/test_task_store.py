@@ -374,6 +374,96 @@ def test_router_cancellation_stops_inflight_read_only_provider(tmp_path: Path) -
     asyncio.run(exercise())
 
 
+def test_build_cancel_at_commit_fences_failed_cleanup_without_stopping_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from uuid import UUID
+
+    from ember_agent.runtime.task_router import (
+        TaskResult,
+        TaskRouter,
+        TextInspectionProvider,
+        TextInspectionTask,
+        ToolContext,
+        ToolReceipt,
+        ToolRouter,
+    )
+    from ember_agent.runtime.task_store import TaskState, TerminalState
+
+    async def exercise() -> None:
+        character = uuid4()
+        native = TextInspectionTask(ToolRouter(TextInspectionProvider(), character))
+        router = TaskRouter(tmp_path, character, uuid4(), native)
+        finish = router.store.finish
+
+        class Build:
+            async def execute(
+                self,
+                request: TaskSubmission,
+                context: ToolContext,
+                progress: Callable[[TaskState], Awaitable[None]],
+            ) -> TaskResult:
+                return TaskResult(
+                    summary="Synthetic build",
+                    receipt=ToolReceipt(
+                        context=context,
+                        tool="build",
+                        data={"artifact": {"sha256": "0" * 64, "size_bytes": 22}},
+                    ),
+                )
+
+        deleted: list[UUID] = []
+
+        async def fail_delete(task_id: UUID) -> None:
+            deleted.append(task_id)
+            raise OSError("synthetic cleanup failure")
+
+        build_id: UUID | None = None
+
+        async def cancel_before_commit(
+            task_id: UUID,
+            expected: TaskState,
+            state: TerminalState,
+            *,
+            result: str | None = None,
+            receipt: str | None = None,
+            artifact: tuple[str, int] | None = None,
+        ) -> TerminalState:
+            if artifact is not None:
+                nonlocal build_id
+                build_id = task_id
+                assert state == "succeeded"
+                await router.store.cancel(task_id, character)
+            return await finish(
+                task_id, expected, state, result=result, receipt=receipt, artifact=artifact
+            )
+
+        monkeypatch.setattr(router.store, "finish", cancel_before_commit)
+        monkeypatch.setattr(router.build_artifacts, "delete", fail_delete)
+        router.providers["build"] = Build()
+        await router.start()
+        try:
+            build = await router.submit("race", "Build a synthetic file", operation="build")
+            inspect = await router.submit("after-race", "one two three")
+            async with asyncio.timeout(3):
+                while True:
+                    status = await router.status(inspect.task_id)
+                    if status is not None and status.state == "succeeded":
+                        break
+                    await asyncio.sleep(0.01)
+            assert build_id == build.task_id
+            assert deleted == [build.task_id]
+            assert router.build_unavailable == "build_cleanup_failed"
+            assert not router.build_available
+            cancelled = await router.status(build.task_id)
+            assert cancelled and cancelled.state == "cancelled" and not cancelled.build_artifact
+            assert await router.active_build_service() is None
+        finally:
+            await router.aclose()
+
+    asyncio.run(exercise())
+
+
 def test_speech_claim_is_durable_scoped_and_does_not_ack_ui(tmp_path: Path) -> None:
     async def exercise() -> None:
         store = TaskStore(tmp_path)

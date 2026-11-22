@@ -22,6 +22,8 @@ from ..inference.contracts import GatewayError, GatewayRequest, ModelClient, Pro
 from ..memory.deep_contracts import DeepRecallRequest
 from ..memory.deep_recall import DeepRecallService
 from ..observability import ActivityLog, ActivityStatus, notify
+from .build_artifacts import MAX_ZIP_BYTES, BuildArtifacts
+from .build_services import BuildService, BuildServices
 from .config import RuntimeModel
 from .skills import Skills
 from .skills_contracts import SkillDependency
@@ -40,6 +42,7 @@ from .task_store import (
     TerminalState,
     ToolInvocation,
 )
+from .worker_process import settled
 
 if TYPE_CHECKING:
     from .mcp_tools import MCPTools
@@ -824,6 +827,10 @@ class TaskRouter:
         self.delegate_label = "Agentic harness"
         self.delegate_unavailable: str | None = None
         self.delegate_health: Callable[[], bool] | None = None
+        self.build_health: Callable[[], bool] | None = None
+        self.build_unavailable: str | None = None
+        self.build_artifacts = BuildArtifacts(root)
+        self.build_services = BuildServices()
         self.artifacts = TaskArtifacts(root)
         self.character_id = character_id
         self.session_id = session_id
@@ -838,6 +845,7 @@ class TaskRouter:
             "summarize": summary,
             "recall": recall,
             "delegate": delegate,
+            "build": None,
         }
         self._wake = asyncio.Event()
         self._completion_lock = asyncio.Lock()
@@ -861,6 +869,22 @@ class TaskRouter:
             self.delegate_health is None or self.delegate_health()
         )
 
+    @property
+    def build_available(self) -> bool:
+        """Advertise Build only after isolated worker qualification at startup."""
+        return (
+            self.providers["build"] is not None
+            and self.build_unavailable is None
+            and (self.build_health is None or self.build_health())
+        )
+
+    def _provider(self, operation: TaskOperation) -> AgenticTaskProvider | None:
+        if (operation == "delegate" and not self.delegation_available) or (
+            operation == "build" and not self.build_available
+        ):
+            return None
+        return self.providers[operation]
+
     async def start(self) -> None:
         """Reconcile interrupted work before accepting new work."""
         if self._worker is not None or self._closing:
@@ -878,15 +902,20 @@ class TaskRouter:
         turn_id: UUID | None = None,
         operation: TaskOperation = "inspect",
         tool: ToolInvocation | None = None,
+        service_port: int | None = None,
     ) -> TaskHandle:
         """Persist a scoped task before signalling the worker."""
         if self._closing or self._worker is None or self._worker.done():
             raise TaskConflict("task_router_unavailable")
         if (operation == "tool") != (tool is not None):
             raise TaskConflict("invalid_tool_submission")
-        if self.providers[operation] is None or (
-            operation == "delegate" and not self.delegation_available
+        if service_port is not None and (
+            operation != "build"
+            or type(service_port) is not int
+            or not 1024 <= service_port <= 65535
         ):
+            raise TaskConflict("invalid_build_service_port")
+        if self._provider(operation) is None:
             raise TaskConflict("task_provider_unavailable")
         handle = await self.store.submit(
             TaskSubmission(
@@ -897,6 +926,7 @@ class TaskRouter:
                 goal=text,
                 operation=operation,
                 tool=tool,
+                service_port=service_port,
             )
         )
         self._wake.set()
@@ -911,7 +941,7 @@ class TaskRouter:
             await self.submit(str(turn_id), text, turn_id=turn_id, operation=operation)
         except TaskConflict:
             return "I couldn't queue that task. Please try again."
-        if operation == "delegate":
+        if operation in ("delegate", "build"):
             return "Task queued. Disconnect Conversation to let it run, then check Tasks."
         return "I queued the task. Its result will appear in Tasks."
 
@@ -937,6 +967,9 @@ class TaskRouter:
             return value.model_copy(update={"result": None, "receipt": None})
         if not self._tool_context_current(result) or not await self._skills_current(result):
             return value.model_copy(update={"result": None, "receipt": None})
+        if value.operation == "build" and value.state == "succeeded":
+            identity = await self.store.artifact_identity(value.task_id, self.character_id)
+            return value.model_copy(update={"build_artifact": identity is not None})
         return value
 
     async def _skills_current(self, result: TaskResult) -> bool:
@@ -979,6 +1012,8 @@ class TaskRouter:
         snapshot = await self.status(task_id)
         if snapshot is None:
             raise TaskConflict("task_not_found")
+        if snapshot.operation == "build":
+            raise TaskConflict("task_artifact_unavailable")
         try:
             artifact = await self.artifacts.save(snapshot)
         except OSError as error:
@@ -1005,12 +1040,43 @@ class TaskRouter:
             raise TaskConflict("task_context_invalidated")
         return data
 
+    async def read_build_artifact(self, task_id: UUID) -> bytes:
+        """Read an immutable Build ZIP only after successful, scoped task completion."""
+        snapshot = await self.status(task_id)
+        if snapshot is None or not snapshot.build_artifact:
+            raise TaskConflict("task_artifact_unavailable")
+        identity = await self.store.artifact_identity(task_id, self.character_id)
+        if identity is None:
+            raise TaskConflict("task_artifact_unavailable")
+        try:
+            return await self.build_artifacts.read(task_id, *identity)
+        except (OSError, ValueError) as error:
+            raise TaskConflict("task_artifact_invalid") from error
+
+    async def active_build_service(self) -> BuildService | None:
+        """Only expose services with a committed successful Build in this character."""
+        service = self.build_services.current
+        if service is None:
+            return None
+        snapshot = await self.status(service.task_id)
+        if snapshot and snapshot.operation == "build" and snapshot.state == "succeeded":
+            return service if self.build_services.current == service else None
+        return None
+
+    async def stop_build_service(self, task_id: UUID) -> None:
+        """Stop only the character's owned service."""
+        service = await self.active_build_service()
+        if service is None or service.task_id != task_id:
+            raise TaskConflict("build_service_unavailable")
+        await self.build_services.stop(task_id)
+
     async def cancel(self, task_id: UUID) -> None:
         """Record cancellation under this character's authority."""
-        await self.store.cancel(task_id, self.character_id)
-        active = self._active
-        if active is not None and active[0] == task_id and not active[1].cancelling():
-            active[1].cancel()
+        async with self._completion_lock:
+            await self.store.cancel(task_id, self.character_id)
+            active = self._active
+            if active is not None and active[0] == task_id and not active[1].cancelling():
+                active[1].cancel()
         self.events.publish()
 
     async def notifications(self, revision: int | None) -> TaskNotifications:
@@ -1100,7 +1166,9 @@ class TaskRouter:
                 request.operation,
                 request_id=request.turn_id,
                 task_id=identity,
-                provider=self.delegate_label if request.operation == "delegate" else "ember",
+                provider=self.delegate_label
+                if request.operation in ("delegate", "build")
+                else "ember",
             )
             if self.activity
             else None
@@ -1151,12 +1219,22 @@ class TaskRouter:
             status = await self.store.status(identity, self.character_id)
             if status is None or status.cancellation_requested:
                 raise TaskCancelled()
-            provider = self.providers[request.operation]
-            if provider is None or (
-                request.operation == "delegate" and not self.delegation_available
-            ):
+            provider = self._provider(request.operation)
+            if provider is None:
                 raise TaskConflict("task_provider_unavailable")
             return await provider.execute(request, context, progress)
+
+        async def discard_build() -> bool:
+            nonlocal failure_code
+            try:
+                try:
+                    await self.build_services.discard(identity)
+                finally:
+                    await self.build_artifacts.delete(identity)
+            except (OSError, TaskConflict):
+                failure_code = self.build_unavailable = "build_cleanup_failed"
+                return False
+            return True
 
         async def finish(
             terminal: TerminalState,
@@ -1165,17 +1243,36 @@ class TaskRouter:
             receipt: str | None = None,
             artifact: tuple[str, int] | None = None,
         ) -> None:
-            # Publish terminal activity before operator status can expose its committed state.
+            # Terminal status must not advertise uncommitted files or service ownership.
             async with self._completion_lock:
-                await self.store.finish(
-                    identity, state, terminal, result=result, receipt=receipt, artifact=artifact
-                )
-                if self.activity and span:
-                    finished = await self.store.status(identity, self.character_id)
-                    if finished:
-                        self.activity.update(
-                            span, cast(ActivityStatus, finished.state), code=failure_code
+                build = request.operation == "build"
+                if build and terminal == "succeeded":
+                    pending = await self.store.status(identity, self.character_id)
+                    if pending is None or pending.cancellation_requested:
+                        terminal, result, receipt, artifact = "cancelled", None, None, None
+                if build and terminal != "succeeded":
+                    if not await settled(asyncio.create_task(discard_build())):
+                        terminal, result, receipt, artifact = (
+                            "uncertain",
+                            "build_cleanup_failed",
+                            None,
+                            None,
                         )
+                try:
+                    committed = await self.store.finish(
+                        identity, state, terminal, result=result, receipt=receipt, artifact=artifact
+                    )
+                except Exception:
+                    if build and terminal == "succeeded":
+                        await settled(asyncio.create_task(discard_build()))
+                    raise
+                if build and terminal == "succeeded":
+                    if committed == "succeeded":
+                        self.build_services.activate(identity)
+                    else:
+                        await settled(asyncio.create_task(discard_build()))
+                if self.activity and span:
+                    self.activity.update(span, cast(ActivityStatus, committed), code=failure_code)
 
         try:
             async with asyncio.timeout(max(0.0, min(180.0, deadline - time()))):
@@ -1189,8 +1286,21 @@ class TaskRouter:
                     if dispatcher is not None and dispatcher.cancelling():
                         if not execution.cancelling():
                             execution.cancel()
-                        await asyncio.gather(execution, return_exceptions=True)
+
+                        async def join_provider() -> None:
+                            await asyncio.gather(execution, return_exceptions=True)
+
+                        await settled(asyncio.create_task(join_provider()))
+                        if not execution.cancelled():
+                            error = execution.exception()
+                            if isinstance(error, TaskConflict) and str(error) == (
+                                "build_container_cleanup_failed"
+                            ):
+                                raise error from None
                         raise
+                    if not execution.cancelled():
+                        # Cancellation of the provider can fail while removing its container.
+                        execution.result()
                     raise TaskCancelled() from None
                 finally:
                     self._active = None
@@ -1211,7 +1321,20 @@ class TaskRouter:
             if not await self._skills_current(result):
                 raise TaskConflict("task_skill_context_invalidated")
             artifact: tuple[str, int] | None = None
-            if request.operation == "review":
+            if request.operation == "build":
+                metadata = result.receipt.data.get("artifact")
+                if result.receipt.tool != "build" or not isinstance(metadata, dict):
+                    raise TaskConflict("build_artifact_invalid")
+                digest, size = metadata.get("sha256"), metadata.get("size_bytes")
+                if (
+                    not isinstance(digest, str)
+                    or not re.fullmatch(r"[a-f0-9]{64}", digest)
+                    or type(size) is not int
+                    or not 22 <= size <= MAX_ZIP_BYTES
+                ):
+                    raise TaskConflict("build_artifact_invalid")
+                artifact = (digest, size)
+            elif request.operation == "review":
                 data = result.summary.encode("utf-8")
                 digest, size = (
                     result.receipt.data.get("sha256"),
@@ -1245,7 +1368,11 @@ class TaskRouter:
             failure_code = (
                 candidate if re.fullmatch(r"[a-z0-9_]{1,64}", candidate) else "task_provider_failed"
             )
-            await finish("failed")
+            if request.operation == "build":
+                uncertain = failure_code == "build_container_cleanup_failed"
+                await finish("uncertain" if uncertain else "failed", result=failure_code)
+            else:
+                await finish("failed")
         else:
             outcome: dict[str, TerminalState] = {
                 "success": "succeeded",

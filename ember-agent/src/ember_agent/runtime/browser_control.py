@@ -25,6 +25,7 @@ from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
+from .build_services import BuildService
 from .capabilities import capability_catalog
 from .config import RuntimeModel, private_lan_address
 from .controls import CaptureControl, GraphInput, PromptControls, RuntimeControls
@@ -96,11 +97,14 @@ class TaskInput(RuntimeModel):
     text: str = Field(min_length=1, max_length=8192, repr=False)
     operation: TaskOperation = "inspect"
     tool: ToolInvocation | None = None
+    service_port: int | None = Field(default=None, ge=1024, le=65535)
 
     @model_validator(mode="after")
-    def bound_tool_operation(self) -> Self:
+    def bound_operation(self) -> Self:
         if (self.operation == "tool") != (self.tool is not None):
             raise ValueError("Tool payload must belong to the tool operation")
+        if self.service_port is not None and self.operation != "build":
+            raise ValueError("Service port must belong to the build operation")
         return self
 
 
@@ -291,7 +295,11 @@ class BrowserControl:
             @app.post("/api/tasks", status_code=202)
             async def submit_task(value: TaskInput) -> TaskHandle:
                 return await router.submit(
-                    value.idempotency_key, value.text, operation=value.operation, tool=value.tool
+                    value.idempotency_key,
+                    value.text,
+                    operation=value.operation,
+                    tool=value.tool,
+                    service_port=value.service_port,
                 )
 
             @app.get("/api/tools")
@@ -327,6 +335,10 @@ class BrowserControl:
                 await router.acknowledge(task_id)
                 return {"accepted": True}
 
+            @app.get("/api/tasks/build-service")
+            async def active_build_service() -> BuildService | None:
+                return await router.active_build_service()
+
             @app.get("/api/tasks/{task_id}")
             async def task_status(task_id: UUID) -> TaskSnapshot:
                 value = await router.status(task_id)
@@ -348,6 +360,22 @@ class BrowserControl:
                         "Cache-Control": "no-store",
                     },
                 )
+
+            @app.get("/api/tasks/{task_id}/build-artifact")
+            async def read_build_artifact(task_id: UUID) -> Response:
+                return Response(
+                    await router.read_build_artifact(task_id),
+                    media_type="application/zip",
+                    headers={
+                        "Content-Disposition": "attachment; filename=ember-build.zip",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
+
+            @app.post("/api/tasks/{task_id}/stop-service")
+            async def stop_build_service(task_id: UUID) -> dict[str, bool]:
+                await router.stop_build_service(task_id)
+                return {"accepted": True}
 
             @app.get("/api/tasks/{task_id}/recall")
             async def task_recall(task_id: UUID) -> dict[str, object]:
@@ -412,6 +440,7 @@ class BrowserControl:
                 "delegation_available": bool(
                     self.task_router and self.task_router.delegation_available
                 ),
+                "build_available": bool(self.task_router and self.task_router.build_available),
                 "delegation_provider": self.task_router.delegate_label
                 if self.task_router
                 else None,

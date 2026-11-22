@@ -1,7 +1,6 @@
 """Exercise owned delegation with synthetic files and a deterministic gateway upstream."""
 
 import asyncio
-import json
 import os
 from collections.abc import AsyncGenerator
 from hashlib import file_digest
@@ -16,7 +15,7 @@ from ember_agent.character.core import CharacterCore, ConversationTask
 from ember_agent.inference.client import HttpGatewayClient
 from ember_agent.inference.contracts import GatewayRequest
 from ember_agent.inference.service import create_app
-from ember_agent.inference.upstream import NativeFrame, NativeFunction, NativeMessage, NativeTool
+from ember_agent.inference.upstream import NativeFrame, NativeMessage
 from ember_agent.runtime.config import HarnessSettings
 from ember_agent.runtime.harness import open_harness
 from ember_agent.runtime.opencode_harness import _prepare, open_opencode
@@ -30,7 +29,7 @@ from ember_agent.runtime.task_store import TaskConflict, TaskSnapshot
 from ember_memory_engine import CanonicalEngine
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 
-from .test_openai_bridge import _bridge, _config, _Upstream
+from .test_openai_bridge import _bridge, _call, _config, _Upstream
 
 
 async def _terminal(router: TaskRouter, task_id: UUID) -> TaskSnapshot:
@@ -40,19 +39,6 @@ async def _terminal(router: TaskRouter, task_id: UUID) -> TaskSnapshot:
             if value and value.state in {"succeeded", "failed", "cancelled", "timed_out"}:
                 return value
             await asyncio.sleep(0.02)
-
-
-def _call(name: str, arguments: dict[str, JsonValue]) -> NativeFrame:
-    return NativeFrame(
-        message=NativeMessage(
-            tool_calls=[
-                NativeTool(
-                    index=0,
-                    function=NativeFunction(name=name, arguments=json.dumps(arguments)),
-                )
-            ]
-        )
-    )
 
 
 @pytest.mark.parametrize(

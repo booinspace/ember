@@ -34,7 +34,19 @@ operator setup, evidence and open acceptance gates.
   session; when cleanup cannot be verified, the worker is made unavailable and
   stopped. This is not a certified private-data purge contract.
 
-## Authority and platform limits
+## Build extension
+
+[Root ADR 0026](../../../docs/adr/0026-managed-opencode-build.md) adds a separate,
+explicit `build` task operation. It starts a pinned worker per task in a Linux
+container, with bounded writable tmpfs, read-only image, no host mounts or external
+network, and fixed-destination pipe relays. The container has no upstream credentials.
+The model bearer is readable by same-task processes, but can only reach the task's
+bound P2 ingress; Ember revokes it before retaining any preview. The worker chooses
+read/edit/write/shell calls; Ember projects terminal text and tool statuses and validates
+an immutable ZIP. A separate operator port grant allows one verified local HTTP
+preview, not arbitrary network exposure. Unverified cleanup fences further builds.
+
+## Inspect authority and platform limits
 
 The managed policy permits only `read`, `glob`, and `grep` in the configured
 workspace. The model bridge checks tool names and resolved paths before
