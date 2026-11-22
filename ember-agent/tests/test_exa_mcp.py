@@ -585,6 +585,8 @@ def test_research_broker_grants_only_exact_public_inputs_and_same_task_sources()
 @pytest.mark.parametrize(
     ("phrase", "operation", "arg", "proposal", "allowed"),
     [
+        (f"whats on this page {_URL}", PAGE, "url", _URL, True),
+        (f"What’s on this page {_URL}", PAGE, "url", _URL, True),
         (f"Could you explain this page at <{_URL}>?", PAGE, "url", _URL, True),
         (f"Give me a summary of the article at {_URL}", PAGE, "url", _URL, True),
         (f"Give me a summary of {_URL} and https://example.net", PAGE, "url", _URL, False),

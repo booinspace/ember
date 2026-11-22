@@ -162,7 +162,12 @@ def test_search_then_build_hands_off_only_current_evidence(tmp_path: Path) -> No
                 assert (
                     first.context_id == second.context_id and first.request_id != second.request_id
                 )
-                assert [tool.function.name for tool in first.tools] == [SEARCH, BUILD]
+                assert [tool.function.name for tool in first.tools] == [
+                    SEARCH,
+                    PAGE,
+                    INSPECT,
+                    BUILD,
+                ]
                 assert [tool.function.name for tool in second.tools] == [BUILD]
                 assert first.messages[-1].content == _TURN
                 assert second.messages[-1].role == "tool"
@@ -170,7 +175,8 @@ def test_search_then_build_hands_off_only_current_evidence(tmp_path: Path) -> No
                 assert "Use strong contrast" in dump
                 assert _URL not in dump and "PRIVATE_" not in dump
                 [(plan, turn_id)] = harness.plans
-                assert turn_id == first.request_id and plan.inspect is None
+                assert turn_id != first.request_id and plan.inspect is None
+                assert harness.core.history[-1].request_id == turn_id
                 assert plan.build and "Use high-contrast transit lines" in plan.build
                 assert "Use strong contrast" not in plan.build
                 assert plan.sources[0].url == _URL and plan.sources[0].source_id
@@ -542,7 +548,63 @@ def test_mere_mentions_do_not_grant_tools(text: str) -> None:
     assert intent_for(text) is None
 
 
-def test_snippet_search_stays_snippet_only(tmp_path: Path) -> None:
+def test_no_proposal_preserves_ordinary_reply(tmp_path: Path) -> None:
+    async def run() -> None:
+        model = Model("Ignored planner text", "Ordinary reply")
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            try:
+                identity = uuid4()
+                turn = await harness.core.prepare("How are you?", request_id=identity)
+                reply = "".join([event.text async for event in harness.core.stream(turn)])
+                assert reply == "Ordinary reply"
+                assert not harness.plans and not harness.web.inputs
+                planner, ordinary = model.requests
+                assert [tool.function.name for tool in planner.tools] == [
+                    SEARCH,
+                    PAGE,
+                    INSPECT,
+                    BUILD,
+                ]
+                assert "PRIVATE_" not in planner.model_dump_json()
+                assert planner.request_id != identity == ordinary.request_id
+                assert "PRIVATE_HISTORY" in ordinary.model_dump_json()
+                assert not harness.core.history[-1].public_web_reply
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("text", "name", "arg", "value"),
+    [
+        (f"Whats on this page {_URL}", INSPECT, "goal", f"Whats on this page {_URL}"),
+        (f"Whats on this page {_URL}", SEARCH, "query", "public design guide"),
+        (f"I bookmarked {_URL}", PAGE, "url", _URL),
+        (f"Don't read {_URL}", PAGE, "url", _URL),
+        (f"Check {_URL}", INSPECT, "goal", f"Check {_URL}"),
+    ],
+)
+def test_proposal_does_not_grant_authority(
+    tmp_path: Path, text: str, name: str, arg: str, value: str
+) -> None:
+    async def run() -> None:
+        model = Model((_call(name, arg, value),))
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            try:
+                assert "Nothing ran" in await harness.turn(text)
+                assert len(model.requests) == 1
+                assert not harness.plans and not harness.web.inputs
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("text", [f"Search the web for {_QUERY}", f"Find me {_QUERY} online"])
+def test_snippet_search_stays_snippet_only(tmp_path: Path, text: str) -> None:
     async def run() -> None:
         model = Model((_call(SEARCH, "query", _QUERY),), "Use strong contrast.")
         with CanonicalEngine(tmp_path) as engine:
@@ -562,7 +624,7 @@ def test_snippet_search_stays_snippet_only(tmp_path: Path) -> None:
 
             harness.core.public_search = search
             try:
-                answer = await harness.turn(f"Search the web for {_QUERY}")
+                answer = await harness.turn(text)
                 assert "search snippets only" in answer and "excerpts" not in answer
                 assert _URL in answer and not harness.plans
             finally:

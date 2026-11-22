@@ -37,6 +37,7 @@ from ..inference.contracts import (
     GenerationUsage,
     ModelClient,
     PromptMessage,
+    ToolCall,
     ToolDefinition,
     ToolFunction,
 )
@@ -74,13 +75,18 @@ from .temporal import CalendarResolver, CalendarScope
 from .tool_workflow import (
     BUILD,
     INSPECT,
+    NO_PLAN,
+    PAGE,
+    SEARCH,
     Intent,
     SubmitManaged,
     execute_workflow,
     has_embedded_prerequisite,
     has_tool_chain,
     intent_for,
+    planning_eligible,
     planning_request,
+    propose_tool,
     public_search_query_candidate,
     workflow_accounting,
 )
@@ -135,7 +141,7 @@ class PreparedTurn:
     local_reply: str | None = None
     prompts: PromptSnapshot | None = None
     web_evidence: WebEvidence | None = None
-    tool_intent: Intent | None = None
+    tool_plan: tuple[Intent, ToolCall] | None = None
 
 
 _TASK_TEXT_LIMIT = 1600
@@ -466,29 +472,16 @@ class CharacterCore:
                 ("tool_plan_needs_order",),
                 observation.prompts,
             )
-        if not stripped.casefold().startswith("build:") and hosted_web_request(text) is None:
-            intent = intent_for(text)
-            if intent is not None and (
-                (
-                    self.submit_managed is not None
-                    and (INSPECT in intent.steps or BUILD in intent.steps)
-                )
-                or (self.plan_web and INSPECT not in intent.steps and BUILD not in intent.steps)
-            ):
-                base = self._local_turn(text, identity, observed_at, "", (), observation.prompts)
-                request = planning_request(base.request, intent, text)
-                accounting = workflow_accounting(request)
-                if accounting.serialized_total <= self.input_ceiling:
-                    return replace(
-                        base,
-                        request=request,
-                        tool_intent=intent,
-                        local_reply=None,
-                        accounting=accounting,
-                    )
-                return replace(
-                    base, local_reply="That tool request is too long. Try a shorter goal."
-                )
+        hosted = hosted_web_request(text)
+        if (
+            investigation is None
+            and hosted is None
+            and not stripped.casefold().startswith("build:")
+            and planning_eligible(text)
+        ):
+            planned = await self._plan_turn(observation)
+            if planned is not None:
+                return planned
 
         submit_build = self.submit_build
         if goal is not None:
@@ -506,7 +499,6 @@ class CharacterCore:
 
         search_context: PromptMessage | None = None
         page_url = public_page_url(text)
-        hosted = hosted_web_request(text)
         if hosted is not None:
             provider, operation, value = hosted
             read = operation == "read"
@@ -1311,9 +1303,78 @@ class CharacterCore:
             ),
         )
 
+    async def _plan_turn(self, observation: TurnObservation) -> PreparedTurn | None:
+        available: list[str] = []
+        if self.plan_web and self.web_search_ready:
+            available.append(SEARCH)
+        if self.plan_web and self.public_web is not None:
+            available.append(PAGE)
+        if self.submit_managed is not None:
+            if self.inspect_ready():
+                available.append(INSPECT)
+            if self.build_ready():
+                available.append(BUILD)
+        if not available:
+            return None
+        base = self._local_turn(
+            observation.text,
+            observation.request_id,
+            observation.observed_at,
+            NO_PLAN,
+            (),
+            observation.prompts,
+        )
+        workflow = planning_request(base.request, tuple(available))
+        accounting = workflow_accounting(workflow)
+        call = None
+        if accounting.serialized_total <= self.input_ceiling:
+            # The gateway deduplicates generation IDs. Keep the original turn ID for
+            # ordinary reply, delivery, and task receipts, not this routing pass.
+            request = workflow.model_copy(
+                update={
+                    "request_id": uuid4(),
+                    "max_output_tokens": 256,
+                    "deadline_at": timestamp_from_datetime(
+                        datetime.now(UTC) + timedelta(seconds=15)
+                    ),
+                }
+            )
+            self.observation_failures += not notify(
+                self.observe_request, replace(base, request=request, accounting=accounting)
+            )
+            finished = False
+            try:
+                async with asyncio.timeout(15):
+                    call = await propose_tool(self.model, request)
+                finished = True
+            except (GatewayError, TimeoutError, ValueError):
+                pass
+            finally:
+                self.observation_failures += not notify(
+                    self.observe_end, request.request_id, finished
+                )
+        intent = intent_for(observation.text)
+        if intent is not None and not all(step in available for step in intent.steps):
+            return replace(base, local_reply="A requested tool is unavailable. Nothing ran.")
+        if call is None:
+            return base if intent is not None else None
+        if intent is None or call.name != intent.steps[0]:
+            return replace(
+                base,
+                local_reply="I couldn't verify that tool request. Nothing ran. "
+                "State what to do and give the exact public URL, search terms, or task goal.",
+            )
+        return replace(
+            base,
+            request=workflow,
+            tool_plan=(intent, call),
+            local_reply=None,
+            accounting=accounting,
+        )
+
     async def _workflow_response(self, turn: PreparedTurn) -> AsyncGenerator[GatewayEvent, None]:
-        intent = turn.tool_intent
-        assert intent is not None
+        assert turn.tool_plan is not None
+        intent, call = turn.tool_plan
 
         def observe(request: GatewayRequest) -> None:
             self.observation_failures += not notify(
@@ -1329,6 +1390,7 @@ class CharacterCore:
                         self.model,
                         turn.request,
                         intent,
+                        call,
                         public_web=self.public_web,
                         snippet_search=self.public_search,
                         provider=self.search_provider,
@@ -1385,11 +1447,11 @@ class CharacterCore:
             if not await self.current(turn.dependencies, turn.certificate):
                 self.turn_view.invalidate(turn.request.request_id)
                 raise GatewayError("context_invalidated")
-            if turn.tool_intent is None and turn.local_reply is None:
+            if turn.tool_plan is None and turn.local_reply is None:
                 self.observation_failures += not notify(self.observe_request, turn)
             response = (
                 self._workflow_response(turn)
-                if turn.tool_intent is not None
+                if turn.tool_plan is not None
                 else self._local_response(turn)
                 if turn.local_reply is not None
                 else synthesize_public_web(self.model, turn.request, turn.web_evidence)
@@ -1492,7 +1554,7 @@ class CharacterCore:
                 complete,
                 turn.dependencies,
                 turn.certificate,
-                public_web_reply=turn.web_evidence is not None or turn.tool_intent is not None,
+                public_web_reply=turn.web_evidence is not None or turn.tool_plan is not None,
             )
         elif isinstance(self.sink, ObservedDialogueSink):
             await self.sink.commit_delivery(
@@ -1507,7 +1569,7 @@ class CharacterCore:
             turn.certificate,
             turn.request.request_id,
             complete,
-            public_web_reply=turn.web_evidence is not None or turn.tool_intent is not None,
+            public_web_reply=turn.web_evidence is not None or turn.tool_plan is not None,
         )
         self.history = [old for old in self.history if old.request_id != turn.request.request_id]
         self.history.append(observed)

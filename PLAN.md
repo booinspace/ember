@@ -5259,10 +5259,13 @@ See [Root ADR 0027](docs/adr/0027-public-web-retrieval.md#natural-language-conve
 [Root ADR 0026](docs/adr/0026-managed-opencode-build.md#conversation-planning-and-build-prerequisites-amendment)
 and [Agent ADR 0015](ember-agent/docs/adr/0015-managed-opencode-preview.md#natural-language-conversation-tool-planning-amendment).
 
-Ember's isolated local planner proposes one typed public search, page read,
-Inspect or Build step at a time from the current user turn. Existing explicit
-commands remain shortcuts. Runtime, not the model, validates intent, tool scope,
-and exact arguments. Only an unambiguous literal public query or single URL can
+Ember's isolated local planner sees the configured tool menu on bounded
+Conversation turns, without a keyword gate. It chooses one typed public search,
+page read, Inspect or Build proposal, or declines. An ordinary no-tool turn
+continues through regular recall and reply. Existing explicit commands remain
+shortcuts. Runtime, not the model, validates current-turn intent, order, tool
+scope, and exact arguments before any effect; planner output alone grants nothing.
+Only an unambiguous literal public query or single URL can
 be sent without further approval. For rewritten or ambiguous input, display
 exact provider, action and argument when safe and require a fresh explicit turn.
 No pending approval or automatic resume. Hosted retrieval receives only validated
@@ -5286,13 +5289,18 @@ No grants added to managed workers; no change to recall or ordinary reply policy
 
 | Preview criterion | Evidence to record | Status |
 | --- | --- | --- |
-| CTP-AC-01 — Planner isolation and intent | `test_tool_workflow.py`: turn-local requests, typed calls, batch/order rejection, unavailable tools, mentions and negation. `test_build_routing.py`: explicit shortcut and unresolved references. | Scripted Mac pass; live model reliability not measured. |
+| CTP-AC-01 — Planner isolation and intent | `test_tool_workflow.py`: full available tool menu, ordinary no-tool recall, wrong-tool rejection, batch/order rejection, unavailable tools, mentions and negation. `test_build_routing.py`: explicit shortcut and unresolved references. | Scripted Mac pass; live model reliability and voice latency not measured. |
 | CTP-AC-02 — Exact public egress | Captured exact Exa request through runtime composition; page, rewrite, private-input and cancellation cases run offline. `test_hosted_web.py` checks both adapters. No pending approval token to replay. | Scripted Mac pass; live Exa and Parallel not run. |
 | CTP-AC-03 — Reservation and ordering | Both chains and text Summary complete through the authenticated gateway while Conversation stays connected. The pinned Research worker completes and returns source receipts with a held Conversation reservation and scripted inference/retrieval. Gateway tests check speech holds, foreground ordering and native drain, and unchanged unmarked P2 behavior. | Passed on macOS with scripted backends; live Strata and physical voice not run. |
 | CTP-AC-04 — Durable prerequisite and failure | `test_inspect_build_dependency.py`: exact parent, atomic admission, detach during commit, failure, expiry, cancellation and restart reconciliation. `test_tool_workflow.py`: unavailable or cancelled retrieval. | Scripted Mac pass; live crash/recovery not qualified. |
 | CTP-AC-05 — Handoff, provenance and unchanged grants | Router checks bounded summary, source IDs/URLs and replacement of fabricated receipt fields. Pinned workers exercise isolation with scripted upstreams. Browser, recall and MCP regressions pass. | Scripted Mac pass; Windows, native Linux and physical voice not run. |
 
-Mac follow-up: 1,381 Python passed, 18 skipped (worktree-local `TMPDIR` avoids
+Planner routing correction: the Mac root gate passed (1,389 Python passed,
+18 skipped), and the final focused gate passed (70 tests). Mocked Exa MCP covers
+“whats on this page” with one literal URL, not a web search or workspace Inspect.
+No live deployment or voice latency measurement.
+
+Previous Mac follow-up: 1,381 Python passed, 18 skipped (worktree-local `TMPDIR` avoids
 macOS symlink paths in bundle tests). Ruff, Pyright and contract schema checks
 passed. The pinned OpenCode 2.3.2 Research regression passed separately with
 scripted backends; previous pinned OpenCode/container suite recorded 17 passes.

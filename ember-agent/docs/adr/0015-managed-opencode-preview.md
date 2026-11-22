@@ -108,8 +108,9 @@ and [Root ADR 0027](../../../docs/adr/0027-public-web-retrieval.md#natural-langu
   the planner. Missing local planning means no natural-language tool dispatch; no
   hosted fallback. Explicit command shortcuts retain their existing checks.
   Ordinary reply and recall behavior is unchanged.
-- Advertise only configured, eligible public search, public page read, Inspect
-  and Build operations. Validate one typed proposal at a time: reject batches,
+- Offer configured, available public search, page read, Inspect and Build in
+  one bounded routing pass without preselecting a tool by phrase. No-tool turns
+  continue through ordinary recall and reply. Validate one proposal at a time: reject batches,
   unknown fields and invalid arguments before effects. Model output cannot grant
   authority, choose provider, supply trusted identities or declare prerequisites
   satisfied. Runtime checks current-turn intent and standalone task goals; ask

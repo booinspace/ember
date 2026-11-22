@@ -103,11 +103,13 @@ live provider qualification or rollout. See
 [PLAN preview criteria](../../PLAN.md#conversation-tool-planning-preview-acceptance).
 
 Users can ask for public search, a page read, Inspect or Build in ordinary
-language. Ember's local planner sees the current user turn, typed tools, and
-bounded public excerpts or staged-task status from that turn. It proposes one
-step at a time. Ember validates intent, order, scope and arguments. The preview
-supports one public lookup followed by optional Inspect and Build, or standalone
-requests. Explicit provider commands remain shortcuts.
+language. On bounded turns, the local planner sees the configured tool menu
+before validation rather than needing a keyword match to see a tool. It sees
+only the current turn and can propose a first action or decline. Ember validates
+intent, order, scope and exact arguments before execution. Ordinary no-tool turns
+continue through regular recall and reply. Further steps see only bounded
+same-turn evidence or staged status. The preview supports one public lookup
+followed by optional Inspect and Build. Explicit commands remain shortcuts.
 
 Ember sends only a literal public query or one literal public URL clearly
 requested in the current turn. If the proposed input is rewritten, ambiguous,
