@@ -97,6 +97,7 @@ class InferenceSettings(RuntimeModel):
     """Select exactly one upstream behind the unchanged gateway and admission policy."""
 
     backend: InferenceBackend = "ollama"
+    coding_api: bool = False
     vllm: VLLMSettings | None = None
     strata: StrataSettings | None = None
 
@@ -650,6 +651,12 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         or urlsplit(settings.services.livekit.endpoint).hostname == "::1"
     ):
         raise ConfigurationError("LAN access requires an enabled browser and managed IPv4 LiveKit.")
+    if settings.inference.coding_api and (
+        settings.inference.backend != "strata" or not settings.browser.enabled or not public_origin
+    ):
+        raise ConfigurationError(
+            "The coding API requires managed Strata and browser HTTPS ingress."
+        )
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
     try:

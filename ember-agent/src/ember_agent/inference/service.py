@@ -246,7 +246,7 @@ def create_app(
             permitted = (
                 (authorized(request) and value.workload == "P0")
                 or (background_authorized(request) and value.workload in {"P3", "P4"})
-                or (agent_authorized(request) and value.workload in {"P1", "P2"})
+                or (agent_authorized(request) and value.workload in {"P1", "P2", "P5"})
             )
             if not permitted:
                 return JSONResponse({"code": "workload_not_authorized"}, status_code=403)

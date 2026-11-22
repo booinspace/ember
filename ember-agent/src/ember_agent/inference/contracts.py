@@ -70,7 +70,7 @@ class GatewayRequest(RuntimeModel):
     version: Literal["0.1.0", "0.2.0", "0.3.0", "0.4.0"] = "0.3.0"
     request_id: UUID4
     context_id: UUID4
-    workload: Literal["P0", "P1", "P2", "P3", "P4"] = "P0"
+    workload: Literal["P0", "P1", "P2", "P3", "P4", "P5"] = "P0"
     model: str
     messages: Annotated[tuple[PromptMessage, ...], Field(min_length=1, max_length=64)]
     max_output_tokens: Annotated[int, Field(gt=0, le=8192)] = 512
@@ -90,7 +90,7 @@ class GatewayRequest(RuntimeModel):
                 or self.tools
             ):
                 raise ValueError("Live thinking requires a version 0.4.0 plain P0 text request.")
-        elif self.max_output_tokens > 1192:
+        elif self.workload != "P5" and self.max_output_tokens > 1192:
             raise ValueError("Non-thinking requests retain the existing output limit.")
         return self
 
@@ -159,6 +159,7 @@ class GatewayEvent(RuntimeModel):
     text: str = Field(default="", repr=False)
     calls: tuple[ToolCall, ...] = ()
     usage: GenerationUsage | None = None
+    truncated: bool = Field(default=False, exclude_if=lambda value: not value)
     code: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")] | None = None
 
     @model_validator(mode="after")
@@ -171,7 +172,7 @@ class GatewayEvent(RuntimeModel):
             raise ValueError("Only text and opt-in thinking events carry stream text.")
         if self.kind != "tools" and self.calls:
             raise ValueError("Only complete tool events carry calls.")
-        if self.kind != "end" and self.usage is not None:
+        if self.kind != "end" and (self.usage is not None or self.truncated):
             raise ValueError("Only completion events carry counters.")
         if self.kind != "error" and self.code is not None:
             raise ValueError("Only failure events carry codes.")

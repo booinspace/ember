@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import httpx
+from fastapi import APIRouter
 from livekit import api, rtc
 from pydantic import ValidationError
 
@@ -38,6 +39,7 @@ from ..realtime.session import HostedRoom
 from .browser_control import BrowserControl
 from .browser_server import BrowserServer
 from .capture_lifecycle import CaptureLifecycle
+from .coding_api import coding_routes, coding_token
 from .composition import LocalRuntime
 from .config import ConfigurationError, DeploymentConfig
 from .console import read_line
@@ -892,6 +894,16 @@ async def run_runtime(
         )
 
 
+async def _coding_api(config: DeploymentConfig, cleanup: AsyncExitStack) -> APIRouter | None:
+    if not config.inference.coding_api:
+        return None
+    token = await asyncio.to_thread(coding_token, config.runtime_root)
+    key = await asyncio.to_thread(read_token, config.runtime_root / "gateway-agent.token")
+    client = HttpGatewayClient(config.services.gateway.endpoint, key)
+    cleanup.push_async_callback(client.aclose)
+    return coding_routes(config, client, token)
+
+
 async def _run_room(
     config: DeploymentConfig,
     runtime: LocalRuntime,
@@ -976,6 +988,7 @@ async def _run_room(
                 host.start_task_announcements(task_router)
                 cleanup.push_async_callback(host.stop_task_announcements)
             control = BrowserControl(
+                coding_api=await _coding_api(config, cleanup),
                 hermes_chat=await _start_hermes_client(runtime),
                 dashboard=runtime.dashboard,
                 memory_graph=runtime.memory_graph,
@@ -1062,6 +1075,7 @@ async def _run_text_browser(
         await _start_public_search(runtime)
         task_router = await _start_tasks(runtime, binding, cleanup)
         control = BrowserControl(
+            coding_api=await _coding_api(config, cleanup) if gateway_available else None,
             hermes_chat=await _start_hermes_client(runtime),
             dashboard=runtime.dashboard,
             memory_graph=runtime.memory_graph,

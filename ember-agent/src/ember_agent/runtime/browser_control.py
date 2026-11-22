@@ -9,7 +9,7 @@ from typing import Annotated, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -136,6 +136,7 @@ class BrowserControl:
         prompt_controls: PromptControls | None = None,
         prompt_idle: Callable[[], None] | None = None,
         hermes_chat: HermesChats | None = None,
+        coding_api: APIRouter | None = None,
         dashboard: Dashboard | None = None,
         memory_graph: Callable[[GraphInput], Awaitable[str]] | None = None,
     ) -> None:
@@ -164,6 +165,7 @@ class BrowserControl:
         self.prompt_controls = prompt_controls
         self.prompt_idle = prompt_idle
         self.hermes_chat = hermes_chat
+        self.coding_api = coding_api
         self.activation = secrets.token_urlsafe(48)
         self._session = secrets.token_urlsafe(48)
         self._tasks: dict[UUID, asyncio.Task[None]] = {}
@@ -232,6 +234,11 @@ class BrowserControl:
                     request.cookies.get(COOKIE, ""), self._session
                 ):
                     return JSONResponse({"error": "operator_session_required"}, status_code=401)
+            if request.url.path.startswith("/coding/"):
+                if not self.trusted_proxy or request_origin != self.lan_origin:
+                    return JSONResponse({"error": "coding_https_required"}, status_code=403)
+                if self._closed:
+                    return JSONResponse({"error": "runtime_closing"}, status_code=503)
             if request.url.path.startswith("/hermes/") and self._closed:
                 return JSONResponse({"error": "runtime_closing"}, status_code=503)
             response = await next_handler(request)
@@ -284,6 +291,8 @@ class BrowserControl:
 
         if self.hermes_chat is not None:
             app.include_router(self.hermes_chat.router)
+        if self.coding_api is not None:
+            app.include_router(self.coding_api)
 
         if self.task_router is not None:
             router = self.task_router

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from pydantic import ValidationError
 
 from ember_agent.inference.client import HttpGatewayClient
@@ -25,6 +26,7 @@ from ember_agent.inference.ollama import OllamaUpstream
 from ember_agent.inference.openai_bridge import OpenAIModelBridge
 from ember_agent.inference.service import create_app
 from ember_agent.inference.upstream import NativeFrame, NativeFunction, NativeMessage, NativeTool
+from ember_agent.runtime.coding_api import coding_routes
 from ember_agent.runtime.config import DeploymentConfig, load_config
 
 _EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
@@ -201,6 +203,70 @@ def test_monitor_failures_cannot_drop_transport_end_or_leave_bridge_busy(tmp_pat
                 assert result["usage"]["completion_tokens"] == 3
                 assert not bridge.running
             assert bridge.observation_failures == client.observation_failures == 2
+        finally:
+            await client.aclose()
+            await gateway.aclose()
+
+    asyncio.run(run())
+
+
+def test_coding_api_shares_gateway_during_realtime_and_streams_tools(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = _config(tmp_path)
+        config = config.model_copy(
+            update={"inference": config.inference.model_copy(update={"coding_api": True})}
+        )
+        upstream = _Upstream()
+        upstream.frames = (
+            NativeFrame(
+                message=NativeMessage(
+                    tool_calls=[
+                        NativeTool(
+                            index=0,
+                            function=NativeFunction(name="lookup", arguments='{"query":"x"}'),
+                        )
+                    ]
+                )
+            ),
+            NativeFrame(done=True, prompt_eval_count=12, eval_count=3),
+        )
+        _, gateway, client = _bridge(config, upstream)
+        app = FastAPI()
+        app.include_router(coding_routes(config, client, "separate-key"))
+        try:
+            await gateway.session(uuid4(), connected=True)
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1"
+            ) as lan:
+                assert (await lan.get("/coding/v1/models")).status_code == 401
+                lan.headers["Authorization"] = "Bearer separate-key"
+                assert (await lan.get("/coding/v1/models")).json()["data"][0][
+                    "id"
+                ] == config.model_tag
+                body = _body(config)
+                body.update(
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    tools=[
+                        {
+                            "type": "function",
+                            "function": {"name": "lookup", "parameters": {"type": "object"}},
+                        }
+                    ],
+                )
+                response = await lan.post("/coding/v1/chat/completions", json=body)
+                assert response.status_code == 200
+                frames = [
+                    line[6:] for line in response.text.splitlines() if line.startswith("data: ")
+                ]
+                assert frames[-1] == "[DONE]"
+                chunks = [json.loads(frame) for frame in frames[:-1]]
+                call = chunks[1]["choices"][0]["delta"]["tool_calls"][0]
+                assert call["function"]["name"] == "lookup"
+                assert json.loads(call["function"]["arguments"]) == {"query": "x"}
+                assert chunks[2]["choices"][0]["finish_reason"] == "tool_calls"
+                assert chunks[3]["usage"]["total_tokens"] == 15
+                assert [req.workload for req in upstream.requests] == ["P5"]
         finally:
             await client.aclose()
             await gateway.aclose()

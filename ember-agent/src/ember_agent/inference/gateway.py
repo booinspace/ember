@@ -111,11 +111,12 @@ class P0Gateway:
         self.record_sessions = record_sessions
         self.background_queue_limit = background_queue_limit
         self.pending: dict[str, deque[Generation]] = {
-            name: deque() for name in ("P1", "P2", "P3", "P4")
+            name: deque() for name in ("P1", "P2", "P3", "P4", "P5")
         }
         self.dispatcher: asyncio.Task[None] | None = None
-        self._schedule = ("P2", "P2", "P2", "P2", "P3", "P4")
+        self._schedule = ("P2", "P2", "P2", "P2", "P3", "P4", "P5")
         self._schedule_cursor = 0
+        self._foreground_waiters = 0
 
     def input_cost(self, request: GatewayRequest) -> int:
         """Conservative UTF-8 serialization plus role/template allowance until tokenizer pinning."""
@@ -141,8 +142,23 @@ class P0Gateway:
             raise GatewayError("quiescence_required")
         if request.workload == "P1" and request.context_id not in self.sessions:
             raise GatewayError("live_reservation_required")
+        if request.workload == "P5" and not self.config.inference.coding_api:
+            raise GatewayError("workload_not_authorized")
         if request.workload == "P0" and self.active is not None:
-            raise GatewayError("busy")
+            active = self.active
+            if active.request.workload != "P5" or self._foreground_waiters:
+                raise GatewayError("busy")
+            self._foreground_waiters += 1
+            try:
+                # Admission itself may still be checking the pin or writing its journal.
+                if active.task is None and self.dispatcher is not None:
+                    await asyncio.shield(self.dispatcher)
+                if active.task is not None:
+                    await asyncio.shield(active.task)
+                return await self.admit(request)
+            finally:
+                self._foreground_waiters -= 1
+                self._wake_background()
         if (
             request.workload != "P0"
             and len(self.pending[request.workload]) >= self.background_queue_limit
@@ -241,7 +257,9 @@ class P0Gateway:
             return
         if self.dispatcher is not None and not self.dispatcher.done():
             return
-        if self._live_job() is None and (
+        if self._foreground_waiters:
+            return
+        if self._live_job() is None and not self.pending["P5"] and (
             self.sessions or not any(self.pending[name] for name in ("P2", "P3", "P4"))
         ):
             return
@@ -278,6 +296,8 @@ class P0Gateway:
     def _eligible(self, job: Generation) -> bool:
         if job.request.workload == "P1":
             return job.request.context_id in self.sessions
+        if job.request.workload == "P5":
+            return not self._foreground_waiters and self._live_job() is None
         return not self.sessions
 
     def _live_job(self) -> Generation | None:
@@ -292,9 +312,14 @@ class P0Gateway:
         job = self._live_job()
         if job is not None:
             self.pending["P1"].remove(job)
-        elif self.sessions:
+        elif self._foreground_waiters:
             return
+        elif self.sessions:
+            if not self.pending["P5"]:
+                return
+            job = self.pending["P5"].popleft()
         else:
+            # Include coding in the existing round-robin when background is eligible.
             for offset in range(len(self._schedule)):
                 index = (self._schedule_cursor + offset) % len(self._schedule)
                 queue = self.pending[self._schedule[index]]
@@ -470,7 +495,8 @@ class P0Gateway:
                     self.uncertain = True
                     raise GatewayError("upstream_output_budget_mismatch")
                 if frame.done_reason == "length" and (
-                    request.output == "json" or request.tools or request.workload != "P0"
+                    request.output == "json"
+                    or (request.workload != "P5" and (request.tools or request.workload != "P0"))
                 ):
                     raise GatewayError("upstream_output_truncated")
                 if request.output == "json":
@@ -486,7 +512,8 @@ class P0Gateway:
                         validate = cast(Callable[[object], bool], validator.is_valid)  # pyright: ignore[reportUnknownMemberType]
                         if not validate(parsed):
                             raise GatewayError("structured_schema_mismatch")
-                calls = self._tools(request, tools)
+                truncated = request.workload == "P5" and frame.done_reason == "length"
+                calls = () if truncated else self._tools(request, tools)
                 usage = GenerationUsage(
                     prompt_tokens=frame.prompt_eval_count,
                     output_tokens=frame.eval_count,
@@ -512,7 +539,7 @@ class P0Gateway:
                     job.emit("text", text="".join(json_text))
                 if calls:
                     job.emit("tools", calls=calls)
-                job.emit("end", usage=usage)
+                job.emit("end", usage=usage, truncated=truncated)
         except asyncio.CancelledError:
             self.uncertain = True
             if self.record:

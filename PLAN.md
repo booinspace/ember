@@ -5241,6 +5241,15 @@ restoration, affected-chat deletion and remaining Phase 8A adoption measurements
 remain follow-up work. The [runbook](docs/phase-11-runbook.md) and
 [validation](docs/phase-11-validation.md) describe exact setup and observed checks.
 
+### Shared Strata coding endpoint — 22 November 2026
+
+An opt-in bearer-authenticated OpenAI Chat Completions endpoint on the existing
+trusted HTTPS ingress shares the managed Strata model. Only model listing and
+bounded completion requests cross to the loopback gateway. The gateway owns one
+native generation at a time, prefers queued voice/text work, and allows coding
+work during an idle realtime reservation without relaxing background admission.
+Coding receives no character context, memory, tools to execute, or lifecycle authority.
+
 ### Hermes integration simplification — 4 November 2026
 
 The user superseded the proposed voice-to-Desktop session mirroring. Keep separate

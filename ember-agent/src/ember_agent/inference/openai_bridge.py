@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import aclosing
 from datetime import UTC, datetime, timedelta
 from time import time
 from typing import Annotated, Literal
@@ -27,6 +28,34 @@ from .contracts import (
 
 _OBJECT = TypeAdapter(dict[str, JsonValue])
 _LIMIT = 1024 * 1024
+
+
+def sse(value: dict[str, JsonValue]) -> bytes:
+    """Encode one OpenAI SSE data frame."""
+    return b"data: " + json.dumps(value, allow_nan=False).encode() + b"\n\n"
+
+
+def openai_error(code: str) -> dict[str, JsonValue]:
+    """Return only fixed, content-free gateway diagnostics."""
+    return {"error": {"message": code, "type": "gateway_error", "code": code}}
+
+
+def openai_tool(call: ToolCall) -> dict[str, JsonValue]:
+    """Encode a complete gateway-validated tool call."""
+    return {
+        "id": str(call.call_id),
+        "type": "function",
+        "function": {"name": call.name, "arguments": json.dumps(call.arguments, allow_nan=False)},
+    }
+
+
+def openai_usage(usage: GenerationUsage) -> dict[str, JsonValue]:
+    """Encode terminal token counts."""
+    return {
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.output_tokens,
+        "total_tokens": usage.prompt_tokens + usage.output_tokens,
+    }
 
 
 def validate_model_schema(schema: dict[str, JsonValue]) -> None:
@@ -108,9 +137,16 @@ class _Call(RuntimeModel):
     function: _Function
 
 
+class _TextPart(RuntimeModel):
+    type: Literal["text"]
+    text: Annotated[str, Field(max_length=100000)] = Field(repr=False)
+
+
 class _Message(RuntimeModel):
     role: Literal["system", "user", "assistant", "tool"]
-    content: Annotated[str, Field(max_length=100000)] | None = Field(default=None, repr=False)
+    content: Annotated[str, Field(max_length=100000)] | tuple[_TextPart, ...] | None = Field(
+        default=None, repr=False
+    )
     tool_calls: Annotated[tuple[_Call, ...], Field(max_length=16)] | None = None
     tool_call_id: PromptCallId | None = None
 
@@ -136,8 +172,8 @@ class _Request(RuntimeModel):
     tools: Annotated[tuple[ToolDefinition, ...], Field(max_length=16)] | None = None
     tool_choice: Literal["auto", "none"] | None = None
     parallel_tool_calls: bool | None = None
-    max_tokens: Annotated[int, Field(gt=0, le=1192)] | None = None
-    max_completion_tokens: Annotated[int, Field(gt=0, le=1192)] | None = None
+    max_tokens: Annotated[int, Field(gt=0, le=8192)] | None = None
+    max_completion_tokens: Annotated[int, Field(gt=0, le=8192)] | None = None
     temperature: Annotated[float, Field(ge=0, le=2, allow_inf_nan=False)] | None = None
     response_format: _Format | None = None
     stream: bool = False
@@ -155,9 +191,17 @@ class OpenAIModelBridge:
         context_id: UUID,
         deadline_at: str,
         observe_request: Callable[[GatewayRequest], None] | None = None,
+        coding: bool = False,
     ) -> None:
         self.client = client
         self.config = config
+        self.coding = coding
+        self.output_limit = min(config.output_reserve_tokens, 8192 if coding else 1192)
+        self.input_limit = min(
+            config.max_input_tokens,
+            config.context_tokens - max(1192, config.output_reserve_tokens if coding else 1192),
+            config.context_tokens if coding else 16384,
+        )
         self.context_id = context_id
         self.deadline = datetime.fromisoformat(deadline_at.replace("Z", "+00:00"))
         if self.deadline.tzinfo is None:
@@ -180,13 +224,14 @@ class OpenAIModelBridge:
                     "created": 0,
                     "owned_by": "ember",
                     "context_length": self.config.context_tokens,
-                    "max_input_tokens": min(self.config.max_input_tokens, 16384),
-                    "max_output_tokens": min(self.config.output_reserve_tokens, 1192),
+                    "max_input_tokens": self.input_limit,
+                    "max_output_tokens": self.output_limit,
                 }
             ],
         }
 
     def _request(self, body: bytes | dict[str, JsonValue]) -> tuple[_Request, GatewayRequest]:
+        """Validate OpenAI input and bind it to the configured model and workload."""
         try:
             raw = body if isinstance(body, bytes) else json.dumps(body, allow_nan=False).encode()
             if len(raw) > _LIMIT:
@@ -205,9 +250,8 @@ class OpenAIModelBridge:
                 if tool.function.parameters.get("type") != "object":
                     raise GatewayError("unsupported_model_schema")
                 validate_model_schema(tool.function.parameters)
-            output_limit = min(self.config.output_reserve_tokens, 1192)
-            maximum = value.max_completion_tokens or value.max_tokens or output_limit
-            if maximum > output_limit:
+            maximum = value.max_completion_tokens or value.max_tokens or self.output_limit
+            if maximum > self.output_limit:
                 raise GatewayError("output_budget_exceeded")
             messages: list[PromptMessage] = []
             for item in value.messages:
@@ -218,7 +262,11 @@ class OpenAIModelBridge:
                 messages.append(
                     PromptMessage(
                         role=item.role,
-                        content=item.content or "",
+                        content=(
+                            "\n".join(part.text for part in item.content)
+                            if isinstance(item.content, tuple)
+                            else item.content or ""
+                        ),
                         tool_call_id=item.tool_call_id,
                         tool_calls=tuple(
                             PromptToolCall(
@@ -251,7 +299,7 @@ class OpenAIModelBridge:
                 request_id=uuid4(),
                 context_id=self.context_id,
                 model=self.config.model_tag,
-                workload="P2",
+                workload="P5" if self.coding else "P2",
                 messages=tuple(messages),
                 max_output_tokens=maximum,
                 output=output,
@@ -268,12 +316,71 @@ class OpenAIModelBridge:
                 allow_nan=False,
             )
             cost = len(serialized.encode()) + 512 + 64 * len(request.messages)
-            if cost > min(self.config.max_input_tokens, self.config.context_tokens - 1192, 16384):
+            if cost > self.input_limit:
                 raise GatewayError("prompt_overflow")
             self.last_input_units = cost
             return value, request
         except (ValidationError, ValueError) as error:
             raise GatewayError("invalid_openai_request") from error
+
+    def response(
+        self, body: bytes
+    ) -> Awaitable[dict[str, JsonValue]] | AsyncGenerator[bytes, None]:
+        """Select OpenAI JSON or SSE after validating transport flags."""
+        value, request = self._request(body)
+        if not value.stream:
+            return self.complete(body)
+        return self._stream(value, request)
+
+    def _stream(self, value: _Request, request: GatewayRequest) -> AsyncGenerator[bytes, None]:
+        """Emit only gateway-validated tools."""
+        envelope: dict[str, JsonValue] = {
+            "id": "chatcmpl-" + str(request.request_id),
+            "object": "chat.completion.chunk",
+            "created": int(time()),
+            "model": self.config.model_tag,
+        }
+
+        def chunk(delta: dict[str, JsonValue], finish: str | None = None) -> bytes:
+            return sse(
+                {**envelope, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+            )
+
+        async def events() -> AsyncGenerator[bytes, None]:
+            calls: tuple[ToolCall, ...] = ()
+            try:
+                async with aclosing(self.client.stream(request)) as source:
+                    async for event in source:
+                        if event.kind == "start":
+                            yield chunk({"role": "assistant"})
+                        elif event.kind == "progress":
+                            yield b": queued\n\n"
+                        elif event.kind == "text":
+                            yield chunk({"content": event.text})
+                        elif event.kind == "tools":
+                            calls = event.calls
+                        elif event.kind == "end" and event.usage is not None:
+                            if value.parallel_tool_calls is False and len(calls) > 1:
+                                raise GatewayError("unexpected_parallel_tool_calls")
+                            for index, call in enumerate(calls):
+                                yield chunk({"tool_calls": [{"index": index, **openai_tool(call)}]})
+                            reason = (
+                                "length" if event.truncated else "tool_calls" if calls else "stop"
+                            )
+                            yield chunk({}, reason)
+                            if value.stream_options and value.stream_options.include_usage:
+                                yield sse(
+                                    {**envelope, "choices": [], "usage": openai_usage(event.usage)}
+                                )
+                            yield b"data: [DONE]\n\n"
+                            return
+                        elif event.kind == "error":
+                            raise GatewayError(event.code or "generation_failed")
+                raise GatewayError("gateway_stream_incomplete")
+            except GatewayError as error:
+                yield sse(openai_error(error.code))
+
+        return events()
 
     async def complete(
         self,
@@ -313,6 +420,7 @@ class OpenAIModelBridge:
         size = 0
         calls: tuple[ToolCall, ...] = ()
         usage: GenerationUsage | None = None
+        truncated = False
         sequence = 0
         try:
             async with asyncio.timeout(min(remaining, 180)):
@@ -342,6 +450,7 @@ class OpenAIModelBridge:
                         calls = event.calls
                     if event.kind == "end":
                         usage = event.usage
+                        truncated = event.truncated
                         break
             if usage is None:
                 raise GatewayError("gateway_stream_incomplete")
@@ -352,17 +461,7 @@ class OpenAIModelBridge:
                 raise GatewayError("unrequested_tool")
             message: dict[str, JsonValue] = {"role": "assistant", "content": "".join(content)}
             if calls:
-                message["tool_calls"] = [
-                    {
-                        "id": str(call.call_id),
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(call.arguments, allow_nan=False),
-                        },
-                    }
-                    for call in calls
-                ]
+                message["tool_calls"] = [openai_tool(call) for call in calls]
             self.last_output_units = len(json.dumps(message, ensure_ascii=False).encode()) + 64
             return {
                 "id": "chatcmpl-" + str(request.request_id),
@@ -373,7 +472,11 @@ class OpenAIModelBridge:
                     {
                         "index": 0,
                         "message": message,
-                        "finish_reason": "tool_calls" if calls else "stop",
+                        "finish_reason": "length"
+                        if truncated
+                        else "tool_calls"
+                        if calls
+                        else "stop",
                     }
                 ],
                 "usage": {
