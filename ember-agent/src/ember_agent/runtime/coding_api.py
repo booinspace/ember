@@ -1,4 +1,4 @@
-"""Bearer-only OpenAI ingress for the existing gateway; no character access."""
+"""Bearer-only OpenAI ingress for the existing gateway and optional memory tools."""
 
 import asyncio
 import secrets
@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
 from ..inference.contracts import GatewayError, ModelClient
-from ..inference.openai_bridge import OpenAIModelBridge, openai_error
+from ..inference.openai_bridge import HostedTools, OpenAIModelBridge, openai_error
 from .config import ConfigurationError, DeploymentConfig
 
 TOKEN_FILE = "coding-api.token"
@@ -34,15 +34,22 @@ def coding_token(root: Path) -> str:
     return token
 
 
-def coding_routes(config: DeploymentConfig, client: ModelClient, token: str) -> APIRouter:
+def coding_routes(
+    config: DeploymentConfig,
+    client: ModelClient,
+    token: str,
+    *,
+    hosted_tools: HostedTools | None = None,
+) -> APIRouter:
     """Expose only models and completions beneath the browser's HTTPS boundary."""
     router = APIRouter(prefix="/coding/v1")
     active = 0
     headers = {"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
 
     def allowed(request: Request) -> bool:
-        return secrets.compare_digest(
-            request.headers.get("authorization", "").encode(), b"Bearer " + token.encode()
+        credentials = request.headers.getlist("authorization")
+        return len(credentials) == 1 and secrets.compare_digest(
+            credentials[0].encode(), b"Bearer " + token.encode()
         )
 
     def error(code: str, status: int) -> JSONResponse:
@@ -55,6 +62,7 @@ def coding_routes(config: DeploymentConfig, client: ModelClient, token: str) -> 
             context_id=uuid4(),
             deadline_at=(datetime.now(UTC) + timedelta(seconds=180)).isoformat(),
             coding=True,
+            hosted_tools=hosted_tools,
         )
 
     @router.get("/models")

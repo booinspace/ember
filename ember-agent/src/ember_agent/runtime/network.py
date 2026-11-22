@@ -13,12 +13,13 @@ from .config import ConfigurationError, DeploymentConfig, RuntimeModel
 
 
 class FirewallPort(RuntimeModel):
-    """One application-scoped local-subnet inbound rule, never a model-service port."""
+    """One application-scoped inbound rule for a configured LAN listener."""
 
     name: str
     program: str
     protocol: Literal["TCP", "UDP"]
     port: int
+    remote_address: str = "LocalSubnet"
 
 
 class NetworkInfo(RuntimeModel):
@@ -55,7 +56,7 @@ def validate_listener(config: DeploymentConfig) -> None:
 
 
 def network_info(config: DeploymentConfig) -> NetworkInfo:
-    """Resolve the four explicit LAN listener rules without services, data or model probes."""
+    """Resolve LAN listener rules without services, data or model probes."""
     address = config.browser.lan_address
     if not address:
         return NetworkInfo(enabled=False)
@@ -82,6 +83,17 @@ def network_info(config: DeploymentConfig) -> NetworkInfo:
         )
         for component, program, protocol, port in ports
     )
+    if config.memory_mcp is not None and config.memory_mcp.lan_bind:
+        port = config.memory_mcp.port
+        rules += (
+            FirewallPort(
+                name=f"Ember-LAN-{config.active_profile}-memory-mcp-tcp-{port}",
+                program=image,
+                protocol="TCP",
+                port=port,
+                remote_address=config.browser.trusted_proxy,
+            ),
+        )
     return NetworkInfo(
         enabled=True, address=address, origin=f"http://{address}:{browser_port}", rules=rules
     )

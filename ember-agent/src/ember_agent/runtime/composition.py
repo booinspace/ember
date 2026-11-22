@@ -322,16 +322,26 @@ class LocalRuntime:
 
     async def opencode_note_writer(self) -> Callable[[str], Awaitable[MutationReceipt]]:
         """Prepare one delegated writer, bound to the current character and runtime worker."""
-        service = LibraryService(self.engine, authority=MutationAuthority(mode="opencode_notes"))
-        await asyncio.wrap_future(self.pool.submit(service.ensure_opencode_library))
-        save = partial(service.save_opencode_note, self.memory.character_id)
+        return await self._note_writer(coding=False)
+
+    async def coding_note_writer(self) -> Callable[[str], Awaitable[MutationReceipt]]:
+        """Prepare the coding-only writer for the active character."""
+        return await self._note_writer(coding=True)
+
+    async def _note_writer(self, *, coding: bool) -> Callable[[str], Awaitable[MutationReceipt]]:
+        authority = MutationAuthority(mode="coding_notes" if coding else "opencode_notes")
+        service = LibraryService(self.engine, authority=authority)
+        ensure = service.ensure_coding_library if coding else service.ensure_opencode_library
+        append = service.save_coding_note if coding else service.save_opencode_note
+        await asyncio.wrap_future(self.pool.submit(ensure))
+        save = partial(append, self.memory.character_id)
 
         async def write(note: str) -> MutationReceipt:
             future = asyncio.wrap_future(self.pool.submit(save, note))
             try:
                 return await asyncio.shield(future)
             except asyncio.CancelledError:
-                # Keep MCP admission held until the accepted write drains.
+                # Keep caller admission held until the accepted write drains.
                 await asyncio.shield(future)
                 raise
 

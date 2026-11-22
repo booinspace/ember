@@ -5249,7 +5249,12 @@ trusted HTTPS ingress shares the managed Strata model. Only model listing and
 bounded completion requests cross to the loopback gateway. The gateway owns one
 native generation at a time, prefers queued voice/text work, and allows coding
 work during an idle realtime reservation without relaxing background admission.
-Coding receives no character context, memory, tools to execute, or lifecycle authority.
+An explicit coding-memory profile adds read and optional note tools to plain
+completions through the same gateway. It is exclusive with the memory MCP
+listener. The active character's existing recall policies govern all source
+selection. Coding notes use the reserved `Coding` library and a separate
+delegated authority. Hosted results are bounded by the remaining measured
+model context and gateway transport, with at most two hosted tool rounds.
 Strata counts coding prompts after rendering the chat template, including tools
 and message history, and enforces the configured input budget before generation.
 An oversized coding prompt returns `context_length_exceeded` and leaves the
@@ -5349,7 +5354,8 @@ this amendment must not misrepresent subscriber cancellation as GPU release.
 ## OpenCode memory amendment
 
 [Root ADR 0022](docs/adr/0022-opencode-memory-recall.md) records the private
-loopback MCP listener. Both reads return bounded, eligible claims from the active
+MCP listener. Loopback is the default, with separate opt-in LAN HTTPS through the
+configured trusted proxy. Both reads return bounded, eligible claims from the active
 character, not archive excerpts. Separate opt-in delegates short, append-only note
 writes to the canonical `OpenCode` library, with ordinary seed and recall policy.
 No new owner, schema change, or Phase 12/13 advancement. See the

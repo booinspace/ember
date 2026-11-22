@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import httpx2
@@ -15,8 +15,14 @@ from mcp.types import TextContent
 
 from ember_agent.memory.backends.dialogue import ArchiveDialogueSink
 from ember_agent.memory.deep_recall import DeepRecallService
-from ember_agent.runtime.config import ConfigurationError, load_config
-from ember_agent.runtime.memory_mcp import DeepMCPResult, RecallResult, serve_memory_mcp
+from ember_agent.runtime.config import BrowserSettings, ConfigurationError, load_config
+from ember_agent.runtime.memory_mcp import (
+    DeepMCPResult,
+    RecallClient,
+    RecallResult,
+    serve_memory_mcp,
+)
+from ember_agent.runtime.network import network_info
 from ember_memory_abi.interfaces import ForgetRequest
 from ember_memory_abi.related import RelatedResponse
 from ember_memory_abi.selection import RecallSelection
@@ -38,13 +44,110 @@ def test_memory_mcp_config_is_opt_in_and_loopback_only(tmp_path: Path) -> None:
     deployment.write_text(example + "\n[memory_mcp]\nport = 8791\n", encoding="utf-8")
     config = load_config(deployment)
     assert config.memory_mcp is not None and config.memory_mcp.port == 8791
-    assert not config.memory_mcp.write_enabled
+    assert not config.memory_mcp.write_enabled and not config.memory_mcp.lan_bind
     deployment.write_text(example + "\n[memory_mcp]\nwrite_enabled = true\n", encoding="utf-8")
     enabled = load_config(deployment).memory_mcp
     assert enabled is not None and enabled.write_enabled
     deployment.write_text(example + '\n[memory_mcp]\nhost = "0.0.0.0"\n', encoding="utf-8")
     with pytest.raises(ConfigurationError):
         load_config(deployment)
+
+
+def test_memory_mcp_lan_requires_https_and_adds_proxy_scoped_firewall_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    deployment = tmp_path / "deployment.toml"
+    lan = (
+        EXAMPLE.read_text(encoding="utf-8")
+        .replace(
+            'endpoint = "ws://127.0.0.1:7880"\nmode = "attach"',
+            'endpoint = "ws://127.0.0.1:7880"\nmode = "managed"',
+        )
+        .replace("[browser]\nenabled = false", "[browser]\nenabled = true")
+        .replace('lan_address = ""', 'lan_address = "10.254.254.11"')
+        + "\n[memory_mcp]\nlan_bind = true\n"
+    )
+    deployment.write_text(lan, encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="requires browser HTTPS ingress"):
+        load_config(deployment)
+
+    https = lan.replace('public_origin = ""', 'public_origin = "https://ember.example.test"').replace(
+        'trusted_proxy = ""', 'trusted_proxy = "10.254.254.10"'
+    )
+    for port in (8787, 7880, 7881):
+        deployment.write_text(https + f"port = {port}\n", encoding="utf-8")
+        with pytest.raises(ConfigurationError, match="distinct TCP port"):
+            load_config(deployment)
+
+    deployment.write_text(https + "port = 8791\n", encoding="utf-8")
+    monkeypatch.setattr("ember_agent.runtime.network.shutil.which", lambda _: "livekit-server.exe")
+    config = load_config(deployment)
+    assert config.memory_mcp is not None and config.memory_mcp.lan_bind
+    rules = network_info(config).rules
+    assert len(rules) == 5
+    proxy_rule = rules[-1]
+    assert (proxy_rule.protocol, proxy_rule.port, proxy_rule.remote_address) == (
+        "TCP",
+        8791,
+        "10.254.254.10",
+    )
+    assert proxy_rule.program == rules[0].program
+    assert all(rule.remote_address == "LocalSubnet" for rule in rules[:-1])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("proxy", ["127.0.0.1", "10.254.254.10"])
+def test_memory_mcp_lan_checks_peer_scheme_bearer_host_and_origin(
+    tmp_path: Path, proxy: str
+) -> None:
+    async def exercise() -> None:
+        # Loopback stands in for the interface so the test needs no LAN configuration.
+        lan = BrowserSettings(
+            enabled=True,
+            lan_address="127.0.0.1",
+            public_origin="https://ember.example.test",
+            trusted_proxy=proxy,
+        )
+        (tmp_path / "memory-mcp.token").write_text(TOKEN, encoding="ascii")
+        auth = {
+            "Authorization": f"Bearer {TOKEN}",
+            "X-Forwarded-Proto": "https",
+            "Accept": "application/json, text/event-stream",
+        }
+        call = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+        async with (
+            serve_memory_mcp(
+                Mock(spec=RecallClient),
+                tmp_path,
+                0,
+                deep=Mock(spec=DeepRecallService),
+                timezone="Europe/London",
+                lan=lan,
+            ) as port,
+            httpx2.AsyncClient(
+                base_url=f"http://127.0.0.1:{port}", trust_env=False, timeout=5
+            ) as client,
+        ):
+            if proxy != "127.0.0.1":
+                spoofed = {**auth, "Host": "ember.example.test", "X-Forwarded-For": proxy}
+                assert (await client.post("/mcp", headers=spoofed, json=call)).status_code == 403
+                return
+            for headers, status in (
+                ({"X-Forwarded-Proto": "https"}, 401),
+                ({**auth, "X-Forwarded-Proto": "http"}, 403),
+                ({**auth, "Host": "other.example"}, 421),
+                ({**auth, "Origin": "https://ember.example.test"}, 403),
+            ):
+                assert (await client.post("/mcp", headers=headers, json=call)).status_code == status
+            for headers in (auth, {**auth, "Host": "ember.example.test"}):
+                response = await client.post("/mcp", headers=headers, json=call)
+                assert response.status_code == 200
+                assert {tool["name"] for tool in response.json()["result"]["tools"]} == {
+                    "recall",
+                    "deep_recall",
+                }
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.integration

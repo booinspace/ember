@@ -31,7 +31,8 @@ function Test-EmberLanRule {
     $addresses = Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule
     return $application.Program -eq $Definition.program -and
         "$($ports.Protocol)" -eq $Definition.protocol -and "$($ports.LocalPort)" -eq "$($Definition.port)" -and
-        "$($addresses.LocalAddress)" -eq $Address -and "$($addresses.RemoteAddress)" -eq "LocalSubnet"
+        "$($addresses.LocalAddress)" -eq $Address -and
+        ("$($addresses.RemoteAddress)" -replace '/32$', '') -eq $Definition.remote_address
 }
 
 $missing = @($network.rules | Where-Object { -not (Test-EmberLanRule $_ $network.address) })
@@ -39,7 +40,7 @@ if ($missing.Count -eq 0) { Write-Host "Ember LAN firewall rules are ready."; re
 $administrator = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $administrator) {
     if ($Elevated) { throw "Windows administrator elevation was not granted." }
-    Write-Host "Windows administrator approval is needed once for Ember's local-subnet firewall rules."
+    Write-Host "Windows administrator approval is needed once for Ember's LAN firewall rules."
     $shellExecutable = (Get-Process -Id $PID).Path
     $scriptArguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ('"{0}"' -f $PSCommandPath), "-Config", ('"{0}"' -f $configPath), "-Elevated")
     $setup = Start-Process -FilePath $shellExecutable -ArgumentList $scriptArguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru
@@ -60,7 +61,7 @@ foreach ($definition in $missing) {
         Protocol = $definition.protocol
         LocalPort = $definition.port
         LocalAddress = $network.address
-        RemoteAddress = "LocalSubnet"
+        RemoteAddress = $definition.remote_address
         PolicyStore = "PersistentStore"
     }
     if (Get-NetFirewallRule -Name $definition.name -PolicyStore PersistentStore -ErrorAction SilentlyContinue) {
@@ -70,4 +71,4 @@ foreach ($definition in $missing) {
     }
     if (-not (Test-EmberLanRule $definition $network.address)) { throw "An Ember LAN firewall rule failed verification." }
 }
-Write-Host "Ember LAN firewall rules installed for the configured address and local subnet."
+Write-Host "Ember LAN firewall rules installed for the configured listeners."

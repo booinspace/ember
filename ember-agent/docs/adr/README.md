@@ -64,7 +64,7 @@ optional provider, task-local model mapping, paired native-client amendment and
 original Phase 11 acceptance.
 
 [Agent ADR 0012 — Private memory MCP](0012-memory-mcp.md) records the inbound
-read-only listener and its runtime ownership.
+listener, opt-in LAN HTTPS and its runtime ownership.
 
 [Agent ADR 0013 — Shared harness skills](0013-shared-harness-skills.md) records the
 neutral catalog, native loading and existing broker/context contracts.

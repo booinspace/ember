@@ -169,7 +169,7 @@ The [current qualification](../benchmarks/2026-11-04-harness-dashboard/README.md
 supersedes the earlier Windows-worker adoption claim; Desktop remains deferred.
 
 [Root ADR 0022 — OpenCode memory](0022-opencode-memory-recall.md) records the
-private recall listener and opt-in note writes; see the [setup runbook](../opencode-memory.md).
+private recall listener, opt-in LAN HTTPS and note writes; see the [setup runbook](../opencode-memory.md).
 
 [Root ADR 0023 — Shared harness skills](0023-shared-harness-skills.md) records
 Phase 12 ownership, the portable repository and bounded native loading.

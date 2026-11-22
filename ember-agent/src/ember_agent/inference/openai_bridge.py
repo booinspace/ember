@@ -5,6 +5,7 @@ import json
 import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from time import time
 from typing import Annotated, Literal
@@ -17,7 +18,9 @@ from ..observability import notify
 from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import (
     NON_CODING_MESSAGE_LIMIT,
+    PROMPT_MESSAGE_CHARS,
     GatewayError,
+    GatewayEvent,
     GatewayRequest,
     GenerationUsage,
     ModelClient,
@@ -216,6 +219,15 @@ class _CodingRequest(_Request):
     messages: Annotated[tuple[_Message, ...], Field(min_length=1)]
 
 
+@dataclass(frozen=True)
+class HostedTools:
+    """Completion-local capabilities bound by the runtime, never by client definitions."""
+
+    definitions: tuple[ToolDefinition, ...]
+    invoke: Callable[[ToolCall, int], Awaitable[str]]
+    single_use: frozenset[str]
+
+
 class OpenAIModelBridge:
     """One provider task owns this mapper; it does not own a listener, runner, or credentials."""
 
@@ -228,10 +240,12 @@ class OpenAIModelBridge:
         deadline_at: str,
         observe_request: Callable[[GatewayRequest], None] | None = None,
         coding: bool = False,
+        hosted_tools: HostedTools | None = None,
     ) -> None:
         self.client = client
         self.config = config
         self.coding = coding
+        self.hosted_tools = hosted_tools if coding else None
         self.output_limit = min(config.output_reserve_tokens, 8192 if coding else 1192)
         self.input_limit = (
             config.max_input_tokens
@@ -280,6 +294,10 @@ class OpenAIModelBridge:
             if value.max_tokens is not None and value.max_completion_tokens is not None:
                 raise GatewayError("conflicting_output_budget")
             tool_names = [tool.function.name for tool in value.tools or ()]
+            if self.hosted_tools is not None and set(tool_names).intersection(
+                tool.function.name for tool in self.hosted_tools.definitions
+            ):
+                raise GatewayError("reserved_tool_name")
             if len(tool_names) != len(set(tool_names)):
                 raise GatewayError("invalid_openai_request")
             tools: list[ToolDefinition] = []
@@ -382,6 +400,111 @@ class OpenAIModelBridge:
             return self.complete(body)
         return self._stream(value, request)
 
+    async def _events(
+        self, value: _Request, request: GatewayRequest
+    ) -> AsyncGenerator[GatewayEvent, None]:
+        hosted = self.hosted_tools
+        if hosted is None or value.tool_choice == "none" or request.output != "text":
+            async with aclosing(self.client.stream(request)) as source:
+                async for event in source:
+                    yield event
+            return
+
+        remaining = request.max_output_tokens
+        sequence = 0
+        messages = request.messages
+        used: set[str] = set()
+        for round_index in range(3):
+            available = (
+                tuple(tool for tool in hosted.definitions if tool.function.name not in used)
+                if round_index < 2
+                else ()
+            )
+            private_names = {tool.function.name for tool in available}
+            current = request.model_copy(
+                update={
+                    "request_id": request.request_id if round_index == 0 else uuid4(),
+                    "messages": messages,
+                    "tools": (*request.tools, *available),
+                    "max_output_tokens": remaining,
+                }
+            )
+            text: list[str] = []
+            calls: tuple[ToolCall, ...] = ()
+            terminal: GatewayEvent | None = None
+            async with aclosing(self.client.stream(current)) as source:
+                async for event in source:
+                    if event.kind == "tools":
+                        calls = event.calls
+                        continue
+                    if event.kind == "end":
+                        terminal = event
+                        break
+                    if event.kind == "start" and round_index:
+                        continue
+                    if event.kind == "text" and available:
+                        text.append(event.text)
+                    yield event.model_copy(
+                        update={"request_id": request.request_id, "sequence": sequence}
+                    )
+                    sequence += 1
+                    if event.kind == "error":
+                        return
+            if terminal is None or terminal.usage is None:
+                raise GatewayError("gateway_stream_incomplete")
+            remaining -= terminal.usage.output_tokens
+            if value.parallel_tool_calls is False and len(calls) > 1:
+                raise GatewayError("unexpected_parallel_tool_calls")
+            external = tuple(call for call in calls if call.name not in private_names)
+            if external or not calls or remaining <= 0 or terminal.truncated:
+                if external:
+                    yield GatewayEvent(
+                        request_id=request.request_id,
+                        context_id=request.context_id,
+                        sequence=sequence,
+                        kind="tools",
+                        calls=external,
+                    )
+                    sequence += 1
+                yield terminal.model_copy(
+                    update={
+                        "request_id": request.request_id,
+                        "sequence": sequence,
+                        "truncated": terminal.truncated
+                        or (bool(calls) and not external and remaining <= 0),
+                        "usage": terminal.usage.model_copy(
+                            update={"output_tokens": request.max_output_tokens - remaining}
+                        ),
+                    }
+                )
+                return
+            call = calls[0]
+            assistant = PromptMessage(
+                role="assistant",
+                content="".join(text),
+                tool_calls=(
+                    PromptToolCall(
+                        call_id=str(call.call_id), name=call.name, arguments=call.arguments
+                    ),
+                ),
+            )
+            tool_result = PromptMessage(role="tool", content="", tool_call_id=str(call.call_id))
+            continuation = current.model_copy(
+                update={"messages": (*messages, assistant, tool_result)}
+            )
+            # Charge measured tokens and leave room for framing. The wire may escape JSON again.
+            headroom = (
+                self.input_limit - terminal.usage.prompt_tokens - terminal.usage.output_tokens
+            )
+            wire_room = _LIMIT - len(continuation.model_dump_json().encode())
+            result_budget = min(headroom - 128, wire_room // 2, PROMPT_MESSAGE_CHARS)
+            if result_budget < 128:
+                raise GatewayError("prompt_overflow")
+            result = await hosted.invoke(call, result_budget)
+            if call.name in hosted.single_use:
+                used.add(call.name)
+            messages = (*messages, assistant, tool_result.model_copy(update={"content": result}))
+
     def _stream(self, value: _Request, request: GatewayRequest) -> AsyncGenerator[bytes, None]:
         """Emit only gateway-validated tools."""
         envelope: dict[str, JsonValue] = {
@@ -399,7 +522,7 @@ class OpenAIModelBridge:
         async def events() -> AsyncGenerator[bytes, None]:
             calls: tuple[ToolCall, ...] = ()
             try:
-                async with aclosing(self.client.stream(request)) as source:
+                async with aclosing(self._events(value, request)) as source:
                     async for event in source:
                         if event.kind == "start":
                             yield chunk({"role": "assistant"})
@@ -465,7 +588,7 @@ class OpenAIModelBridge:
         self.last_input_units = max(original_units, self.last_input_units)
         self.running = True
         self.observation_failures += not notify(self.observe_request, request)
-        stream = self.client.stream(request)
+        stream = self._events(value, request)
         content: list[str] = []
         size = 0
         calls: tuple[ToolCall, ...] = ()

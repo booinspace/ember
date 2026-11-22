@@ -65,6 +65,7 @@ from .source_access import source_keys
 from .specifications import specification_rows
 
 OPENCODE_LIBRARY = "OpenCode"
+CODING_LIBRARY = "Coding"
 OPENCODE_NOTE_CHARS = 512
 
 
@@ -153,14 +154,23 @@ class LibraryService:
         """Provision the reserved library through the runtime's serialized owner."""
         if self.authority.mode != "opencode_notes":
             raise AccessDeniedError()
+        return self._ensure_note_library(OPENCODE_LIBRARY)
+
+    def ensure_coding_library(self) -> CanonicalId:
+        """Provision the reserved library for the coding API's separate authority."""
+        if self.authority.mode != "coding_notes":
+            raise AccessDeniedError()
+        return self._ensure_note_library(CODING_LIBRARY)
+
+    def _ensure_note_library(self, namespace: str) -> CanonicalId:
         library = next(
             (
                 info
                 for info in self.engine.stores()
-                if info.kind == "library" and info.namespace == OPENCODE_LIBRARY
+                if info.kind == "library" and info.namespace == namespace
             ),
             None,
-        ) or self.engine.create_library(OPENCODE_LIBRARY)
+        ) or self.engine.create_library(namespace)
         self.engine.maintenance_store(library.store_id)
         return library.store_id
 
@@ -168,14 +178,26 @@ class LibraryService:
         """Append an attributed note to the fixed library and adopt it into this character."""
         if self.authority.mode != "opencode_notes":
             raise AccessDeniedError()
+        return self._save_delegated_note(character_id, note, OPENCODE_LIBRARY, "opencode")
+
+    def save_coding_note(self, character_id: CanonicalId, note: str) -> MutationReceipt:
+        """Append an attributed coding note and adopt it into this character."""
+        if self.authority.mode != "coding_notes":
+            raise AccessDeniedError()
+        return self._save_delegated_note(character_id, note, CODING_LIBRARY, "coding")
+
+    def _save_delegated_note(
+        self, character_id: CanonicalId, note: str, namespace: str, channel: str
+    ) -> MutationReceipt:
+        adapter = f"{channel}_note"
         note = note.strip()
         if not 1 <= len(note) <= OPENCODE_NOTE_CHARS or not note.isprintable():
-            raise ValueError("Expected a short, single-line OpenCode note.")
+            raise ValueError("Expected a short, single-line delegated note.")
         character = self.engine.character(character_id)
-        library_id = self.ensure_opencode_library()
+        library_id = self._ensure_note_library(namespace)
         writer = self.engine.archive(library_id)
         digest = canonical_object_sha256({"character": str(character_id), "note": note})
-        key = SourceKey(adapter="opencode_note", record_kind="document", external_id=digest)
+        key = SourceKey(adapter=adapter, record_kind="document", external_id=digest)
         assigned = writer.prepare_keys((key,))
         record_id = assigned[0].record_id
         existing = writer.latest_record("document", record_id)
@@ -193,8 +215,8 @@ class LibraryService:
                     record_revision=1,
                 ),
                 recorded_at=stamp,
-                title="Delegated OpenCode session note",
-                created_time=SourceTimestamp(value=stamp, basis="opencode_note_received"),
+                title=f"Delegated {namespace} session note",
+                created_time=SourceTimestamp(value=stamp, basis=f"{adapter}_received"),
                 parts=(
                     ContentPart(
                         part_id=uuid4(),
@@ -213,13 +235,13 @@ class LibraryService:
             writer.write_batch(
                 NormalizedArchiveBatch(
                     source_store_id=library_id,
-                    source_namespace=OPENCODE_LIBRARY,
-                    idempotency_key="opencode-note:" + digest,
+                    source_namespace=namespace,
+                    idempotency_key=f"{channel}-note:" + digest,
                     processing_spec=ProcessingSpecRef(
-                        name="ember.opencode_note",
+                        name=f"ember.{adapter}",
                         version="0.1.0",
                         specification_sha256=canonical_object_sha256(
-                            {"policy": "delegated-opencode-note-v1"}
+                            {"policy": f"delegated-{channel}-note-v1"}
                         ),
                     ),
                     records=(document,),
@@ -227,7 +249,7 @@ class LibraryService:
                         logical_inventory_sha256=digest,
                         component_sha256=digest,
                         next_record_index=1,
-                        adapter="opencode_note",
+                        adapter=adapter,
                         adapter_version="0.1.0",
                     ),
                 ),
@@ -243,7 +265,7 @@ class LibraryService:
             revision=1,
             recorded_at=observed_at,
             draft=MemoryDraft(
-                temporal=TemporalBounds(observed_at=observed_at, basis="opencode_note_received"),
+                temporal=TemporalBounds(observed_at=observed_at, basis=f"{adapter}_received"),
                 content=MemoryContent(
                     kind="episode",
                     payload=EpisodePayload(event=note),
@@ -259,7 +281,7 @@ class LibraryService:
                             ),
                             relation="supports",
                             modality="BELIEF",
-                            authority="delegated_opencode",
+                            authority=f"delegated_{channel}",
                             verdict="delegated_note",
                         ),
                     ),
@@ -268,12 +290,12 @@ class LibraryService:
         )
         approved = self._approve(
             library_id,
-            ApprovalRequest(idempotency_key="opencode-note:" + digest, candidate=candidate),
+            ApprovalRequest(idempotency_key=f"{channel}-note:" + digest, candidate=candidate),
         )
         receipt = self._seed(
             character_id,
             SeedRequest(
-                idempotency_key="opencode-note:" + digest,
+                idempotency_key=f"{channel}-note:" + digest,
                 library_id=library_id,
                 selections=(
                     KnowledgeSelection(
@@ -294,7 +316,8 @@ class LibraryService:
         return self._approve(library_id, request)
 
     def _approve(self, library_id: CanonicalId, request: ApprovalRequest) -> ApprovedKnowledge:
-        delegated = self.authority.mode == "opencode_notes"
+        delegated = self.authority.mode in {"opencode_notes", "coding_notes"}
+        channel = "coding" if self.authority.mode == "coding_notes" else "opencode"
         request = ApprovalRequest.model_validate_json(request.model_dump_json())
         info, database = self.engine.maintenance_store(library_id)
         if info.kind != "library" or request.candidate.owner_store_id != library_id:
@@ -303,10 +326,10 @@ class LibraryService:
             raise AccessDeniedError()
         digest = canonical_object_sha256(request)
         candidate = request.candidate
-        operation = "accept_opencode_note" if delegated else "approve"
-        policy = "delegated-opencode-note-v1" if delegated else "exact-evidence-human-review-v1"
+        operation = f"accept_{channel}_note" if delegated else "approve"
+        policy = f"delegated-{channel}-note-v1" if delegated else "exact-evidence-human-review-v1"
         reason = (
-            "operator_enabled_opencode_notes" if delegated else "operator_reviewed_exact_evidence"
+            f"operator_enabled_{channel}_notes" if delegated else "operator_reviewed_exact_evidence"
         )
 
         def write(connection: sqlite3.Connection) -> ApprovedKnowledge:
@@ -371,7 +394,7 @@ class LibraryService:
                     recorded_at=stamp,
                     approval=ValidationVerdict(
                         policy=ProcessingSpecRef(
-                            name="ember.opencode_note"
+                            name=f"ember.{channel}_note"
                             if delegated
                             else "ember.manual_library_approval",
                             version="0.1.0",
@@ -418,7 +441,7 @@ class LibraryService:
                     "INSERT INTO audit_events VALUES(?,?,?,?,?)",
                     (
                         str(uuid4()),
-                        "accept_opencode_note" if delegated else "approve_library",
+                        f"accept_{channel}_note" if delegated else "approve_library",
                         str(approved.knowledge_id),
                         recorded,
                         self.authority.mode,

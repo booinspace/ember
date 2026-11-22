@@ -68,7 +68,7 @@ class SourceKeyAssignment(ContractModel):
 class MutationAuthority(ContractModel):
     """Trusted composition binding, never derived from model arguments/verdict strings."""
 
-    mode: Literal["read_only", "confirmed_user", "opencode_notes"] = "read_only"
+    mode: Literal["read_only", "confirmed_user", "opencode_notes", "coding_notes"] = "read_only"
 
 
 class SourceGrant(ContractModel):

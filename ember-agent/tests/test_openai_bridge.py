@@ -6,6 +6,7 @@ import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import httpx
@@ -19,6 +20,7 @@ from ember_agent.inference.contracts import (
     GatewayRequest,
     PromptMessage,
     PromptToolCall,
+    ToolCall,
     ToolDefinition,
     ToolFunction,
 )
@@ -34,13 +36,31 @@ from ember_agent.inference.upstream import (
     NativeTool,
     Upstream,
 )
+from ember_agent.memory.deep_recall import DeepRecallService
 from ember_agent.runtime.coding_api import coding_routes
+from ember_agent.runtime.coding_memory import coding_memory_tools
 from ember_agent.runtime.config import (
+    ConfigurationError,
     DeploymentConfig,
     InferenceSettings,
     StrataSettings,
     load_config,
 )
+from ember_agent.runtime.memory_tools import (
+    MemoryTools,
+    RecallClient,
+    RecallHit,
+    RecallResult,
+    _coding_rank,
+)
+from ember_memory_abi.common import timestamp_from_datetime
+from ember_memory_abi.errors import AccessDeniedError
+from ember_memory_abi.interfaces import MemoryResult, MutationReceipt
+from ember_memory_engine import CanonicalEngine, MutationAuthority
+from ember_memory_engine.async_client import InProcessAsyncMemoryClient
+from ember_memory_engine.deep_profile import DeepSources
+from ember_memory_engine.library import LibraryService
+from ember_memory_engine.read_budget import ReadBudget
 
 _EXAMPLE = Path(__file__).parents[1] / "config/deployment.example.toml"
 
@@ -857,3 +877,271 @@ def test_bridge_cancellation_keeps_existing_runner_ownership(tmp_path: Path) -> 
         await client.aclose()
 
     asyncio.run(run())
+
+
+RECALL = "ember_recall_memory"
+SAVE = "ember_save_memory"
+
+
+def test_coding_memory_and_mcp_are_exclusive(tmp_path: Path) -> None:
+    _config(tmp_path)
+    path = tmp_path / "deployment.toml"
+    path.write_text(
+        path.read_text() + "\n[inference]\ncoding_api = true\ncoding_memory = true\n[memory_mcp]\n"
+    )
+    with pytest.raises(ConfigurationError, match="Choose coding memory or memory MCP"):
+        load_config(path)
+
+
+def _call(index: int, name: str, **arguments: str) -> NativeTool:
+    return NativeTool(
+        index=index,
+        function=NativeFunction(name=name, arguments=json.dumps(arguments)),
+    )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_coding_memory_uses_gateway_and_fixed_library(tmp_path: Path, stream: bool) -> None:
+    async def run() -> None:
+        with CanonicalEngine(tmp_path / "data") as engine:
+            character = engine.create_character().store_id
+            other = engine.create_character().store_id
+            opencode = LibraryService(engine, authority=MutationAuthority(mode="opencode_notes"))
+            opencode.save_opencode_note(character, "Cobalt fixture uses green build flags.")
+            opencode.save_opencode_note(other, "Cobalt unrelated private fact.")
+            coding = LibraryService(engine, authority=MutationAuthority(mode="coding_notes"))
+            with pytest.raises(AccessDeniedError):
+                opencode.save_coding_note(character, "Wrong authority.")
+            with pytest.raises(AccessDeniedError):
+                coding.save_opencode_note(character, "Wrong transport.")
+            store = engine.character(character)
+            client = InProcessAsyncMemoryClient(store)
+
+            def deep_client(deadline: float) -> InProcessAsyncMemoryClient:
+                budget = ReadBudget(deadline=deadline)
+                return InProcessAsyncMemoryClient(
+                    store, deep_sources=DeepSources(engine, budget), read_budget=budget
+                )
+
+            deep = DeepRecallService(character, deep_client, validation=client)
+
+            async def writer(note: str) -> MutationReceipt:
+                return await asyncio.to_thread(coding.save_coding_note, character, note)
+
+            service = MemoryTools(client, deep, "Europe/London", writer, library="Coding")
+            hosted = coding_memory_tools(service)
+            read_only = coding_memory_tools(MemoryTools(client, deep, "Europe/London", None))
+            assert [tool.function.name for tool in read_only.definitions] == [RECALL]
+            saved_note = "Use purple flags for the next fixture."
+
+            class Scripted(_Upstream):
+                async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
+                    self.requests.append(request)
+                    match len(self.requests):
+                        case 1:
+                            yield NativeFrame(
+                                message=NativeMessage(
+                                    tool_calls=[_call(0, RECALL, query="Cobalt fixture")]
+                                )
+                            )
+                        case 2:
+                            text = request.messages[-1].content
+                            assert len(text.encode()) < 126976
+                            assert "green build flags" in text and "private fact" not in text
+                            assert json.loads(text)["memories"][0]["claim"]["confidence"] == 0.5
+                            yield NativeFrame(
+                                message=NativeMessage(tool_calls=[_call(0, SAVE, note=saved_note)])
+                            )
+                        case 3:
+                            assert json.loads(request.messages[-1].content)["library"] == "Coding"
+                            assert SAVE not in {tool.function.name for tool in request.tools}
+                            yield NativeFrame(message=NativeMessage(content="Saved the fixture."))
+                        case _:
+                            raise AssertionError("Too many model rounds")
+                    yield NativeFrame(done=True, prompt_eval_count=50, eval_count=3)
+
+            config = _config(tmp_path)
+            config = config.model_copy(
+                update={
+                    "inference": config.inference.model_copy(update={"coding_api": True}),
+                    "context_tokens": 131072,
+                    "max_input_tokens": 126976,
+                    "output_reserve_tokens": 4096,
+                }
+            )
+            native = Scripted()
+            _, gateway, transport = _bridge(config, native)
+            app = FastAPI()
+            app.include_router(coding_routes(config, transport, "fixture-key", hosted_tools=hosted))
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+                ) as http:
+                    body = _body(config)
+                    body.update(stream=stream, stream_options={"include_usage": True})
+                    url = "/coding/v1/chat/completions"
+                    assert (await http.post(url, json=body)).status_code == 401
+                    http.headers["Authorization"] = "Bearer fixture-key"
+                    response = await http.post(url, json=body)
+                    assert response.status_code == 200
+                    assert "Saved the fixture." in response.text
+                    assert RECALL not in response.text and SAVE not in response.text
+                    if stream:
+                        assert "data: [DONE]" in response.text
+                    else:
+                        assert response.json()["usage"]["completion_tokens"] == 9
+                assert [request.workload for request in native.requests] == ["P5"] * 3
+                assert len({request.request_id for request in native.requests}) == 3
+                coding_id = coding.ensure_coding_library()
+                assert coding_id != opencode.ensure_opencode_library()
+                assert coding.save_coding_note(character, saved_note).outcome == "already_applied"
+                recall = await hosted.invoke(
+                    ToolCall(call_id=uuid4(), name=RECALL, arguments={"query": "purple flags"}),
+                    8192,
+                )
+                assert saved_note in recall
+            finally:
+                await transport.aclose()
+                await gateway.aclose()
+                await deep.aclose()
+                await client.aclose()
+
+    asyncio.run(run())
+
+
+def test_coding_memory_keeps_client_tools_and_rejects_reserved_names(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = _config(tmp_path)
+        config = config.model_copy(
+            update={"inference": config.inference.model_copy(update={"coding_api": True})}
+        )
+        native = _Upstream()
+        native.frames = (
+            NativeFrame(
+                message=NativeMessage(
+                    tool_calls=[
+                        _call(0, SAVE, note="Do not execute this mixed save."),
+                        _call(1, "client_read", path="example.py"),
+                    ]
+                )
+            ),
+            NativeFrame(done=True, prompt_eval_count=50, eval_count=3),
+        )
+        _, gateway, transport = _bridge(config, native)
+        calls: list[str] = []
+
+        async def writer(note: str) -> MutationReceipt:
+            calls.append(note)
+            raise AssertionError("A mixed tool call must not save a note.")
+
+        # Mixed client batches never reach either memory operation.
+        service = MemoryTools(
+            Mock(spec=RecallClient),
+            Mock(spec=DeepRecallService),
+            "Europe/London",
+            writer,
+            library="Coding",
+        )
+        app = FastAPI()
+        app.include_router(
+            coding_routes(
+                config, transport, "fixture-key", hosted_tools=coding_memory_tools(service)
+            )
+        )
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://localhost",
+                headers={"Authorization": "Bearer fixture-key"},
+            ) as http:
+                tool = {
+                    "type": "function",
+                    "function": {
+                        "name": SAVE,
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"path": {"type": "string"}},
+                            "required": ["path"],
+                        },
+                    },
+                }
+                body = _body(config) | {"tools": [tool]}
+                path = "/coding/v1/chat/completions"
+                bad = await http.post(path, json=body)
+                assert bad.json()["error"]["code"] == "reserved_tool_name"
+                tool["function"]["name"] = "client_read"
+                response = await http.post(path, json=body)
+                assert response.status_code == 200, response.text
+                message = response.json()["choices"][0]["message"]
+                assert [item["function"]["name"] for item in message["tool_calls"]] == [
+                    "client_read"
+                ]
+                assert calls == []
+        finally:
+            await transport.aclose()
+            await gateway.aclose()
+
+    asyncio.run(run())
+
+
+def test_coding_recall_uses_available_budget_without_cutting_claims() -> None:
+    async def run() -> None:
+        hits = tuple(
+            RecallHit(
+                memory_id=uuid4(),
+                revision=1,
+                kind="episode",
+                claim={"value": f"rank {index} " + "é" * 400},
+            )
+            for index in range(14)
+        )
+        recall = Mock(spec=MemoryTools)
+        recall.write_note = None
+        recall.recall = AsyncMock(
+            return_value=RecallResult(memories=hits, coverage="complete", omitted_for_size=0)
+        )
+        hosted = coding_memory_tools(recall)
+        call = ToolCall(call_id=uuid4(), name=RECALL, arguments={"query": "fixture"})
+        large = await hosted.invoke(call, 20_000)
+        assert 6144 < len(large.encode()) <= 20_000
+        assert len(json.loads(large)["memories"]) == len(hits)
+        small = await hosted.invoke(call, 1600)
+        assert len(small.encode()) <= 1600
+        body = json.loads(small)
+        assert len(body["memories"]) == 1 and body["omitted_for_size"] == len(hits) - 1
+        assert body["memories"][0]["claim"] == hits[0].claim
+        recall.recall.assert_awaited_with("fixture", coding_budget=1600)
+
+    asyncio.run(run())
+
+
+def test_coding_ranking_preserves_relevance_and_uses_recency_and_confidence(tmp_path: Path) -> None:
+    with CanonicalEngine(tmp_path / "data") as engine:
+        character = engine.create_character().store_id
+        coding = LibraryService(engine, authority=MutationAuthority(mode="coding_notes"))
+        receipt = coding.save_coding_note(character, "Use fixture-mode for local rehearsals.")
+        memory = engine.character(character).get(receipt.affected[0].memory_id)
+        recent = timestamp_from_datetime(datetime.now(UTC))
+        older = timestamp_from_datetime(datetime.now(UTC) - timedelta(days=100))
+
+        def item(relevance: float, confidence: float, date: str) -> MemoryResult:
+            return MemoryResult(
+                score=relevance,
+                memory=memory.model_copy(
+                    update={
+                        "content": memory.content.model_copy(update={"confidence": confidence}),
+                        "temporal": memory.temporal.model_copy(update={"observed_at": date}),
+                    }
+                ),
+            )
+
+        relevant = item(1.5, 0.1, older)
+        recent_confident = item(1.0, 1.0, recent)
+        recent_uncertain = item(1.0, 0.2, recent)
+        older_confident = item(1.0, 1.0, older)
+        assert _coding_rank((older_confident, recent_uncertain, recent_confident, relevant)) == (
+            relevant,
+            recent_confident,
+            recent_uncertain,
+            older_confident,
+        )

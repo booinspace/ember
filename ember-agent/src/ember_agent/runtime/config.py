@@ -98,11 +98,17 @@ class InferenceSettings(RuntimeModel):
 
     backend: InferenceBackend = "ollama"
     coding_api: bool = False
+    coding_memory: bool = False
+    coding_memory_write: bool = False
     vllm: VLLMSettings | None = None
     strata: StrataSettings | None = None
 
     @model_validator(mode="after")
     def _selected_runner(self) -> Self:
+        if self.coding_memory and not self.coding_api:
+            raise ValueError("Coding memory requires the coding API.")
+        if self.coding_memory_write and not self.coding_memory:
+            raise ValueError("Coding memory writes require coding memory.")
         if self.backend == "vllm" and self.vllm is None:
             raise ValueError("vLLM requires an explicit installed runner profile.")
         if self.backend == "strata" and self.strata is None:
@@ -298,6 +304,7 @@ class MemoryMCPSettings(RuntimeModel):
 
     port: Annotated[int, Field(ge=1024, le=65535)] = 8790
     write_enabled: bool = False
+    lan_bind: bool = False
 
 
 class DeploymentConfig(RuntimeModel):
@@ -653,6 +660,8 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         or urlsplit(settings.services.livekit.endpoint).hostname == "::1"
     ):
         raise ConfigurationError("LAN access requires an enabled browser and managed IPv4 LiveKit.")
+    if settings.inference.coding_memory and settings.memory_mcp is not None:
+        raise ConfigurationError("Choose coding memory or memory MCP for this deployment.")
     if settings.inference.coding_api and (
         settings.inference.backend != "strata" or not settings.browser.enabled or not public_origin
     ):
@@ -708,6 +717,17 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             raise ValueError("The Hermes client requires the application control listener.")
     except (ValidationError, ValueError) as error:
         raise ConfigurationError("Hermes configuration is invalid.") from error
+    services = _validate_services(settings, path.resolve().parent, runtime_root)
+    if settings.memory_mcp is not None and settings.memory_mcp.lan_bind:
+        if not public_origin:
+            raise ConfigurationError("memory_mcp.lan_bind requires browser HTTPS ingress.")
+        livekit = services.livekit
+        if settings.memory_mcp.port in {
+            urlsplit(settings.browser.endpoint).port,
+            urlsplit(livekit.endpoint).port,
+            livekit.tcp_port,
+        }:
+            raise ConfigurationError("LAN memory MCP requires a distinct TCP port.")
     return DeploymentConfig(
         harness=harness,
         public_search=public_search,
@@ -725,7 +745,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         context_tokens=settings.model.context_tokens,
         max_input_tokens=settings.model.max_input_tokens,
         output_reserve_tokens=settings.model.output_reserve_tokens,
-        services=_validate_services(settings, path.resolve().parent, runtime_root),
+        services=services,
         recall_timezone=settings.search.timezone,
         interpretation=settings.interpretation,
         natural_deep_recall=settings.natural_deep_recall,

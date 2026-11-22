@@ -11,6 +11,7 @@ from ember_memory_abi.common import UtcTimestamp
 from ..runtime.config import RuntimeModel
 
 NON_CODING_MESSAGE_LIMIT = 64
+PROMPT_MESSAGE_CHARS = 100_000
 
 
 class GatewayError(RuntimeError):
@@ -43,7 +44,7 @@ class PromptMessage(RuntimeModel):
     """One explicit request context item, without backend runner options."""
 
     role: Literal["system", "user", "assistant", "tool"]
-    content: Annotated[str, Field(max_length=100000)] = Field(repr=False)
+    content: Annotated[str, Field(max_length=PROMPT_MESSAGE_CHARS)] = Field(repr=False)
     tool_calls: Annotated[tuple[PromptToolCall, ...], Field(max_length=16)] = Field(
         default=(), exclude_if=lambda value: not value
     )
@@ -86,13 +87,15 @@ class GatewayRequest(RuntimeModel):
     deadline_at: UtcTimestamp
     output: Literal["text", "json"] = "text"
     output_schema: dict[str, JsonValue] | None = None
-    tools: Annotated[tuple[ToolDefinition, ...], Field(max_length=16)] = ()
+    tools: Annotated[tuple[ToolDefinition, ...], Field(max_length=18)] = ()
     thinking: bool = Field(default=False, exclude_if=lambda value: not value)
 
     @model_validator(mode="after")
     def _workload_limits(self) -> Self:
         if self.workload != "P5" and len(self.messages) > NON_CODING_MESSAGE_LIMIT:
             raise ValueError("Non-coding requests retain the existing message limit.")
+        if self.workload != "P5" and len(self.tools) > 16:
+            raise ValueError("Non-coding requests retain the existing tool limit.")
         if self.thinking:
             if (
                 self.version != "0.4.0"

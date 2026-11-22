@@ -837,6 +837,7 @@ async def run_runtime(
             from .memory_mcp import serve_memory_mcp
 
             port = config.memory_mcp.port
+            lan = config.browser if config.memory_mcp.lan_bind else None
             try:
                 write_note = None
                 if config.memory_mcp.write_enabled:
@@ -852,6 +853,7 @@ async def run_runtime(
                         deep=runtime.deep,
                         timezone=config.recall_timezone,
                         write_note=write_note,
+                        lan=lan,
                     )
                 )
             except (ConfigurationError, TimeoutError) as error:
@@ -860,7 +862,8 @@ async def run_runtime(
                 )
                 print(f"Memory MCP unavailable: {detail}")
             else:
-                print(f"Memory MCP ready on http://127.0.0.1:{port}/mcp")
+                origin = lan.public_origin if lan else f"http://127.0.0.1:{port}"
+                print(f"Memory MCP listening for {origin}/mcp")
                 if write_note is not None:
                     print("OpenCode memory writes enabled for the OpenCode library.")
         binding = RoomBinding(
@@ -897,14 +900,30 @@ async def run_runtime(
         )
 
 
-async def _coding_api(config: DeploymentConfig, cleanup: AsyncExitStack) -> APIRouter | None:
+async def _coding_api(
+    config: DeploymentConfig, runtime: LocalRuntime, cleanup: AsyncExitStack
+) -> APIRouter | None:
     if not config.inference.coding_api:
         return None
     token = await asyncio.to_thread(coding_token, config.runtime_root)
     key = await asyncio.to_thread(read_token, config.runtime_root / "gateway-agent.token")
     client = HttpGatewayClient(config.services.gateway.endpoint, key)
     cleanup.push_async_callback(client.aclose)
-    return coding_routes(config, client, token)
+    if not config.inference.coding_memory:
+        return coding_routes(config, client, token)
+    from .coding_memory import coding_memory_tools
+    from .memory_tools import MemoryTools
+
+    writer = None
+    if config.inference.coding_memory_write:
+        try:
+            writer = await runtime.coding_note_writer()
+        except MemoryError as error:
+            print(f"Coding memory writes unavailable: {error.info.code}")
+    tools = MemoryTools(
+        runtime.memory, runtime.deep, config.recall_timezone, writer, library="Coding"
+    )
+    return coding_routes(config, client, token, hosted_tools=coding_memory_tools(tools))
 
 
 async def _run_room(
@@ -991,7 +1010,7 @@ async def _run_room(
                 host.start_task_announcements(task_router)
                 cleanup.push_async_callback(host.stop_task_announcements)
             control = BrowserControl(
-                coding_api=await _coding_api(config, cleanup),
+                coding_api=await _coding_api(config, runtime, cleanup),
                 hermes_chat=await _start_hermes_client(runtime),
                 dashboard=runtime.dashboard,
                 memory_graph=runtime.memory_graph,
@@ -1078,7 +1097,7 @@ async def _run_text_browser(
         await _start_public_search(runtime)
         task_router = await _start_tasks(runtime, binding, cleanup)
         control = BrowserControl(
-            coding_api=await _coding_api(config, cleanup) if gateway_available else None,
+            coding_api=await _coding_api(config, runtime, cleanup) if gateway_available else None,
             hermes_chat=await _start_hermes_client(runtime),
             dashboard=runtime.dashboard,
             memory_graph=runtime.memory_graph,
