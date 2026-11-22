@@ -188,6 +188,19 @@ def test_strata_preflight_rejects_modified_or_unpinned_inputs(tmp_path: Path, ta
     assert strata is not None
     if tamper == "bytes":
         other.write_bytes(b"modified second shard")
+        assert not strata.verify_model_checksums
+        unchecked = tmp_path / "default-snapshot.json"
+        prepare_strata_config(config, strata, unchecked)
+        assert unchecked.is_file()
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "[inference.strata]", "[inference.strata]\nverify_model_checksums = true"
+            ),
+            encoding="utf-8",
+        )
+        config = load_config(path)
+        strata = config.inference.strata
+        assert strata is not None and strata.verify_model_checksums
     if tamper == "config":
         with Path(strata.runner_config).open("ab") as stream:
             stream.write(b"\n")

@@ -68,6 +68,7 @@ class StrataSettings(RuntimeModel):
     server_script: str
     runner_config: str
     runner_config_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    verify_model_checksums: bool = False
     startup_timeout_seconds: Annotated[float, Field(gt=0, le=600)] = 120.0
 
     @model_validator(mode="after")

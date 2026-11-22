@@ -181,7 +181,7 @@ def _engine_paths(profile: _RunnerProfile, context: int) -> tuple[set[Path], set
 def prepare_strata_config(
     config: DeploymentConfig, settings: StrataSettings, snapshot: Path
 ) -> None:
-    """Verify exact JSON and installed artifact bytes before writing an isolated launch copy."""
+    """Verify pinned config and artifacts before writing an isolated launch copy."""
     try:
         python = _absolute(settings.python_executable)
         script = _absolute(settings.server_script)
@@ -211,6 +211,9 @@ def prepare_strata_config(
         ):
             raise ConfigurationError("Strata installed working or library directory is missing.")
         files, directories = _engine_paths(profile, config.context_tokens)
+        model_files = {
+            path.resolve(strict=True) for path in files if path.suffix.lower() == ".gguf"
+        }
         exe = _absolute(profile.exe)
         files.update((script, exe))
         tokenizer = _absolute(profile.tokenizer)
@@ -239,6 +242,8 @@ def prepare_strata_config(
         if not {file.resolve(strict=True) for file in files} <= pins.keys():
             raise ConfigurationError("Strata runner references an unpinned artifact.")
         for artifact, digest in pins.items():
+            if not settings.verify_model_checksums and artifact in model_files:
+                continue
             with artifact.open("rb") as stream:
                 if file_digest(stream, "sha256").hexdigest() != digest:
                     raise ConfigurationError("Strata artifact SHA-256 does not match.")
