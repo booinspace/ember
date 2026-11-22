@@ -280,7 +280,7 @@ def test_research_consent_survives_restart_without_switching_providers(tmp_path:
             idempotency_key="public-fixture",
             goal="Search: public fixture",
             operation="research",
-            research_provider="exa",
+            research_provider="exa_mcp",
         )
         queued = await router.store.submit(request)
         assert await router.store.claim(identity, realtime_reserved=True) is None
@@ -302,14 +302,14 @@ def test_research_consent_survives_restart_without_switching_providers(tmp_path:
 
         restarted = TaskRouter(tmp_path, identity, session, inspect)
         restarted.providers["research"] = UnexpectedProvider()
-        restarted.research_provider = "parallel"
+        restarted.research_provider = "exa"
         await restarted.start()
         try:
             for task in (queued, legacy):
                 terminal = await _terminal(restarted, task.task_id)
                 assert terminal.state == "failed"
                 assert terminal.result == "research_provider_consent_required"
-            for provider in (None, "exa"):
+            for provider in (None, "exa_mcp"):
                 with pytest.raises(TaskConflict, match="research_provider_consent_required"):
                     await restarted.submit(
                         "fresh", request.goal, operation="research", research_provider=provider
@@ -573,8 +573,14 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
             research=True,
         )
         upstream = Upstream()
-        _, gateway, model = _bridge(config, upstream)
-        identity = uuid4()
+        _, gateway, model = _bridge(config, upstream, idle_managed_tasks=True)
+        identity, conversation = uuid4(), uuid4()
+        await gateway.session(conversation, connected=True)
+
+        async def task_admission() -> tuple[bool, bool]:
+            health = await model.health()
+            return bool(health.realtime_sessions), "idle_managed_tasks_v1" in health.features
+
         try:
             async with open_research(config, settings, model, Retrieval(), "exa") as worker:
                 router = TaskRouter(
@@ -586,6 +592,7 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
                 router.providers["research"] = worker
                 router.research_provider = "exa"
                 router.research_health = lambda: worker.available
+                router.task_admission = task_admission
                 await router.start()
                 try:
                     cancelled = await router.submit(
@@ -650,6 +657,7 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
                         assert [request.context_id for request in upstream.requests[-3:]] == [
                             task.task_id
                         ] * 3
+                    assert (await model.health()).realtime_sessions == (conversation,)
                 finally:
                     await router.aclose()
         finally:

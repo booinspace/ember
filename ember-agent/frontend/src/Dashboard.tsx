@@ -148,7 +148,7 @@ export function SystemStatus({
 const status: Record<ActivityEvent["status"], string> = {
   running: "Running",
   waiting_for_model: "Waiting for model",
-  waiting_for_realtime: "Waiting for conversation to disconnect",
+  waiting_for_realtime: "Waiting for inference access",
   waiting_for_tool: "Waiting for tool",
   waiting_for_user: "Approval needed",
   succeeded: "Complete",
@@ -174,6 +174,7 @@ export function ActivityCard({
   showTasks: (taskId: string) => void;
 }) {
   const { task_id: taskId } = event;
+  const label = status[event.status];
   const active =
     event.status === "running" || event.status.startsWith("waiting_");
   const name =
@@ -195,9 +196,7 @@ export function ActivityCard({
           {icons[event.kind]}
         </span>
         <span className="activity-name">{name}</span>
-        <span className={`event-status ${event.status}`}>
-          {status[event.status]}
-        </span>
+        <span className={`event-status ${event.status}`}>{label}</span>
         <time>{active ? "Live" : duration(event.duration_ms)}</time>
         <span className="chevron" aria-hidden="true">
           ⌄
@@ -209,21 +208,15 @@ export function ActivityCard({
             ? active
               ? "Assembling authorized memory and session context…"
               : `${event.count ?? 0} memory values included in this turn.`
-            : `Provider: ${event.provider} · ${status[event.status]}`}
+            : `Provider: ${event.provider} · ${label}`}
         </p>
         {event.code && (
           <p className="quiet">
             Diagnostic: <code>{event.code}</code>
           </p>
         )}
-        {event.status === "waiting_for_realtime" && (
-          <p className="quiet">Use Disconnect above to let this task start.</p>
-        )}
-        {event.status === "waiting_for_model" && (
-          <p className="quiet">
-            Background inference waits while conversation reserves the model.
-            Disconnect voice to continue.
-          </p>
+        {event.kind === "task" && event.status === "waiting_for_model" && (
+          <p className="quiet">Waiting for an inference slot.</p>
         )}
         {event.status === "uncertain" && (
           <p>
@@ -283,38 +276,20 @@ export function Capabilities({ enabled }: { enabled: boolean }) {
       id="capabilities"
     >
       <div className="panel-heading">
-        <div>
-          <span className="eyebrow">CONNECTED CAPABILITIES</span>
-          <h2>Tools & providers</h2>
-        </div>
-        <button
-          className="icon-button"
-          aria-label="Refresh capabilities"
-          onClick={() => void refresh()}
-        >
-          ↻
-        </button>
-      </div>
-      <div
-        className="filter-tabs"
-        role="group"
-        aria-label="Capability category"
-      >
-        {["all", "native", "public_search", "mcp", "harness"].map((kind) => (
-          <button
-            key={kind}
-            className={filter === kind ? "selected" : ""}
-            onClick={() => setFilter(kind)}
+        <label>
+          Capability category
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
           >
-            {kind === "public_search"
-              ? "Search"
-              : kind === "mcp"
-                ? "MCP"
-                : kind === "harness"
-                  ? "Harness"
-                  : kind.charAt(0).toUpperCase() + kind.slice(1)}
-          </button>
-        ))}
+            <option value="all">All</option>
+            <option value="native">Native</option>
+            <option value="public_search">Search</option>
+            <option value="mcp">MCP</option>
+            <option value="harness">Harness</option>
+          </select>
+        </label>
+        <button onClick={() => void refresh()}>Refresh capabilities</button>
       </div>
       <div className="capability-list">
         {items === null && (
@@ -361,7 +336,7 @@ export function PromptInspector({
   snapshot: DashboardSnapshot | null;
   requestedId: string | null;
 }) {
-  const [open, setOpen] = useState(requestedId !== null);
+  const [inspecting, setInspecting] = useState(requestedId !== null);
   const [selection, setSelection] = useState(requestedId ?? "latest");
   const [value, setValue] = useState<z.infer<typeof promptInspection> | null>(
     null,
@@ -376,12 +351,12 @@ export function PromptInspector({
   useEffect(() => {
     setValue(null);
     setCopied(false);
-    if (!open || !identity) {
-      setError(
-        selection !== "latest"
-          ? "This request expired or was replaced. Choose Latest request."
-          : "",
-      );
+    setError("");
+    if (!inspecting || !identity) {
+      if (selection !== "latest" && !identity)
+        setError(
+          "This request expired or was replaced. Choose Latest request.",
+        );
       return;
     }
     const abort = new AbortController();
@@ -424,119 +399,108 @@ export function PromptInspector({
       abort.abort();
       clearTimeout(timer);
     };
-  }, [open, identity, selection]);
+  }, [inspecting, identity, selection]);
   return (
-    <details
-      className="dashboard-panel prompt-inspector"
-      id="inference-context"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="panel-heading">
-        <div>
-          <span className="eyebrow">INFERENCE CONTEXT</span>
-          <h2>Request inspector</h2>
-        </div>
-        <span className="chevron" aria-hidden="true">
-          ⌄
-        </span>
-      </summary>
-      <div className="inspector-body">
-        <p className="quiet">
-          Exact input captured before inference. Loaded on demand and kept in
-          memory only.
+    <div className="controls prompt-inspector">
+      <p className="quiet">
+        Exact input captured before inference. Loaded on demand and kept in
+        memory only.
+      </p>
+      <label>
+        Model request
+        <select
+          value={selection}
+          onChange={(event) => setSelection(event.target.value)}
+        >
+          <option value="latest">Latest request</option>
+          {requests.map((request) => (
+            <option key={request.request_id} value={request.request_id}>
+              {request.workload} · {request.request_id.slice(0, 8)} ·{" "}
+              {request.messages} messages
+            </option>
+          ))}
+        </select>
+      </label>
+      {identity && !inspecting && (
+        <button type="button" onClick={() => setInspecting(true)}>
+          Inspect selected request
+        </button>
+      )}
+      {error && (
+        <p role="status" className="quiet">
+          {error}
         </p>
-        <label>
-          Model request
-          <select
-            value={selection}
-            onChange={(event) => setSelection(event.target.value)}
-          >
-            <option value="latest">Latest request</option>
-            {requests.map((request) => (
-              <option key={request.request_id} value={request.request_id}>
-                {request.workload} · {request.request_id.slice(0, 8)} ·{" "}
-                {request.messages} messages
-              </option>
-            ))}
-          </select>
-        </label>
-        {error && (
-          <p role="status" className="quiet">
-            {error}
-          </p>
-        )}
-        {!identity && !error && (
-          <p className="inspector-empty">
-            Send a message to inspect its assembled context.
-          </p>
-        )}
-        {value && (
-          <>
-            <div className="request-facts">
-              <span>{value.request.model}</span>
-              <span>{value.request.messages.length} messages</span>
-              <span>{value.request.tools.length} tools</span>
+      )}
+      {!identity && !error && (
+        <p className="inspector-empty">
+          Send a message to inspect its assembled context.
+        </p>
+      )}
+      {value && (
+        <>
+          <div className="request-facts">
+            <span>{value.request.model}</span>
+            <span>{value.request.messages.length} messages</span>
+            <span>{value.request.tools.length} tools</span>
+            <span>
+              Input ceiling: {value.input_budget_units.toLocaleString()} guard
+              units
+            </span>
+            <span>
+              Model capacity: {value.model_context_tokens.toLocaleString()}{" "}
+              tokens
+            </span>
+            {value.input_units != null && (
               <span>
-                Input ceiling: {value.input_budget_units.toLocaleString()} guard
+                Assembled input: {value.input_units.toLocaleString()} guard
                 units
               </span>
+            )}
+            {typeof value.usage?.prompt_tokens === "number" && (
               <span>
-                Model capacity: {value.model_context_tokens.toLocaleString()}{" "}
+                Measured prompt: {value.usage.prompt_tokens.toLocaleString()}{" "}
                 tokens
               </span>
-              {value.input_units != null && (
-                <span>
-                  Assembled input: {value.input_units.toLocaleString()} guard
-                  units
-                </span>
+            )}
+          </div>
+          {value.request.messages.map((message, index) => (
+            <details className="prompt-message" key={index} open>
+              <summary>
+                <span>{message.role}</span>
+                <small>
+                  {message.content.length.toLocaleString()} characters
+                </small>
+              </summary>
+              <pre>{message.content}</pre>
+              {message.tool_calls !== undefined && (
+                <pre>{JSON.stringify(message.tool_calls, null, 2)}</pre>
               )}
-              {typeof value.usage?.prompt_tokens === "number" && (
-                <span>
-                  Measured prompt: {value.usage.prompt_tokens.toLocaleString()}{" "}
-                  tokens
-                </span>
+              {message.tool_call_id !== undefined && (
+                <small>Tool result: {String(message.tool_call_id)}</small>
               )}
-            </div>
-            {value.request.messages.map((message, index) => (
-              <details className="prompt-message" key={index} open>
-                <summary>
-                  <span>{message.role}</span>
-                  <small>
-                    {message.content.length.toLocaleString()} characters
-                  </small>
-                </summary>
-                <pre>{message.content}</pre>
-                {message.tool_calls !== undefined && (
-                  <pre>{JSON.stringify(message.tool_calls, null, 2)}</pre>
-                )}
-                {message.tool_call_id !== undefined && (
-                  <small>Tool result: {String(message.tool_call_id)}</small>
-                )}
-              </details>
-            ))}
-            <details className="prompt-message">
-              <summary>Tool definitions ({value.request.tools.length})</summary>
-              <pre>{JSON.stringify(value.request.tools, null, 2)}</pre>
             </details>
-            <details className="prompt-message">
-              <summary>Complete request JSON</summary>
-              <pre>{JSON.stringify(value.request, null, 2)}</pre>
-            </details>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard
-                  .writeText(JSON.stringify(value.request, null, 2))
-                  .then(() => setCopied(true))
-                  .catch(() => setError("Clipboard is unavailable."));
-              }}
-            >
-              {copied ? "Copied" : "Copy request JSON"}
-            </button>
-          </>
-        )}
-      </div>
-    </details>
+          ))}
+          <details className="prompt-message">
+            <summary>Tool definitions ({value.request.tools.length})</summary>
+            <pre>{JSON.stringify(value.request.tools, null, 2)}</pre>
+          </details>
+          <details className="prompt-message">
+            <summary>Complete request JSON</summary>
+            <pre>{JSON.stringify(value.request, null, 2)}</pre>
+          </details>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(JSON.stringify(value.request, null, 2))
+                .then(() => setCopied(true))
+                .catch(() => setError("Clipboard is unavailable."));
+            }}
+          >
+            {copied ? "Copied" : "Copy request JSON"}
+          </button>
+        </>
+      )}
+    </div>
   );
 }

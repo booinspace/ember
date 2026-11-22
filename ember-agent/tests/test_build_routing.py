@@ -104,8 +104,8 @@ def test_build_waits_without_starting_provider(tmp_path: Path, cancel: bool) -> 
                     receipt=ToolReceipt(context=context, tool="build", data={}),
                 )
 
-        async def reserved() -> bool:
-            return not release.is_set()
+        async def reserved() -> tuple[bool, bool]:
+            return not release.is_set(), False
 
         character = uuid4()
         router = TaskRouter(
@@ -115,7 +115,7 @@ def test_build_waits_without_starting_provider(tmp_path: Path, cancel: bool) -> 
             TextInspectionTask(ToolRouter(TextInspectionProvider(), character)),
         )
         router.providers["build"] = Provider()
-        router.realtime_reserved = reserved
+        router.task_admission = reserved
         await router.start()
         try:
             identity = uuid4()
@@ -165,16 +165,16 @@ def test_shutdown_during_realtime_probe_does_not_start_build(tmp_path: Path) -> 
         entered = asyncio.Event()
         release = asyncio.Event()
 
-        async def probe() -> bool:
+        async def probe() -> tuple[bool, bool]:
             entered.set()
             await release.wait()
-            return False
+            return False, False
 
         character = uuid4()
         native = TextInspectionTask(ToolRouter(TextInspectionProvider(), character))
         router = TaskRouter(tmp_path, character, uuid4(), native)
         router.providers["build"] = native
-        router.realtime_reserved = probe
+        router.task_admission = probe
         await router.start()
         try:
             handle = await router.submit("build", "Build a fixture", operation="build")

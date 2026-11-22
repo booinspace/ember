@@ -36,8 +36,7 @@ export function VoiceControls({
     }
   };
   return (
-    <details className="controls voice-controls">
-      <summary>Voice and speaking speed</summary>
+    <div className="controls voice-controls">
       <p>Voice model: {options.model} · CPU · Text appears ahead of speech.</p>
       <fieldset disabled={busy || saving}>
         <legend className="sr-only">Speech preferences</legend>
@@ -81,6 +80,6 @@ export function VoiceControls({
         settings reset on restart.
       </p>
       {error && <p role="alert">{error}</p>}
-    </details>
+    </div>
   );
 }

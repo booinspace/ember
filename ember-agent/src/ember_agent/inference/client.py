@@ -94,9 +94,12 @@ class HttpGatewayClient:
         *,
         client: httpx.AsyncClient | None = None,
         observe_event: Callable[[GatewayEvent], None] | None = None,
+        idle_managed_tasks: bool = False,
     ) -> None:
         self.client = client or httpx.AsyncClient(base_url=endpoint, timeout=190, trust_env=False)
         self.headers = {"Authorization": "Bearer " + token}
+        if idle_managed_tasks:
+            self.headers["X-Ember-Managed-Task"] = "idle"
         self.observe_event = observe_event
         self.observation_failures = 0
 

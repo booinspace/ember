@@ -46,6 +46,7 @@ class Generation:
     native_started: bool = False
     native_drained: bool = False
     preemption: asyncio.Task[None] | None = None
+    idle_managed_task: bool = False
     sequence: int = 0
     on_detach: Callable[[], None] | None = None
     expiry: asyncio.TimerHandle | None = None
@@ -113,7 +114,7 @@ class Generation:
 
 
 class P0Gateway:
-    """Own one serial runner and reserve realtime sessions before background admission."""
+    """Own one serial runner; admit opted-in managed work between foreground steps."""
 
     def __init__(
         self,
@@ -161,7 +162,9 @@ class P0Gateway:
         )
         return len(serialized.encode("utf-8")) + 512 + 64 * len(request.messages)
 
-    async def admit(self, request: GatewayRequest) -> Generation:
+    async def admit(
+        self, request: GatewayRequest, *, idle_managed_task: bool = False
+    ) -> Generation:
         """Reject auth-class/model/budget/deadline/capacity failures before upstream generation."""
         request = GatewayRequest.model_validate_json(request.model_dump_json())
         if self.closed:
@@ -172,6 +175,8 @@ class P0Gateway:
             raise GatewayError("journal_unavailable")
         if self.uncertain:
             raise GatewayError("quiescence_required")
+        if idle_managed_task and request.workload != "P2":
+            raise GatewayError("workload_not_authorized")
         if request.workload == "P1" and request.context_id not in self.sessions:
             raise GatewayError("live_reservation_required")
         if request.workload == "P5" and not self.config.inference.coding_api:
@@ -187,7 +192,7 @@ class P0Gateway:
             deadline = min(deadline, now + timedelta(seconds=CODING_GENERATION_SECONDS))
         if request.workload == "P0" and self.active is not None:
             active = self.active
-            if active.request.workload != "P5" or self._foreground_waiters:
+            if not self._runs_between_turns(active) or self._foreground_waiters:
                 raise GatewayError("busy")
             self._foreground_waiters += 1
             try:
@@ -245,7 +250,7 @@ class P0Gateway:
             references = json.dumps(request.output_schema)
             if any(item in references for item in ("http:", "https:", "file:")):
                 raise GatewayError("external_schema_reference")
-        job = Generation(request, deadline)
+        job = Generation(request, deadline, idle_managed_task=idle_managed_task)
         self.used_ids.add(request.request_id)
         if request.workload != "P0":
             job.emit("start")
@@ -325,10 +330,10 @@ class P0Gateway:
             return
         if self._foreground_waiters or self._session_guard.locked():
             return
-        if (
-            self._live_job() is None
-            and (not self.pending["P5"] or self.voice_sessions)
-            and (self.sessions or not any(self.pending[name] for name in ("P2", "P3", "P4")))
+        if self._live_job() is None and not any(
+            self._background_eligible(job)
+            for name in ("P2", "P3", "P4", "P5")
+            for job in self.pending[name]
         ):
             return
         self.dispatcher = asyncio.create_task(self._dispatch(), name="ember-background-dispatch")
@@ -362,9 +367,20 @@ class P0Gateway:
             return True
         if self._session_guard.locked():
             return False
-        if workload == "P5":
-            return not (self._foreground_waiters or self.voice_sessions or self._live_job())
-        return workload == "P1" or not self.sessions
+        if workload == "P1":
+            return True
+        return self._background_eligible(job) and not (self._foreground_waiters or self._live_job())
+
+    @staticmethod
+    def _runs_between_turns(job: Generation) -> bool:
+        return job.idle_managed_task or job.request.workload == "P5"
+
+    def _background_eligible(self, job: Generation) -> bool:
+        if job.idle_managed_task:
+            return not self.voice_sessions
+        if job.request.workload == "P5":
+            return self.preempt is None or not self.voice_sessions
+        return not self.sessions
 
     async def _record(self, status: str, request: GatewayRequest) -> None:
         if self.record is not None:
@@ -390,17 +406,14 @@ class P0Gateway:
         job = self._live_job()
         if job is not None:
             self.pending["P1"].remove(job)
-        elif self.sessions:
-            if self.voice_sessions or not self.pending["P5"]:
-                return
-            job = self.pending["P5"].popleft()
         else:
-            # Include coding in the existing round-robin when background is eligible.
             for offset in range(len(self._schedule)):
                 index = (self._schedule_cursor + offset) % len(self._schedule)
                 queue = self.pending[self._schedule[index]]
-                if queue:
-                    job = queue.popleft()
+                candidate = next((item for item in queue if self._background_eligible(item)), None)
+                if candidate is not None:
+                    job = candidate
+                    queue.remove(job)
                     self._schedule_cursor = (index + 1) % len(self._schedule)
                     break
             else:
@@ -479,7 +492,7 @@ class P0Gateway:
             self._wake_background()
 
     async def session(self, identity: UUID, *, connected: bool) -> None:
-        """Reserve before waiting for background quiescence; idle connected sessions block it.
+        """Reserve before waiting for non-idle background work to drain.
 
         Journal failure leaves background blocked. No native cancellation or release
         proof is inferred from an HTTP disconnect or apparent idle gap.
@@ -517,6 +530,7 @@ class P0Gateway:
             if (
                 active is not None
                 and active.request.workload in {"P2", "P3", "P4"}
+                and not active.idle_managed_task
                 and active.task is not None
             ):
                 await asyncio.shield(active.task)
@@ -531,9 +545,7 @@ class P0Gateway:
         self._wake_background()
 
     def voice(self, identity: UUID, *, reserved: bool) -> None:
-        """Give a connected realtime host exclusive capacity for detected speech and playout."""
-        if self.preempt is None:
-            raise GatewayError("preemption_unavailable")
+        """Block new idle steps during speech; native P5 stop still requires opt-in."""
         if not reserved:
             self._release_voice(identity)
             return
@@ -546,7 +558,8 @@ class P0Gateway:
         )
         job = self.active
         if (
-            job is not None
+            self.preempt is not None
+            and job is not None
             and job.request.workload == "P5"
             and job.native_started
             and not job.native_drained
@@ -822,7 +835,7 @@ class P0Gateway:
             queued_p3=len(self.pending["P3"]),
             queued_p4=len(self.pending["P4"]),
             realtime_sessions=tuple(sorted(self.sessions, key=str)),
-            features=("live_thinking_v1",),
+            features=("live_thinking_v1", "idle_managed_tasks_v1"),
             scheduling="voice_preemption" if self.preempt is not None else "conservative",
         )
 

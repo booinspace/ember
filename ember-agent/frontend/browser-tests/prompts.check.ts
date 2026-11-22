@@ -91,12 +91,18 @@ test("Markdown preview is safe and failed saves retain scoped drafts", async ({
     page.getByRole("button", { name: "Connect", exact: true }),
   ).toBeEnabled();
   expect(reads).toBe(0);
-  await page.getByRole("tab", { name: "Memory & Settings" }).click();
-  await page.getByText("Prompts", { exact: true }).click();
+  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
   const source = page.getByLabel("This character Markdown");
   await expect(source).toHaveValue(stored.personality);
   const draft = "# Style\nLiteral <script>window.promptInjected=true</script>";
   await source.fill(draft);
+  await page.getByRole("tab", { name: "Memory sources", exact: true }).click();
+  await expect(source).toBeHidden();
+  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
+  await expect(source).toHaveValue(draft);
+  expect(reads).toBe(1);
+  await expect(page.getByRole("tablist")).toHaveCount(1);
+  await expect(page.getByRole("tabpanel")).toHaveCount(1);
   await page.getByRole("button", { name: "Preview draft" }).click();
   await page
     .getByText("Effective system instruction (preview)", { exact: true })
@@ -123,7 +129,7 @@ test("Markdown preview is safe and failed saves retain scoped drafts", async ({
     page.getByText("Saved. This version will be loaded for the next message."),
   ).toBeVisible();
   expect(stored.personality).toBe(draft);
-  await page.getByRole("tab", { name: "Shared system", exact: true }).click();
+  await page.getByLabel("Prompt scope").selectOption("system");
   await expect(
     page.getByText("Affects all characters using this shared system file."),
   ).toBeVisible();

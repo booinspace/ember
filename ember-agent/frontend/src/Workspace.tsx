@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 const pages = {
-  chat: "Chat",
-  tools: "Tools",
-  tasks: "Tasks",
+  conversation: "Conversation",
   activity: "Activity",
-  inference: "Inference Context",
+  inference: "Inference context",
+  memory: "Memory sources",
+  prompts: "Prompts",
+  tasks: "Tasks",
+  mcp: "Run an MCP tool",
   skills: "Skills",
-  settings: "Memory & Settings",
+  providers: "Tools & providers",
+  voice: "Voice and speaking speed",
 } as const;
 
 export type WorkspacePage = keyof typeof pages;
@@ -71,12 +74,30 @@ export function WorkspaceTabs({
   );
 }
 
-export function workspacePanelProps(tab: WorkspacePage, page: WorkspacePage) {
-  return {
-    role: "tabpanel",
-    id: workspacePanel(tab),
-    "aria-labelledby": tabId(tab),
-    hidden: tab !== page,
-    tabIndex: 0,
-  };
+export function WorkspacePanel({
+  view,
+  page,
+  description,
+  children,
+}: {
+  view: WorkspacePage;
+  page: WorkspacePage;
+  description?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      role="tabpanel"
+      id={workspacePanel(view)}
+      aria-labelledby={tabId(view)}
+      hidden={view !== page}
+      tabIndex={0}
+    >
+      <div className="page-heading">
+        <h2>{pages[view]}</h2>
+        {description}
+      </div>
+      {children}
+    </section>
+  );
 }

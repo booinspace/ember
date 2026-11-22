@@ -284,6 +284,10 @@ class PublicSearchSettings(RuntimeModel):
         """Select exactly one transport; hosted origins are not deployment inputs."""
         if self.provider == "hermes":
             raise ValueError(_HERMES_SEARCH_REMOVED)
+        if self.provider == "exa_mcp":
+            if self.api_key_env is not None or self.command or self.searxng_url is not None:
+                raise ValueError("Keyless Exa MCP requires only provider = 'exa_mcp'.")
+            return self
         if self.provider in {"exa", "parallel"}:
             if self.api_key_env is None or self.command or self.searxng_url is not None:
                 raise ValueError("Hosted public search requires only an API key environment name.")
@@ -740,7 +744,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     except (ValidationError, ValueError):
         raise ConfigurationError(
             "Invalid [public_search]: configure one searxng_url HTTP(S) origin, an absolute "
-            "installed command, or provider exa/parallel with api_key_env."
+            "installed command, provider exa/parallel with api_key_env, or provider exa_mcp alone."
         ) from None
     services = _validate_services(settings, path.resolve().parent, runtime_root)
     if settings.memory_mcp is not None and settings.memory_mcp.lan_bind:

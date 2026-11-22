@@ -295,15 +295,24 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
   await expect(
     page.getByRole("region", { name: "System monitoring" }),
   ).toContainText("41.3");
-  await page.getByRole("tab", { name: "Tools", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Tools & providers", exact: true })
+    .click();
   await expect(
     page.getByRole("region", { name: "Capabilities" }),
   ).toContainText("Agentic delegation");
   await expect(
     page.getByRole("region", { name: "Capabilities" }),
   ).toContainText("unconfigured");
+  await expect(page.getByLabel("Tool", { exact: true })).toBeHidden();
+  await page
+    .getByRole("tab", { name: "Inference context", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Inspect selected request" }),
+  ).toBeVisible();
   expect(fixture.reads()).toBe(0);
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByRole("tab", { name: "Conversation", exact: true }).click();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   const input = page.getByRole("textbox", { name: "Message Ember" });
   await expect(input).toHaveAttribute("placeholder", "Message Ember…");
@@ -325,7 +334,7 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
     .getByRole("button", { name: "Inspect request", exact: true })
     .click();
   await expect(
-    page.getByRole("tabpanel", { name: "Inference Context" }),
+    page.getByRole("tabpanel", { name: "Inference context" }),
   ).toBeFocused();
   await expect(page.locator(".prompt-inspector")).toContainText(
     "SYNTHETIC_SYSTEM_RULES",
@@ -351,7 +360,7 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
   await expect(
     page.getByText("SYNTHETIC_MEMORY_VALUE", { exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByRole("tab", { name: "Conversation", exact: true }).click();
   await expect(input).toHaveValue("Unsent draft");
   await expect(page.locator(".turn.assistant")).toContainText(
     "Synthetic reply",
@@ -407,51 +416,83 @@ test("workspace tabs support manual keyboard selection without leaving the tab l
 }) => {
   await mock(page);
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-  const chat = page.getByRole("tab", { name: "Chat", exact: true });
-  const settings = page.getByRole("tab", { name: "Memory & Settings" });
-  const tools = page.getByRole("tab", { name: "Tools", exact: true });
-  await chat.focus();
+  const conversation = page.getByRole("tab", {
+    name: "Conversation",
+    exact: true,
+  });
+  const voice = page.getByRole("tab", {
+    name: "Voice and speaking speed",
+    exact: true,
+  });
+  const activity = page.getByRole("tab", { name: "Activity", exact: true });
+  await conversation.focus();
   await page.keyboard.press("ArrowLeft");
-  await expect(settings).toBeFocused();
-  await expect(chat).toHaveAttribute("aria-selected", "true");
+  await expect(voice).toBeFocused();
+  await expect(conversation).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Space");
-  await expect(settings).toHaveAttribute("aria-selected", "true");
+  await expect(voice).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Home");
-  await expect(chat).toBeFocused();
+  await expect(conversation).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(voice).toBeFocused();
   await page.keyboard.press("ArrowRight");
-  await expect(tools).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(activity).toBeFocused();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("tabpanel", { name: "Tools" })).toBeFocused();
+  await expect(page.getByRole("tabpanel", { name: "Activity" })).toBeFocused();
 });
 
-for (const width of [375, 1280, 1680])
+for (const width of [320, 375, 1280, 1680])
   test(`dashboard fits ${width}px and shows meaningful unavailable states`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
     await mock(page);
     await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-    for (const name of [
-      "Tools",
-      "Tasks",
+    const names = [
+      "Conversation",
       "Activity",
-      "Inference Context",
+      "Inference context",
+      "Memory sources",
+      "Prompts",
+      "Tasks",
+      "Run an MCP tool",
       "Skills",
-      "Memory & Settings",
-      "Chat",
-    ]) {
-      const tab = page.getByRole("tab", { name, exact: true });
+      "Tools & providers",
+      "Voice and speaking speed",
+    ];
+    const workspace = page.getByRole("tablist", { name: "Workspace" });
+    await expect(workspace.getByRole("tab")).toHaveText(names);
+    await expect(workspace.getByRole("tab", { selected: true })).toHaveText(
+      "Conversation",
+    );
+    for (const name of names) {
+      const tab = workspace.getByRole("tab", { name, exact: true });
       await tab.click();
-      await expect(tab).toHaveAttribute("aria-selected", "true");
+      await expect(workspace.getByRole("tab", { selected: true })).toHaveText(
+        name,
+      );
+      await expect(page.getByRole("tablist")).toHaveCount(1);
       await expect(page.getByRole("tabpanel")).toHaveCount(1);
+      const panel = page.getByRole("tabpanel", { name, exact: true });
+      await expect(tab).toHaveAttribute(
+        "aria-controls",
+        (await panel.getAttribute("id"))!,
+      );
       await expect(
-        page.getByRole("tabpanel", { name, exact: true }),
-      ).toBeVisible();
+        panel.getByRole("heading", { name, exact: true }),
+      ).toHaveCount(1);
       await expect
         .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
         .toBeLessThanOrEqual(width);
     }
+    await expect(
+      page.getByText("Voice settings are unavailable for this runtime."),
+    ).toBeVisible();
+    await workspace
+      .getByRole("tab", { name: "Conversation", exact: true })
+      .click();
     await expect(
       page.getByRole("textbox", { name: "Message Ember" }),
     ).not.toHaveAttribute("placeholder", /NAS|Milo|summer/);

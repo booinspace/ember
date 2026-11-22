@@ -862,7 +862,7 @@ class TaskRouter:
         self.research_unavailable: str | None = None
         self.build_health: Callable[[], bool] | None = None
         self.build_unavailable: str | None = None
-        self.realtime_reserved: Callable[[], Awaitable[bool]] | None = None
+        self.task_admission: Callable[[], Awaitable[tuple[bool, bool]]] | None = None
         self.build_artifacts = BuildArtifacts(root)
         self.build_services = BuildServices()
         self.artifacts = TaskArtifacts(root)
@@ -1064,7 +1064,7 @@ class TaskRouter:
             return "I couldn't queue that task. Please try again."
         if operation in ("delegate", "build"):
             name = "Build" if operation == "build" else "Inspect"
-            return f"{name} task queued. Disconnect Conversation to let it run, then check Tasks."
+            return f"{name} task queued. Follow progress in Tasks."
         return "I queued the task. Its result will appear in Tasks."
 
     async def _validated(self, value: TaskSnapshot) -> TaskSnapshot:
@@ -1293,20 +1293,23 @@ class TaskRouter:
             self._wake.clear()
             while not self._closing:
                 before = await self.store.active(self.character_id)
-                probe = self.realtime_reserved
+                probe = self.task_admission
                 # A managed task can arrive between the snapshot and atomic claim.
-                reserved = probe is not None
+                reserved, idle_tasks = probe is not None, False
                 if probe is not None and any(
-                    item.operation in ("delegate", "build", "research") for item in before
+                    item.operation in ("delegate", "build", "research", "summarize")
+                    for item in before
                 ):
                     try:
-                        reserved = await probe()
+                        reserved, idle_tasks = await probe()
                     except GatewayError:
                         # Unknown reservation state cannot admit a managed worker.
-                        reserved = True
+                        pass
                 if self._closing:
                     return
-                claim = await self.store.claim(self.character_id, realtime_reserved=reserved)
+                claim = await self.store.claim(
+                    self.character_id, realtime_reserved=reserved, idle_managed_tasks=idle_tasks
+                )
                 if claim is None:
                     after = await self.store.active(self.character_id)
                     retry = any(item.state == "waiting_for_realtime" for item in after)

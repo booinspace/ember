@@ -172,6 +172,8 @@ history budget, timeout recovery, and the profile gates for live preemption. See
 records hosted extraction, task-scoped retrieval grants, and dashboard/task status changes.
 Its [natural-language planning amendment](0027-public-web-retrieval.md#natural-language-conversation-tool-planning-amendment)
 records the implementation and [scripted preview evidence](../../PLAN.md#conversation-tool-planning-preview-acceptance).
+[Keyless Exa MCP](0027-public-web-retrieval.md#keyless-exa-mcp-for-conversation-and-tasks)
+is an opt-in provider for Conversation and Web Research, not a direct MCP grant.
 
 [Root ADR 0026 — Isolated OpenCode Build preview](0026-managed-opencode-build.md)
 adds opt-in containerized coding and local service previews. Production gates remain open.

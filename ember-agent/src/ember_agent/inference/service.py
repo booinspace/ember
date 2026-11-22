@@ -322,10 +322,15 @@ def create_app(
             )
             if not permitted:
                 return JSONResponse({"code": "workload_not_authorized"}, status_code=403)
+            admission = request.headers.get("x-ember-managed-task")
+            if admission is not None and not (
+                agent and value.workload == "P2" and admission == "idle"
+            ):
+                return JSONResponse({"code": "workload_not_authorized"}, status_code=403)
             job = (
                 await admit_foreground(request, value)
                 if value.workload == "P0"
-                else await gateway.admit(value)
+                else await gateway.admit(value, idle_managed_task=admission is not None)
             )
         except ValidationError:
             return JSONResponse({"code": "invalid_request"}, status_code=422)

@@ -315,12 +315,6 @@ meter::-moz-meter-bar {
   color: #a3afc1;
   font-size: 13px;
 }
-.page-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 16px;
-}
 .page-stack {
   display: grid;
   gap: 12px;
@@ -536,31 +530,10 @@ meter::-moz-meter-bar {
 .panel-heading h3 {
   font-size: 13px;
 }
-.icon-button {
-  background: transparent;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  font-size: 17px;
-  color: #9fabc0;
-}
-.filter-tabs {
-  display: flex;
-  gap: 3px;
-  padding: 0 12px 12px;
-  overflow-x: auto;
-}
-.filter-tabs button {
-  border: 0;
-  background: transparent;
-  color: #8997ae;
-  font-size: 10px;
-  padding: 4px 8px;
-  white-space: nowrap;
-}
-.filter-tabs .selected {
-  background: #293244;
-  color: #e3eaff;
+.capabilities-panel .panel-heading {
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: flex-start;
 }
 .capability-list {
   padding: 0 12px 7px;
@@ -620,6 +593,7 @@ meter::-moz-meter-bar {
   font-size: 11px;
 }
 .request-facts {
+  margin-top: 12px;
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -885,9 +859,6 @@ details.controls > summary {
   padding: 10px 18px;
   font-size: 10px;
 }
-.voice-controls summary {
-  color: #8fa4c1;
-}
 .voice-controls p {
   color: #8c9ab1;
   margin: 8px 0;
@@ -906,10 +877,6 @@ details.controls > summary {
 .prompt-editor {
   padding: 16px;
   font-size: 11px;
-}
-.prompt-editor > summary {
-  color: #c7d3e5;
-  font-size: 12px;
 }
 .prompt-editor textarea {
   min-height: 160px;
@@ -1009,10 +976,6 @@ details.controls > summary {
 @media (max-width: 900px) {
   .dashboard-shell {
     padding: 0 16px 20px;
-  }
-  .page-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
   }
   .telemetry-strip {
     grid-template-columns: repeat(6, minmax(130px, 1fr));

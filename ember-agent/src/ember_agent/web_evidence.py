@@ -15,6 +15,7 @@ MAX_WEB_SOURCES = 3
 MAX_WEB_QUERY = 400
 MAX_WEB_URL = 512
 MAX_WEB_PASSAGE = 3072
+HOSTED_WEB_LABELS = {"exa": "Exa", "parallel": "Parallel", "exa_mcp": "Exa MCP"}
 
 _HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", re.ASCII)
 _PATH = re.compile(r"[a-zA-Z0-9/._~!$&'()*+,-]*", re.ASCII)
@@ -28,6 +29,27 @@ _QUERY_LINK = re.compile(
     r"[a-z][a-z0-9+.-]*:/{1,2}|(?<!\w)//|\b[\w.-]+\.[a-z]{2,63}[/@?#]|"
     r"(?<!\w)(?:~|\.{1,2})?/[\w.-]|[\\%]",
     re.IGNORECASE,
+)
+
+# Shared with the local turn planner: a provider must not accept forms it would decline.
+PUBLIC_CONTEXT_REFERENCE = re.compile(
+    r"\b(?:we discussed|we talked about|from (?:earlier|above|my notes|memory)|"
+    r"from (?:our|my) (?:chat|history)|(?:based on|using)\s+(?:this|that|it|what you|what we))\b",
+    re.I,
+)
+PRIVATE_INPUT = re.compile(
+    r"(?<![a-z])(?:private|internal|confidential|secret|pass(?:word|code)|api[ _-]?key|"
+    r"token|credentials?)(?![a-z])|\b(?:my|our) (?:files?|notes?|chat|history|account|address)\b|"
+    r"\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b|[a-z0-9_-]{40,}|[\x00-\x1f\x7f]",
+    re.I,
+)
+_AMBIGUOUS_QUERY = re.compile(
+    r"\b(?:do not|don['’]t|never|instead|without searching|this info|this information|"
+    r"that info|the above|what (?:I|we|you) (?:said|found|know))\b|"
+    r"\b(?:and then|then please|and (?:tell|show|send|give|include) me)\b|"
+    r"[;\"“”<>`]|\b\d{1,3}(?:\.\d{1,3}){3}\b|"
+    r"\b[\w.-]+\.(?:localhost|local|internal|home|lan|nas|corp|intranet)\b",
+    re.I,
 )
 
 
@@ -81,6 +103,19 @@ def allowed_public_query(value: str) -> bool:
         and not any(ord(char) < 32 or ord(char) == 127 for char in value)
         and len(value.splitlines()) == 1
         and not _QUERY_LINK.search(value)
+    )
+
+
+def permitted_public_query(value: str) -> bool:
+    """Reject known private and referential forms; syntax cannot certify public data."""
+    return (
+        len(value.encode()) <= MAX_WEB_QUERY
+        and allowed_public_query(value)
+        and not (
+            PRIVATE_INPUT.search(value)
+            or PUBLIC_CONTEXT_REFERENCE.search(value)
+            or _AMBIGUOUS_QUERY.search(value)
+        )
     )
 
 

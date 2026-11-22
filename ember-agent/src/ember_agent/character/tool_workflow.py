@@ -22,16 +22,19 @@ from ..inference.contracts import (
 )
 from ..observability import ActivityLog, ActivityStatus
 from ..web_evidence import (
+    HOSTED_WEB_LABELS,
     MAX_WEB_QUERY,
     MAX_WEB_SOURCES,
     MAX_WEB_URL,
+    PRIVATE_INPUT,
+    PUBLIC_CONTEXT_REFERENCE,
     PublicWebProvider,
-    allowed_public_query,
     allowed_public_url,
+    permitted_public_query,
 )
 from .build_intent import build_goal
 from .prompt_budget import PromptAccounting, message_bytes
-from .public_search import public_search_query
+from .public_search import PAGE_ACTION, public_search_query
 
 SEARCH = "search_public"
 PAGE = "read_public_page"
@@ -39,7 +42,7 @@ INSPECT = "inspect_workspace"
 BUILD = "build_app"
 _REQUEST = r"(?:(?:please|can you|could you|would you|will you)\s+)*"
 _ACTION = (
-    r"search|google|look\s+up|read|summari[sz]e|inspect|check|examine|list|"
+    rf"search|google|look\s+up|{PAGE_ACTION}|inspect|check|examine|list|"
     r"build|create|implement|make|write"
 )
 _SPLIT = re.compile(
@@ -53,9 +56,12 @@ _BARE_SEARCH = re.compile(
     r"(?:\s+for)?[?.!]*",
     re.I,
 )
-_PAGE = re.compile(rf"^{_REQUEST}(?:read|summari[sz]e)\b.*https?://", re.I)
+_PAGE = re.compile(rf"^{_REQUEST}{PAGE_ACTION}\b.*https?://", re.I)
 _LITERAL_PAGE = re.compile(
-    rf"^{_REQUEST}(?:read|summari[sz]e)\s+(?:this\s+)?<?(https?://\S+)", re.I
+    rf"{_REQUEST}{PAGE_ACTION}\s+(?:(?:this|the)\s+)?"
+    r"(?:(?:page|article|link|url)(?:\s+at)?[ :]+)?"
+    r"(?:<(https?://[^\s<>]+)>[?.!]?|(https?://[^\s<>]+))",
+    re.I,
 )
 _INSPECT = re.compile(
     rf"^{_REQUEST}(?:inspect|check|examine|read|list)\b.+"
@@ -67,17 +73,6 @@ _BUILD = re.compile(
     r"\b(?:web\s*app(?:lication)?|app(?:lication)?|website|demo|prototype|cli)\b",
     re.I,
 )
-_REFERENTIAL = re.compile(
-    r"\b(?:we discussed|we talked about|from (?:earlier|above|my notes|memory)|"
-    r"from (?:our|my) (?:chat|history)|(?:based on|using)\s+(?:this|that|it|what you|what we))\b",
-    re.I,
-)
-_PRIVATE = re.compile(
-    r"(?<![a-z])(?:private|internal|confidential|secret|pass(?:word|code)|api[ _-]?key|"
-    r"token|credentials?)(?![a-z])|\b(?:my|our) (?:files?|notes?|chat|history|account|address)\b|"
-    r"\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b|[a-z0-9_-]{40,}|[\x00-\x1f\x7f]",
-    re.I,
-)
 _EMBEDDED_PREREQUISITE = re.compile(
     r"\b(?:after|before|first|once|using results from|based on results from)\b[^.!?;]{0,120}"
     r"\b(?:search(?:ing)?|look(?:ing)?\s+up|inspect(?:ing|ion)?|read(?:ing)?)\b"
@@ -86,14 +81,6 @@ _EMBEDDED_PREREQUISITE = re.compile(
 )
 _NEGATED_ACTION = re.compile(
     rf"\b(?:do not|don['’]t|never|not to|without)\s+(?:actually\s+)?(?:{_ACTION})\b",
-    re.I,
-)
-_AMBIGUOUS_QUERY = re.compile(
-    r"\b(?:do not|don['’]t|never|instead|without searching|this info|this information|"
-    r"that info|the above|what (?:I|we|you) (?:said|found|know))\b|"
-    r"\b(?:and then|then please|and (?:tell|show|send|give|include) me)\b|"
-    r"[;\"“”<>`]|\b\d{1,3}(?:\.\d{1,3}){3}\b|"
-    r"\b[\w.-]+\.(?:localhost|local|internal|home|lan|nas|corp|intranet)\b",
     re.I,
 )
 _LINK = re.compile(r"://|\bwww\.|[<>\[\]]", re.I)
@@ -126,13 +113,6 @@ class Intent:
     url: str | None = None
     inspect_goal: str | None = None
     build_goal: str | None = None
-
-
-def permitted_public_query(value: str) -> bool:
-    """Reject known private and referential forms; syntax cannot certify public data."""
-    return allowed_public_query(value) and not (
-        _PRIVATE.search(value) or _REFERENTIAL.search(value) or _AMBIGUOUS_QUERY.search(value)
-    )
 
 
 def has_embedded_prerequisite(text: str) -> bool:
@@ -173,8 +153,10 @@ def intent_for(text: str) -> Intent | None:
         elif _PAGE.match(clause):
             steps.append(PAGE)
             literal = _LITERAL_PAGE.fullmatch(clause)
-            if literal and allowed_public_url(literal[1]):
-                url = literal[1]
+            if literal:
+                candidate = literal[1] or literal[2]
+                if allowed_public_url(candidate):
+                    url = candidate
         elif _INSPECT.match(clause):
             steps.append(INSPECT)
             inspect = clause
@@ -324,10 +306,10 @@ def _approval_message(operation: str, value: str, provider: str) -> str:
         action = "read"
     else:
         return "Provide exact public search terms or a single public URL. Nothing was sent."
-    if provider in {"exa", "parallel"}:
+    if label := HOSTED_WEB_LABELS.get(provider):
         return (
-            f"Nothing was sent to {provider.title()}. To approve {action} alone, send "
-            f"`{provider.title()} {action}: {value}`. To chain it with another step, "
+            f"Nothing was sent to {label}. To approve {action} alone, send "
+            f"`{label} {action}: {value}`. To chain it with another step, "
             "repeat your request with that exact public input. No task was queued."
         )
     return "Repeat the request with exact public search terms. Nothing was sent."
@@ -500,7 +482,7 @@ async def execute_workflow(
                     retrieved.append(evidence)
                     result = evidence.payload
                 elif expected == INSPECT:
-                    if value != intent.inspect_goal or _PRIVATE.search(value):
+                    if value != intent.inspect_goal or PRIVATE_INPUT.search(value):
                         return (
                             "Specify exactly what to inspect in the non-sensitive workspace. "
                             "No task was queued."
@@ -514,13 +496,13 @@ async def execute_workflow(
                     if has_embedded_prerequisite(intent.build_goal) and not (inspect or retrieved):
                         return "Put the required search or inspection first. No task was queued."
                     if (
-                        _PRIVATE.search(value)
+                        PRIVATE_INPUT.search(value)
                         or _LINK.search(value)
-                        or _PRIVATE.search(intent.build_goal)
+                        or PRIVATE_INPUT.search(intent.build_goal)
                     ):
                         return "Build needs a non-sensitive, standalone goal. No task was queued."
                     if not (inspect or retrieved) and (
-                        _REFERENTIAL.search(intent.build_goal)
+                        PUBLIC_CONTEXT_REFERENCE.search(intent.build_goal)
                         or build_goal(intent.build_goal) == ""
                     ):
                         return "Give Build a standalone goal in this turn. No task was queued."

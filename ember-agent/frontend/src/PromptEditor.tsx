@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { control, promptDocuments, type PromptDocuments } from "./contracts";
 
 type Kind = "system" | "personality";
@@ -17,7 +17,19 @@ const errors: Record<string, string> = {
     "A file contains invalid UTF-8. Replace its text with valid Markdown.",
 };
 
-export function PromptEditor({ busy }: { busy: boolean }) {
+function errorMessage(failure: unknown): string {
+  const message =
+    failure instanceof Error ? failure.message : "Prompt controls unavailable.";
+  return errors[message] ?? message;
+}
+
+export function PromptEditor({
+  enabled,
+  busy,
+}: {
+  enabled: boolean;
+  busy: boolean;
+}) {
   const [documents, setDocuments] = useState<PromptDocuments | null>(null);
   const [drafts, setDrafts] = useState({ system: "", personality: "" });
   const [kind, setKind] = useState<Kind>("personality");
@@ -26,14 +38,8 @@ export function PromptEditor({ busy }: { busy: boolean }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const active = useRef(false);
-  const showError = (failure: unknown): void => {
-    const message =
-      failure instanceof Error
-        ? failure.message
-        : "Prompt controls unavailable.";
-    setError(errors[message] ?? message);
-  };
-  const load = async (keepDrafts = false): Promise<void> => {
+
+  const load = useCallback(async (keepDrafts = false): Promise<void> => {
     if (active.current) return;
     active.current = true;
     setPending(true);
@@ -48,12 +54,16 @@ export function PromptEditor({ busy }: { busy: boolean }) {
         });
       setPreview(null);
     } catch (failure) {
-      showError(failure);
+      setError(errorMessage(failure));
     } finally {
       active.current = false;
       setPending(false);
     }
-  };
+  }, []);
+  useEffect(() => {
+    if (enabled && !documents) void load();
+  }, [enabled, documents, load]);
+
   const submit = async (save: boolean): Promise<void> => {
     if (!documents || active.current || (save && busy)) return;
     active.current = true;
@@ -79,7 +89,7 @@ export function PromptEditor({ busy }: { busy: boolean }) {
         setNotice("Saved. This version will be loaded for the next message.");
       }
     } catch (failure) {
-      showError(failure);
+      setError(errorMessage(failure));
     } finally {
       active.current = false;
       setPending(false);
@@ -88,59 +98,26 @@ export function PromptEditor({ busy }: { busy: boolean }) {
   const effective = preview ?? documents;
   const dirty = documents && drafts[kind] !== documents[kind].markdown;
   return (
-    <details
-      className="prompt-editor"
-      onToggle={(event) => {
-        if (event.currentTarget.open && !documents) void load();
-      }}
-    >
-      <summary>Prompts</summary>
+    <div className="prompt-editor">
       {documents && (
         <>
-          <div role="tablist" aria-label="Prompt scope">
-            {(["system", "personality"] as const).map((value) => (
-              <button
-                key={value}
-                id={"prompt-tab-" + value}
-                role="tab"
-                aria-selected={kind === value}
-                tabIndex={kind === value ? 0 : -1}
-                onKeyDown={(event) => {
-                  if (
-                    !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                      event.key,
-                    )
-                  )
-                    return;
-                  event.preventDefault();
-                  const next =
-                    event.key === "Home"
-                      ? "system"
-                      : event.key === "End"
-                        ? "personality"
-                        : kind === "system"
-                          ? "personality"
-                          : "system";
-                  setKind(next);
-                  setPreview(null);
-                  document.getElementById("prompt-tab-" + next)?.focus();
-                }}
-                aria-controls="prompt-panel"
-                onClick={() => {
-                  setKind(value);
-                  setPreview(null);
-                  setNotice("");
-                }}
-              >
-                {names[value]}
-              </button>
-            ))}
-          </div>
-          <div
-            id="prompt-panel"
-            role="tabpanel"
-            aria-labelledby={"prompt-tab-" + kind}
-          >
+          <label>
+            Prompt scope
+            <select
+              value={kind}
+              onChange={(event) => {
+                setKind(
+                  event.target.value === "system" ? "system" : "personality",
+                );
+                setPreview(null);
+                setNotice("");
+              }}
+            >
+              <option value="system">{names.system}</option>
+              <option value="personality">{names.personality}</option>
+            </select>
+          </label>
+          <div>
             <p>
               {kind === "system"
                 ? "Affects all characters using this shared system file."
@@ -228,6 +205,6 @@ export function PromptEditor({ busy }: { busy: boolean }) {
       {!documents && !pending && (
         <button onClick={() => void load()}>Load prompts</button>
       )}
-    </details>
+    </div>
   );
 }

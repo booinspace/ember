@@ -73,3 +73,14 @@ runner to accept live preemption by default.
 The [Phase 13 acceptance record](../phase-13-validation.md) maps the current
 tests and measurements to each gate and retains the historical Ollama evidence.
 The port uses the existing gateway wire format and journal.
+
+## Idle Tasks admission
+
+On the updated gateway, the agent's authenticated Tasks client can mark P2
+steps for idle admission. Inspect, Build, Web Research, and text Summary use
+this path while Conversation stays connected. Pending foreground requests and
+detected speech hold new idle P2 steps, not active native generation. A running
+step retains the single slot through verified release and journal settlement.
+Unmarked P2 and automatic P3 capture keep conservative admission. The
+`idle_managed_tasks_v1` health feature lets the dispatcher distinguish updated
+gateways from older ones without changing inference or tool permissions.

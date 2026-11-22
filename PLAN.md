@@ -5214,11 +5214,11 @@ live skills, or page reading. Both are for synthetic, non-sensitive tasks only.
 
 [Root ADR 0027](docs/adr/0027-public-web-retrieval.md) adds opt-in Web Research
 through a separate long-lived pinned worker with fresh sessions and task-scoped
-public retrieval. Build remains isolated per task, not per tool. Realtime-reserved
-managed tasks wait durably before worker startup, remain cancellable, and do not
-block eligible native tasks. Chat, Tools, Tasks, Activity, Inference Context,
-Skills, and Memory & Settings have separate tabs; switching tabs does not
-disconnect Conversation.
+public retrieval. Build remains isolated per task, not per tool. The idle Tasks
+lane lets these tasks run with Conversation connected. Queued tasks remain
+cancellable. Conversation, Activity, Inference context, Memory sources, Prompts,
+Tasks, Run an MCP tool, Skills, Tools & providers, and Voice and speaking speed
+have separate tabs. Switching tabs does not disconnect Conversation.
 
 Isolated macOS gate: 1,299 Python tests passed with pinned OpenCode and the
 Build image; 12 live model, embedding, or LiveKit cases skipped. Frontend:
@@ -5269,9 +5269,12 @@ No pending approval or automatic resume. Hosted retrieval receives only validate
 public input and provider authentication, never recall, prior chat, other
 credentials or raw workspace data. No hosted planning fallback.
 
-Native search and page reading can run during connected chat. Inspect and Build
-use existing durable tasks and wait for Conversation disconnect before P2 work
-starts. When the user requests Inspect before Build, only a durable successful
+Native search and page reading can run during connected chat. No Tasks operation
+requires a disconnect. Inspect, Build, Web Research and text Summary share idle
+inference time through a scoped P2 lane on the existing gateway. Foreground work
+gets priority before native steps; a running step retains ownership through verified
+release. Automatic memory capture retains its separate P3 policy. When the user
+requests Inspect before Build, only a durable successful
 Inspect receipt bound to that same turn satisfies the prerequisite. Any other
 required step must also succeed; failure or cancellation blocks dependent Build.
 Build receives only a bounded, untrusted Inspect summary, not source workspace
@@ -5285,14 +5288,17 @@ No grants added to managed workers; no change to recall or ordinary reply policy
 | --- | --- | --- |
 | CTP-AC-01 — Planner isolation and intent | `test_tool_workflow.py`: turn-local requests, typed calls, batch/order rejection, unavailable tools, mentions and negation. `test_build_routing.py`: explicit shortcut and unresolved references. | Scripted Mac pass; live model reliability not measured. |
 | CTP-AC-02 — Exact public egress | Captured exact Exa request through runtime composition; page, rewrite, private-input and cancellation cases run offline. `test_hosted_web.py` checks both adapters. No pending approval token to replay. | Scripted Mac pass; live Exa and Parallel not run. |
-| CTP-AC-03 — Reservation and ordering | Composed runtime and authenticated gateway defer both chains while connected and dispatch after release. Store tests check no attempt while held; gateway suite covers reconnect during durable release. | Scripted Mac pass; reconnect with real workers and Strata not run. |
+| CTP-AC-03 — Reservation and ordering | Both chains and text Summary complete through the authenticated gateway while Conversation stays connected. The pinned Research worker completes and returns source receipts with a held Conversation reservation and scripted inference/retrieval. Gateway tests check speech holds, foreground ordering and native drain, and unchanged unmarked P2 behavior. | Passed on macOS with scripted backends; live Strata and physical voice not run. |
 | CTP-AC-04 — Durable prerequisite and failure | `test_inspect_build_dependency.py`: exact parent, atomic admission, detach during commit, failure, expiry, cancellation and restart reconciliation. `test_tool_workflow.py`: unavailable or cancelled retrieval. | Scripted Mac pass; live crash/recovery not qualified. |
 | CTP-AC-05 — Handoff, provenance and unchanged grants | Router checks bounded summary, source IDs/URLs and replacement of fabricated receipt fields. Pinned workers exercise isolation with scripted upstreams. Browser, recall and MCP regressions pass. | Scripted Mac pass; Windows, native Linux and physical voice not run. |
 
-Mac gate: 1,333 Python passed, 18 skipped; Ruff, Pyright and contract schema check
-passed. Pinned OpenCode/container suite: 17 passed with scripted upstreams.
-Frontend format and build passed; 32 unit and 25 browser passed, 3 live browser
-cases skipped. This does not close Phase 11/12 production gates or authorize rollout.
+Mac follow-up: 1,381 Python passed, 18 skipped (worktree-local `TMPDIR` avoids
+macOS symlink paths in bundle tests). Ruff, Pyright and contract schema checks
+passed. The pinned OpenCode 2.3.2 Research regression passed separately with
+scripted backends; previous pinned OpenCode/container suite recorded 17 passes.
+Frontend formatting, type checks and build passed; 32 unit and 26 browser checks
+passed, with three live LAN/voice cases skipped. This does not close Phase 11/12
+production gates or authorize rollout.
 
 ## Shared Strata coding endpoint — 22 November 2026
 

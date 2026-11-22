@@ -86,7 +86,10 @@ async def _start_tasks(
 
     if 32 <= len(token) <= 128:
         client = HttpGatewayClient(
-            runtime.config.services.gateway.endpoint, token, observe_event=runtime.dashboard.event
+            runtime.config.services.gateway.endpoint,
+            token,
+            observe_event=runtime.dashboard.event,
+            idle_managed_tasks=True,
         )
         cleanup.push_async_callback(client.aclose)
         summary = SummaryTask(client, runtime.config.model_tag, observe=runtime.dashboard.capture)
@@ -108,14 +111,17 @@ async def _start_tasks(
         ),
         activity=runtime.dashboard.activity,
     )
+    settings = runtime.config.selected_harness
     if client is not None:
         gateway = client
 
-        async def realtime_reserved() -> bool:
-            return bool((await gateway.health()).realtime_sessions)
+        async def task_admission() -> tuple[bool, bool]:
+            health = await gateway.health()
+            if health.status not in ("ready", "busy"):
+                return True, False
+            return bool(health.realtime_sessions), "idle_managed_tasks_v1" in health.features
 
-        router.realtime_reserved = realtime_reserved
-    settings = runtime.config.selected_harness
+        router.task_admission = task_admission
     if settings is not None:
         from .harness import open_harness
 
@@ -160,6 +166,7 @@ async def _start_tasks(
             router.research_unavailable = "gateway_task_credentials_unavailable"
         elif runtime.core.public_web is None or runtime.core.search_provider not in (
             "exa",
+            "exa_mcp",
             "parallel",
         ):
             router.research_unavailable = "research_hosted_retrieval_unavailable"
@@ -256,7 +263,7 @@ async def _start_tasks(
                 return "No managed task was queued."
         except TaskConflict:
             return "Couldn't queue the requested work. Check Tools and Tasks."
-        return message + " Disconnect Conversation to let it run, then check Tasks."
+        return message + " Follow progress in Tasks."
 
     runtime.core.submit_build = build_task
     runtime.core.submit_managed = submit_managed
@@ -967,7 +974,7 @@ async def _run_room(
         lifecycle = CaptureLifecycle(services.instance, reserve, host.quiesce, runtime.consolidate)
         host.before_turn = lifecycle.before_turn
         host.connection_changed = lifecycle.connection_changed
-        if voice is not None and config.preemption_enabled:
+        if voice is not None:
 
             async def priority(reserved: bool) -> None:
                 await reservation.voice(services.instance, reserved=reserved)

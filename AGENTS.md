@@ -102,7 +102,8 @@ Do not vendor external agent frameworks into either core.
   loopback by default with explicit trusted-proxy HTTPS support. Use read-only with verified
   local inference; never wire it into managed OpenCode. Do not copy or migrate existing notes.
 - **Skills and public web (root ADRs 0023, 0025, 0027).** No live skills provider is installed.
-  Ember can opt into Exa or Parallel for public page excerpts; SearXNG stays snippet-only.
+  Ember can opt into keyless Exa MCP, keyed Exa, or Parallel for public page excerpts;
+  SearXNG stays snippet-only.
   Keep hosted keys and private context out of worker and retrieval inputs. Only the separate,
   opt-in Research worker gets task-scoped retrieval. Inspect and Build get no search grant.
   See [preview evidence](docs/adr/0027-public-web-retrieval.md#acceptance-mapping).
@@ -112,10 +113,10 @@ Do not vendor external agent frameworks into either core.
   same-turn prerequisite success. Scripted preview evidence is not rollout authorization.
 - **Inference hardening (13; root ADR 0024).** One gateway owns native generation through
   verified drain/release and durable journal settlement. P2–P4 wait until realtime sessions
-  disconnect; P5 can use idle time in a connected session but yields to waiting foreground
-  work before native start. A subscriber disconnect is not native release. Fence uncertain
-  ownership across restart and validate buffered P2–P4 output before publishing. Only steps
-  that never reached the runner may return to the queue. Never stop an independently managed
+  disconnect except scoped P2 Tasks requests. Tasks and P5 can use idle inference time while
+  Conversation stays connected and yield before native start. A subscriber disconnect is not
+  native release. Fence uncertain ownership across restart and validate buffered P2–P4 output
+  before publishing. Only steps that never reached the runner may return to the queue. Never stop an independently managed
   runner. Conservative mode is qualified on the tested Strata profile; active P5 can still delay
   voice. The isolated P5 abort candidate proved same-runner reuse but failed P13-AC-03:
   added warm first-PCM p95 during long prefill was 834 ms (`--prefill auto`) and 439 ms

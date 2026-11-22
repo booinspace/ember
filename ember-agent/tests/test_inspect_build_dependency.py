@@ -241,13 +241,13 @@ def test_detached_submission_publishes_atomic_pair(
             ) -> TaskResult:
                 raise AssertionError("Realtime reservation must defer managed work")
 
-        async def reserved() -> bool:
-            return True
+        async def reserved() -> tuple[bool, bool]:
+            return True, False
 
         worker = NoWorker()
         router = TaskRouter(tmp_path, uuid4(), uuid4(), worker, delegate=worker)
         router.providers["build"] = worker
-        router.realtime_reserved = reserved
+        router.task_admission = reserved
         entered, release = asyncio.Event(), asyncio.Event()
         commit = router.store.submit_inspect_build
 
@@ -329,13 +329,13 @@ def test_router_handoff_and_public_provenance(tmp_path: Path, qualified: bool) -
                     ),
                 )
 
-        async def probe() -> bool:
-            return reserved
+        async def probe() -> tuple[bool, bool]:
+            return reserved, False
 
         worker = Worker()
         router = TaskRouter(tmp_path, uuid4(), uuid4(), worker, delegate=worker)
         router.providers["build"] = worker
-        router.realtime_reserved = probe
+        router.task_admission = probe
         await router.start()
         try:
             turn = uuid4()

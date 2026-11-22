@@ -6,6 +6,7 @@ import sys
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 import httpx
@@ -553,9 +554,10 @@ def test_invalid_output_still_requires_loaded_profile_verification(
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("coding_has_started", [False, True])
-def test_foreground_preserves_owned_coding_and_precedes_queued_work(
-    tmp_path: Path, coding_has_started: bool
+@pytest.mark.parametrize("workload", ["P2", "P5"])
+@pytest.mark.parametrize("step_has_started", [False, True])
+def test_foreground_preserves_owned_step_and_precedes_queued_work(
+    tmp_path: Path, step_has_started: bool, workload: Literal["P2", "P5"]
 ) -> None:
     async def run() -> None:
         config = configuration(tmp_path)
@@ -572,13 +574,13 @@ def test_foreground_preserves_owned_coding_and_precedes_queued_work(
             nonlocal verify_count
             if not loaded:
                 verify_count += 1
-                if verify_count == 1 and not coding_has_started:
+                if verify_count == 1 and not step_has_started:
                     paused.set()
                     await release.wait()
 
         async def generate(value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
             trace.append(value.workload)
-            if trace == ["P5"]:
+            if trace == [workload]:
                 paused.set()
                 await release.wait()
             yield NativeFrame(message=NativeMessage(content="done"), done=True)
@@ -589,9 +591,13 @@ def test_foreground_preserves_owned_coding_and_precedes_queued_work(
         try:
             session = uuid4()
             await gateway.session(session, connected=True)
-            first = await gateway.admit(request(config, workload="P5"))
+            first = await gateway.admit(
+                request(config, workload=workload), idle_managed_task=workload == "P2"
+            )
             await paused.wait()
-            second = await gateway.admit(request(config, workload="P5"))
+            second = await gateway.admit(
+                request(config, workload=workload), idle_managed_task=workload == "P2"
+            )
             deadline = datetime.now(UTC) + timedelta(milliseconds=75)
             with pytest.raises(GatewayError, match="deadline_exceeded"):
                 await gateway.admit(
@@ -606,7 +612,9 @@ def test_foreground_preserves_owned_coding_and_precedes_queued_work(
             assert [event async for event in voice.events()][-1].kind == "end"
             for coding in (first, second):
                 assert [event async for event in coding.events()][-1].kind == "end"
-            expected = ["P5", "P0", "P5"] if coding_has_started else ["P0", "P5", "P5"]
+            expected = (
+                [workload, "P0", workload] if step_has_started else ["P0", workload, workload]
+            )
             assert trace == expected
         finally:
             release.set()
@@ -617,6 +625,65 @@ def test_foreground_preserves_owned_coding_and_precedes_queued_work(
             await run()
 
     asyncio.run(bounded())
+
+
+def test_idle_managed_lane_waits_for_voice_but_not_connection(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        native = FakeUpstream()
+        gateway = P0Gateway(config, native)
+        session = uuid4()
+        try:
+            await gateway.session(session, connected=True)
+            gateway.voice(session, reserved=True)
+            regular = await gateway.admit(request(config, workload="P2"))
+            managed = await gateway.admit(request(config, workload="P2"), idle_managed_task=True)
+            foreground = await gateway.admit(request(config))
+            assert [event async for event in foreground.events()][-1].kind == "end"
+            assert native.count == 1
+            gateway.voice(session, reserved=False)
+            assert [event async for event in managed.events()][-1].kind == "end"
+            assert native.count == 2
+            assert (await gateway.health()).realtime_sessions == (session,)
+            assert regular in gateway.pending["P2"]
+        finally:
+            await gateway.aclose()
+
+    async def bounded() -> None:
+        async with asyncio.timeout(5):
+            await run()
+
+    asyncio.run(bounded())
+
+
+def test_idle_managed_lane_requires_p2_agent_auth(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        gateway = P0Gateway(config, FakeUpstream())
+        app = create_app(gateway, "foreground", background_token="background", agent_token="agent")
+        try:
+            async with httpx.AsyncClient(
+                base_url="http://test", transport=httpx.ASGITransport(app=app)
+            ) as client:
+                for token, workload in (
+                    ("foreground", "P0"),
+                    ("background", "P3"),
+                    ("agent", "P1"),
+                    ("agent", "P5"),
+                ):
+                    response = await client.post(
+                        "/v1/generate",
+                        content=request(config, workload=workload).model_dump_json(),
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "X-Ember-Managed-Task": "idle",
+                        },
+                    )
+                    assert response.status_code == 403
+        finally:
+            await gateway.aclose()
+
+    asyncio.run(run())
 
 
 def test_native_deadline_reports_expiry_and_fences_its_slot(tmp_path: Path) -> None:

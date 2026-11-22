@@ -93,7 +93,7 @@ test("Stop speaking remains usable during a reply and preserves chat and microph
   await expect(stopping).toBeDisabled();
   await expect(stopping).toHaveCount(0);
   await expect(stop).toHaveCount(0);
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByRole("tab", { name: "Conversation", exact: true }).click();
   await expect(page.locator(".turn.user")).toContainText(
     "Keep my original question.",
   );

@@ -134,11 +134,25 @@ def test_hosted_public_search_uses_offline_environment_reference(
     assert not config.runtime_root.exists()
 
 
+def test_keyless_exa_mcp_is_opt_in_without_harness_or_credentials(config_path: Path) -> None:
+    assert load_config(config_path).public_search is None
+    config_path.write_text(config_path.read_text() + '\n[public_search]\nprovider="exa_mcp"\n')
+    config = load_config(config_path)
+    assert config.harness is None and config.public_search is not None
+    assert config.public_search.provider == "exa_mcp"
+    assert config.public_search.api_key_env is None and not config.runtime_root.exists()
+
+
 @pytest.mark.parametrize(
     "fields",
     [
         "",
         'command=["search"]',
+        'provider="exa_mcp"\napi_key_env="WEB_KEY"',
+        'provider="exa_mcp"\nendpoint="https://example.com/mcp"',
+        'provider="exa_mcp"\ntools=["agent_run"]',
+        'provider="exa_mcp"\nsearxng_url="https://example.com"',
+        f'provider="exa_mcp"\ncommand=[{json.dumps(sys.executable)}]',
         'provider="exa"',
         'provider="parallel"\napi_key_env="secret value"',
         'provider="exa"\napi_key="secret"',

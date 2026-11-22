@@ -199,6 +199,7 @@ class LocalRuntime:
 
     async def start_public_search(self) -> None:
         """Compose only the configured public transport, independent of tasks and harnesses."""
+        from .exa_mcp import ExaMCP
         from .hosted_web import HostedWeb
         from .native_search import NativeSearch, SearXNGSearch
 
@@ -207,7 +208,9 @@ class LocalRuntime:
             return
         self.core.search_provider = settings.provider
         self.core.plan_web = True
-        if settings.provider in ("exa", "parallel"):
+        if settings.provider == "exa_mcp":
+            self.core.public_web = ExaMCP()
+        elif settings.provider in ("exa", "parallel"):
             assert settings.api_key_env is not None
             hosted = HostedWeb(settings.provider, settings.api_key_env)
             if not hosted.configured:

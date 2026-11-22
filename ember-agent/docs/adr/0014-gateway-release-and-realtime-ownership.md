@@ -11,7 +11,9 @@ and [Phase 13 validation](../../../docs/phase-13-validation.md).
   metadata verification by the request deadline and rechecks closure, deadline,
   subscription and realtime eligibility before any native generation.
 - P1 requires its own realtime reservation. P2–P4 use the existing weighted FIFO
-  schedule and run when the connected set is empty. A preparing step counts
+  schedule. Unmarked P2 and P3–P4 run when the connected set is empty. Only
+  authenticated Tasks P2 steps can use an idle reservation. They yield to pending
+  foreground requests and detected speech before native start. A preparing step counts
   against its class's queue limit until it reaches the runner. When it loses
   eligibility before native work, it returns to the head of its own queue with
   the same deadline and request identity.

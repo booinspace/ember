@@ -128,7 +128,7 @@ def test_reserved_queue_capacity_and_expiry(tmp_path: Path) -> None:
     asyncio.run(exercise())
 
 
-def test_summary_dispatches_through_p2_gateway(tmp_path: Path) -> None:
+def test_summary_dispatches_through_p2_gateway_while_connected(tmp_path: Path) -> None:
     import httpx
 
     from ember_agent.inference.client import HttpGatewayClient
@@ -151,7 +151,14 @@ def test_summary_dispatches_through_p2_gateway(tmp_path: Path) -> None:
         app = create_app(gateway, "foreground", agent_token="agent")
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
-            client = HttpGatewayClient("http://test", "agent", client=http)
+            client = HttpGatewayClient("http://test", "agent", client=http, idle_managed_tasks=True)
+            session = uuid4()
+            await gateway.session(session, connected=True)
+
+            async def admission() -> tuple[bool, bool]:
+                health = await client.health()
+                return bool(health.realtime_sessions), "idle_managed_tasks_v1" in health.features
+
             character = uuid4()
             router = TaskRouter(
                 tmp_path,
@@ -160,6 +167,7 @@ def test_summary_dispatches_through_p2_gateway(tmp_path: Path) -> None:
                 TextInspectionTask(ToolRouter(TextInspectionProvider(), character)),
                 summary=SummaryTask(client, config.model_tag),
             )
+            router.task_admission = admission
             await router.start()
             try:
                 handle = await router.submit("summary", "Synthetic content", operation="summarize")

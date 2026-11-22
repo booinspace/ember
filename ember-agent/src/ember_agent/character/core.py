@@ -45,10 +45,12 @@ from ..memory.deep_prompt import condense
 from ..observability import ActivityLog, notify
 from ..runtime.config import RuntimeModel
 from ..web_evidence import (
+    HOSTED_WEB_LABELS,
     PublicWebOperation,
     PublicWebProvider,
     WebEvidence,
     allowed_public_url,
+    permitted_public_query,
 )
 from .build_intent import build_goal
 from .conversation import CompletedTurn, ConversationSink
@@ -78,7 +80,6 @@ from .tool_workflow import (
     has_embedded_prerequisite,
     has_tool_chain,
     intent_for,
-    permitted_public_query,
     planning_request,
     public_search_query_candidate,
     workflow_accounting,
@@ -510,7 +511,9 @@ class CharacterCore:
             provider, operation, value = hosted
             read = operation == "read"
             if provider != self.search_provider or self.public_web is None:
-                reply = f"{provider.title()} is not available. No other provider was used."
+                reply = (
+                    f"{HOSTED_WEB_LABELS[provider]} is not available. No other provider was used."
+                )
             elif has_tool_chain(value) or not (
                 allowed_public_url(value) if read else permitted_public_query(value)
             ):
@@ -532,13 +535,13 @@ class CharacterCore:
                 ("public_web_input_rejected",),
                 observation.prompts,
             )
-        if self.search_provider in {"exa", "parallel"}:
+        if self.search_provider in HOSTED_WEB_LABELS:
             try:
                 query = public_search_query(text)
             except GatewayError:
                 query = ""
             if query is not None or public_page_requested(text):
-                provider = self.search_provider.title()
+                provider = HOSTED_WEB_LABELS[self.search_provider]
                 return self._local_turn(
                     text,
                     identity,

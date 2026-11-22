@@ -28,6 +28,7 @@ from ember_agent.inference.contracts import (
     GatewayRequest,
     GenerationUsage,
     ModelClient,
+    PromptMessage,
     ToolCall,
 )
 from ember_agent.inference.gateway import P0Gateway
@@ -205,8 +206,9 @@ def test_chain_through_composed_runtime(
         )
         config.runtime_root.mkdir()
         token = "f" * 32
-        for name in ("gateway.token", "gateway-agent.token"):
-            (config.runtime_root / name).write_text(token)
+        agent_token = "a" * 32
+        (config.runtime_root / "gateway.token").write_text(token)
+        (config.runtime_root / "gateway-agent.token").write_text(agent_token)
         web_inputs: list[str] = []
 
         def serve(request: httpx.Request) -> httpx.Response:
@@ -238,6 +240,9 @@ def test_chain_through_composed_runtime(
             async def generate(self, value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
                 self.count += 1
                 assert "PRIVATE_HISTORY" not in value.model_dump_json()
+                if value.workload == "P2":
+                    yield NativeFrame(message=NativeMessage(content="worker step"), done=True)
+                    return
                 if self.count == 1:
                     name, args = (
                         first,
@@ -255,9 +260,13 @@ def test_chain_through_composed_runtime(
                 yield NativeFrame(done=True, done_reason="tool_calls")
 
         seen: list[TaskSubmission] = []
+        task_ids: dict[str, UUID] = {}
 
         class Worker:
             available = True
+
+            def __init__(self, model: ModelClient) -> None:
+                self.model = model
 
             async def execute(
                 self,
@@ -266,6 +275,19 @@ def test_chain_through_composed_runtime(
                 progress: Callable[[TaskState], Awaitable[None]],
             ) -> TaskResult:
                 seen.append(request)
+                task_ids[request.operation] = context.task_id
+                assert context.deadline_at is not None
+                model_request = GatewayRequest(
+                    request_id=uuid4(),
+                    context_id=context.task_id,
+                    model=config.model_tag,
+                    workload="P2",
+                    messages=(PromptMessage(role="user", content="Synthetic worker prompt"),),
+                    deadline_at=datetime.fromtimestamp(context.deadline_at, UTC)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                )
+                assert [event async for event in self.model.stream(model_request)][-1].kind == "end"
                 await progress("waiting_for_tool")
                 inspect = request.operation == "delegate"
                 return TaskResult(
@@ -282,27 +304,33 @@ def test_chain_through_composed_runtime(
                     ),
                 )
 
-        worker = Worker()
-
         @asynccontextmanager
         async def open_inspect(
+            _config: object,
+            model: ModelClient,
             *_: object,
         ) -> AsyncGenerator[tuple[Worker, Callable[[], bool]], None]:
+            worker = Worker(model)
             yield worker, lambda: worker.available
 
         @asynccontextmanager
-        async def open_build(*_: object) -> AsyncGenerator[Worker, None]:
-            yield worker
+        async def open_build(
+            _config: object,
+            _settings: object,
+            model: ModelClient,
+            *_: object,
+        ) -> AsyncGenerator[Worker, None]:
+            yield Worker(model)
 
         upstream = Upstream()
         gateway = P0Gateway(config, upstream)
-        app = create_app(gateway, token)
+        app = create_app(gateway, token, agent_token=agent_token)
 
         def gateway_client(endpoint: str, key: str, **kwargs: object) -> HttpGatewayClient:
-            del kwargs
             return HttpGatewayClient(
                 endpoint,
                 key,
+                idle_managed_tasks=kwargs.get("idle_managed_tasks") is True,
                 client=httpx.AsyncClient(
                     transport=httpx.ASGITransport(app=app),
                     base_url="http://gateway",
@@ -338,23 +366,15 @@ def test_chain_through_composed_runtime(
                     assert "queued" in "".join([event.text async for event in core.stream(turn)])
                     async with asyncio.timeout(5):
                         while True:
-                            tasks = await router.store.active(router.character_id)
-                            if any(task.state == "waiting_for_realtime" for task in tasks):
+                            child_id = task_ids.get("build")
+                            status = await router.status(child_id) if child_id else None
+                            if status and status.receipt:
                                 break
                             await asyncio.sleep(0.01)
-                    assert not seen and upstream.count == 2
+                    assert (await runtime.model.health()).realtime_sessions == (core.context_id,)
                     assert web_inputs == ([_QUERY] if first == SEARCH else [])
-                    child = next(task for task in tasks if task.operation == "build")
-                    parent = next((task for task in tasks if task.operation == "delegate"), None)
                 finally:
                     await runtime.model.session(core.context_id, connected=False)
-                router._wake.set()  # Don't wait for the normal two-second idle probe in this test.
-                async with asyncio.timeout(5):
-                    while True:
-                        status = await router.status(child.task_id)
-                        if status and status.receipt:
-                            break
-                        await asyncio.sleep(0.01)
                 data = TaskResult.model_validate_json(status.receipt).receipt.data
                 assert status.state == "succeeded"
                 if first == SEARCH:
@@ -363,7 +383,7 @@ def test_chain_through_composed_runtime(
                     assert isinstance(sources, list) and len(sources) == 1
                     assert isinstance(sources[0], dict) and sources[0]["url"] == _URL
                 else:
-                    assert parent and data["inspect_task_id"] == str(parent.task_id)
+                    assert data["inspect_task_id"] == str(task_ids["delegate"])
                     assert [request.operation for request in seen] == ["delegate", "build"]
                     assert "Synthetic workspace finding" in seen[-1].goal
         finally:

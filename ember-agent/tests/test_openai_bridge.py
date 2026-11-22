@@ -190,12 +190,13 @@ class _Upstream:
 
 
 def _bridge(
-    config: DeploymentConfig, upstream: Upstream
+    config: DeploymentConfig, upstream: Upstream, *, idle_managed_tasks: bool = False
 ) -> tuple[OpenAIModelBridge, P0Gateway, HttpGatewayClient]:
     gateway = P0Gateway(config, upstream)
     client = HttpGatewayClient(
         config.services.gateway.endpoint,
         "agent",
+        idle_managed_tasks=idle_managed_tasks,
         client=httpx.AsyncClient(
             base_url=config.services.gateway.endpoint,
             transport=httpx.ASGITransport(

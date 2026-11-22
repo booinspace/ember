@@ -77,7 +77,7 @@ for (const { width, height } of [
     await expect(
       page.getByRole("button", { name: "Use microphone" }),
     ).toHaveAttribute("aria-pressed", "false");
-    const settings = page.getByRole("tab", { name: "Memory & Settings" });
+    const settings = page.getByRole("tab", { name: "Memory sources" });
     expect((await settings.boundingBox())?.height).toBeGreaterThanOrEqual(44);
     await settings.click();
     await expect(
@@ -91,7 +91,7 @@ for (const { width, height } of [
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
       .toBeLessThanOrEqual(width);
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    await page.getByRole("tab", { name: "Conversation", exact: true }).click();
     await expect(page.locator(".turn.assistant")).toContainText(
       "Synthetic reply",
     );

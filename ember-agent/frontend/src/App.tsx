@@ -30,9 +30,9 @@ import { TurnDetailsPanel } from "./TurnDetails";
 import { PromptEditor } from "./PromptEditor";
 import { VoiceControls } from "./VoiceControls";
 import {
+  WorkspacePanel,
   WorkspaceTabs,
   workspacePanel,
-  workspacePanelProps,
   type WorkspacePage,
 } from "./Workspace";
 
@@ -64,7 +64,7 @@ export function App() {
   const [result, setResult] = useState<Investigation | null>(null);
   const [details, setDetails] = useState<TurnDetails | null>(null);
   const monitor = useDashboard(state !== null);
-  const [page, setPage] = useState<WorkspacePage>("chat");
+  const [page, setPage] = useState<WorkspacePage>("conversation");
   const [inspectDetails, setInspectDetails] = useState(false);
   const [requestedInspection, setRequestedInspection] = useState<string | null>(
     null,
@@ -82,9 +82,9 @@ export function App() {
     selectPage("inference", workspacePanel("inference"));
     setRequestedInspection(identity);
   };
-  const showTasks = (taskId?: string): void => {
+  const showTasks = (taskId: string): void => {
     selectPage("tasks", workspacePanel("tasks"));
-    setRequestedTaskId(taskId ?? null);
+    setRequestedTaskId(taskId);
   };
   useLayoutEffect(() => {
     if (focusTarget.current) {
@@ -168,7 +168,7 @@ export function App() {
   }, [details, speechTarget]);
 
   useLayoutEffect(() => {
-    if (page !== "chat") return;
+    if (page !== "conversation") return;
     if (messages.current && (forceScroll.current || following.current)) {
       messages.current.scrollTo({
         top: messages.current.scrollHeight,
@@ -460,7 +460,7 @@ export function App() {
     );
   const voiceActions = (
     <>
-      {(page === "chat" || microphone) && (
+      {(page === "conversation" || microphone) && (
         <button
           type="button"
           aria-pressed={microphone}
@@ -477,7 +477,7 @@ export function App() {
       )}
       {state?.voice &&
         state.transport === "livekit" &&
-        (page === "chat" || speechTarget) && (
+        (page === "conversation" || speechTarget) && (
           <button
             type="button"
             disabled={
@@ -511,7 +511,7 @@ export function App() {
         >
           {connected ? "Disconnect" : "Connect"}
         </button>
-        {page !== "chat" && (microphone || speechTarget) && (
+        {page !== "conversation" && (microphone || speechTarget) && (
           <div
             className="session-actions"
             aria-label="Active voice controls"
@@ -527,17 +527,19 @@ export function App() {
           {error}
         </div>
       )}
-      <section {...workspacePanelProps("chat", page)}>
-        <div className="page-heading">
-          <h2>Chat</h2>
-          {state?.transport === "http" && (
+      <WorkspacePanel
+        view="conversation"
+        page={page}
+        description={
+          state?.transport === "http" && (
             <p role="status">
               {state.text_available
-                ? "Voice is unavailable. Text chat and memory controls are ready."
+                ? "Voice is unavailable. Text chat is ready."
                 : "Conversation is unavailable. Memory controls are ready."}
             </p>
-          )}
-        </div>
+          )
+        }
+      >
         <div className="conversation" aria-label="Conversation">
           <div
             className="messages"
@@ -658,7 +660,7 @@ export function App() {
                   Cancel recall
                 </button>
               )}
-              {page === "chat" && voiceActions}
+              {page === "conversation" && voiceActions}
             </div>
             <p className="composer-hint">
               Enter to send · Shift+Enter for a new line
@@ -700,28 +702,110 @@ export function App() {
             />
           )}
         </div>
-      </section>
-      <section {...workspacePanelProps("tools", page)}>
-        <div className="page-heading">
-          <h2>Tools</h2>
-          <p>Check available capabilities and run configured MCP tools.</p>
-        </div>
-        <div className="page-grid">
-          {state ? (
-            <Capabilities enabled={page === "tools"} />
-          ) : (
-            <p>Waiting for Ember activation…</p>
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="activity"
+        page={page}
+        description={
+          <p>
+            Runtime health and recent memory, tool, task, and inference
+            activity.
+          </p>
+        }
+      >
+        <SystemStatus snapshot={monitor.snapshot} online={monitor.online} />
+        <section aria-label="Recent activity" className="activity-timeline">
+          <h3>Recent activity</h3>
+          {monitor.events.length === 0 && (
+            <p className="page-empty">No activity yet.</p>
           )}
-          {state?.tasks_available && (
-            <Tools active={page === "tools"} showTasks={showTasks} />
-          )}
-        </div>
-      </section>
-      <section {...workspacePanelProps("tasks", page)}>
-        <div className="page-heading">
-          <h2>Tasks</h2>
+          {monitor.events.slice(-64).map((event) => (
+            <ActivityCard
+              key={event.id}
+              event={event}
+              inspect={inspectRequest}
+              showTasks={showTasks}
+            />
+          ))}
+        </section>
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="inference"
+        page={page}
+        description={<p>Inspect assembled inputs for recent model requests.</p>}
+      >
+        {page === "inference" && (
+          <PromptInspector
+            snapshot={monitor.snapshot}
+            requestedId={requestedInspection}
+          />
+        )}
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="memory"
+        page={page}
+        description={
+          <p>
+            Choose what Ember may recall and whether it learns from
+            conversations.
+          </p>
+        }
+      >
+        {state ? (
+          <div className="page-stack">
+            <Controls
+              state={state}
+              update={(value) => {
+                setState(value);
+                setResult(null);
+              }}
+              failure={report}
+            />
+            {state.lan_available && (
+              <section className="controls" aria-label="LAN access">
+                <h3>LAN access</h3>
+                <button onClick={() => void shareLan()}>Copy LAN link</button>
+                {lanLink && (
+                  <label>
+                    Private LAN access link
+                    <input
+                      readOnly
+                      value={lanLink}
+                      onFocus={(event) => event.target.select()}
+                    />
+                  </label>
+                )}
+              </section>
+            )}
+          </div>
+        ) : (
+          <p className="page-empty">Waiting for Ember activation…</p>
+        )}
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="prompts"
+        page={page}
+        description={
+          <p>Edit the shared system and character Markdown instructions.</p>
+        }
+      >
+        {state?.prompts_available ? (
+          <PromptEditor enabled={page === "prompts"} busy={replyInProgress} />
+        ) : (
+          <p className="page-empty">
+            {state
+              ? "Prompt editing is unavailable for this runtime."
+              : "Waiting for Ember activation…"}
+          </p>
+        )}
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="tasks"
+        page={page}
+        description={
           <p>Queue work, review approvals, and check results and receipts.</p>
-        </div>
+        }
+      >
         {state?.tasks_available ? (
           <Tasks
             visible={page === "tasks"}
@@ -741,114 +825,70 @@ export function App() {
               : "Waiting for Ember activation…"}
           </p>
         )}
-      </section>
-      <section {...workspacePanelProps("activity", page)}>
-        <div className="page-heading">
-          <h2>Activity</h2>
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="mcp"
+        page={page}
+        description={
           <p>
-            Runtime health and recent memory, tool, task, and inference
-            activity.
+            Run configured, granted tools. Write actions require approval in
+            Tasks.
           </p>
-        </div>
-        <SystemStatus snapshot={monitor.snapshot} online={monitor.online} />
-        <section aria-label="Recent activity" className="activity-timeline">
-          <h3>Recent activity</h3>
-          {monitor.events.length === 0 && (
-            <p className="page-empty">No activity yet.</p>
-          )}
-          {monitor.events.slice(-64).map((event) => (
-            <ActivityCard
-              key={event.id}
-              event={event}
-              inspect={inspectRequest}
-              showTasks={showTasks}
-            />
-          ))}
-        </section>
-      </section>
-      <section {...workspacePanelProps("inference", page)}>
-        <div className="page-heading">
-          <h2>Inference Context</h2>
-          <p>Inspect assembled inputs for recent model requests.</p>
-        </div>
-        {page === "inference" && (
-          <PromptInspector
-            snapshot={monitor.snapshot}
-            requestedId={requestedInspection}
-          />
+        }
+      >
+        {state?.tasks_available ? (
+          <Tools active={page === "mcp"} showTasks={showTasks} />
+        ) : (
+          <p className="page-empty">
+            {state
+              ? "MCP tool execution is unavailable for this runtime."
+              : "Waiting for Ember activation…"}
+          </p>
         )}
-      </section>
-      <section {...workspacePanelProps("skills", page)}>
-        <div className="page-heading">
-          <h2>Skills</h2>
-          <p>Browse, select, and manage portable skill packages.</p>
-        </div>
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="skills"
+        page={page}
+        description={<p>Browse, select, and manage portable skill packages.</p>}
+      >
         {state ? (
           <Skills
             enabled={page === "skills"}
             useSkill={(name) => {
               setInput("Use " + name + " to ");
-              selectPage("chat", "prompt");
+              selectPage("conversation", "prompt");
             }}
           />
         ) : (
           <p className="page-empty">Waiting for Ember activation…</p>
         )}
-      </section>
-      <section {...workspacePanelProps("settings", page)}>
-        <div className="page-heading">
-          <h2>Memory & Settings</h2>
-          <p>Manage memory sources, capture, and character preferences.</p>
-        </div>
+      </WorkspacePanel>
+      <WorkspacePanel
+        view="providers"
+        page={page}
+        description={<p>Check tool availability and provider status.</p>}
+      >
         {state ? (
-          <div className="page-grid">
-            <Controls
-              state={state}
-              update={(value) => {
-                setState(value);
-                setResult(null);
-              }}
-              failure={report}
-            />
-            {(state.prompts_available ||
-              state.speech ||
-              state.lan_available) && (
-              <div className="page-stack">
-                {state.prompts_available && (
-                  <PromptEditor busy={replyInProgress} />
-                )}
-                {state.speech && (
-                  <VoiceControls
-                    options={state.speech}
-                    busy={replyInProgress}
-                    change={changeSpeech}
-                  />
-                )}
-                {state.lan_available && (
-                  <section className="controls" aria-label="LAN access">
-                    <h3>LAN access</h3>
-                    <button onClick={() => void shareLan()}>
-                      Copy LAN link
-                    </button>
-                    {lanLink && (
-                      <label>
-                        Private LAN access link
-                        <input
-                          readOnly
-                          value={lanLink}
-                          onFocus={(event) => event.target.select()}
-                        />
-                      </label>
-                    )}
-                  </section>
-                )}
-              </div>
-            )}
-          </div>
+          <Capabilities enabled={page === "providers"} />
         ) : (
           <p className="page-empty">Waiting for Ember activation…</p>
         )}
-      </section>
+      </WorkspacePanel>
+      <WorkspacePanel view="voice" page={page}>
+        {state?.speech ? (
+          <VoiceControls
+            options={state.speech}
+            busy={replyInProgress}
+            change={changeSpeech}
+          />
+        ) : (
+          <p className="page-empty">
+            {state
+              ? "Voice settings are unavailable for this runtime."
+              : "Waiting for Ember activation…"}
+          </p>
+        )}
+      </WorkspacePanel>
     </main>
   );
 }

@@ -29,7 +29,7 @@ from ..web_evidence import (
 )
 from .config import DeploymentConfig, HarnessSettings
 from .opencode_harness import OpenCodeTask, open_opencode
-from .task_store import TaskConflict
+from .task_store import ResearchProvider, TaskConflict
 
 RESEARCH_AGENT = "ember-researcher"
 BROKER = "emberweb"
@@ -50,7 +50,7 @@ class ResearchBroker:
     tools = RESEARCH_TOOLS
     transport_argument = _PERMIT
 
-    def __init__(self, provider: PublicWebProvider, backend: str) -> None:
+    def __init__(self, provider: PublicWebProvider, backend: ResearchProvider) -> None:
         self._key = secrets.token_urlsafe(32)
         self._expected = f"Bearer {self._key}".encode()
         self.provider = provider
@@ -382,14 +382,14 @@ async def open_research(
     settings: HarnessSettings,
     model: ModelClient,
     retrieval: PublicWebProvider,
-    backend: str,
+    backend: ResearchProvider,
     observe: Callable[[GatewayRequest], None] | None = None,
 ) -> AsyncGenerator[OpenCodeTask]:
     """Give one pinned worker only access to Ember's authenticated public retrieval broker."""
     if (
         not settings.research
         or settings.provider != "opencode"
-        or backend not in {"exa", "parallel"}
+        or backend not in {"exa", "parallel", "exa_mcp"}
     ):
         raise TaskConflict("research_unconfigured")
     async with open_opencode(

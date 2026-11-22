@@ -19,7 +19,7 @@ type TaskOperation = Literal[
     "inspect", "summarize", "recall", "review", "tool", "delegate", "build", "research"
 ]
 type ServicePort = Annotated[int, Field(ge=1024, le=65535)]
-type ResearchProvider = Literal["exa", "parallel"]
+type ResearchProvider = Literal["exa", "parallel", "exa_mcp"]
 type TerminalState = Literal["succeeded", "failed", "cancelled", "timed_out", "uncertain"]
 type TaskState = Literal[
     "queued",
@@ -465,13 +465,19 @@ class TaskStore:
         db.executemany("INSERT INTO terminal_outbox(task_id, state) VALUES (?, ?)", rows)
 
     async def claim(
-        self, character_id: UUID, *, realtime_reserved: bool = False
+        self,
+        character_id: UUID,
+        *,
+        realtime_reserved: bool = False,
+        idle_managed_tasks: bool = False,
     ) -> tuple[UUID, TaskSubmission, float] | None:
         """Claim the oldest eligible task; deferred work has no attempt yet."""
-        return await asyncio.to_thread(self._claim, character_id, realtime_reserved)
+        return await asyncio.to_thread(
+            self._claim, character_id, realtime_reserved, idle_managed_tasks
+        )
 
     def _claim(
-        self, character_id: UUID, realtime_reserved: bool
+        self, character_id: UUID, realtime_reserved: bool, idle_managed_tasks: bool
     ) -> tuple[UUID, TaskSubmission, float] | None:
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("BEGIN IMMEDIATE")
@@ -490,19 +496,26 @@ class TaskStore:
             )
             character = str(character_id)
             self._settle_dependencies(db, character, cutoff)
-            scope = {"character": character, "cutoff": cutoff, "unreserved": not realtime_reserved}
+            scope = {
+                "character": character,
+                "cutoff": cutoff,
+                "reserved": realtime_reserved,
+                "idle_tasks": idle_managed_tasks,
+            }
+            blocked = """(:reserved AND NOT :idle_tasks
+                AND json_extract(request_json, '$.operation')
+                    IN ('build', 'delegate', 'research', 'summarize'))"""
             if realtime_reserved:
                 db.execute(
                     f"""UPDATE task SET state='waiting_for_realtime'
                         WHERE character_id=:character AND state='queued' AND {_DEPENDENCY_READY}
-                        AND json_extract(request_json, '$.operation')
-                            IN ('build', 'delegate', 'research')""",
+                        AND {blocked}""",
                     scope,
                 )
             row = db.execute(
                 f"""UPDATE task SET state='running'
                     WHERE id=(SELECT id FROM task WHERE character_id=:character
-                              AND (state='queued' OR (:unreserved AND state='waiting_for_realtime'))
+                              AND state IN ('queued', 'waiting_for_realtime') AND NOT {blocked}
                               AND {_DEPENDENCY_READY} ORDER BY rowid LIMIT 1)
                     RETURNING id, request_json, deadline_at""",
                 scope,

@@ -23,14 +23,15 @@ def public_search_query(text: str) -> str | None:
     return query
 
 
+PAGE_ACTION = r"(?:summari[sz]e|read|explain|give me (?:a )?summary of)"
 _PAGE_REQUEST = re.compile(
-    r"^\s*(?:(?:please|can you|could you|would you|will you)\s+)*"
-    r"(?:summari[sz]e|read|explain|give me (?:a )?summary of)\b",
+    rf"^\s*(?:(?:please|can you|could you|would you|will you)\s+)*{PAGE_ACTION}\b",
     re.IGNORECASE,
 )
 
-
-_HOSTED_REQUEST = re.compile(r"^\s*(exa|parallel)[ \t]+(search|read):[ \t]*(.*)$", re.I | re.S)
+_HOSTED_REQUEST = re.compile(
+    r"^\s*(exa[ \t]+mcp|exa|parallel)[ \t]+(search|read):[ \t]*(.*)$", re.I | re.S
+)
 
 
 def hosted_web_request(text: str) -> tuple[str, str, str] | None:
@@ -38,7 +39,7 @@ def hosted_web_request(text: str) -> tuple[str, str, str] | None:
     match = _HOSTED_REQUEST.fullmatch(text)
     if match is None:
         return None
-    return match[1].lower(), match[2].lower(), match[3].strip(" \t")
+    return "_".join(match[1].lower().split()), match[2].lower(), match[3].strip(" \t")
 
 
 def public_page_requested(text: str) -> bool:

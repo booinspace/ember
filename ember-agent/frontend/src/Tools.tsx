@@ -36,7 +36,7 @@ export function Tools({
   showTasks,
 }: {
   active: boolean;
-  showTasks: () => void;
+  showTasks: (taskId: string) => void;
 }) {
   const retry = useRef<{ signature: string; key: string } | null>(null);
   const [snapshot, setSnapshot] = useState<z.infer<typeof discovery>>();
@@ -74,6 +74,7 @@ export function Tools({
           undefined,
           controller.signal,
         );
+        if (controller.signal.aborted) return;
         setCurrent(value);
         if (!terminal(value.state)) timer = setTimeout(poll, 500);
       } catch {
@@ -130,12 +131,7 @@ export function Tools({
     }
   };
   return (
-    <section className="controls" aria-label="Run an MCP tool">
-      <h3>Run an MCP tool</h3>
-      <p>
-        Only configured, granted tools can run. Write actions require approval
-        in Tasks.
-      </p>
+    <div className="controls">
       {snapshot?.servers.map((server) => (
         <p key={server.id}>
           {server.id}: {server.status} ({server.tools} tools)
@@ -192,7 +188,7 @@ export function Tools({
       )}
       {message && <p role="status">{message}</p>}
       {current && (
-        <button type="button" onClick={showTasks}>
+        <button type="button" onClick={() => showTasks(current.task_id)}>
           Open Tasks
         </button>
       )}
@@ -222,6 +218,6 @@ export function Tools({
           )}
         </p>
       )}
-    </section>
+    </div>
   );
 }

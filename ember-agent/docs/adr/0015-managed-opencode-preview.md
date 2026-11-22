@@ -62,12 +62,15 @@ only after validating the full P2 tool-call batch and hides them from subsequent
 model input. Search inputs must match a `Search: <public query>` line. Read inputs
 must be a standalone public URL line or an exact URL returned in this task.
 Limits: three unique queries, three unique page URLs, eight model steps.
-Submission binds consent to Exa or Parallel; changing providers invalidates the
+Submission binds consent to Exa REST, Exa MCP, or Parallel; changing providers invalidates the
 queued grant. Cancellation fences model and broker calls before awaiting the
 cancellation write or cleanup. If cleanup cannot be verified, Ember disables the
 worker instead of reusing it. Each retrieval gets distinct source IDs. Receipts
 prove retrieval provenance, not that sources support model claims. No source
 means no successful research receipt.
+[Keyless Exa MCP](../../../docs/adr/0027-public-web-retrieval.md#keyless-exa-mcp-for-conversation-and-tasks)
+can serve Research through Ember's existing task-scoped broker. The worker does
+not connect directly to Exa MCP.
 
 ## Inspect authority and platform limits
 
@@ -122,8 +125,10 @@ and [Root ADR 0027](../../../docs/adr/0027-public-web-retrieval.md#natural-langu
   worker or generic workflow service. New coupling is a typed durable binding
   between a dependent Build, originating turn and required receipt identities.
   Validate prerequisites before dispatch. Public retrieval may run during chat;
-  Inspect and Build remain P2 and wait for disconnect, with gateway rechecking
-  admission if Conversation reconnects. No worker starts while reservation holds.
+  Inspect and Build remain P2 and can run while Conversation stays connected.
+  The trusted task client uses idle P2 admission for Inspect, Build, Web Research,
+  and text Summary. Foreground work wins at step boundaries. Active native steps
+  are not interrupted.
 - Give Build a bounded, untrusted Inspect summary, not workspace access or raw
   tool output. Carry verified public source references into its receipt when used;
   never grant Build retrieval. Failure, cancellation, expiry or uncertain outcome

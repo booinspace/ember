@@ -108,7 +108,7 @@ class TaskInput(RuntimeModel):
         if self.service_port is not None and self.operation != "build":
             raise ValueError("Service port must belong to the build operation")
         if (self.research_provider is not None) != (self.operation == "research"):
-            raise ValueError("Web Research requires an explicit hosted provider")
+            raise ValueError("Web Research requires an explicit public retrieval provider")
         return self
 
 

@@ -56,13 +56,11 @@ export function Controls({
   };
   return (
     <section className="controls" aria-label="Memory controls">
-      <h3>Memory sources</h3>
+      <h3>Recall permissions</h3>
       <p>
         <a href="/memory-graph">Memory graph</a>
       </p>
-      <p>
-        Choose what Ember may recall. Changing sources does not approve imports.
-      </p>
+      <p>Changing sources does not approve imports.</p>
       <label className="toggle">
         <input
           type="checkbox"

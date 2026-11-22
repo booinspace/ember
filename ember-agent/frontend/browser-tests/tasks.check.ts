@@ -179,7 +179,7 @@ test("Tasks show cancellable conversation-submitted work and deduplicate local s
   ).toHaveCount(33);
   const fromChatRow = page.getByRole("group", { name: "Build task 22222222" });
   await expect(
-    fromChatRow.getByText("Build: Waiting for conversation to disconnect"),
+    fromChatRow.getByText("Build: Waiting for inference access"),
   ).toBeVisible();
   await fromChatRow
     .getByRole("button", { name: "Cancel task: Build 22222222", exact: true })
@@ -203,9 +203,7 @@ test("Tasks show cancellable conversation-submitted work and deduplicate local s
   });
   await expect(cancel).toHaveCount(1);
   await expect(
-    page.getByText(
-      "Workspace inspection: Waiting for conversation to disconnect",
-    ),
+    page.getByText("Workspace inspection: Waiting for inference access"),
   ).toBeVisible();
   await cancel.click();
   await expect.poll(() => cancelled.has(id)).toBe(true);
@@ -250,8 +248,12 @@ test("web research binds consent and retries to its hosted provider and only lin
           capture: { enabled: false, revision: 0 },
           deep: "available",
           tasks_available: true,
+          transport: "http",
+          text_available: true,
         },
       });
+    if (path === "/api/text/connect")
+      return route.fulfill({ json: { session_id: id } });
     if (path === "/api/capabilities")
       return route.fulfill({
         json: {
@@ -328,7 +330,13 @@ test("web research binds consent and retries to its hosted provider and only lin
   });
   await page.goto("http://127.0.0.1:4174/");
   const tasks = page.getByRole("tab", { name: "Tasks", exact: true });
-  const chat = page.getByRole("tab", { name: "Chat", exact: true });
+  const chat = page.getByRole("tab", { name: "Conversation", exact: true });
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  const disconnect = page.getByRole("button", {
+    name: "Disconnect",
+    exact: true,
+  });
+  await expect(disconnect).toBeVisible();
   const openTasks = async () => {
     const capability = page.waitForResponse("**/api/capabilities");
     await tasks.click();
@@ -361,11 +369,12 @@ test("web research binds consent and retries to its hosted provider and only lin
   }
   expect(attempts[1]).toEqual(attempts[0]);
 
-  provider = "parallel";
+  provider = "exa_mcp";
   await chat.click();
+  await expect(disconnect).toBeVisible();
   await openTasks();
   await expect(question).toHaveAccessibleDescription(
-    /The hosted service Parallel receives your approved search queries and any public URLs read/,
+    /The hosted service Exa MCP receives your approved search queries and any public URLs read/,
   );
   await expect(question).toHaveValue(text);
   await queue.click();
@@ -373,7 +382,7 @@ test("web research binds consent and retries to its hosted provider and only lin
   expect(attempts.map((attempt) => attempt.research_provider)).toEqual([
     "exa",
     "exa",
-    "parallel",
+    "exa_mcp",
   ]);
   expect(attempts[2]?.idempotency_key).not.toBe(attempts[0]?.idempotency_key);
   await expect(page.getByRole("link", { name: "Invented" })).toHaveCount(0);
@@ -401,6 +410,13 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
 }) => {
   const url = `http://build-${"a".repeat(32)}.localhost:49152/`;
   const modelText = '<a href="https://model.example.test/">Draft page</a>';
+  const researchWaiting = {
+    task_id: "22222222-2222-4222-8222-222222222222",
+    operation: "research",
+    state: "waiting_for_realtime",
+    cancellation_requested: false,
+    result: null,
+  };
   const attempts: { idempotency_key: string; service_port?: number }[] = [];
   let completed = false;
   let dismissed = false;
@@ -437,11 +453,16 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
             capture: { enabled: false, revision: 0 },
             deep: "available",
             tasks_available: true,
+            summary_tasks_available: true,
             delegation_available: true,
             delegation_provider: "OpenCode",
             build_available: true,
+            transport: "http",
+            text_available: true,
           },
         });
+      case "/api/text/connect":
+        return route.fulfill({ json: { session_id: id } });
       case "/api/capabilities":
         return route.fulfill({
           json: {
@@ -478,6 +499,7 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
           json: {
             revision: 0,
             items: completed && !dismissed ? [status()] : [],
+            active: [researchWaiting],
           },
         });
       case "/api/task-confirmations":
@@ -529,14 +551,30 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
     }
   });
   await page.goto("http://127.0.0.1:4174/");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Disconnect", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("tab", { name: "Tasks", exact: true }).click();
   const operation = page.getByLabel("Operation");
   const port = page.getByLabel("Local service port (optional)");
   const queue = page.getByRole("button", { name: "Queue task" });
   await expect(operation.locator('option[value="research"]')).toBeEnabled();
-  await operation.selectOption("delegate");
-  await expect(port).toHaveCount(0);
-  await operation.selectOption("build");
+  await expect(
+    page.getByRole("group", { name: "Web research task 22222222" }),
+  ).toContainText("Waiting for inference access");
+  const sharedInference = page.getByText(
+    "with foreground requests taking priority between steps.",
+    { exact: false },
+  );
+  for (const modelTask of ["research", "summarize", "delegate", "build"]) {
+    await operation.selectOption(modelTask);
+    await expect(sharedInference).toBeVisible();
+    if (modelTask !== "build") await expect(port).toHaveCount(0);
+  }
+  await expect(
+    page.getByText(/disconnect.*(?:to run|starts after)/i),
+  ).toHaveCount(0);
   await page.getByLabel("Build request").fill("Create a synthetic page");
   await queue.click();
   await expect(page.getByText("Task submission failed.")).toBeVisible();

@@ -63,8 +63,9 @@ test("voice and speed controls apply confirmed settings and preserve failed edit
   });
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-  await page.getByRole("tab", { name: "Memory & Settings" }).click();
-  await page.getByText("Voice and speaking speed", { exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Voice and speaking speed", exact: true })
+    .click();
   await expect(page.getByLabel("Voice", { exact: true })).toHaveValue(
     "default",
   );
@@ -73,6 +74,15 @@ test("voice and speed controls apply confirmed settings and preserve failed edit
   ).toBeDisabled();
   await page.getByLabel("Voice", { exact: true }).selectOption("Juniper");
   await page.getByLabel("Speaking speed:").fill("1.25");
+  await page.getByRole("tab", { name: "Prompts", exact: true }).click();
+  await expect(page.getByLabel("Voice", { exact: true })).toBeHidden();
+  await page
+    .getByRole("tab", { name: "Voice and speaking speed", exact: true })
+    .click();
+  await expect(page.getByLabel("Voice", { exact: true })).toHaveValue(
+    "Juniper",
+  );
+  await expect(page.getByLabel("Speaking speed:")).toHaveValue("1.25");
   await page.getByRole("button", { name: "Apply voice" }).click();
   await expect(
     page.getByRole("button", { name: "Apply voice" }),

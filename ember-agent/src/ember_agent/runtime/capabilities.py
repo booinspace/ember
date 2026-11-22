@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from ..character.core import CharacterCore
+from ..web_evidence import HOSTED_WEB_LABELS
 from .task_router import TaskRouter
 
 
@@ -44,6 +45,7 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
         )
         for operation, label in labels.items()
     ]
+    public_web_label = HOSTED_WEB_LABELS.get(core.search_provider, core.search_provider.title())
     values.append(
         Capability(
             id="public_search",
@@ -57,8 +59,8 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             else "unconfigured",
             operations=("web_search", "read_page") if core.public_web else ("web_search",),
             reason=(
-                f"In Chat, use {core.search_provider.title()} search: <public query> or "
-                f"{core.search_provider.title()} read: <public URL>. Only send public inputs."
+                f"In Chat, use {public_web_label} search: <public query> or "
+                f"{public_web_label} read: <public URL>. Only send public inputs."
                 if core.public_web
                 else None
                 if core.web_search_ready

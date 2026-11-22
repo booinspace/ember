@@ -110,14 +110,16 @@ completion of a prerequisite blocks dependent Build, including across restart;
 never start with missing context or silently substitute another task. Persist the
 binding in the existing operational task store so it survives disconnect, and
 recheck it at dispatch. Keep the original deadline and cancellation authority;
-no foreground planning turn is needed after disconnect.
+no further foreground planning turn is needed.
 
 The handoff is a bounded, untrusted Inspect summary, not a workspace transfer
 or raw tool transcript. Treat it and any approved public excerpts as data, not
 instructions or grants. Inspect remains read-only; Build still starts in a fresh
 empty offline container with no source mounts, external network, or hosted tools.
-Both tasks remain P2 and wait for Conversation disconnect; gateway admission still
-fences reconnect races. A Build receipt identifies validated public retrieval used
+Inspect and Build remain P2. The trusted managed-task client uses the gateway's
+idle lane even with Conversation connected. Chat and speech have priority between
+inference steps; an active native step retains ownership until verified release.
+A Build receipt identifies validated public retrieval used
 by recording its provider, source IDs and public URLs, not raw excerpts or private
 workspace data. For Inspect chains it also records the prerequisite task ID.
 Keep the approved Inspect workspace synthetic and non-sensitive: no filter can

@@ -27,10 +27,11 @@ const operationSchema = z.enum([
   "research",
 ]);
 type Operation = z.infer<typeof operationSchema>;
-const researchProviderSchema = z.enum(["exa", "parallel"]);
+const researchProviderSchema = z.enum(["exa", "exa_mcp", "parallel"]);
 type ResearchProvider = z.infer<typeof researchProviderSchema>;
 const researchProviderNames: Record<ResearchProvider, string> = {
   exa: "Exa",
+  exa_mcp: "Exa MCP",
   parallel: "Parallel",
 };
 const operationNames: Record<Operation, string> = {
@@ -242,12 +243,14 @@ export function Tasks({
     (Number.isInteger(servicePort) &&
       servicePort >= 1024 &&
       servicePort <= 65535);
-  const waitsForRealtime = operation === "delegate" || isResearch || isBuild;
-  const needsDisconnect = connected && operation === "summarize";
+  const sharesInference =
+    operation === "delegate" ||
+    operation === "summarize" ||
+    isBuild ||
+    isResearch;
   const canSubmit =
     !busy &&
     !!text.trim() &&
-    !needsDisconnect &&
     (!isBuild || (build && validPort)) &&
     (!isResearch || researchProvider !== undefined);
   useEffect(() => {
@@ -574,12 +577,11 @@ export function Tasks({
             <p>Leave blank to build without starting a local preview.</p>
           </>
         )}
-        {needsDisconnect && (
-          <p>Disconnect from conversation to run this model task.</p>
-        )}
-        {connected && waitsForRealtime && (
+        {connected && sharesInference && (
           <p>
-            This task can queue now. It starts after conversation disconnects.
+            This task can run while Conversation is connected. It uses one
+            inference step at a time, with foreground requests taking priority
+            between steps.
           </p>
         )}
         <button disabled={!canSubmit}>Queue task</button>
@@ -602,7 +604,7 @@ export function Tasks({
                 {item.cancellation_requested && isActive(item.state)
                   ? "Cancellation requested"
                   : item.state === "waiting_for_realtime"
-                    ? "Waiting for conversation to disconnect"
+                    ? "Waiting for inference access"
                     : item.state.replaceAll("_", " ")}
               </p>
               <small>Task {item.task_id.slice(0, 8)}</small>
