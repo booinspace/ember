@@ -88,6 +88,46 @@ def test_restart_and_cancellation_preserve_terminal_outcome(tmp_path: Path) -> N
     asyncio.run(exercise())
 
 
+def test_reserved_queue_capacity_and_expiry(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        store = TaskStore(tmp_path)
+        await store.initialize()
+        request = TaskSubmission(
+            character_id=uuid4(),
+            session_id=uuid4(),
+            turn_id=uuid4(),
+            idempotency_key="running",
+            goal="Synthetic fixture",
+        )
+        running = await store.submit(request)
+        assert await store.claim(request.character_id) is not None
+        queued = [
+            await store.submit(
+                request.model_copy(update={"idempotency_key": f"build-{i}", "operation": "build"})
+            )
+            for i in range(32)
+        ]
+        assert await store.claim(request.character_id, realtime_reserved=True) is None
+        active = await store.active(request.character_id)
+        assert len(active) == 33
+        expected_ids = [running.task_id, *(item.task_id for item in queued)]
+        assert [entry.task_id for entry in active] == expected_ids
+        assert {entry.state for entry in active[1:]} == {"waiting_for_realtime"}
+        with pytest.raises(TaskConflict, match="task_queue_full"):
+            await store.submit(request.model_copy(update={"idempotency_key": "overflow"}))
+        expired = queued[0].task_id
+        with closing(sqlite3.connect(store.path)) as db, db:
+            db.execute("UPDATE task SET deadline_at=0 WHERE id=?", (str(expired),))
+            assert db.execute("SELECT task_id FROM task_attempt").fetchall() == [
+                (str(running.task_id),)
+            ]
+        assert await store.claim(request.character_id, realtime_reserved=True) is None
+        snapshot = await store.status(expired, request.character_id)
+        assert snapshot is not None and snapshot.state == "timed_out"
+
+    asyncio.run(exercise())
+
+
 def test_summary_dispatches_through_p2_gateway(tmp_path: Path) -> None:
     import httpx
 

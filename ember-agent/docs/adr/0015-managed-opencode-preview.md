@@ -46,6 +46,29 @@ read/edit/write/shell calls; Ember projects terminal text and tool statuses and 
 an immutable ZIP. A separate operator port grant allows one verified local HTTP
 preview, not arbitrary network exposure. Unverified cleanup fences further builds.
 
+## Public web research extension
+
+[Root ADR 0027](../../../docs/adr/0027-public-web-retrieval.md) adds independent
+native hosted retrieval and an opt-in Research worker. The same Ember-owned
+adapter supplies bounded excerpts to Conversation and a private loopback MCP
+broker. Provider credentials stay in Ember. Research gets no workspace tools,
+other MCP servers, recall, skills, or direct retrieval route. A separate pinned
+process and empty temporary workspace keep its static grants distinct from
+Inspect; this is application authority, not an OS sandbox or firewall.
+
+The broker checks a private worker bearer, active OpenCode session metadata,
+and one-use invocation nonces bound to exact tool arguments. Ember issues nonces
+only after validating the full P2 tool-call batch and hides them from subsequent
+model input. Search inputs must match a `Search: <public query>` line. Read inputs
+must be a standalone public URL line or an exact URL returned in this task.
+Limits: three unique queries, three unique page URLs, eight model steps.
+Submission binds consent to Exa or Parallel; changing providers invalidates the
+queued grant. Cancellation fences model and broker calls before awaiting the
+cancellation write or cleanup. If cleanup cannot be verified, Ember disables the
+worker instead of reusing it. Each retrieval gets distinct source IDs. Receipts
+prove retrieval provenance, not that sources support model claims. No source
+means no successful research receipt.
+
 ## Inspect authority and platform limits
 
 The managed policy permits only `read`, `glob`, and `grep` in the configured

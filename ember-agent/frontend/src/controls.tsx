@@ -55,12 +55,8 @@ export function Controls({
     }
   };
   return (
-    <aside
-      className="controls"
-      id="memory-controls"
-      aria-label="Memory controls"
-    >
-      <h2>Memory sources</h2>
+    <section className="controls" aria-label="Memory controls">
+      <h3>Memory sources</h3>
       <p>
         <a href="/memory-graph">Memory graph</a>
       </p>
@@ -147,7 +143,7 @@ export function Controls({
           </button>
         </>
       )}
-      <h2>Conversation capture</h2>
+      <h3>Conversation capture</h3>
       <label className="toggle">
         <input
           type="checkbox"
@@ -161,7 +157,7 @@ export function Controls({
         Native proposals use the acceptance policy. Pending work runs when
         realtime conversation is released.
       </p>
-      <h2>Memory processing</h2>
+      <h3>Memory processing</h3>
       <p>
         Index: {state.processing.index_status}. Queued:{" "}
         {state.processing.counts.queued ?? 0}; paused:{" "}
@@ -196,6 +192,6 @@ export function Controls({
         Refresh memory status
       </button>
       <p className="identity">Character {state.binding.character_id}</p>
-    </aside>
+    </section>
   );
 }

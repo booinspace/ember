@@ -38,6 +38,7 @@ from .task_artifacts import TaskArtifact
 from .task_router import TaskNotifications, TaskReceiptView, TaskRouter
 from .task_store import (
     Confirmation,
+    ResearchProvider,
     TaskConflict,
     TaskHandle,
     TaskOperation,
@@ -98,6 +99,7 @@ class TaskInput(RuntimeModel):
     operation: TaskOperation = "inspect"
     tool: ToolInvocation | None = None
     service_port: int | None = Field(default=None, ge=1024, le=65535)
+    research_provider: ResearchProvider | None = None
 
     @model_validator(mode="after")
     def bound_operation(self) -> Self:
@@ -105,6 +107,8 @@ class TaskInput(RuntimeModel):
             raise ValueError("Tool payload must belong to the tool operation")
         if self.service_port is not None and self.operation != "build":
             raise ValueError("Service port must belong to the build operation")
+        if (self.research_provider is not None) != (self.operation == "research"):
+            raise ValueError("Web Research requires an explicit hosted provider")
         return self
 
 
@@ -300,6 +304,7 @@ class BrowserControl:
                     operation=value.operation,
                     tool=value.tool,
                     service_port=value.service_port,
+                    research_provider=value.research_provider,
                 )
 
             @app.get("/api/tools")
@@ -444,7 +449,7 @@ class BrowserControl:
                 "delegation_provider": self.task_router.delegate_label
                 if self.task_router
                 else None,
-                "public_search_available": self.core.public_search is not None,
+                "public_search_available": self.core.web_search_ready,
                 "context_id": str(self.core.context_id),
                 "prompts_available": self.prompt_controls is not None,
                 "recall": (await self.controls.recall_settings()).model_dump(mode="json"),

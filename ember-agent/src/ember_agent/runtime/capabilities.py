@@ -51,14 +51,19 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             name="Public web search",
             provider=core.search_provider,
             status="enabled"
-            if core.public_search
+            if core.web_search_ready
             else "unavailable"
             if core.search_unavailable
             else "unconfigured",
-            operations=("web_search",),
-            reason="Configured; each invocation checks the installed command."
-            if core.public_search
-            else core.search_unavailable or "No public search provider configured.",
+            operations=("web_search", "read_page") if core.public_web else ("web_search",),
+            reason=(
+                f"In Chat, use {core.search_provider.title()} search: <public query> or "
+                f"{core.search_provider.title()} read: <public URL>. Only send public inputs."
+                if core.public_web
+                else None
+                if core.web_search_ready
+                else core.search_unavailable or "No public search provider configured."
+            ),
         )
     )
     values.append(
@@ -97,6 +102,25 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
                     "Configured isolated Build workspace."
                     if router.build_available
                     else router.build_unavailable or "Build cleanup could not be verified."
+                ),
+            )
+        )
+
+    if router and (
+        router.research_available or router.research_unavailable or router.providers["research"]
+    ):
+        values.append(
+            Capability(
+                id="harness.research",
+                kind="harness",
+                name="Public web research",
+                provider=router.research_provider or "OpenCode",
+                status="enabled" if router.research_available else "unavailable",
+                operations=("research",),
+                reason=(
+                    "Configured public evidence retrieval through Ember."
+                    if router.research_available
+                    else router.research_unavailable or "Research worker unavailable."
                 ),
             )
         )

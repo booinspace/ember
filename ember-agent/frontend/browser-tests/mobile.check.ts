@@ -72,11 +72,18 @@ for (const { width, height } of [
       "Synthetic reply",
     );
     await expect(
-      page.getByRole("complementary", { name: "Memory controls" }),
-    ).toBeVisible();
+      page.getByRole("region", { name: "Memory controls" }),
+    ).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Use microphone" }),
     ).toHaveAttribute("aria-pressed", "false");
+    const settings = page.getByRole("tab", { name: "Memory & Settings" });
+    expect((await settings.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    await settings.click();
+    await expect(
+      page.getByRole("region", { name: "Memory controls" }),
+    ).toBeVisible();
+    await expect(prompt).toBeHidden();
     await page.getByRole("button", { name: "Copy LAN link" }).click();
     await expect(
       page.getByRole("textbox", { name: "Private LAN access link" }),
@@ -84,6 +91,11 @@ for (const { width, height } of [
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
       .toBeLessThanOrEqual(width);
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    await expect(page.locator(".turn.assistant")).toContainText(
+      "Synthetic reply",
+    );
+    await expect(page.locator("header .status")).toHaveText("Connected");
     if (width <= 520) {
       const button = await page
         .getByRole("button", { name: "Send", exact: true })

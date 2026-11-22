@@ -31,6 +31,7 @@ from .task_artifacts import TaskArtifact, TaskArtifacts
 from .task_store import (
     Confirmation,
     ConfirmationRequest,
+    ResearchProvider,
     TaskCancelled,
     TaskConflict,
     TaskHandle,
@@ -468,6 +469,7 @@ class TaskNotifications(RuntimeModel):
 
     revision: int = Field(ge=0)
     items: tuple[TaskSnapshot, ...]
+    active: tuple[TaskSnapshot, ...] = ()
 
 
 class TaskReceiptView(RuntimeModel):
@@ -827,8 +829,12 @@ class TaskRouter:
         self.delegate_label = "Agentic harness"
         self.delegate_unavailable: str | None = None
         self.delegate_health: Callable[[], bool] | None = None
+        self.research_provider: ResearchProvider | None = None
+        self.research_health: Callable[[], bool] | None = None
+        self.research_unavailable: str | None = None
         self.build_health: Callable[[], bool] | None = None
         self.build_unavailable: str | None = None
+        self.realtime_reserved: Callable[[], Awaitable[bool]] | None = None
         self.build_artifacts = BuildArtifacts(root)
         self.build_services = BuildServices()
         self.artifacts = TaskArtifacts(root)
@@ -845,6 +851,7 @@ class TaskRouter:
             "summarize": summary,
             "recall": recall,
             "delegate": delegate,
+            "research": None,
             "build": None,
         }
         self._wake = asyncio.Event()
@@ -860,7 +867,10 @@ class TaskRouter:
         self.broker = HarnessToolBroker(character_id, self.providers["tool"], activity)
         self._worker: asyncio.Task[None] | None = None
         self._closing = False
-        self._active: tuple[UUID, asyncio.Task[TaskResult]] | None = None
+        self._active: (
+            tuple[UUID, asyncio.Task[tuple[TaskResult, ToolContext]], TaskOperation] | None
+        ) = None
+        self._cancelling_tasks: dict[UUID, int] = {}
 
     @property
     def delegation_available(self) -> bool:
@@ -878,7 +888,19 @@ class TaskRouter:
             and (self.build_health is None or self.build_health())
         )
 
+    @property
+    def research_available(self) -> bool:
+        """Advertise only the configured and verified Research worker."""
+        return (
+            self.providers["research"] is not None
+            and self.research_provider is not None
+            and self.research_unavailable is None
+            and (self.research_health is None or self.research_health())
+        )
+
     def _provider(self, operation: TaskOperation) -> AgenticTaskProvider | None:
+        if operation == "research" and not self.research_available:
+            return None
         if (operation == "delegate" and not self.delegation_available) or (
             operation == "build" and not self.build_available
         ):
@@ -903,6 +925,7 @@ class TaskRouter:
         operation: TaskOperation = "inspect",
         tool: ToolInvocation | None = None,
         service_port: int | None = None,
+        research_provider: ResearchProvider | None = None,
     ) -> TaskHandle:
         """Persist a scoped task before signalling the worker."""
         if self._closing or self._worker is None or self._worker.done():
@@ -917,6 +940,10 @@ class TaskRouter:
             raise TaskConflict("invalid_build_service_port")
         if self._provider(operation) is None:
             raise TaskConflict("task_provider_unavailable")
+        if (operation == "research" and research_provider != self.research_provider) or (
+            operation != "research" and research_provider is not None
+        ):
+            raise TaskConflict("research_provider_consent_required")
         handle = await self.store.submit(
             TaskSubmission(
                 character_id=self.character_id,
@@ -927,6 +954,7 @@ class TaskRouter:
                 operation=operation,
                 tool=tool,
                 service_port=service_port,
+                research_provider=research_provider,
             )
         )
         self._wake.set()
@@ -937,12 +965,15 @@ class TaskRouter:
         self, text: str, turn_id: UUID, *, operation: TaskOperation = "inspect"
     ) -> str:
         """Queue an explicit conversational task and return a short local receipt."""
+        if operation == "build" and not self.build_available:
+            return "Build is unavailable. Check Tools for status; Inspect cannot build apps."
         try:
             await self.submit(str(turn_id), text, turn_id=turn_id, operation=operation)
         except TaskConflict:
             return "I couldn't queue that task. Please try again."
         if operation in ("delegate", "build"):
-            return "Task queued. Disconnect Conversation to let it run, then check Tasks."
+            name = "Build" if operation == "build" else "Inspect"
+            return f"{name} task queued. Disconnect Conversation to let it run, then check Tasks."
         return "I queued the task. Its result will appear in Tasks."
 
     async def _validated(self, value: TaskSnapshot) -> TaskSnapshot:
@@ -1072,11 +1103,24 @@ class TaskRouter:
 
     async def cancel(self, task_id: UUID) -> None:
         """Record cancellation under this character's authority."""
-        async with self._completion_lock:
-            await self.store.cancel(task_id, self.character_id)
-            active = self._active
-            if active is not None and active[0] == task_id and not active[1].cancelling():
+        # Research has no write effects. Fence task-owned grants before SQLite awaits.
+        active = self._active
+        if active is not None and active[0] == task_id and active[2] == "research":
+            if not active[1].cancelling():
                 active[1].cancel()
+        self._cancelling_tasks[task_id] = self._cancelling_tasks.get(task_id, 0) + 1
+        try:
+            async with self._completion_lock:
+                await self.store.cancel(task_id, self.character_id)
+                active = self._active
+                if active is not None and active[0] == task_id and not active[1].cancelling():
+                    active[1].cancel()
+        finally:
+            remaining = self._cancelling_tasks[task_id] - 1
+            if remaining:
+                self._cancelling_tasks[task_id] = remaining
+            else:
+                del self._cancelling_tasks[task_id]
         self.events.publish()
 
     async def notifications(self, revision: int | None) -> TaskNotifications:
@@ -1084,7 +1128,9 @@ class TaskRouter:
         current = await self.events.wait(revision)
         values = await self.store.notifications(self.character_id)
         return TaskNotifications(
-            revision=current, items=tuple([await self._validated(value) for value in values])
+            revision=current,
+            items=tuple([await self._validated(value) for value in values]),
+            active=await self.store.active(self.character_id),
         )
 
     async def acknowledge(self, task_id: UUID) -> None:
@@ -1146,12 +1192,35 @@ class TaskRouter:
         return self.attention.update(len(pending), len(results))
 
     async def _dispatch(self) -> None:
+        retry = False
         while not self._closing:
-            await self._wake.wait()
+            try:
+                async with asyncio.timeout(2 if retry else None):
+                    await self._wake.wait()
+            except TimeoutError:
+                pass
             self._wake.clear()
             while not self._closing:
-                claim = await self.store.claim(self.character_id)
+                before = await self.store.active(self.character_id)
+                probe = self.realtime_reserved
+                # A managed task can arrive between the snapshot and atomic claim.
+                reserved = probe is not None
+                if probe is not None and any(
+                    item.operation in ("delegate", "build", "research") for item in before
+                ):
+                    try:
+                        reserved = await probe()
+                    except GatewayError:
+                        # Unknown reservation state cannot admit a managed worker.
+                        reserved = True
+                if self._closing:
+                    return
+                claim = await self.store.claim(self.character_id, realtime_reserved=reserved)
                 if claim is None:
+                    after = await self.store.active(self.character_id)
+                    retry = any(item.state == "waiting_for_realtime" for item in after)
+                    if after != before:
+                        self.events.publish()
                     break
                 self.events.publish()
                 await self._execute(*claim)
@@ -1168,17 +1237,12 @@ class TaskRouter:
                 task_id=identity,
                 provider=self.delegate_label
                 if request.operation in ("delegate", "build")
+                else "OpenCode"
+                if request.operation == "research"
                 else "ember",
             )
             if self.activity
             else None
-        )
-        context = ToolContext(
-            character_id=request.character_id,
-            session_id=request.session_id,
-            turn_id=request.turn_id,
-            task_id=identity,
-            deadline_at=deadline,
         )
         progress_lock = asyncio.Lock()
 
@@ -1208,6 +1272,7 @@ class TaskRouter:
                 self.events.publish()
                 if self.activity and span:
                     stages: dict[str, ActivityStatus] = {
+                        "waiting_for_realtime": "waiting_for_realtime",
                         "waiting_for_inference": "waiting_for_model",
                         "waiting_for_tool": "waiting_for_tool",
                         "waiting_for_user": "waiting_for_user",
@@ -1215,14 +1280,30 @@ class TaskRouter:
                     }
                     self.activity.update(span, stages.get(next_state, "running"))
 
-        async def execute_provider() -> TaskResult:
+        async def execute_provider() -> tuple[TaskResult, ToolContext]:
             status = await self.store.status(identity, self.character_id)
             if status is None or status.cancellation_requested:
                 raise TaskCancelled()
+            if self._closing or identity in self._cancelling_tasks:
+                raise TaskCancelled()
+            if request.operation == "research" and (
+                request.research_provider is None
+                or request.research_provider != self.research_provider
+            ):
+                raise TaskConflict("research_provider_consent_required")
             provider = self._provider(request.operation)
             if provider is None:
                 raise TaskConflict("task_provider_unavailable")
-            return await provider.execute(request, context, progress)
+            run_deadline = min(deadline, time() + (600 if request.operation == "build" else 180))
+            context = ToolContext(
+                character_id=request.character_id,
+                session_id=request.session_id,
+                turn_id=request.turn_id,
+                task_id=identity,
+                deadline_at=run_deadline,
+            )
+            async with asyncio.timeout(max(0.0, run_deadline - time())):
+                return await provider.execute(request, context, progress), context
 
         async def discard_build() -> bool:
             nonlocal failure_code
@@ -1275,11 +1356,11 @@ class TaskRouter:
                     self.activity.update(span, cast(ActivityStatus, committed), code=failure_code)
 
         try:
-            async with asyncio.timeout(max(0.0, min(180.0, deadline - time()))):
+            async with asyncio.timeout(max(0.0, deadline - time())):
                 execution = asyncio.create_task(execute_provider(), name="ember-task-provider")
-                self._active = (identity, execution)
+                self._active = (identity, execution, request.operation)
                 try:
-                    result = await asyncio.shield(execution)
+                    result, context = await asyncio.shield(execution)
                 except asyncio.CancelledError:
                     # The dispatcher owns the provider even when its own deadline expires.
                     dispatcher = asyncio.current_task()
@@ -1371,6 +1452,8 @@ class TaskRouter:
             if request.operation == "build":
                 uncertain = failure_code == "build_container_cleanup_failed"
                 await finish("uncertain" if uncertain else "failed", result=failure_code)
+            elif request.operation == "research":
+                await finish("failed", result=failure_code)
             else:
                 await finish("failed")
         else:

@@ -16,6 +16,7 @@ class CompletedTurn:
     request_id: UUID | None = None
     complete: bool = True
     clipped: bool = False
+    public_web_reply: bool = False
 
 
 @runtime_checkable
@@ -35,4 +36,6 @@ class ConversationSink(Protocol):
         complete: bool,
         dependencies: tuple[tuple[UUID, int], ...],
         certificate: ContextDependencies | None,
+        *,
+        public_web_reply: bool = False,
     ) -> None: ...

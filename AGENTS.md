@@ -101,10 +101,11 @@ Do not vendor external agent frameworks into either core.
   input history. The existing [operator-managed memory MCP](docs/opencode-memory.md) is unchanged,
   loopback by default with explicit trusted-proxy HTTPS support. Use read-only with verified
   local inference; never wire it into managed OpenCode. Do not copy or migrate existing notes.
-- **Skills and public search (root ADRs 0023, 0025).** No live skills provider or page reader is
-  installed by the preview. Portable contracts/assets and prior Hermes qualification are not
-  evidence of current execution. Public SearXNG search is independently configured and returns
-  snippets, not page contents. No skill or search authority is granted to managed OpenCode.
+- **Skills and public web (root ADRs 0023, 0025, 0027).** No live skills provider is installed.
+  Ember can opt into Exa or Parallel for public page excerpts; SearXNG stays snippet-only.
+  Keep hosted keys and private context out of worker and retrieval inputs. Only the separate,
+  opt-in Research worker gets task-scoped retrieval. Inspect and Build get no search grant.
+  See [preview evidence](docs/adr/0027-public-web-retrieval.md#acceptance-mapping).
 - **Inference hardening (13; root ADR 0024).** One gateway owns native generation through
   verified drain/release and durable journal settlement. P2–P4 wait until realtime sessions
   disconnect; P5 can use idle time in a connected session but yields to waiting foreground

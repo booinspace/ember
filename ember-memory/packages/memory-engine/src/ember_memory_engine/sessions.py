@@ -19,10 +19,12 @@ if TYPE_CHECKING:
 
 
 class NativeReplyContext(ContractModel):
-    """Only source/permission dependencies accompany persisted delivered assistant text."""
+    """Source dependencies and replay policy for persisted delivered assistant text."""
 
     memories: tuple[MemoryReference, ...] = Field(default=(), max_length=256)
     certificate: ContextDependencies | None = None
+    # Preserve old native batch hashes for retries when the marker is absent.
+    public_web_reply: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class NativeTurnWrite(ContractModel):

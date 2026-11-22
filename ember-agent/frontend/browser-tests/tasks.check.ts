@@ -78,7 +78,7 @@ test("draft approval shows exact text and binds the decision to its action hash"
     return route.fulfill({ json: {} });
   });
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-  await page.getByText("Tasks", { exact: true }).click();
+  await page.getByRole("tab", { name: "Tasks", exact: true }).click();
   await page.getByLabel("Operation").selectOption("review");
   await page.getByLabel("Text to inspect").fill(approval.arguments.draft);
   await page.getByRole("button", { name: "Queue task" }).click();
@@ -92,11 +92,24 @@ test("draft approval shows exact text and binds the decision to its action hash"
   ).toHaveCount(0);
 });
 
-test("Delegated research keeps the durable task handle and cancellation", async ({
+test("Tasks show cancellable conversation-submitted work and deduplicate local submissions", async ({
   page,
 }) => {
   let submitted = false;
-  let cancelled = false;
+  const fromChat = "22222222-2222-4222-8222-222222222222";
+  const otherBuilds = Array.from(
+    { length: 32 },
+    (_, index) =>
+      `${String(index + 1).padStart(8, "0")}-3333-4333-8333-333333333333`,
+  );
+  const cancelled = new Set<string>();
+  const waiting = (taskId: string, operation: "build" | "delegate") => ({
+    task_id: taskId,
+    state: cancelled.has(taskId) ? "cancelled" : "waiting_for_realtime",
+    cancellation_requested: cancelled.has(taskId),
+    result: null,
+    operation,
+  });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/bootstrap")
@@ -131,48 +144,256 @@ test("Delegated research keeps the durable task handle and cancellation", async 
       });
       submitted = true;
       return route.fulfill({
+        json: waiting(id, "delegate"),
+      });
+    }
+    if (path === "/api/task-notifications") {
+      const tasks = [
+        waiting(fromChat, "build"),
+        ...otherBuilds.map((taskId) => waiting(taskId, "build")),
+        ...(submitted ? [waiting(id, "delegate")] : []),
+      ];
+      return route.fulfill({
         json: {
-          task_id: id,
-          state: "waiting_for_inference",
-          cancellation_requested: false,
+          revision: 0,
+          items: tasks.filter((item) => item.state === "cancelled"),
+          active: tasks.filter((item) => item.state !== "cancelled"),
         },
       });
     }
-    if (path === "/api/task-notifications")
-      return route.fulfill({ json: { revision: 0, items: [] } });
     if (path === "/api/task-confirmations") return route.fulfill({ json: [] });
-    if (path === "/api/tasks/" + id + "/cancel") {
-      cancelled = true;
+    if (path.startsWith("/api/tasks/") && path.endsWith("/cancel")) {
+      cancelled.add(path.split("/")[3]!);
       return route.fulfill({ json: { accepted: true } });
     }
     if (path === "/api/tasks/" + id)
-      return route.fulfill({
-        json: {
-          task_id: id,
-          state: cancelled ? "cancelled" : "waiting_for_inference",
-          cancellation_requested: cancelled,
-          result: null,
-          operation: "delegate",
-        },
-      });
+      return route.fulfill({ json: waiting(id, "delegate") });
     return route.fulfill({ json: {} });
   });
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-  await page.getByText("Tasks", { exact: true }).click();
+  await page.getByRole("tab", { name: "Tasks", exact: true }).click();
   await expect(page.locator('option[value="build"]')).toHaveCount(0);
   await expect(page.getByLabel("Local service port (optional)")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^Cancel task: Build / }),
+  ).toHaveCount(33);
+  const fromChatRow = page.getByRole("group", { name: "Build task 22222222" });
+  await expect(
+    fromChatRow.getByText("Build: Waiting for conversation to disconnect"),
+  ).toBeVisible();
+  await fromChatRow
+    .getByRole("button", { name: "Cancel task: Build 22222222", exact: true })
+    .click();
+  await expect.poll(() => [...cancelled]).toEqual([fromChat]);
+  await expect(
+    page.getByRole("button", {
+      name: "Cancel task: Build 00000032",
+      exact: true,
+    }),
+  ).toBeVisible();
   await page.getByLabel("Operation").selectOption("delegate");
   await page
-    .getByLabel("Research request")
+    .getByLabel("Workspace inspection request")
     .fill("Find official search documentation");
   await page.getByRole("button", { name: "Queue task" }).click();
   await expect.poll(() => submitted).toBe(true);
-  await expect(page.getByRole("button", { name: "Cancel task" })).toBeVisible();
-  await page.getByRole("button", { name: "Cancel task" }).click();
-  await expect.poll(() => cancelled).toBe(true);
-  await expect(page.getByRole("button", { name: "Cancel task" })).toHaveCount(
-    0,
+  const cancel = page.getByRole("button", {
+    name: "Cancel task: Workspace inspection 11111111",
+    exact: true,
+  });
+  await expect(cancel).toHaveCount(1);
+  await expect(
+    page.getByText(
+      "Workspace inspection: Waiting for conversation to disconnect",
+    ),
+  ).toBeVisible();
+  await cancel.click();
+  await expect.poll(() => cancelled.has(id)).toBe(true);
+  await expect(cancel).toHaveCount(0);
+});
+
+test("web research binds consent and retries to its hosted provider and only links receipt citations", async ({
+  page,
+}) => {
+  let available = false;
+  let provider = "OpenCode";
+  let submitted = false;
+  let invalid = false;
+  const attempts: { idempotency_key: string; research_provider: string }[] = [];
+  const result = {
+    task_id: id,
+    state: "succeeded",
+    cancellation_requested: false,
+    result:
+      'Finding [S1]. <a href="https://example.invalid/invented">Invented</a>',
+    operation: "research",
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/state")
+      return route.fulfill({
+        json: {
+          binding: {
+            character_id: id,
+            instance_id: id,
+            room: "synthetic",
+            endpoint: "ws://127.0.0.1:7880",
+          },
+          context_id: id,
+          recall: {
+            local_enabled: true,
+            import_mode: "none",
+            included_libraries: [],
+            excluded_libraries: [],
+            revision: 0,
+          },
+          capture: { enabled: false, revision: 0 },
+          deep: "available",
+          tasks_available: true,
+        },
+      });
+    if (path === "/api/capabilities")
+      return route.fulfill({
+        json: {
+          capabilities: [
+            {
+              id: "harness.research",
+              kind: "harness",
+              name: "Public web research",
+              provider,
+              status: available ? "enabled" : "unavailable",
+              operations: ["research"],
+              reason: null,
+              effect: "read",
+            },
+          ],
+        },
+      });
+    if (path === "/api/tasks") {
+      const payload = route.request().postDataJSON();
+      expect(payload).toMatchObject({
+        operation: "research",
+        text: "Summarize public documentation.\nSearch: public documentation",
+        research_provider: provider,
+      });
+      attempts.push(payload);
+      if (attempts.length <= 2)
+        return route.fulfill({ status: 409, json: { error: "test_retry" } });
+      submitted = true;
+      return route.fulfill({ json: { ...result, state: "queued" } });
+    }
+    if (path === `/api/tasks/${id}`) return route.fulfill({ json: result });
+    if (path === "/api/task-notifications")
+      return route.fulfill({
+        json: { revision: 1, items: submitted ? [result] : [] },
+      });
+    if (path === "/api/task-confirmations") return route.fulfill({ json: [] });
+    if (path === `/api/tasks/${id}/receipt`)
+      return route.fulfill({
+        json: {
+          task_id: id,
+          state: "succeeded",
+          receipt: {
+            tool: "research",
+            outcome: "succeeded",
+            code: null,
+            data: {
+              sources: [
+                {
+                  id: "S1",
+                  url: invalid
+                    ? "javascript:alert(1)"
+                    : "https://example.invalid/docs",
+                  title: "Official docs",
+                  provider: "fixture",
+                  operation: "read",
+                  retrieved_at: "2026-11-22T12:00:00Z",
+                  truncated: true,
+                },
+                ...Array.from({ length: 11 }, (_, index) => ({
+                  id: `S${index + 2}`,
+                  url: "https://example.invalid/docs",
+                  title: "📖".repeat(160),
+                  provider: "fixture",
+                  operation: "search",
+                  retrieved_at: "2026-11-22T12:00:00Z",
+                  truncated: false,
+                })),
+              ],
+            },
+          },
+        },
+      });
+    return route.fulfill({ json: null });
+  });
+  await page.goto("http://127.0.0.1:4174/");
+  const tasks = page.getByRole("tab", { name: "Tasks", exact: true });
+  const chat = page.getByRole("tab", { name: "Chat", exact: true });
+  const openTasks = async () => {
+    const capability = page.waitForResponse("**/api/capabilities");
+    await tasks.click();
+    await capability;
+  };
+  await openTasks();
+  const researchOption = page.locator('option[value="research"]');
+  await expect(researchOption).toHaveCount(0);
+  available = true;
+  await chat.click();
+  await openTasks();
+  await expect(researchOption).toHaveCount(0);
+
+  provider = "exa";
+  await chat.click();
+  await openTasks();
+  await page.getByLabel("Operation").selectOption("research");
+  const question = page.getByLabel("Public web research question");
+  const text = "Summarize public documentation.\nSearch: public documentation";
+  await question.fill(text);
+  await expect(question).toHaveAccessibleDescription(
+    /Use public information only\. The hosted service Exa receives your approved search queries and any public URLs read/,
   );
+  const queue = page.getByRole("button", { name: "Queue task" });
+  const submissionError = page.getByText("Task submission failed.");
+  for (const count of [1, 2]) {
+    await queue.click();
+    await expect.poll(() => attempts.length).toBe(count);
+    await expect(submissionError).toBeVisible();
+  }
+  expect(attempts[1]).toEqual(attempts[0]);
+
+  provider = "parallel";
+  await chat.click();
+  await openTasks();
+  await expect(question).toHaveAccessibleDescription(
+    /The hosted service Parallel receives your approved search queries and any public URLs read/,
+  );
+  await expect(question).toHaveValue(text);
+  await queue.click();
+  await expect(page.getByText(result.result, { exact: true })).toBeVisible();
+  expect(attempts.map((attempt) => attempt.research_provider)).toEqual([
+    "exa",
+    "exa",
+    "parallel",
+  ]);
+  expect(attempts[2]?.idempotency_key).not.toBe(attempts[0]?.idempotency_key);
+  await expect(page.getByRole("link", { name: "Invented" })).toHaveCount(0);
+  const view = page.getByRole("button", { name: "View receipt" });
+  await view.click();
+  const receipt = page.getByRole("region", { name: "Web research receipt" });
+  await expect(
+    receipt.getByRole("link", { name: "Official docs" }),
+  ).toHaveAttribute("href", "https://example.invalid/docs");
+  await expect(
+    receipt.getByRole("link", { name: "Official docs" }),
+  ).toHaveAttribute("rel", /noreferrer/);
+  await expect(receipt.getByRole("link")).toHaveCount(12);
+  await expect(receipt).toContainText("[S1]");
+  await expect(receipt).toContainText("[S12]");
+  await expect(receipt).toContainText("Page excerpts · Truncated");
+  invalid = true;
+  await view.click();
+  await expect(receipt).toContainText("No source data was retained");
+  await expect(receipt.getByRole("link")).toHaveCount(0);
 });
 
 test("Build has a separate request, ZIP, receipt, and independently stoppable preview", async ({
@@ -221,12 +442,30 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
             build_available: true,
           },
         });
+      case "/api/capabilities":
+        return route.fulfill({
+          json: {
+            capabilities: [
+              {
+                id: "harness.research",
+                kind: "harness",
+                name: "Public web research",
+                provider: "exa",
+                status: "enabled",
+                operations: ["research"],
+                reason: null,
+                effect: "read",
+              },
+            ],
+          },
+        });
       case "/api/tasks": {
         const payload = route.request().postDataJSON();
         expect(payload).toMatchObject({
           operation: "build",
           text: "Create a synthetic page",
         });
+        expect(payload).not.toHaveProperty("research_provider");
         attempts.push(payload);
         if (attempts.length < 3)
           return route.fulfill({ status: 409, json: { error: "test_retry" } });
@@ -290,10 +529,11 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
     }
   });
   await page.goto("http://127.0.0.1:4174/");
-  await page.getByText("Tasks", { exact: true }).click();
+  await page.getByRole("tab", { name: "Tasks", exact: true }).click();
   const operation = page.getByLabel("Operation");
   const port = page.getByLabel("Local service port (optional)");
   const queue = page.getByRole("button", { name: "Queue task" });
+  await expect(operation.locator('option[value="research"]')).toBeEnabled();
   await operation.selectOption("delegate");
   await expect(port).toHaveCount(0);
   await operation.selectOption("build");

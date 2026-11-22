@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Skills } from "./Skills";
 import {
   useDashboard,
@@ -8,7 +8,6 @@ import {
   PromptInspector,
 } from "./Dashboard";
 import { createRequestId } from "./ids";
-import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { CharacterConnection } from "./connection";
 import type { TextConnection } from "./text_connection";
@@ -30,6 +29,12 @@ import { Inspector } from "./Inspector";
 import { TurnDetailsPanel } from "./TurnDetails";
 import { PromptEditor } from "./PromptEditor";
 import { VoiceControls } from "./VoiceControls";
+import {
+  WorkspaceTabs,
+  workspacePanel,
+  workspacePanelProps,
+  type WorkspacePage,
+} from "./Workspace";
 
 type Turn = {
   id: string;
@@ -59,16 +64,34 @@ export function App() {
   const [result, setResult] = useState<Investigation | null>(null);
   const [details, setDetails] = useState<TurnDetails | null>(null);
   const monitor = useDashboard(state !== null);
-  const [view, setView] = useState<"conversation" | "activity">("conversation");
+  const [page, setPage] = useState<WorkspacePage>("chat");
   const [inspectDetails, setInspectDetails] = useState(false);
   const [requestedInspection, setRequestedInspection] = useState<string | null>(
     null,
   );
-  const [inspectionNonce, setInspectionNonce] = useState(0);
-  const inspectRequest = (identity: string): void => {
-    setRequestedInspection(identity);
-    setInspectionNonce((value) => value + 1);
+  const [requestedTaskId, setRequestedTaskId] = useState<string | null>(null);
+  const focusTarget = useRef<string | null>(null);
+  const selectPage = (next: WorkspacePage, focus?: string): void => {
+    if (next === page) return;
+    focusTarget.current = focus ?? null;
+    setRequestedInspection(null);
+    setRequestedTaskId(null);
+    setPage(next);
   };
+  const inspectRequest = (identity: string): void => {
+    selectPage("inference", workspacePanel("inference"));
+    setRequestedInspection(identity);
+  };
+  const showTasks = (taskId?: string): void => {
+    selectPage("tasks", workspacePanel("tasks"));
+    setRequestedTaskId(taskId ?? null);
+  };
+  useLayoutEffect(() => {
+    if (focusTarget.current) {
+      document.getElementById(focusTarget.current)?.focus();
+      focusTarget.current = null;
+    }
+  }, [page]);
   const [thinkingSaving, setThinkingSaving] = useState(false);
   const thinkingPending = useRef(false);
   const messages = useRef<HTMLDivElement | null>(null);
@@ -144,7 +167,8 @@ export function App() {
       setSpeechTarget(null);
   }, [details, speechTarget]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (page !== "chat") return;
     if (messages.current && (forceScroll.current || following.current)) {
       messages.current.scrollTo({
         top: messages.current.scrollHeight,
@@ -153,7 +177,7 @@ export function App() {
       following.current = true;
     }
     forceScroll.current = false;
-  }, [turns]);
+  }, [page, turns]);
 
   const report = (value: string): void => {
     if (mounted.current) setError(value);
@@ -422,6 +446,52 @@ export function App() {
         setStoppingSpeech((old) => (old === target ? null : old));
     }
   };
+  const replyInProgress =
+    busy ||
+    Boolean(
+      details &&
+      [
+        "preparing",
+        "generating",
+        "thinking",
+        "answering",
+        "awaiting_delivery",
+      ].includes(details.stage),
+    );
+  const voiceActions = (
+    <>
+      {(page === "chat" || microphone) && (
+        <button
+          type="button"
+          aria-pressed={microphone}
+          disabled={
+            !connected ||
+            !state?.voice ||
+            !microphoneAvailable ||
+            (busy && !microphone)
+          }
+          onClick={() => void toggleMicrophone()}
+        >
+          {microphone ? "Mute microphone" : "Use microphone"}
+        </button>
+      )}
+      {state?.voice &&
+        state.transport === "livekit" &&
+        (page === "chat" || speechTarget) && (
+          <button
+            type="button"
+            disabled={
+              !connected || !speechTarget || stoppingSpeech === speechTarget
+            }
+            onClick={() => void stopSpeaking()}
+          >
+            {stoppingSpeech === speechTarget && speechTarget
+              ? "Stopping speech…"
+              : "Stop speaking"}
+          </button>
+        )}
+    </>
+  );
   return (
     <main className="dashboard-shell">
       <header className="app-header">
@@ -441,103 +511,34 @@ export function App() {
         >
           {connected ? "Disconnect" : "Connect"}
         </button>
+        {page !== "chat" && (microphone || speechTarget) && (
+          <div
+            className="session-actions"
+            aria-label="Active voice controls"
+            role="group"
+          >
+            {voiceActions}
+          </div>
+        )}
       </header>
-      <SystemStatus snapshot={monitor.snapshot} online={monitor.online} />
-      {state?.transport === "http" && (
-        <p role="status">
-          {state.text_available
-            ? "Voice is unavailable. Text chat and memory controls are ready."
-            : "Conversation is unavailable. Memory controls are ready."}
-        </p>
-      )}
-      {state?.lan_available && (
-        <div className="lan-sharing">
-          <button onClick={() => void shareLan()}>Copy LAN link</button>
-          {lanLink && (
-            <label>
-              Private LAN access link{" "}
-              <input
-                readOnly
-                value={lanLink}
-                onFocus={(event) => event.target.select()}
-              />
-            </label>
-          )}
-        </div>
-      )}
+      <WorkspaceTabs page={page} select={selectPage} />
       {error && (
         <div role="alert" className="error">
           {error}
         </div>
       )}
-      <div className="layout workspace">
-        <nav className="workspace-nav" aria-label="Dashboard navigation">
-          <span className="eyebrow">WORKSPACE</span>
-          <button
-            className={view === "conversation" ? "selected" : ""}
-            onClick={() => setView("conversation")}
-          >
-            <span aria-hidden="true">◉</span> Conversation
-          </button>
-          <button
-            className={view === "activity" ? "selected" : ""}
-            onClick={() => setView("activity")}
-          >
-            <span aria-hidden="true">↗</span> Activity{" "}
-            <span className="nav-count">{monitor.events.length}</span>
-          </button>
-          <a href="#inference-context">
-            <span aria-hidden="true">✦</span> Inference context
-          </a>
-          <a href="#capabilities">
-            <span aria-hidden="true">◇</span> Capabilities
-          </a>
-          <a href="#skills">
-            <span aria-hidden="true">▧</span> Skills
-          </a>
-          <a href="#memory-controls">
-            <span aria-hidden="true">▤</span> Memory & settings
-          </a>
-          <div className="runtime-card">
-            <i className={monitor.online ? "live-dot" : "offline-dot"} />
-            <strong>
-              {monitor.online ? "Runtime online" : "Connecting to runtime"}
-            </strong>
-            <p>{monitor.snapshot?.model ?? "Local model"}</p>
-            <small>
-              {monitor.snapshot?.system.gpu_name ?? "Local hardware"}
-            </small>
-          </div>
-        </nav>
-        <section className="conversation" aria-label="Conversation">
-          <div className="conversation-toolbar">
-            <div>
-              <span className="eyebrow">
-                {view === "conversation"
-                  ? "CHARACTER SESSION"
-                  : "RUNTIME TRANSACTIONS"}
-              </span>
-              <h2>{view === "conversation" ? "Conversation" : "Activity"}</h2>
-            </div>
-            <div
-              className="view-switch"
-              role="group"
-              aria-label="Conversation view"
-            >
-              <button
-                className={view === "conversation" ? "selected" : ""}
-                onClick={() => setView("conversation")}
-              >
-                Chat
-              </button>
-              <button
-                className={view === "activity" ? "selected" : ""}
-                onClick={() => setView("activity")}
-              >
-                Activity
-              </button>
-            </div>
-          </div>
+      <section {...workspacePanelProps("chat", page)}>
+        <div className="page-heading">
+          <h2>Chat</h2>
+          {state?.transport === "http" && (
+            <p role="status">
+              {state.text_available
+                ? "Voice is unavailable. Text chat and memory controls are ready."
+                : "Conversation is unavailable. Memory controls are ready."}
+            </p>
+          )}
+        </div>
+        <div className="conversation" aria-label="Conversation">
           <div
             className="messages"
             aria-live="polite"
@@ -551,92 +552,49 @@ export function App() {
                 80;
             }}
           >
-            {view === "conversation" && turns.length === 0 && (
+            {turns.length === 0 && (
               <div className="welcome">
                 <div className="welcome-emblem" aria-hidden="true">
                   ✦
                 </div>
                 <span className="eyebrow">YOUR LOCAL AI WORKSPACE</span>
-                <h2>Start a conversation.</h2>
+                <h3>Start a conversation.</h3>
                 <p>
-                  Talk, search, or explore a memory. Tool calls and context
-                  activity appear here as they happen.
+                  Connect to chat with Ember. Explore related tool calls and
+                  memory context as you go.
                 </p>
               </div>
             )}
-            {view === "conversation" &&
-              turns.map((turn) => (
-                <Fragment key={turn.id}>
-                  <article className={"turn " + turn.role}>
-                    <span>{turn.role === "user" ? "You" : "Ember"}</span>
-                    <p>{turn.text}</p>
-                  </article>
-                  {turn.role === "user" &&
-                    monitor.events
-                      .filter(
-                        (event) =>
-                          event.request_id &&
-                          event.request_id === turn.requestId &&
-                          event.kind !== "inference" &&
-                          event.kind !== "system",
-                      )
-                      .map((event) => (
-                        <ActivityCard
-                          key={event.id}
-                          event={event}
-                          inspect={inspectRequest}
-                        />
-                      ))}
-                </Fragment>
-              ))}
-            {monitor.events
-              .filter(
-                (event) =>
-                  view === "activity" ||
-                  (["task", "tool", "memory"].includes(event.kind) &&
-                    !turns.some((turn) => turn.requestId === event.request_id)),
-              )
-              .slice(-64)
-              .map((event) => (
-                <ActivityCard
-                  key={event.id}
-                  event={event}
-                  inspect={inspectRequest}
-                />
-              ))}
-            {view === "activity" && monitor.events.length === 0 && (
-              <div className="welcome">
-                <h2>Activity will appear here.</h2>
-                <p>
-                  Memory recall, tools, tasks and inference share one live
-                  timeline.
-                </p>
-              </div>
-            )}
+            {turns.map((turn) => (
+              <Fragment key={turn.id}>
+                <article className={"turn " + turn.role}>
+                  <span>{turn.role === "user" ? "You" : "Ember"}</span>
+                  <p>{turn.text}</p>
+                </article>
+                {turn.role === "user" &&
+                  monitor.events
+                    .filter(
+                      (event) =>
+                        event.request_id &&
+                        event.request_id === turn.requestId &&
+                        event.kind !== "inference" &&
+                        event.kind !== "system",
+                    )
+                    .map((event) => (
+                      <ActivityCard
+                        key={event.id}
+                        event={event}
+                        inspect={inspectRequest}
+                        showTasks={showTasks}
+                      />
+                    ))}
+              </Fragment>
+            ))}
           </div>
           <TurnDetailsPanel
             details={details}
             inspect={() => setInspectDetails(true)}
           />
-          {state?.speech && (
-            <VoiceControls
-              options={state.speech}
-              busy={
-                busy ||
-                Boolean(
-                  details &&
-                  [
-                    "preparing",
-                    "generating",
-                    "thinking",
-                    "answering",
-                    "awaiting_delivery",
-                  ].includes(details.stage),
-                )
-              }
-              change={changeSpeech}
-            />
-          )}
           <form
             className="composer"
             aria-label="Message Ember"
@@ -700,31 +658,7 @@ export function App() {
                   Cancel recall
                 </button>
               )}
-              <button
-                type="button"
-                aria-pressed={microphone}
-                disabled={
-                  !connected || !state?.voice || !microphoneAvailable || busy
-                }
-                onClick={() => void toggleMicrophone()}
-              >
-                {microphone ? "Mute microphone" : "Use microphone"}
-              </button>
-              {state?.voice && state.transport === "livekit" && (
-                <button
-                  type="button"
-                  disabled={
-                    !connected ||
-                    !speechTarget ||
-                    stoppingSpeech === speechTarget
-                  }
-                  onClick={() => void stopSpeaking()}
-                >
-                  {stoppingSpeech === speechTarget && speechTarget
-                    ? "Stopping speech…"
-                    : "Stop speaking"}
-                </button>
-              )}
+              {page === "chat" && voiceActions}
             </div>
             <p className="composer-hint">
               Enter to send · Shift+Enter for a new line
@@ -765,50 +699,109 @@ export function App() {
               busy={busy || !connected}
             />
           )}
+        </div>
+      </section>
+      <section {...workspacePanelProps("tools", page)}>
+        <div className="page-heading">
+          <h2>Tools</h2>
+          <p>Check available capabilities and run configured MCP tools.</p>
+        </div>
+        <div className="page-grid">
+          {state ? (
+            <Capabilities enabled={page === "tools"} />
+          ) : (
+            <p>Waiting for Ember activation…</p>
+          )}
+          {state?.tasks_available && (
+            <Tools active={page === "tools"} showTasks={showTasks} />
+          )}
+        </div>
+      </section>
+      <section {...workspacePanelProps("tasks", page)}>
+        <div className="page-heading">
+          <h2>Tasks</h2>
+          <p>Queue work, review approvals, and check results and receipts.</p>
+        </div>
+        {state?.tasks_available ? (
+          <Tasks
+            visible={page === "tasks"}
+            requestedTaskId={requestedTaskId}
+            clearRequestedTask={() => setRequestedTaskId(null)}
+            summaries={state.summary_tasks_available}
+            recall={state.recall_tasks_available}
+            delegation={state.delegation_available}
+            build={state.build_available}
+            connected={connected}
+            provider={state.delegation_provider ?? "Agentic harness"}
+          />
+        ) : (
+          <p className="page-empty">
+            {state
+              ? "Tasks are unavailable for this runtime."
+              : "Waiting for Ember activation…"}
+          </p>
+        )}
+      </section>
+      <section {...workspacePanelProps("activity", page)}>
+        <div className="page-heading">
+          <h2>Activity</h2>
+          <p>
+            Runtime health and recent memory, tool, task, and inference
+            activity.
+          </p>
+        </div>
+        <SystemStatus snapshot={monitor.snapshot} online={monitor.online} />
+        <section aria-label="Recent activity" className="activity-timeline">
+          <h3>Recent activity</h3>
+          {monitor.events.length === 0 && (
+            <p className="page-empty">No activity yet.</p>
+          )}
+          {monitor.events.slice(-64).map((event) => (
+            <ActivityCard
+              key={event.id}
+              event={event}
+              inspect={inspectRequest}
+              showTasks={showTasks}
+            />
+          ))}
         </section>
-        <div className="dashboard-side">
+      </section>
+      <section {...workspacePanelProps("inference", page)}>
+        <div className="page-heading">
+          <h2>Inference Context</h2>
+          <p>Inspect assembled inputs for recent model requests.</p>
+        </div>
+        {page === "inference" && (
           <PromptInspector
             snapshot={monitor.snapshot}
             requestedId={requestedInspection}
-            nonce={inspectionNonce}
           />
-          <Capabilities enabled={state !== null} />
+        )}
+      </section>
+      <section {...workspacePanelProps("skills", page)}>
+        <div className="page-heading">
+          <h2>Skills</h2>
+          <p>Browse, select, and manage portable skill packages.</p>
+        </div>
+        {state ? (
           <Skills
-            enabled={state !== null}
+            enabled={page === "skills"}
             useSkill={(name) => {
               setInput("Use " + name + " to ");
-              document.getElementById("prompt")?.focus();
+              selectPage("chat", "prompt");
             }}
           />
-          {state?.tasks_available && <Tools />}
-          {state?.tasks_available && (
-            <Tasks
-              summaries={state.summary_tasks_available}
-              recall={state.recall_tasks_available}
-              delegation={state.delegation_available}
-              build={state.build_available}
-              connected={connected}
-              provider={state.delegation_provider ?? "Agentic harness"}
-            />
-          )}
-          {state?.prompts_available && (
-            <PromptEditor
-              busy={
-                busy ||
-                Boolean(
-                  details &&
-                  [
-                    "preparing",
-                    "generating",
-                    "thinking",
-                    "answering",
-                    "awaiting_delivery",
-                  ].includes(details.stage),
-                )
-              }
-            />
-          )}
-          {state && (
+        ) : (
+          <p className="page-empty">Waiting for Ember activation…</p>
+        )}
+      </section>
+      <section {...workspacePanelProps("settings", page)}>
+        <div className="page-heading">
+          <h2>Memory & Settings</h2>
+          <p>Manage memory sources, capture, and character preferences.</p>
+        </div>
+        {state ? (
+          <div className="page-grid">
             <Controls
               state={state}
               update={(value) => {
@@ -817,9 +810,45 @@ export function App() {
               }}
               failure={report}
             />
-          )}{" "}
-        </div>
-      </div>
+            {(state.prompts_available ||
+              state.speech ||
+              state.lan_available) && (
+              <div className="page-stack">
+                {state.prompts_available && (
+                  <PromptEditor busy={replyInProgress} />
+                )}
+                {state.speech && (
+                  <VoiceControls
+                    options={state.speech}
+                    busy={replyInProgress}
+                    change={changeSpeech}
+                  />
+                )}
+                {state.lan_available && (
+                  <section className="controls" aria-label="LAN access">
+                    <h3>LAN access</h3>
+                    <button onClick={() => void shareLan()}>
+                      Copy LAN link
+                    </button>
+                    {lanLink && (
+                      <label>
+                        Private LAN access link
+                        <input
+                          readOnly
+                          value={lanLink}
+                          onFocus={(event) => event.target.select()}
+                        />
+                      </label>
+                    )}
+                  </section>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="page-empty">Waiting for Ember activation…</p>
+        )}
+      </section>
     </main>
   );
 }

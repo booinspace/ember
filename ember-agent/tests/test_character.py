@@ -407,9 +407,6 @@ def test_text_composition_human_entry_and_stable_identity(
         ("delegate_task", "Read fixture.txt", None, False, False),
         ("delegate_task", "Read " + "x" * 1600, None, False, False),
         ("build_task", "Tell me about testing", None, False, False),
-        ("build_task", "Build: ", None, False, False),
-        ("build_task", "Build: Write and test a calculator", None, True, True),
-        ("build_task", "Build: Write and test a calculator", "invented", False, True),
     ],
 )
 def test_model_selected_task_is_bound_to_user_text(

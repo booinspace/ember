@@ -91,13 +91,13 @@ test("shared catalog inspects raw Markdown and binds enablement to exact package
     return route.fulfill({ json: {} });
   });
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-  await page.locator("#skills > summary").click();
+  await page.getByRole("tab", { name: "Skills", exact: true }).click();
   await page.getByLabel("Find skills", { exact: true }).fill("text-brief");
   await page.getByRole("button", { name: /text-brief/ }).click();
   await expect(
     page.getByRole("region", { name: "Selected skill" }).locator("pre").first(),
   ).toContainText("Complete procedure.");
-  await expect(page.locator("#skills script")).toHaveCount(0);
+  await expect(page.locator("#workspace-skills script")).toHaveCount(0);
   await page.getByRole("button", { name: "Enable skill", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Selection failed");
   await page
@@ -112,9 +112,13 @@ test("shared catalog inspects raw Markdown and binds enablement to exact package
   await page
     .getByRole("button", { name: "Use in conversation", exact: true })
     .click();
-  await expect(
-    page.getByRole("textbox", { name: "Message Ember", exact: true }),
-  ).toHaveValue("Use shared/text-brief to ");
+  const draft = page.getByRole("textbox", {
+    name: "Message Ember",
+    exact: true,
+  });
+  await expect(draft).toHaveValue("Use shared/text-brief to ");
+  await expect(draft).toBeFocused();
+  await page.getByRole("tab", { name: "Skills", exact: true }).click();
   await page
     .getByRole("button", { name: "Disable skill", exact: true })
     .click();

@@ -80,11 +80,20 @@ test("Stop speaking remains usable during a reply and preserves chat and microph
   ).toBeDisabled();
   const stop = page.getByRole("button", { name: "Stop speaking", exact: true });
   await expect(stop).toBeEnabled();
-  await stop.click();
+  await page.getByRole("tab", { name: "Activity", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Stopping speech…", exact: true }),
-  ).toBeDisabled();
-  await expect(stop).toBeDisabled();
+    page.getByRole("button", { name: "Mute microphone", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(stop).toBeEnabled();
+  await stop.click();
+  const stopping = page.getByRole("button", {
+    name: "Stopping speech…",
+    exact: true,
+  });
+  await expect(stopping).toBeDisabled();
+  await expect(stopping).toHaveCount(0);
+  await expect(stop).toHaveCount(0);
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await expect(page.locator(".turn.user")).toContainText(
     "Keep my original question.",
   );

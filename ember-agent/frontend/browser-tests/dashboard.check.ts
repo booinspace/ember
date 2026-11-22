@@ -32,19 +32,19 @@ const request = {
   ],
   max_output_tokens: 512,
 };
-async function mock(page: Page) {
+async function mock(page: Page, taskId?: string) {
   let revoked = false;
   let promptReads = 0;
   const event = {
     id: toolId,
     sequence: 2,
     started_at: "2026-11-04T12:00:00Z",
-    kind: "tool",
-    name: "web_search",
+    kind: taskId ? "task" : "tool",
+    name: taskId ? "build" : "web_search",
     provider: "fixture",
     status: "succeeded",
     request_id: id,
-    task_id: null,
+    task_id: taskId ?? null,
     duration_ms: 182,
     count: 3,
   };
@@ -291,9 +291,11 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
 }) => {
   const fixture = await mock(page);
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
+  await page.getByRole("tab", { name: "Activity", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "System monitoring" }),
   ).toContainText("41.3");
+  await page.getByRole("tab", { name: "Tools", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "Capabilities" }),
   ).toContainText("Agentic delegation");
@@ -301,17 +303,30 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
     page.getByRole("region", { name: "Capabilities" }),
   ).toContainText("unconfigured");
   expect(fixture.reads()).toBe(0);
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   const input = page.getByRole("textbox", { name: "Message Ember" });
   await expect(input).toHaveAttribute("placeholder", "Message Ember…");
   await input.fill("Search for a synthetic source");
   await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(page.locator(".activity-card.tool")).toHaveCount(1);
-  await page.locator(".activity-card.tool summary").click();
-  await expect(page.locator(".activity-body")).toContainText("fixture");
+  await expect(page.locator(".turn.assistant")).toContainText(
+    "Synthetic reply",
+  );
+  await input.fill("Unsent draft");
+  await page.getByRole("tab", { name: "Activity", exact: true }).click();
+  const activity = page.getByRole("tabpanel", {
+    name: "Activity",
+    exact: true,
+  });
+  await expect(input).toBeHidden();
+  await activity.locator(".activity-card.tool summary").click();
+  await expect(activity.locator(".activity-body")).toContainText("fixture");
   await page
     .getByRole("button", { name: "Inspect request", exact: true })
     .click();
+  await expect(
+    page.getByRole("tabpanel", { name: "Inference Context" }),
+  ).toBeFocused();
   await expect(page.locator(".prompt-inspector")).toContainText(
     "SYNTHETIC_SYSTEM_RULES",
   );
@@ -336,7 +351,80 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
   await expect(
     page.getByText("SYNTHETIC_MEMORY_VALUE", { exact: true }),
   ).toHaveCount(0);
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await expect(input).toHaveValue("Unsent draft");
+  await expect(page.locator(".turn.assistant")).toContainText(
+    "Synthetic reply",
+  );
+  await expect(
+    page.getByRole("button", { name: "Disconnect", exact: true }),
+  ).toBeEnabled();
+  await input.press("Enter");
+  await expect(page.locator(".turn.assistant")).toHaveCount(2);
 });
+test("Activity opens the exact task, even after its result was dismissed", async ({
+  page,
+}) => {
+  await mock(page, toolId);
+  const outcome = {
+    task_id: toolId,
+    state: "succeeded",
+    cancellation_requested: false,
+    operation: "build",
+    result: "Previously dismissed Build result",
+  };
+  await page.route(`**/api/tasks/${toolId}`, (route) =>
+    route.fulfill({ json: outcome }),
+  );
+  await page.route("**/api/task-notifications*", (route) =>
+    route.fulfill({
+      json: { revision: 0, items: [{ ...outcome, task_id: id, result: null }] },
+    }),
+  );
+  await page.route(`**/api/tasks/${toolId}/receipt`, (route) =>
+    route.fulfill({ json: { ...outcome, receipt: null } }),
+  );
+  await page.goto("http://127.0.0.1:4174/#activate=synthetic");
+  await page.getByRole("tab", { name: "Activity", exact: true }).click();
+  await page.locator(".activity-card.task summary").click();
+  await page.getByRole("button", { name: "Task progress & receipt" }).click();
+  const selected = page.getByRole("region", { name: "Build task 22222222" });
+  await expect(selected).toBeFocused();
+  await expect(selected).toContainText(outcome.result);
+  await expect(
+    page.getByRole("region", { name: "Build task 11111111" }),
+  ).toBeVisible();
+  const receipt = page.waitForResponse(`**/api/tasks/${toolId}/receipt`);
+  await selected.getByRole("button", { name: "View receipt" }).click();
+  await receipt;
+  await expect(
+    page.getByRole("region", { name: "Build receipt" }),
+  ).toBeVisible();
+});
+
+test("workspace tabs support manual keyboard selection without leaving the tab list", async ({
+  page,
+}) => {
+  await mock(page);
+  await page.goto("http://127.0.0.1:4174/#activate=synthetic");
+  const chat = page.getByRole("tab", { name: "Chat", exact: true });
+  const settings = page.getByRole("tab", { name: "Memory & Settings" });
+  const tools = page.getByRole("tab", { name: "Tools", exact: true });
+  await chat.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(settings).toBeFocused();
+  await expect(chat).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Space");
+  await expect(settings).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Home");
+  await expect(chat).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(tools).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("tabpanel", { name: "Tools" })).toBeFocused();
+});
+
 for (const width of [375, 1280, 1680])
   test(`dashboard fits ${width}px and shows meaningful unavailable states`, async ({
     page,
@@ -344,12 +432,26 @@ for (const width of [375, 1280, 1680])
     await page.setViewportSize({ width, height: 900 });
     await mock(page);
     await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-    await expect(
-      page.getByRole("region", { name: "System monitoring" }),
-    ).toContainText("ready");
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
-      .toBeLessThanOrEqual(width);
+    for (const name of [
+      "Tools",
+      "Tasks",
+      "Activity",
+      "Inference Context",
+      "Skills",
+      "Memory & Settings",
+      "Chat",
+    ]) {
+      const tab = page.getByRole("tab", { name, exact: true });
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("tabpanel")).toHaveCount(1);
+      await expect(
+        page.getByRole("tabpanel", { name, exact: true }),
+      ).toBeVisible();
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(width);
+    }
     await expect(
       page.getByRole("textbox", { name: "Message Ember" }),
     ).not.toHaveAttribute("placeholder", /NAS|Milo|summer/);

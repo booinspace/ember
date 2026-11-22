@@ -58,14 +58,17 @@ export function Skills({
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState(false);
   const generation = useRef(0);
   useEffect(() => {
     if (!enabled) return;
     const abort = new AbortController();
     void control("skills", skillCatalog, undefined, abort.signal)
-      .then(setCatalog)
-      .catch(() => setError("Skill catalog unavailable."));
+      .then((value) => {
+        if (!abort.signal.aborted) setCatalog(value);
+      })
+      .catch(() => {
+        if (!abort.signal.aborted) setError("Skill catalog unavailable.");
+      });
     return () => abort.abort();
   }, [enabled]);
   async function inspect(item: Summary) {
@@ -149,179 +152,172 @@ export function Skills({
         .includes(query.toLowerCase()),
   );
   return (
-    <details
+    <section
       className="dashboard-panel skills-panel"
-      id="skills"
-      open={open}
-      onToggle={(e) => setOpen(e.currentTarget.open)}
+      aria-label="Skill library"
     >
-      <summary className="panel-heading">
-        <div>
-          <span className="eyebrow">SHARED CAPABILITY LIBRARY</span>
-          <h2>Skills</h2>
-        </div>
+      <header className="panel-heading">
+        <h3>Skill library</h3>
         <span>
           {catalog?.skills.filter((s) => s.enabled).length ?? 0} enabled
         </span>
-      </summary>
-      {open && (
-        <div className="inspector-body">
-          <p className="quiet">
-            {catalog?.provider ?? "Harness"} owns skill loading. Required tools
-            use Ember’s existing grants and approvals.
-          </p>
-          <div className="skill-actions">
-            <button disabled={busy || !enabled} onClick={() => void refresh()}>
-              Refresh skills
-            </button>
-            <label className="file-button">
-              Import package
-              <input
-                type="file"
-                accept="application/json,.json"
-                disabled={busy}
-                onChange={(e) => {
-                  void importFile(e.currentTarget.files?.[0]);
-                  e.currentTarget.value = "";
-                }}
-              />
-            </label>
-          </div>
-          {catalog?.unavailable && (
-            <p role="status">{catalog.unavailable.replaceAll("_", " ")}</p>
-          )}
-          <label>
-            Find skills
+      </header>
+      <div className="inspector-body">
+        <p className="quiet">
+          {catalog?.provider ?? "Harness"} owns skill loading. Required tools
+          use Ember’s existing grants and approvals.
+        </p>
+        <div className="skill-actions">
+          <button disabled={busy || !enabled} onClick={() => void refresh()}>
+            Refresh skills
+          </button>
+          <label className="file-button">
+            Import package
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search names, providers or descriptions"
+              type="file"
+              accept="application/json,.json"
+              disabled={busy}
+              onChange={(e) => {
+                void importFile(e.currentTarget.files?.[0]);
+                e.currentTarget.value = "";
+              }}
             />
           </label>
-          <label>
-            Show
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">All available packages</option>
-              <option value="enabled">Enabled</option>
-              <option value="unavailable">Requirements unavailable</option>
-            </select>
-          </label>
-          {error && <p role="alert">{error}</p>}
-          <div className="skill-list">
-            {items.slice(0, 40).map((item) => (
-              <button
-                key={item.id}
-                className="skill-row"
-                disabled={busy}
-                onClick={() => void inspect(item)}
-              >
-                <strong>{item.name}</strong>
-                <small>
-                  {item.id} ·{" "}
-                  {item.enabled
-                    ? "Enabled"
-                    : item.unavailable.length
-                      ? "Unavailable"
-                      : "Available"}
-                </small>
-                <span>{item.description}</span>
-              </button>
-            ))}
-          </div>
-          <p className="quiet">
-            {items.length} matching packages
-            {items.length > 40 ? " · narrow the search to see more" : ""}. Only
-            selected complete instructions enter a task.
-          </p>
-          {document && (
-            <section className="skill-document" aria-label="Selected skill">
-              <div className="panel-heading">
-                <h3>{document.skill.name}</h3>
-                <button
-                  onClick={() => {
-                    setDocument(null);
-                    generation.current++;
-                  }}
-                >
-                  Close skill
-                </button>
-              </div>
-              <p className="quiet">
-                {document.skill.id} · {document.skill.version}
-              </p>
-              <code>{document.skill.content_sha256}</code>
-              <p>
-                Requirements:{" "}
-                {document.skill.requirements.join(", ") ||
-                  "No declared tool requirements"}
-              </p>
-              {document.skill.unavailable.map((value) => (
-                <p role="status" key={value}>
-                  {value.replaceAll("_", " ")}
-                </p>
-              ))}
-              {document.skill.diagnostics.map((value) => (
-                <p className="quiet" key={value}>
-                  {value.replaceAll("_", " ")}
-                </p>
-              ))}
-              <div className="skill-actions">
-                <button
-                  disabled={
-                    busy ||
-                    (!document.skill.enabled &&
-                      document.skill.unavailable.length > 0)
-                  }
-                  onClick={() => void select()}
-                >
-                  {document.skill.enabled ? "Disable skill" : "Enable skill"}
-                </button>
-                <button
-                  disabled={
-                    busy ||
-                    !document.skill.enabled ||
-                    document.skill.unavailable.length > 0
-                  }
-                  onClick={() => useSkill(document.skill.id)}
-                >
-                  Use in conversation
-                </button>
-                <a
-                  download="ember-skill.json"
-                  href={
-                    "/api/skills/export?identity=" +
-                    encodeURIComponent(document.skill.id)
-                  }
-                >
-                  Export package
-                </a>
-              </div>
-              <details open>
-                <summary>SKILL.md</summary>
-                <pre>{document.markdown}</pre>
-              </details>
-              <details>
-                <summary>Resources ({document.resources.length})</summary>
-                <ul>
-                  {document.resources.map((file) => (
-                    <li key={file.path}>
-                      {file.path} · {file.size_bytes} bytes
-                    </li>
-                  ))}
-                </ul>
-                <p className="quiet">
-                  Resources load on demand. Scripts and installers are not
-                  executed by viewing a skill.
-                </p>
-              </details>
-              <details>
-                <summary>Original provider metadata</summary>
-                <pre>{JSON.stringify(document.metadata, null, 2)}</pre>
-              </details>
-            </section>
-          )}
         </div>
-      )}
-    </details>
+        {catalog?.unavailable && (
+          <p role="status">{catalog.unavailable.replaceAll("_", " ")}</p>
+        )}
+        <label>
+          Find skills
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search names, providers or descriptions"
+          />
+        </label>
+        <label>
+          Show
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="all">All available packages</option>
+            <option value="enabled">Enabled</option>
+            <option value="unavailable">Requirements unavailable</option>
+          </select>
+        </label>
+        {error && <p role="alert">{error}</p>}
+        <div className="skill-list">
+          {items.slice(0, 40).map((item) => (
+            <button
+              key={item.id}
+              className="skill-row"
+              disabled={busy}
+              onClick={() => void inspect(item)}
+            >
+              <strong>{item.name}</strong>
+              <small>
+                {item.id} ·{" "}
+                {item.enabled
+                  ? "Enabled"
+                  : item.unavailable.length
+                    ? "Unavailable"
+                    : "Available"}
+              </small>
+              <span>{item.description}</span>
+            </button>
+          ))}
+        </div>
+        <p className="quiet">
+          {items.length} matching packages
+          {items.length > 40 ? " · narrow the search to see more" : ""}. Only
+          selected complete instructions enter a task.
+        </p>
+        {document && (
+          <section className="skill-document" aria-label="Selected skill">
+            <div className="panel-heading">
+              <h3>{document.skill.name}</h3>
+              <button
+                onClick={() => {
+                  setDocument(null);
+                  generation.current++;
+                }}
+              >
+                Close skill
+              </button>
+            </div>
+            <p className="quiet">
+              {document.skill.id} · {document.skill.version}
+            </p>
+            <code>{document.skill.content_sha256}</code>
+            <p>
+              Requirements:{" "}
+              {document.skill.requirements.join(", ") ||
+                "No declared tool requirements"}
+            </p>
+            {document.skill.unavailable.map((value) => (
+              <p role="status" key={value}>
+                {value.replaceAll("_", " ")}
+              </p>
+            ))}
+            {document.skill.diagnostics.map((value) => (
+              <p className="quiet" key={value}>
+                {value.replaceAll("_", " ")}
+              </p>
+            ))}
+            <div className="skill-actions">
+              <button
+                disabled={
+                  busy ||
+                  (!document.skill.enabled &&
+                    document.skill.unavailable.length > 0)
+                }
+                onClick={() => void select()}
+              >
+                {document.skill.enabled ? "Disable skill" : "Enable skill"}
+              </button>
+              <button
+                disabled={
+                  busy ||
+                  !document.skill.enabled ||
+                  document.skill.unavailable.length > 0
+                }
+                onClick={() => useSkill(document.skill.id)}
+              >
+                Use in conversation
+              </button>
+              <a
+                download="ember-skill.json"
+                href={
+                  "/api/skills/export?identity=" +
+                  encodeURIComponent(document.skill.id)
+                }
+              >
+                Export package
+              </a>
+            </div>
+            <details open>
+              <summary>SKILL.md</summary>
+              <pre>{document.markdown}</pre>
+            </details>
+            <details>
+              <summary>Resources ({document.resources.length})</summary>
+              <ul>
+                {document.resources.map((file) => (
+                  <li key={file.path}>
+                    {file.path} · {file.size_bytes} bytes
+                  </li>
+                ))}
+              </ul>
+              <p className="quiet">
+                Resources load on demand. Scripts and installers are not
+                executed by viewing a skill.
+              </p>
+            </details>
+            <details>
+              <summary>Original provider metadata</summary>
+              <pre>{JSON.stringify(document.metadata, null, 2)}</pre>
+            </details>
+          </section>
+        )}
+      </div>
+    </section>
   );
 }

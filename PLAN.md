@@ -4165,8 +4165,9 @@ Owner: ember-agent; memory remains behind the injected ABI.
   validate capabilities, schemas, bound character/session/turn, deadlines, scoped
   authority and receipts. No extra routing model or memory-writing harness is required.
 - **P9-AC-02:** Durable queued submission/outbox returns a handle promptly;
-  idempotent retries and state transitions distinguish waiting for model/tool/user,
-  cancellation requested and actual completion. Unknown states fail explicitly.
+  idempotent retries and state transitions distinguish waiting for realtime release,
+  model/tool/user, cancellation requested and actual completion. Unknown states
+  fail explicitly.
 - **P9-AC-03:** Runtime operational storage owns task attempts/results/artifacts/
   events/confirmation/notification state, never canonical autobiographical beliefs.
   Findings promote only through normal scoped source/extraction policy.
@@ -5211,6 +5212,20 @@ Ember retains task records and attention, character continuity, capture, memory,
 and sole P2 model admission. Neither mode grants private recall, external MCP,
 live skills, or page reading. Both are for synthetic, non-sensitive tasks only.
 
+[Root ADR 0027](docs/adr/0027-public-web-retrieval.md) adds opt-in Web Research
+through a separate long-lived pinned worker with fresh sessions and task-scoped
+public retrieval. Build remains isolated per task, not per tool. Realtime-reserved
+managed tasks wait durably before worker startup, remain cancellable, and do not
+block eligible native tasks. Chat, Tools, Tasks, Activity, Inference Context,
+Skills, and Memory & Settings have separate tabs; switching tabs does not
+disconnect Conversation.
+
+Isolated macOS gate: 1,299 Python tests passed with pinned OpenCode and the
+Build image; 12 live model, embedding, or LiveKit cases skipped. Frontend:
+32 unit and 25 isolated browser tests passed; three live LAN/audio cases skipped.
+See [verification scope](docs/adr/0027-public-web-retrieval.md#verification) for
+review fixes and qualification limits.
+
 Real macOS and Miku Windows OpenCode tool loops passed with a deterministic gateway
 upstream, not live Strata. Miku's tracked Strata profiles opt into the synthetic
 preview. Production Windows and Linux remain unqualified. P11-AC-01–07 and
@@ -5220,9 +5235,12 @@ real-server test cannot close those gates. Phase 13 cancellation and native rele
 Hermes delegation, Desktop, launch/setup adapters, and Hermes public search have
 been removed. Browser text and voice remain independent. Remove retired settings
 rather than translating them or migrating private configs, credentials, chats, or
-notes. `[public_search]` configures SearXNG (or an independent installed command)
-without a harness. It returns bounded public search references and snippets, not
-live page contents. Direct MCP tools remain independent. Existing operator-managed
+notes. `[public_search]` selects one independent transport. Exa and Parallel
+return bounded extracted page passages for public search and page reading. They
+receive only admitted public inputs, not history, recall, files, or credentials
+other than their own API authentication. SearXNG and installed command search
+remain snippet/reference paths. Native search and page reading do not require a
+harness. Direct MCP tools remain independent. Existing operator-managed
 `[memory_mcp]` is unchanged: use read-only with verified local inference only,
 never attach it to managed OpenCode. See [memory MCP setup](docs/opencode-memory.md).
 

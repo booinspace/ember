@@ -102,6 +102,7 @@ class ArchiveDialogueSink:
                     turn.request_id,
                     turn.complete,
                     turn.clipped,
+                    turn.context.public_web_reply,
                 )
                 for turn in page.turns
             ]
@@ -171,6 +172,8 @@ class ArchiveDialogueSink:
         complete: bool,
         dependencies: tuple[tuple[UUID, int], ...],
         certificate: ContextDependencies | None,
+        *,
+        public_web_reply: bool = False,
     ) -> None:
         await self.commit_delivery(
             context_id,
@@ -181,6 +184,7 @@ class ArchiveDialogueSink:
             NativeReplyContext(
                 memories=tuple(MemoryReference(memory_id=i, revision=r) for i, r in dependencies),
                 certificate=certificate,
+                public_web_reply=public_web_reply,
             ),
         )
 

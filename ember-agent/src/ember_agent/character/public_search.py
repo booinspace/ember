@@ -30,6 +30,25 @@ _PAGE_REQUEST = re.compile(
 )
 
 
+_HOSTED_REQUEST = re.compile(r"^\s*(exa|parallel)[ \t]+(search|read):[ \t]*(.*)$", re.I | re.S)
+
+
+def hosted_web_request(text: str) -> tuple[str, str, str] | None:
+    """Require a provider-named action and a literal, standalone input."""
+    match = _HOSTED_REQUEST.fullmatch(text)
+    if match is None:
+        return None
+    return match[1].lower(), match[2].lower(), match[3].strip(" \t")
+
+
+def public_page_requested(text: str) -> bool:
+    """Recognize read attempts even when the explicit URL is ambiguous or unsupported."""
+    return (
+        _PAGE_REQUEST.match(text) is not None
+        and re.search(r"\b[a-z][a-z0-9+.-]*://", text, re.IGNORECASE) is not None
+    )
+
+
 def public_page_url(text: str) -> str | None:
     """Fetch only one literal URL in an explicit read request, never recalled/model-derived text."""
     if not _PAGE_REQUEST.match(text):

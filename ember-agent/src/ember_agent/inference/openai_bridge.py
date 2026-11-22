@@ -286,7 +286,9 @@ class OpenAIModelBridge:
         observe_request: Callable[[GatewayRequest], None] | None = None,
         coding: bool = False,
         allowed_tools: frozenset[str] | None = None,
-        validate_call: Callable[[ToolCall], Awaitable[None]] | None = None,
+        prepare_calls: Callable[[tuple[ToolCall, ...]], Awaitable[tuple[ToolCall, ...]]]
+        | None = None,
+        transport_tool_argument: str | None = None,
         observe_failure: Callable[[str], None] | None = None,
         on_step: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
@@ -294,7 +296,8 @@ class OpenAIModelBridge:
         self.config = config
         self.coding = coding
         self.allowed_tools = allowed_tools
-        self.validate_call = validate_call
+        self.prepare_calls = prepare_calls
+        self.transport_tool_argument = transport_tool_argument
         self.on_step = on_step
         self.observe_failure = observe_failure
         self.output_limit = min(config.output_reserve_tokens, 8192 if coding else 1192)
@@ -370,15 +373,28 @@ class OpenAIModelBridge:
                     continue
                 if function.parameters.get("type") != "object":
                     raise GatewayError("unsupported_model_schema")
-                validate_model_schema(
-                    function.parameters, literal_prefix=self.coding or value.stream
-                )
+                parameters = function.parameters
+                secret = self.transport_tool_argument
+                if secret:
+                    properties = parameters.get("properties")
+                    required = parameters.get("required")
+                    if not isinstance(properties, dict) or not isinstance(required, list):
+                        raise GatewayError("unsupported_model_schema")
+                    parameters = {
+                        **parameters,
+                        "properties": {
+                            key: item for key, item in properties.items() if key != secret
+                        },
+                        "required": [name for name in required if name != secret],
+                        "additionalProperties": False,
+                    }
+                validate_model_schema(parameters, literal_prefix=self.coding or value.stream)
                 tools.append(
                     ToolDefinition(
                         function=ToolFunction(
                             name=function.name,
                             description=function.description,
-                            parameters=function.parameters,
+                            parameters=parameters,
                         )
                     )
                 )
@@ -412,7 +428,13 @@ class OpenAIModelBridge:
                             PromptToolCall(
                                 call_id=call.id,
                                 name=call.function.name,
-                                arguments=_OBJECT.validate_json(call.function.arguments),
+                                arguments={
+                                    key: item
+                                    for key, item in _OBJECT.validate_json(
+                                        call.function.arguments
+                                    ).items()
+                                    if key != self.transport_tool_argument
+                                },
                             )
                             for call in item.tool_calls or ()
                         ),
@@ -523,9 +545,8 @@ class OpenAIModelBridge:
                                 raise GatewayError("unexpected_parallel_tool_calls")
                             if event.truncated:
                                 calls = ()
-                            if self.validate_call is not None:
-                                for call in calls:
-                                    await self.validate_call(call)
+                            if calls and self.prepare_calls is not None:
+                                calls = await self.prepare_calls(calls)
                             for index, call in enumerate(calls):
                                 yield chunk({"tool_calls": [{"index": index, **openai_tool(call)}]})
                             reason = (

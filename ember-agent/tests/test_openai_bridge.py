@@ -58,7 +58,10 @@ def _config(tmp_path: Path) -> DeploymentConfig:
         .replace('tag = ""', 'tag = "synthetic:27b"')
         .replace('expected_digest = ""', 'expected_digest = "' + "a" * 64 + '"')
     )
-    return load_config(path, require_model_pin=True)
+    # Fixture paths must not share runtime ownership across concurrent test runs.
+    return load_config(path, require_model_pin=True).model_copy(
+        update={"runtime_root": tmp_path / "runtime"}
+    )
 
 
 def _history() -> tuple[PromptMessage, ...]:

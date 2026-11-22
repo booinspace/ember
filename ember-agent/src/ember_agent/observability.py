@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 type ActivityKind = Literal["tool", "memory", "task", "inference", "system"]
 type ActivityStatus = Literal[
     "running",
+    "waiting_for_realtime",
     "waiting_for_model",
     "waiting_for_tool",
     "waiting_for_user",

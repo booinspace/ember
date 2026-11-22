@@ -31,9 +31,14 @@ const handle = z.object({
   cancellation_requested: z.boolean(),
 });
 
-export function Tools() {
+export function Tools({
+  active,
+  showTasks,
+}: {
+  active: boolean;
+  showTasks: () => void;
+}) {
   const retry = useRef<{ signature: string; key: string } | null>(null);
-  const [open, setOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<z.infer<typeof discovery>>();
   const [selected, setSelected] = useState("");
   const [argumentsText, setArguments] = useState("{}");
@@ -47,7 +52,7 @@ export function Tools() {
     );
   const tool = snapshot?.tools.find((entry) => entry.id === selected);
   useEffect(() => {
-    if (!open) return;
+    if (!active) return;
     const controller = new AbortController();
     void control("tools", discovery, undefined, controller.signal)
       .then(setSnapshot)
@@ -56,9 +61,9 @@ export function Tools() {
           setMessage("Tool availability could not be read.");
       });
     return () => controller.abort();
-  }, [open]);
+  }, [active]);
   useEffect(() => {
-    if (!open || !taskId) return;
+    if (!active || !taskId) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
@@ -83,7 +88,7 @@ export function Tools() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [open, taskId]);
+  }, [active, taskId]);
   const refresh = async () => {
     setBusy(true);
     try {
@@ -125,11 +130,8 @@ export function Tools() {
     }
   };
   return (
-    <details
-      className="controls"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary>Run an MCP tool</summary>
+    <section className="controls" aria-label="Run an MCP tool">
+      <h3>Run an MCP tool</h3>
       <p>
         Only configured, granted tools can run. Write actions require approval
         in Tasks.
@@ -190,6 +192,11 @@ export function Tools() {
       )}
       {message && <p role="status">{message}</p>}
       {current && (
+        <button type="button" onClick={showTasks}>
+          Open Tasks
+        </button>
+      )}
+      {current && (
         <p role="status">
           {current.cancellation_requested && !terminal(current.state)
             ? "Cancellation requested"
@@ -215,6 +222,6 @@ export function Tools() {
           )}
         </p>
       )}
-    </details>
+    </section>
   );
 }

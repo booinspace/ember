@@ -148,6 +148,7 @@ export function SystemStatus({
 const status: Record<ActivityEvent["status"], string> = {
   running: "Running",
   waiting_for_model: "Waiting for model",
+  waiting_for_realtime: "Waiting for conversation to disconnect",
   waiting_for_tool: "Waiting for tool",
   waiting_for_user: "Approval needed",
   succeeded: "Complete",
@@ -166,10 +167,13 @@ const icons = {
 export function ActivityCard({
   event,
   inspect,
+  showTasks,
 }: {
   event: ActivityEvent;
   inspect: (id: string) => void;
+  showTasks: (taskId: string) => void;
 }) {
+  const { task_id: taskId } = event;
   const active =
     event.status === "running" || event.status.startsWith("waiting_");
   const name =
@@ -212,6 +216,9 @@ export function ActivityCard({
             Diagnostic: <code>{event.code}</code>
           </p>
         )}
+        {event.status === "waiting_for_realtime" && (
+          <p className="quiet">Use Disconnect above to let this task start.</p>
+        )}
         {event.status === "waiting_for_model" && (
           <p className="quiet">
             Background inference waits while conversation reserves the model.
@@ -234,7 +241,15 @@ export function ActivityCard({
               Inspect request
             </button>
           )}
-          {event.task_id && <a href="#tasks">Task progress & receipt</a>}
+          {taskId && (
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => showTasks(taskId)}
+            >
+              Task progress & receipt
+            </button>
+          )}
           <small>{event.id.slice(0, 8)}</small>
         </div>
       </div>
@@ -342,14 +357,12 @@ export function Capabilities({ enabled }: { enabled: boolean }) {
 export function PromptInspector({
   snapshot,
   requestedId,
-  nonce,
 }: {
   snapshot: DashboardSnapshot | null;
   requestedId: string | null;
-  nonce: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const [selection, setSelection] = useState("latest");
+  const [open, setOpen] = useState(requestedId !== null);
+  const [selection, setSelection] = useState(requestedId ?? "latest");
   const [value, setValue] = useState<z.infer<typeof promptInspection> | null>(
     null,
   );
@@ -360,12 +373,6 @@ export function PromptInspector({
     selection === "latest"
       ? requests.at(-1)?.request_id
       : requests.find((entry) => entry.request_id === selection)?.request_id;
-  useEffect(() => {
-    if (requestedId) {
-      setSelection(requestedId);
-      setOpen(true);
-    }
-  }, [requestedId, nonce]);
   useEffect(() => {
     setValue(null);
     setCopied(false);

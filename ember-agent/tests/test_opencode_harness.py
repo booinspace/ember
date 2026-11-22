@@ -243,7 +243,7 @@ def test_installed_opencode_runs_and_revokes_read_only_tasks(tmp_path: Path) -> 
                                 turn = await core.prepare(chat_goal)
                                 events = [event async for event in core.stream(turn)]
                                 assert "".join(event.text for event in events) == (
-                                    "Task queued. Disconnect Conversation to let it run, "
+                                    "Inspect task queued. Disconnect Conversation to let it run, "
                                     "then check Tasks."
                                 )
                             finally:

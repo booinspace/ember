@@ -103,6 +103,7 @@ test("browse, inspect, navigate and filter the memory graph", async ({
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("http://127.0.0.1:4174/");
+  await page.getByRole("tab", { name: "Memory & Settings" }).click();
   await page.getByRole("link", { name: "Memory graph" }).click();
   await expect(page).toHaveURL(/\/memory-graph$/);
   await expect(

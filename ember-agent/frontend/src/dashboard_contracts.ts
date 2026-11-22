@@ -10,6 +10,7 @@ export const activityEvent = z.object({
   status: z.enum([
     "running",
     "waiting_for_model",
+    "waiting_for_realtime",
     "waiting_for_tool",
     "waiting_for_user",
     "succeeded",

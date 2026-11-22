@@ -57,24 +57,6 @@ from .text_session import DirectTextSession
 from .worker_process import settled
 
 
-async def _start_public_search(runtime: LocalRuntime) -> None:
-    """Keep explicit public search independent of the agentic harness."""
-    settings = runtime.config.public_search
-    if settings is None:
-        return
-    from .native_search import NativeSearch, SearXNGSearch
-
-    runtime.core.search_provider = settings.provider
-    if settings.searxng_url is not None:
-        runtime.core.public_search = SearXNGSearch(settings.searxng_url)
-    elif await asyncio.to_thread(Path(settings.command[0]).is_file):
-        runtime.core.public_search = NativeSearch(
-            settings.command, runtime.config.runtime_root / "public-search-homes"
-        )
-    else:
-        runtime.core.search_unavailable = "public_search_executable_unavailable"
-
-
 async def _start_tasks(
     runtime: LocalRuntime, binding: RoomBinding, cleanup: AsyncExitStack
 ) -> TaskRouter | None:
@@ -125,6 +107,13 @@ async def _start_tasks(
         ),
         activity=runtime.dashboard.activity,
     )
+    if client is not None:
+        gateway = client
+
+        async def realtime_reserved() -> bool:
+            return bool((await gateway.health()).realtime_sessions)
+
+        router.realtime_reserved = realtime_reserved
     settings = runtime.config.selected_harness
     if settings is not None:
         from .harness import open_harness
@@ -165,6 +154,35 @@ async def _start_tasks(
                     router.build_unavailable = str(error)
                 except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
                     router.build_unavailable = "build_startup_failed"
+    if settings is not None and settings.research:
+        if client is None:
+            router.research_unavailable = "gateway_task_credentials_unavailable"
+        elif runtime.core.public_web is None or runtime.core.search_provider not in (
+            "exa",
+            "parallel",
+        ):
+            router.research_unavailable = "research_hosted_retrieval_unavailable"
+        else:
+            from .research import open_research
+
+            try:
+                research = await cleanup.enter_async_context(
+                    open_research(
+                        runtime.config,
+                        settings,
+                        client,
+                        runtime.core.public_web,
+                        runtime.core.search_provider,
+                        runtime.dashboard.capture,
+                    )
+                )
+                router.providers["research"] = research
+                router.research_provider = runtime.core.search_provider
+                router.research_health = lambda: research.available
+            except TaskConflict as error:
+                router.research_unavailable = str(error)
+            except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
+                router.research_unavailable = "research_startup_failed"
     try:
         await router.start()
     except (OSError, sqlite3.Error):
@@ -206,19 +224,11 @@ async def _start_tasks(
             delegate_task,
             use_current_turn=True,
         )
-    if router.build_available:
 
-        async def build_task(text: str, turn_id: UUID) -> str:
-            return await router.submit_turn(text, turn_id, operation="build")
+    async def build_task(text: str, turn_id: UUID) -> str:
+        return await router.submit_turn(text, turn_id, operation="build")
 
-        runtime.core.task_tools["build_task"] = ConversationTask(
-            "Queue the user's Build: goal in an isolated empty workspace using an empty object. "
-            "For a retained HTTP service, direct the user to Tasks to grant a port. "
-            "Do not send private data. Ember reports whether queued; never promise success.",
-            build_task,
-            use_current_turn=True,
-            required_prefix="Build: ",
-        )
+    runtime.core.submit_build = build_task
     runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)
     return router
@@ -912,6 +922,7 @@ async def _run_room(
 
         cleanup.push_async_callback(delete_room)
 
+        await runtime.start_public_search()
         host = HostedRoom(
             runtime.core, binding, remember, voice=voice, investigate=runtime.investigate
         )
@@ -944,7 +955,6 @@ async def _run_room(
         if config.browser.enabled:
             if await asyncio.to_thread(port_open, config.browser.endpoint):
                 raise ConfigurationError("Browser control port is already occupied.")
-            await _start_public_search(runtime)
             task_router = await _start_tasks(runtime, binding, cleanup)
             if task_router is not None:
                 host.start_task_announcements(task_router)
@@ -1033,7 +1043,7 @@ async def _run_text_browser(
         async def room_answer(_: DeepRecallResult) -> str:
             raise GatewayError("use_browser_text_transport")
 
-        await _start_public_search(runtime)
+        await runtime.start_public_search()
         task_router = await _start_tasks(runtime, binding, cleanup)
         control = BrowserControl(
             coding_api=await _coding_api(config, runtime, cleanup) if gateway_available else None,

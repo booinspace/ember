@@ -119,7 +119,7 @@ test("MCP requests retain progress, cancellation, safe output and idempotent ret
     return route.fulfill({ json: {} });
   });
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
-  await page.getByText("Run an MCP tool", { exact: true }).click();
+  await page.getByRole("tab", { name: "Tools", exact: true }).click();
   await expect(
     page.getByText("offline: unavailable (0 tools)", { exact: true }),
   ).toBeVisible();
@@ -135,7 +135,8 @@ test("MCP requests retain progress, cancellation, safe output and idempotent ret
   await expect(page.getByRole("button", { name: "Cancel tool" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel tool" }).click();
   await expect.poll(() => cancelled).toBe(true);
-  await page.getByText("Tasks", { exact: true }).click();
+  await page.getByRole("button", { name: "Open Tasks", exact: true }).click();
+  await expect(page.getByRole("tabpanel", { name: "Tasks" })).toBeFocused();
   await page.getByRole("button", { name: "View receipt" }).click();
   await expect(
     page.getByText("Outcome: uncertain", { exact: true }),

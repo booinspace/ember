@@ -44,6 +44,14 @@ from ..memory.deep_contracts import DeepRecallResult
 from ..memory.deep_prompt import condense
 from ..observability import ActivityLog, notify
 from ..runtime.config import RuntimeModel
+from ..web_evidence import (
+    PublicWebOperation,
+    PublicWebProvider,
+    WebEvidence,
+    allowed_public_query,
+    allowed_public_url,
+)
+from .build_intent import build_goal
 from .conversation import CompletedTurn, ConversationSink
 from .delivery import ObservedDialogueSink
 from .interpretation import CalendarInterpreter
@@ -55,9 +63,15 @@ from .prompt_budget import (
     recalled_message,
 )
 from .prompts import PromptSnapshot
-from .public_search import public_page_url, public_search_query
+from .public_search import (
+    hosted_web_request,
+    public_page_requested,
+    public_page_url,
+    public_search_query,
+)
 from .temporal import CalendarResolver, CalendarScope
 from .turn_view import CurrentTurnView, MemoryCategory
+from .web_reply import evidence_prompt, synthesis_schema, synthesize_public_web
 
 
 class Personality(RuntimeModel):
@@ -106,6 +120,7 @@ class PreparedTurn:
     observed_at: str = ""
     local_reply: str | None = None
     prompts: PromptSnapshot | None = None
+    web_evidence: WebEvidence | None = None
 
 
 _TASK_TEXT_LIMIT = 1600
@@ -210,9 +225,10 @@ class CharacterCore:
         self.submit_task: Callable[[str, UUID], Awaitable[str]] | None = None
         self.task_tools: dict[str, ConversationTask] = {}
         self.task_notice: Callable[[], Awaitable[str]] | None = None
+        self.submit_build: Callable[[str, UUID], Awaitable[str]] | None = None
         self.public_search: Callable[[str], Awaitable[str]] | None = None
         self.public_page: Callable[[str], Awaitable[str]] | None = None
-        self.public_search_available = False
+        self.public_web: PublicWebProvider | None = None
         self.search_provider = "public search"
         self.observation_failures = 0
         self.activity: ActivityLog | None = None
@@ -416,8 +432,62 @@ class CharacterCore:
                     return replace(local, local_reply=await self.submit_task(goal, identity))
                 return local
 
+        submit_build = self.submit_build
+        goal = build_goal(text)
+        if goal is not None:
+            if not goal or len(goal) > 8192:
+                reply = "Send a standalone Build: goal describing what to make, or use Tasks."
+            elif submit_build is None:
+                reply = "Build is unavailable. Inspect cannot build apps."
+            else:
+                reply = await submit_build(goal, identity)
+            return self._local_turn(
+                text, identity, observed_at, reply, ("task_submission",), observation.prompts
+            )
+
         search_context: PromptMessage | None = None
         page_url = public_page_url(text)
+        hosted = hosted_web_request(text)
+        if hosted is not None:
+            provider, operation, value = hosted
+            read = operation == "read"
+            if provider != self.search_provider or self.public_web is None:
+                reply = f"{provider.title()} is not available. No other provider was used."
+            elif not (allowed_public_url(value) if read else allowed_public_query(value)):
+                reply = (
+                    "Use one public HTTP(S) URL without credentials, query parameters, "
+                    "or a fragment."
+                    if read
+                    else "Use a short, single-line public search query without URLs."
+                )
+            else:
+                return await self._prepare_web(
+                    observation, value if read else None, None if read else value
+                )
+            return self._local_turn(
+                text,
+                identity,
+                observed_at,
+                reply,
+                ("public_web_input_rejected",),
+                observation.prompts,
+            )
+        if self.search_provider in {"exa", "parallel"}:
+            try:
+                query = public_search_query(text)
+            except GatewayError:
+                query = ""
+            if query is not None or public_page_requested(text):
+                provider = self.search_provider.title()
+                return self._local_turn(
+                    text,
+                    identity,
+                    observed_at,
+                    f"To send a public input to {provider}, use `{provider} search: <query>` "
+                    f"or `{provider} read: <URL>`. No request was sent.",
+                    ("public_web_input_rejected",),
+                    observation.prompts,
+                )
         reader = self.public_page if page_url else self.public_search
         query_text = (
             page_url if page_url else public_search_query(text) if self.public_search else None
@@ -611,6 +681,10 @@ class CharacterCore:
         )
         live_history: list[CompletedTurn] = []
         for old in previous[-64:]:
+            # Hosted web replies stay in delivery archives, not in model-history authority.
+            if old.public_web_reply or hosted_web_request(old.user) is not None:
+                live_history.append(replace(old, assistant="", dependencies=(), certificate=None))
+                continue
             if not self.recall_enabled and (old.dependencies or old.certificate is not None):
                 live_history.append(replace(old, assistant="", dependencies=(), certificate=None))
                 omissions.append("client_private_history_unavailable")
@@ -801,7 +875,7 @@ class CharacterCore:
         def compose() -> tuple[PromptMessage, ...]:
             messages = [PromptMessage(role="system", content=instructions)]
             capabilities: list[str] = []
-            if self.public_search is not None or self.public_search_available:
+            if self.web_search_ready:
                 capabilities.append(
                     "Public web search is available for explicit requests: 'Search for ...'. "
                     "Cite only URLs in the supplied search results."
@@ -1029,6 +1103,99 @@ class CharacterCore:
         )
         return self._local_turn(text, identity, observed_at, reply, reasons, prompts)
 
+    @property
+    def web_search_ready(self) -> bool:
+        """Whether explicit public search has an adapter, not upstream health."""
+        return self.public_web is not None or self.public_search is not None
+
+    async def _prepare_web(
+        self, observation: TurnObservation, url: str | None, query: str | None
+    ) -> PreparedTurn:
+        operation: PublicWebOperation = "read" if url is not None else "search"
+        tool = "read_page" if url is not None else "web_search"
+        base = self._local_turn(
+            observation.text,
+            observation.request_id,
+            observation.observed_at,
+            "Public web retrieval is unavailable. No other provider was used.",
+            ("public_web_unavailable",),
+            observation.prompts,
+        )
+        if self.public_web is None:
+            return base
+        span = (
+            self.activity.begin(
+                "tool", tool, request_id=observation.request_id, provider=self.search_provider
+            )
+            if self.activity
+            else None
+        )
+        try:
+            if url is not None:
+                evidence = await self.public_web.read(url)
+            else:
+                assert query is not None
+                evidence = await self.public_web.search(query)
+        except BaseException as error:
+            if self.activity and span:
+                self.activity.update(
+                    span, "cancelled" if isinstance(error, asyncio.CancelledError) else "failed"
+                )
+            raise
+        if self.activity and span:
+            if evidence.failure:
+                self.activity.update(span, "failed", code="public_web_" + evidence.failure)
+            else:
+                self.activity.update(span, "succeeded", count=len(evidence.sources))
+        if evidence.failure == "input_rejected":
+            return replace(
+                base,
+                local_reply=(
+                    "Use one public HTTP(S) URL without credentials, query parameters, "
+                    "or a fragment."
+                    if operation == "read"
+                    else "Use a short, single-line public search query without URLs."
+                ),
+                omissions=("public_web_input_rejected",),
+            )
+        if evidence.coverage == "unavailable":
+            return base
+        if not evidence.sources:
+            return replace(
+                base,
+                local_reply="The provider returned no public excerpts for this request.",
+                omissions=("public_web_empty",),
+            )
+        messages = evidence_prompt(evidence, query or "Summarize the requested page excerpts.")
+        cost = prompt_cost(messages)
+        if cost > self.input_ceiling:
+            return replace(
+                base,
+                local_reply="Retrieved public excerpts, but they exceed this conversation's "
+                "summary budget.",
+                omissions=("public_web_prompt_bound",),
+            )
+        self.turn_view.prepared(observation.request_id, [], (), None, historical=False)
+        return replace(
+            base,
+            request=base.request.model_copy(
+                update={
+                    "messages": messages,
+                    "output": "json",
+                    "output_schema": synthesis_schema(),
+                    "max_output_tokens": min(512, self.output_ceiling),
+                }
+            ),
+            local_reply=None,
+            omissions=(),
+            web_evidence=evidence,
+            accounting=PromptAccounting(
+                identity=message_bytes(messages[0]),
+                excerpts=message_bytes(messages[1]),
+                serialized_total=cost,
+            ),
+        )
+
     def _local_turn(
         self,
         text: str,
@@ -1119,6 +1286,8 @@ class CharacterCore:
             response = (
                 self._local_response(turn)
                 if turn.local_reply is not None
+                else synthesize_public_web(self.model, turn.request, turn.web_evidence)
+                if turn.web_evidence is not None
                 else self.model.stream(turn.request)
             )
             async with aclosing(response) as events:
@@ -1217,6 +1386,7 @@ class CharacterCore:
                 complete,
                 turn.dependencies,
                 turn.certificate,
+                public_web_reply=turn.web_evidence is not None,
             )
         elif isinstance(self.sink, ObservedDialogueSink):
             await self.sink.commit_delivery(
@@ -1225,7 +1395,13 @@ class CharacterCore:
         elif self.sink is not None:
             await self.sink.commit(self.context_id, turn.user, text, complete)
         observed = CompletedTurn(
-            turn.user, text, turn.dependencies, turn.certificate, turn.request.request_id, complete
+            turn.user,
+            text,
+            turn.dependencies,
+            turn.certificate,
+            turn.request.request_id,
+            complete,
+            public_web_reply=turn.web_evidence is not None,
         )
         self.history = [old for old in self.history if old.request_id != turn.request.request_id]
         self.history.append(observed)

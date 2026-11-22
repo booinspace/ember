@@ -63,6 +63,7 @@ test("voice and speed controls apply confirmed settings and preserve failed edit
   });
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("http://127.0.0.1:4174/#activate=synthetic");
+  await page.getByRole("tab", { name: "Memory & Settings" }).click();
   await page.getByText("Voice and speaking speed", { exact: true }).click();
   await expect(page.getByLabel("Voice", { exact: true })).toHaveValue(
     "default",

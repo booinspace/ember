@@ -91,6 +91,7 @@ test("Markdown preview is safe and failed saves retain scoped drafts", async ({
     page.getByRole("button", { name: "Connect", exact: true }),
   ).toBeEnabled();
   expect(reads).toBe(0);
+  await page.getByRole("tab", { name: "Memory & Settings" }).click();
   await page.getByText("Prompts", { exact: true }).click();
   const source = page.getByLabel("This character Markdown");
   await expect(source).toHaveValue(stored.personality);

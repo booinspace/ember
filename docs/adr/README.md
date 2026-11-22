@@ -168,6 +168,9 @@ records conservative runner ownership, admission race fixes, the coding image
 history budget, timeout recovery, and the profile gates for live preemption. See [Phase 13 validation](../phase-13-validation.md) and
 [opt-in Strata screenshot setup](../../ember-agent/docs/strata-vision.md).
 
+[Root ADR 0027 — Public web retrieval and Web Research preview](0027-public-web-retrieval.md)
+records hosted extraction, task-scoped retrieval grants, and dashboard/task status changes.
+
 [Root ADR 0026 — Isolated OpenCode Build preview](0026-managed-opencode-build.md)
 adds opt-in containerized coding and local service previews. Production gates remain open.
 

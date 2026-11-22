@@ -16,10 +16,20 @@ search grant changes. See [Agent ADR 0015](../../ember-agent/docs/adr/0015-manag
 
 The authenticated Tasks form may grant one explicit service port. Ember probes
 HTTP on that port, returns a host-local preview URL only on success, and owns its
-stop/expiry. No port grant means no retained process. In Conversation with Thinking
-off, start the message with `Build: ` to opt in. Ember forwards that exact current
-message, never generated arguments; service exposure requires the Tasks grant.
+stop/expiry. No port grant means no retained process. In Conversation, use
+`Build: <standalone goal>` or a standalone software build request. Ember uses only
+the current turn, not model-generated arguments or history. `Build it` without a
+standalone goal asks for one; unavailable Build never falls back to Inspect.
+Service exposure requires the Tasks grant.
 Build does not import source trees or install dependencies at runtime.
+
+The container, worker, and session are per **Build task**, not per tool call.
+A fresh session or directory would not clear background processes, writable
+state, or task credentials. Reuse needs proof of equivalent OS-enforced cleanup
+and isolation, including after failure. The router waits for realtime reservations
+to clear without starting a Build worker. Build then has up to ten minutes
+within the original 30-minute task deadline. The gateway still owns P2 admission,
+including if Conversation reconnects.
 
 ## Setup and rollback
 
@@ -54,7 +64,16 @@ On Apple Silicon Docker Desktop, the real OpenCode 2.3.2 test passed a synthetic
 write/run/check loop, ZIP validation, HTTP preview and Stop through a scripted P2
 upstream. Run it with `EMBER_TEST_BUILD_IMAGE=<local image ID>` and
 `pytest ember-agent/tests/test_opencode_build.py`. The amd64 image passed an offline
-binary smoke test under emulation, not a Windows test.
+binary smoke test under emulation. Miku subsequently passed six scripted Docker
+Desktop tests on the pinned amd64 image, including Build ZIP, preview, and Stop.
+That exercised OpenCode, not live Strata inference.
+
+Two earlier Miku chat jobs (`dc156c0e`, `29dcfc1d`) were recorded as `delegate`,
+not `build`, and reached the 180-second deadline. A connected Conversation can
+hold the P2 reservation, but those task records do not show scheduler history.
+The new chat route admits explicit Build directly or asks for a standalone goal;
+it never falls back to Inspect. Managed jobs wait durably before starting work
+while Conversation holds its reservation.
 
 | PLAN gate | Preview evidence | Production status |
 | --- | --- | --- |

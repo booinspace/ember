@@ -279,74 +279,68 @@ meter::-webkit-meter-optimum-value {
 meter::-moz-meter-bar {
   background: #8c9fc9;
 }
-.workspace {
-  display: grid;
-  grid-template-columns: 170px minmax(0, 1fr) 350px;
-  align-items: start;
-  gap: 20px;
-  min-width: 0;
-}
-.workspace > * {
-  min-width: 0;
-}
-.workspace-nav {
-  padding: 14px 0;
+.workspace-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  position: sticky;
-  top: 20px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 3px 10px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 22px;
 }
-.workspace-nav > .eyebrow {
-  margin-left: 11px;
+.workspace-tabs button {
+  min-height: 44px;
+  padding: 8px 13px;
+  background: transparent;
+  border-color: transparent;
+  color: #b3bdcd;
+}
+.workspace-tabs button[aria-selected="true"] {
+  background: #26252a;
+  border-color: #785344;
+  color: #ffd0b7;
+}
+[role="tabpanel"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.page-heading {
   margin-bottom: 14px;
 }
-.workspace-nav > button,
-.workspace-nav > a {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  text-align: left;
-  color: #9eabc0;
-  background: transparent;
-  border: 1px solid transparent;
-  font-size: 11px;
-  border-radius: 6px;
+.page-heading h2 {
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 640;
 }
-.workspace-nav > .selected {
-  background: #26252a;
-  color: #ffd0b7;
-  border-color: #47342f;
+.page-heading p,
+.page-empty {
+  color: #a3afc1;
+  font-size: 13px;
 }
-.workspace-nav > a:hover {
-  background: #191f29;
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
 }
-.nav-count {
-  margin-left: auto;
-  font-size: 9px;
-  color: #9da8ba;
+.page-stack {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
-.runtime-card {
-  margin-top: 34px;
-  padding: 13px;
+.activity-timeline {
+  padding: 16px;
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #11161e;
+  border-radius: 9px;
 }
-.runtime-card strong {
-  font-size: 10px;
-  font-weight: 500;
-  margin-left: 6px;
+.activity-timeline h3,
+.controls h3,
+.panel-heading h3 {
+  font-size: 14px;
 }
-.runtime-card p {
-  font-size: 10px;
-  overflow-wrap: anywhere;
-  color: #8796af;
-  margin: 11px 0 5px;
-}
-.runtime-card small {
-  font-size: 9px;
+.session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .conversation {
   background: #12161e;
@@ -354,32 +348,6 @@ meter::-moz-meter-bar {
   border-radius: 10px;
   overflow: hidden;
   min-width: 0;
-}
-.conversation-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 17px 21px;
-  border-bottom: 1px solid var(--line);
-}
-.view-switch {
-  display: flex;
-  padding: 3px;
-  border: 1px solid var(--line);
-  background: #0e131a;
-  border-radius: 7px;
-}
-.view-switch button {
-  border: none;
-  background: transparent;
-  padding: 5px 9px;
-  color: #8f9db3;
-  font-size: 10px;
-}
-.view-switch .selected {
-  color: #e7ecf6;
-  background: #263142;
 }
 .messages {
   height: clamp(280px, calc(100dvh - 450px), 780px);
@@ -411,7 +379,7 @@ meter::-moz-meter-bar {
   background: #241e1e;
   margin-bottom: 8px;
 }
-.welcome h2 {
+.welcome h3 {
   font-size: 25px;
   font-weight: 500;
   letter-spacing: -0.05em;
@@ -549,12 +517,6 @@ meter::-moz-meter-bar {
   font-size: 10px;
   color: #b5cafa;
 }
-.dashboard-side {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
 .dashboard-panel,
 .controls,
 .prompt-editor {
@@ -571,7 +533,7 @@ meter::-moz-meter-bar {
   align-items: center;
   justify-content: space-between;
 }
-.panel-heading h2 {
+.panel-heading h3 {
   font-size: 13px;
 }
 .icon-button {
@@ -644,9 +606,6 @@ meter::-moz-meter-bar {
 }
 .inspector-body {
   padding: 0 14px 14px;
-  max-height: 600px;
-  overflow: auto;
-  scrollbar-width: thin;
 }
 .inspector-body > p {
   margin-bottom: 14px;
@@ -748,15 +707,31 @@ details.controls > summary {
   color: #91a1ba;
   overflow-wrap: anywhere;
 }
-.controls h2 {
+.controls h3 {
   font-size: 13px;
   margin-bottom: 14px;
 }
-.controls h2:not(:first-child) {
+.controls h3:not(:first-child) {
   margin-top: 22px;
 }
 .controls label {
   margin: 11px 0;
+}
+.tasks-panel form {
+  max-width: 50rem;
+}
+.tasks-panel > section,
+.task-progress > div {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.task-result {
+  white-space: pre-wrap;
+}
+.research-sources {
+  padding-inline-start: 20px;
+  overflow-wrap: anywhere;
 }
 .controls textarea {
   min-height: 80px;
@@ -908,7 +883,6 @@ details.controls > summary {
 }
 .voice-controls {
   padding: 10px 18px;
-  border-top: 1px solid #252e3d;
   font-size: 10px;
 }
 .voice-controls summary {
@@ -976,24 +950,6 @@ details.controls > summary {
   font-size: 11px;
   margin-top: 10px;
 }
-.lan-sharing {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin: 0 0 15px;
-}
-.lan-sharing > button {
-  font-size: 10px;
-  padding: 5px 9px;
-}
-.lan-sharing label {
-  flex: 1 1 240px;
-  max-width: 800px;
-}
-.lan-sharing input {
-  font-size: 10px;
-}
 .error {
   background: #2d1d27;
   border: 1px solid #64404d;
@@ -1035,26 +991,14 @@ details.controls > summary {
   }
 }
 @media (min-width: 1600px) {
-  .workspace {
-    grid-template-columns: 190px minmax(0, 1fr) 390px;
-    gap: 26px;
-  }
-  .conversation-toolbar,
   .composer {
-    padding-left: 26px;
-    padding-right: 26px;
+    padding-inline: 26px;
   }
   .messages {
     padding: 27px;
   }
 }
 @media (max-width: 1300px) {
-  .workspace {
-    grid-template-columns: minmax(0, 1fr) 320px;
-  }
-  .workspace-nav {
-    display: none;
-  }
   .metric {
     padding: 13px;
   }
@@ -1066,17 +1010,9 @@ details.controls > summary {
   .dashboard-shell {
     padding: 0 16px 20px;
   }
-  .workspace {
+  .page-grid {
     grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-  }
-  .dashboard-side {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-  }
-  .prompt-inspector {
-    grid-column: 1 / -1;
+    gap: 12px;
   }
   .telemetry-strip {
     grid-template-columns: repeat(6, minmax(130px, 1fr));
@@ -1134,8 +1070,22 @@ details.controls > summary {
   .metric small {
     font-size: 9px;
   }
-  .conversation-toolbar {
-    padding: 13px;
+  .app-header:has(.session-actions) {
+    flex-wrap: wrap;
+    padding-block: 8px;
+  }
+  .session-actions {
+    width: 100%;
+  }
+  .session-actions button {
+    min-height: 44px;
+  }
+  .workspace-tabs {
+    gap: 3px;
+    margin-bottom: 14px;
+  }
+  .workspace-tabs button {
+    padding-inline: 9px;
   }
   .messages {
     padding: 16px 13px;
@@ -1145,7 +1095,7 @@ details.controls > summary {
     padding: 20px 5px;
     min-height: 240px;
   }
-  .welcome h2 {
+  .welcome h3 {
     font-size: 23px;
   }
   .welcome p {
@@ -1189,10 +1139,6 @@ details.controls > summary {
   .thinking-toggle {
     min-height: 44px;
     font-size: 10px;
-  }
-  .dashboard-side {
-    display: flex;
-    align-items: stretch;
   }
   .controls,
   .prompt-editor {

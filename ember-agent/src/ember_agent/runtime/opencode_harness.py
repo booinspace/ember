@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from hashlib import file_digest
 from pathlib import Path, PurePath, PurePosixPath
 from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import httpx
@@ -33,6 +34,9 @@ from .http_server import EmbeddedServer
 from .task_router import TaskResult, ToolContext, ToolReceipt
 from .task_store import TaskConflict, TaskState, TaskSubmission
 from .worker_process import owned_stdio, settled
+
+if TYPE_CHECKING:
+    from .research import ResearchBroker
 
 _PROVIDER = "ember-local"
 _AGENT = "ember-reader"
@@ -67,12 +71,14 @@ class _TaskStream(StreamingResponse):
 
     async def stream_response(self, send: Send) -> None:
         await send({"type": "http.response.start", "status": 200, "headers": self.raw_headers})
-        if self.ingress.bridge is self.bridge:
+        if self.ingress.accepts(self.bridge):
             done = asyncio.Event()
             with CancelScope() as scope:
                 self.ingress.active[scope] = done
                 try:
                     async for frame in self.source:
+                        if not self.ingress.accepts(self.bridge):
+                            break
                         await send({"type": "http.response.body", "body": frame, "more_body": True})
                 finally:
                     try:
@@ -87,11 +93,19 @@ class _TaskStream(StreamingResponse):
 class _ModelIngress:
     """Only the owned harness can submit steps, only while its task is active."""
 
-    def __init__(self, key: str) -> None:
+    def __init__(self, key: str, *, research: "ResearchBroker | None" = None) -> None:
         self.key = f"Bearer {key}".encode()
         self.bridge: OpenAIModelBridge | None = None
+        self.owner: asyncio.Task[object] | None = None
         self.active: dict[CancelScope, asyncio.Event] = {}
-        self.app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+        self.app = FastAPI(
+            openapi_url=None,
+            docs_url=None,
+            redoc_url=None,
+            lifespan=research.lifespan if research is not None else None,
+        )
+        if research is not None:
+            self.app.mount("/broker", research.authenticate)
         self.app.add_api_route(
             "/v1/chat/completions", self.complete, methods=["POST"], response_model=None
         )
@@ -101,7 +115,7 @@ class _ModelIngress:
         if len(headers) != 1 or not secrets.compare_digest(headers[0].encode(), self.key):
             return JSONResponse(openai_error("unauthorized"), 401)
         bridge = self.bridge
-        if bridge is None:
+        if bridge is None or not self.accepts(bridge):
             return JSONResponse(openai_error("harness_task_inactive"), 403)
         try:
             body = bytearray()
@@ -110,7 +124,7 @@ class _ModelIngress:
                     if len(body) + len(chunk) > _WIRE_LIMIT:
                         return JSONResponse(openai_error("request_too_large"), 413)
                     body.extend(chunk)
-            if self.bridge is not bridge:
+            if not self.accepts(bridge):
                 return JSONResponse(openai_error("harness_task_inactive"), 403)
             result = bridge.response(bytes(body))
             if isinstance(result, Awaitable):
@@ -127,9 +141,22 @@ class _ModelIngress:
                 notify(bridge.observe_failure, error.code)
             return JSONResponse(openai_error(error.code), 400)
 
-    async def revoke(self) -> None:
-        """Detach active streams; gateway retains ownership until native settlement."""
+    def accepts(self, bridge: OpenAIModelBridge) -> bool:
+        """Check live task ownership, including cancellation before cleanup runs."""
+        return (
+            self.bridge is bridge
+            and self.owner is not None
+            and not self.owner.cancelling()
+            and datetime.now(UTC) < bridge.deadline
+        )
+
+    def fence(self) -> None:
+        """Close model ingress before any cleanup await."""
         self.bridge = None
+        self.owner = None
+
+    async def drain(self) -> None:
+        """Detach active streams; gateway retains ownership until native settlement."""
         active = tuple(self.active.items())
         for scope, _ in active:
             scope.cancel()
@@ -137,13 +164,13 @@ class _ModelIngress:
 
 
 @asynccontextmanager
-async def _listen(app: FastAPI) -> AsyncGenerator[str]:
+async def _listen(app: FastAPI, *, lifespan: bool = False) -> AsyncGenerator[str]:
     server = EmbeddedServer(
         uvicorn.Config(
             app,
             access_log=False,
             log_level="warning",
-            lifespan="off",
+            lifespan="on" if lifespan else "off",
             ws="none",
             proxy_headers=False,
             limit_concurrency=12,
@@ -262,7 +289,7 @@ def _check_settings(settings: HarnessSettings) -> None:
         raise TaskConflict("opencode_optional_capability_unqualified")
 
 
-def _prepare(config: DeploymentConfig, settings: HarnessSettings) -> tuple[str, Path]:
+def _prepare_executable(settings: HarnessSettings) -> str:
     _check_settings(settings)
     try:
         executable = Path(settings.command[0]).resolve(strict=True)
@@ -272,6 +299,11 @@ def _prepare(config: DeploymentConfig, settings: HarnessSettings) -> tuple[str, 
         raise TaskConflict("opencode_executable_access_denied") from error
     if digest != settings.profile_sha256:
         raise TaskConflict("opencode_executable_pin_mismatch")
+    return str(executable)
+
+
+def _prepare(config: DeploymentConfig, settings: HarnessSettings) -> tuple[str, Path]:
+    executable = _prepare_executable(settings)
     workspace = settings.workspace.resolve(strict=True)
     if not workspace.is_dir() or workspace == workspace.parent:
         raise TaskConflict("opencode_workspace_invalid")
@@ -384,11 +416,15 @@ class OpenCodeTask:
         stop: Callable[[], Awaitable[None]],
         *,
         build: bool = False,
+        research: "ResearchBroker | None" = None,
     ) -> None:
         self.stop = stop
         self.config, self.model, self.workspace = config, model, workspace
         self.http, self.ingress, self.process, self.observe = http, ingress, process, observe
         self.agent, self.tools = (_BUILD_AGENT, _BUILD) if build else (_AGENT, _READ)
+        self.research = research
+        if research is not None:
+            self.agent, self.tools = research.agent, research.tools
         self.build = build
         self.failed = False
         self.busy = False
@@ -409,7 +445,12 @@ class OpenCodeTask:
         context: ToolContext,
         progress: Callable[[TaskState], Awaitable[None]],
     ) -> TaskResult:
-        """Execute one read-only task. Never resubmit after an ambiguous response."""
+        """Execute one task. Never resubmit after an ambiguous response."""
+        research = self.research
+        if research is not None and (
+            request.operation != "research" or request.research_provider != research.backend
+        ):
+            raise TaskConflict("research_provider_consent_required")
         if not self.available or context.deadline_at is None or self.busy:
             raise TaskConflict("opencode_unavailable")
         self.busy = True
@@ -419,18 +460,22 @@ class OpenCodeTask:
         dispatched = False
         finished = False
         failure: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        prompt: asyncio.Task[None] | None = None
 
         def fail(code: str) -> None:
             if not failure.done():
+                self._fence()
                 failure.set_result(code)
 
-        async def validate_call(call: ToolCall) -> None:
-            if call.name not in self.tools:
+        async def prepare_calls(calls: tuple[ToolCall, ...]) -> tuple[ToolCall, ...]:
+            if any(call.name not in self.tools for call in calls):
                 raise GatewayError("harness_tool_not_granted")
-            if not self.build:
+            if research is None and not self.build:
                 assert isinstance(self.workspace, Path)
-                await asyncio.to_thread(_validate_workspace_call, self.workspace, call)
+                for call in calls:
+                    await asyncio.to_thread(_validate_workspace_call, self.workspace, call)
             await progress("waiting_for_tool")
+            return research.grant(calls) if research is not None else calls
 
         async def observe_step() -> None:
             await progress("waiting_for_inference")
@@ -443,7 +488,10 @@ class OpenCodeTask:
                 deadline_at=datetime.fromtimestamp(context.deadline_at, UTC).isoformat(),
                 observe_request=self.observe,
                 allowed_tools=frozenset(self.tools),
-                validate_call=validate_call,
+                prepare_calls=prepare_calls,
+                transport_tool_argument=research.transport_argument
+                if research is not None
+                else None,
                 observe_failure=fail,
                 on_step=observe_step,
             )
@@ -468,7 +516,10 @@ class OpenCodeTask:
                 or session.get("agent") != self.agent
             ):
                 raise TaskConflict("opencode_session_mismatch")
+            if research is not None:
+                research.begin(identity, context.deadline_at, request.goal)
             await progress("waiting_for_inference")
+            self.ingress.owner = asyncio.current_task()
             self.ingress.bridge = bridge
 
             async def run_prompt() -> None:
@@ -481,41 +532,49 @@ class OpenCodeTask:
                 await _api(self.http, "POST", f"/api/experimental/session/{identity}/wait")
 
             prompt = asyncio.create_task(run_prompt())
-            try:
-                await asyncio.wait((prompt, failure), return_when=asyncio.FIRST_COMPLETED)
-                if failure.done():
-                    # Do not let provider retry/backoff continue after a rejected step.
-                    raise TaskConflict(failure.result())
-                await prompt
-            finally:
-                prompt.cancel()
-                await settled(asyncio.create_task(_join(prompt)))
-                failure.cancel()
+            await asyncio.wait((prompt, failure), return_when=asyncio.FIRST_COMPLETED)
+            if failure.done():
+                # Do not let provider retry/backoff continue after a rejected step.
+                raise TaskConflict(failure.result())
+            await prompt
+            self._fence()
             session = _data(await _api(self.http, "GET", task_path))
             if session.get("id") != identity or session.get("outcome") != "succeeded":
                 raise TaskConflict("opencode_execution_failed")
             finished = True
             timeline = await _api(self.http, "GET", task_path + "/message?limit=64&order=asc")
             summary, tools = self._result(timeline, message)
+            data: dict[str, JsonValue] = {"provider": "opencode", "tools": tools}
+            if research is not None:
+                summary, data["sources"] = research.result(summary)
             return TaskResult(
                 summary=summary,
                 receipt=ToolReceipt(
                     context=context,
-                    tool="delegate",
-                    data={"provider": "opencode", "tools": tools},
+                    tool="research" if research is not None else "delegate",
+                    data=data,
                 ),
             )
         except (httpx.HTTPError, ValidationError) as error:
             raise TaskConflict("opencode_transport_failed") from error
         finally:
+            self._fence()
+            failure.cancel()
+            if prompt is not None:
+                prompt.cancel()
             try:
                 if dispatched:
-                    await settled(asyncio.create_task(self._cleanup(task_path, finished)))
+                    await settled(asyncio.create_task(self._cleanup(task_path, finished, prompt)))
                     owner = asyncio.current_task()
                     if owner is not None and owner.cancelling():
                         raise asyncio.CancelledError
             finally:
                 self.busy = False
+
+    def _fence(self) -> None:
+        self.ingress.fence()
+        if self.research is not None:
+            self.research.fence()
 
     def _goal(self, request: TaskSubmission) -> str:
         if not self.build:
@@ -528,10 +587,15 @@ class OpenCodeTask:
         )
         return f"Ember workspace: /work. {grant}\n\nUser goal:\n{request.goal}"
 
-    async def _cleanup(self, path: str, finished: bool) -> None:
+    async def _cleanup(self, path: str, finished: bool, prompt: asyncio.Task[None] | None) -> None:
         try:
             async with asyncio.timeout(5):
-                await self.ingress.revoke()
+                drains = [self.ingress.drain()]
+                if self.research is not None:
+                    drains.append(self.research.drain())
+                if prompt is not None:
+                    drains.append(_join(prompt))
+                await asyncio.gather(*drains)
                 if not finished:
                     try:
                         await _api(self.http, "POST", path + "/interrupt?resume=false")
@@ -600,7 +664,12 @@ class OpenCodeTask:
 
 
 async def _verify_config(
-    http: httpx.AsyncClient, workspace: PurePath, source: PurePath, intended: dict[str, JsonValue]
+    http: httpx.AsyncClient,
+    workspace: PurePath,
+    source: PurePath,
+    intended: dict[str, JsonValue],
+    *,
+    resolved_mcp: dict[str, JsonValue] | None = None,
 ) -> None:
     async with asyncio.timeout(_READY_TIMEOUT):
         documents = await _api(
@@ -615,8 +684,13 @@ async def _verify_config(
         actual = Path(path).resolve() if isinstance(source, Path) else PurePosixPath(path)
         if actual == source:
             value = document.get("info")
-            if not isinstance(value, dict) or any(
-                value.get(name) != intended[name] for name in ("policies", "providers", "agents")
+            if (
+                not isinstance(value, dict)
+                or any(
+                    value.get(name) != intended[name]
+                    for name in ("policies", "providers", "agents")
+                )
+                or (resolved_mcp is not None and value.get("mcp") != resolved_mcp)
             ):
                 raise TaskConflict("opencode_unexpected_configuration")
             verified = True
@@ -632,17 +706,31 @@ async def open_opencode(
     settings: HarnessSettings,
     model: ModelClient,
     observe: Callable[[GatewayRequest], None] | None = None,
+    *,
+    research: "ResearchBroker | None" = None,
 ) -> AsyncGenerator[OpenCodeTask]:
     """Start only the pinned installed server and authenticate exact child identity."""
-    executable, workspace = await asyncio.to_thread(_prepare, config, settings)
+    if research is None:
+        executable, inspect_workspace = await asyncio.to_thread(_prepare, config, settings)
+    else:
+        executable = await asyncio.to_thread(_prepare_executable, settings)
+        inspect_workspace = None
     password, key = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-    ingress = _ModelIngress(key)
+    ingress = _ModelIngress(key, research=research)
     with TemporaryDirectory(prefix="opencode-", dir=config.runtime_root) as directory:
-        async with _listen(ingress.app) as endpoint:
-            home = Path(directory)
-            environment = await asyncio.to_thread(
-                _environment, home, _policy(config, endpoint), password, key
+        home = Path(directory)
+        async with AsyncExitStack() as stack:
+            workspace = inspect_workspace or home / "workspace"
+            if inspect_workspace is None:
+                await asyncio.to_thread(workspace.mkdir)
+            endpoint = await stack.enter_async_context(
+                _listen(ingress.app, lifespan=research is not None)
             )
+            intended = _policy(config, endpoint)
+            resolved_mcp = research.configure(intended, endpoint) if research is not None else None
+            environment = await asyncio.to_thread(_environment, home, intended, password, key)
+            if research is not None:
+                environment.update(research.environment())
             command = (executable, "serve", "--hostname", "127.0.0.1", "--port", "0")
             async with AsyncExitStack() as child:
                 process = await child.enter_async_context(
@@ -685,8 +773,20 @@ async def open_opencode(
                         http,
                         workspace,
                         (home / "config/opencode/opencode.json").resolve(),
-                        _policy(config, endpoint),
+                        intended,
+                        resolved_mcp=resolved_mcp,
                     )
+                    if research is not None:
+
+                        async def catalog() -> JsonValue:
+                            return await _api(
+                                http,
+                                "GET",
+                                "/api/mcp",
+                                headers={"x-opencode-directory": str(workspace)},
+                            )
+
+                        await research.verify(catalog)
 
                     async def drain_output() -> None:
                         assert process.stdout is not None
@@ -704,6 +804,7 @@ async def open_opencode(
                             process,
                             observe,
                             stop,
+                            research=research,
                         )
                     finally:
                         output.cancel()
@@ -772,7 +873,8 @@ async def _build_worker(
         async with httpx.AsyncClient(
             base_url=f"http://127.0.0.1:{forwarded}",
             trust_env=False,
-            timeout=httpx.Timeout(8, read=180),
+            # TaskRouter bounds the whole Build, including multi-step session waits.
+            timeout=httpx.Timeout(8, read=610),
         ) as http:
             async with http.stream("GET", "/api/info") as response:
                 if response.status_code != 401:

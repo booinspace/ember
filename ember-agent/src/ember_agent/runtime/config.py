@@ -250,6 +250,7 @@ class HarnessSettings(RuntimeModel):
     profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     workspace: Path
     build: BuildSettings | None = None
+    research: bool = False
     private_recall: bool = False
     tools: tuple[str, ...] = Field(default=(), max_length=8)
     skills: bool = False
@@ -276,12 +277,19 @@ class PublicSearchSettings(RuntimeModel):
     provider: str = Field(default="command", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
     command: tuple[str, ...] = Field(default=(), max_length=32)
     searxng_url: str | None = None
+    api_key_env: str | None = Field(default=None, pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 
     @model_validator(mode="after")
     def installed_transport(self) -> Self:
-        """Accept an absolute installed command or an unauthenticated HTTP(S) origin."""
+        """Select exactly one transport; hosted origins are not deployment inputs."""
         if self.provider == "hermes":
             raise ValueError(_HERMES_SEARCH_REMOVED)
+        if self.provider in {"exa", "parallel"}:
+            if self.api_key_env is None or self.command or self.searxng_url is not None:
+                raise ValueError("Hosted public search requires only an API key environment name.")
+            return self
+        if self.api_key_env is not None:
+            raise ValueError("api_key_env is only supported with Exa or Parallel.")
         if bool(self.command) == (self.searxng_url is not None):
             raise ValueError("Configure either a public search command or searxng_url.")
         if self.command and not _absolute_command(self.command):
@@ -729,11 +737,11 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             if settings.public_search is not None
             else None
         )
-    except (ValidationError, ValueError) as error:
+    except (ValidationError, ValueError):
         raise ConfigurationError(
-            "Invalid [public_search]: specify either searxng_url as an "
-            "HTTP(S) origin or an absolute installed command."
-        ) from error
+            "Invalid [public_search]: configure one searxng_url HTTP(S) origin, an absolute "
+            "installed command, or provider exa/parallel with api_key_env."
+        ) from None
     services = _validate_services(settings, path.resolve().parent, runtime_root)
     if settings.memory_mcp is not None and settings.memory_mcp.lan_bind:
         if not public_origin:

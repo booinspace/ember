@@ -123,10 +123,19 @@ assert s.makefile('rb').read() == b'host:' + b'a' * 262144
                 PYTHON,
                 "-c",
                 """
-import subprocess, sys
-subprocess.Popen([sys.executable, '-m', 'http.server', '18741', '--bind', '127.0.0.1'],
-                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                 stderr=subprocess.DEVNULL, start_new_session=True)
+import socket, subprocess, sys, time
+server = subprocess.Popen([sys.executable, '-m', 'http.server', '18741', '--bind', '127.0.0.1'],
+                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL, start_new_session=True)
+deadline = time.monotonic() + 3
+while server.poll() is None and time.monotonic() < deadline:
+    try:
+        with socket.create_connection(('127.0.0.1', 18741), timeout=0.2):
+            break
+    except OSError:
+        time.sleep(0.02)
+else:
+    raise AssertionError('fixture HTTP server did not start')
 """,
             )
             key = "local-fixture-authorization-must-not-reach-container"

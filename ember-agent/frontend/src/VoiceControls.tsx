@@ -36,7 +36,7 @@ export function VoiceControls({
     }
   };
   return (
-    <details className="voice-controls">
+    <details className="controls voice-controls">
       <summary>Voice and speaking speed</summary>
       <p>Voice model: {options.model} · CPU · Text appears ahead of speech.</p>
       <fieldset disabled={busy || saving}>

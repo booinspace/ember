@@ -118,11 +118,34 @@ def test_public_search_can_run_independently_of_harness(config_path: Path, use_u
     assert not config.runtime_root.exists()
 
 
+@pytest.mark.parametrize("provider", ["exa", "parallel"])
+def test_hosted_public_search_uses_offline_environment_reference(
+    config_path: Path, provider: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("TEST_WEB_API_KEY", raising=False)
+    config_path.write_text(
+        config_path.read_text()
+        + f'\n[public_search]\nprovider="{provider}"\napi_key_env="TEST_WEB_API_KEY"\n'
+    )
+    config = load_config(config_path)
+    assert config.harness is None and config.public_search is not None
+    assert config.public_search.provider == provider
+    assert config.public_search.api_key_env == "TEST_WEB_API_KEY"
+    assert not config.runtime_root.exists()
+
+
 @pytest.mark.parametrize(
     "fields",
     [
         "",
         'command=["search"]',
+        'provider="exa"',
+        'provider="parallel"\napi_key_env="secret value"',
+        'provider="exa"\napi_key="secret"',
+        'provider="exa"\napi_key_env="WEB_KEY"\nendpoint="https://other.example"',
+        'provider="parallel"\napi_key_env="WEB_KEY"\nsearxng_url="http://nas.example"',
+        f'provider="exa"\napi_key_env="WEB_KEY"\ncommand=[{json.dumps(sys.executable)}]',
+        'api_key_env="WEB_KEY"\nsearxng_url="http://nas.example"',
         'searxng_url="http://user:secret@nas.example"',
         'searxng_url="http://nas.example:invalid"',
         'searxng_url="http://nas.example/search"',

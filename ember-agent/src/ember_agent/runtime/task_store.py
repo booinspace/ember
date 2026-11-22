@@ -15,14 +15,16 @@ from pydantic import Field, JsonValue, TypeAdapter, model_validator
 from .config import RuntimeModel
 
 type TaskOperation = Literal[
-    "inspect", "summarize", "recall", "review", "tool", "delegate", "build"
+    "inspect", "summarize", "recall", "review", "tool", "delegate", "build", "research"
 ]
 type ServicePort = Annotated[int, Field(ge=1024, le=65535)]
+type ResearchProvider = Literal["exa", "parallel"]
 type TerminalState = Literal["succeeded", "failed", "cancelled", "timed_out", "uncertain"]
 type TaskState = Literal[
     "queued",
     "starting",
     "running",
+    "waiting_for_realtime",
     "waiting_for_inference",
     "waiting_for_tool",
     "waiting_for_user",
@@ -70,6 +72,7 @@ class TaskSubmission(RuntimeModel):
     operation: TaskOperation = "inspect"
     tool: ToolInvocation | None = None
     service_port: ServicePort | None = None
+    research_provider: ResearchProvider | None = None
 
     @model_validator(mode="after")
     def bound_operation(self) -> Self:
@@ -77,6 +80,8 @@ class TaskSubmission(RuntimeModel):
             raise ValueError("Tool payload must belong to the tool operation")
         if self.service_port is not None and self.operation != "build":
             raise ValueError("Service port requires Build")
+        if self.research_provider is not None and self.operation != "research":
+            raise ValueError("Research provider requires Web Research")
         return self
 
 
@@ -211,11 +216,18 @@ class TaskStore:
             ).fetchone()
             if row is not None:
                 original = TaskSubmission.model_validate_json(row[1])
-                if (original.goal, original.operation, original.tool, original.service_port) != (
+                if (
+                    original.goal,
+                    original.operation,
+                    original.tool,
+                    original.service_port,
+                    original.research_provider,
+                ) != (
                     request.goal,
                     request.operation,
                     request.tool,
                     request.service_port,
+                    request.research_provider,
                 ):
                     raise TaskConflict("idempotency_key_reused")
                 return TaskHandle.model_validate(
@@ -226,7 +238,9 @@ class TaskStore:
                     }
                 )
             count = db.execute(
-                "SELECT count(*) FROM task WHERE character_id=? AND state='queued'", (character,)
+                "SELECT count(*) FROM task WHERE character_id=? "
+                "AND state IN ('queued', 'waiting_for_realtime')",
+                (character,),
             ).fetchone()
             if count[0] >= 32:
                 raise TaskConflict("task_queue_full")
@@ -308,32 +322,45 @@ class TaskStore:
             )
             return TypeAdapter[TerminalState](TerminalState).validate_python(row[0])
 
-    async def claim(self, character_id: UUID) -> tuple[UUID, TaskSubmission, float] | None:
-        """Claim the oldest queued task with an atomic compare-and-set."""
-        return await asyncio.to_thread(self._claim, character_id)
+    async def claim(
+        self, character_id: UUID, *, realtime_reserved: bool = False
+    ) -> tuple[UUID, TaskSubmission, float] | None:
+        """Claim the oldest eligible task; deferred work has no attempt yet."""
+        return await asyncio.to_thread(self._claim, character_id, realtime_reserved)
 
-    def _claim(self, character_id: UUID) -> tuple[UUID, TaskSubmission, float] | None:
+    def _claim(
+        self, character_id: UUID, realtime_reserved: bool
+    ) -> tuple[UUID, TaskSubmission, float] | None:
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("BEGIN IMMEDIATE")
             cutoff = time()
             expired = (str(character_id), cutoff)
             db.execute(
                 """INSERT INTO terminal_outbox(task_id, state)
-                   SELECT id, 'timed_out' FROM task WHERE character_id=? AND state='queued'
-                   AND deadline_at<=?""",
+                   SELECT id, 'timed_out' FROM task WHERE character_id=?
+                   AND state IN ('queued', 'waiting_for_realtime') AND deadline_at<=?""",
                 expired,
             )
             db.execute(
-                """UPDATE task SET state='timed_out' WHERE character_id=? AND state='queued'
-                   AND deadline_at<=?""",
+                """UPDATE task SET state='timed_out' WHERE character_id=?
+                   AND state IN ('queued', 'waiting_for_realtime') AND deadline_at<=?""",
                 expired,
             )
+            if realtime_reserved:
+                db.execute(
+                    """UPDATE task SET state='waiting_for_realtime'
+                       WHERE character_id=? AND state='queued'
+                       AND json_extract(request_json, '$.operation')
+                           IN ('build', 'delegate', 'research')""",
+                    (str(character_id),),
+                )
             row = db.execute(
                 """UPDATE task SET state='running'
-                   WHERE id=(SELECT id FROM task WHERE character_id=? AND state='queued'
+                   WHERE id=(SELECT id FROM task WHERE character_id=?
+                             AND (state='queued' OR (? AND state='waiting_for_realtime'))
                              ORDER BY rowid LIMIT 1)
                    RETURNING id, request_json, deadline_at""",
-                (str(character_id),),
+                (str(character_id), not realtime_reserved),
             ).fetchone()
             if row is None:
                 return None
@@ -367,16 +394,16 @@ class TaskStore:
                 """INSERT INTO terminal_outbox(task_id, state)
                    SELECT id, 'uncertain' FROM task
                    WHERE character_id=? AND state IN ('starting', 'running',
-                                   'waiting_for_inference', 'waiting_for_tool',
-                                   'waiting_for_user')""",
+                                    'waiting_for_inference', 'waiting_for_tool',
+                                    'waiting_for_user')""",
                 (str(character_id),),
             )
             db.execute(
                 """UPDATE task_attempt SET outcome='uncertain', finished_at=?
                    WHERE outcome='running' AND task_id IN (
                        SELECT id FROM task WHERE character_id=? AND state IN (
-                           'starting', 'running', 'waiting_for_inference', 'waiting_for_tool',
-                           'waiting_for_user'
+                           'starting', 'running', 'waiting_for_inference',
+                           'waiting_for_tool', 'waiting_for_user'
                        )
                    )""",
                 (time(), str(character_id)),
@@ -384,8 +411,8 @@ class TaskStore:
             db.execute(
                 """UPDATE task SET state='uncertain'
                    WHERE character_id=? AND state IN ('starting', 'running',
-                                   'waiting_for_inference', 'waiting_for_tool',
-                                   'waiting_for_user')""",
+                                    'waiting_for_inference', 'waiting_for_tool',
+                                    'waiting_for_user')""",
                 (str(character_id),),
             )
 
@@ -430,7 +457,7 @@ class TaskStore:
                 raise TaskConflict("task_not_found")
             if row[0] in TERMINAL_STATES:
                 return
-            if row[0] == "queued":
+            if row[0] in {"queued", "waiting_for_realtime"}:
                 db.execute("UPDATE task SET state='cancelled' WHERE id=?", (identity,))
                 db.execute(
                     "INSERT INTO terminal_outbox(task_id, state) VALUES (?, 'cancelled')",
@@ -438,6 +465,33 @@ class TaskStore:
                 )
             else:
                 db.execute("UPDATE task SET cancellation_requested=1 WHERE id=?", (identity,))
+
+    async def active(self, character_id: UUID) -> tuple[TaskSnapshot, ...]:
+        """List pending work, including tasks queued outside the Tasks page."""
+        return await asyncio.to_thread(self._active, character_id)
+
+    def _active(self, character_id: UUID) -> tuple[TaskSnapshot, ...]:
+        with closing(sqlite3.connect(self.path)) as db:
+            rows = db.execute(
+                """SELECT id, state, cancellation_requested,
+                          json_extract(request_json, '$.operation')
+                   FROM task WHERE character_id=? AND state IN (
+                       'queued', 'starting', 'running', 'waiting_for_realtime',
+                       'waiting_for_inference', 'waiting_for_tool', 'waiting_for_user')
+                   ORDER BY state IN ('queued', 'waiting_for_realtime'), rowid LIMIT 33""",
+                (str(character_id),),
+            ).fetchall()
+        return tuple(
+            TaskSnapshot.model_validate(
+                {
+                    "task_id": UUID(row[0]),
+                    "state": row[1],
+                    "cancellation_requested": bool(row[2]),
+                    "operation": row[3] or "inspect",
+                }
+            )
+            for row in rows
+        )
 
     async def notifications(self, character_id: UUID) -> tuple[TaskSnapshot, ...]:
         """Return a bounded, stable batch until the operator acknowledges it."""
@@ -531,7 +585,12 @@ class TaskStore:
 
     async def progress(self, task_id: UUID, expected: TaskState, state: TaskState) -> None:
         """Coalesce progress to the latest provider state, preserving terminal events."""
-        active = {"running", "waiting_for_inference", "waiting_for_tool", "waiting_for_user"}
+        active = {
+            "running",
+            "waiting_for_inference",
+            "waiting_for_tool",
+            "waiting_for_user",
+        }
         if expected not in active or state not in active:
             raise TaskConflict("invalid_progress_transition")
         await asyncio.to_thread(self._progress, task_id, expected, state)
