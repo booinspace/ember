@@ -151,6 +151,15 @@ integration. [Memory ADRs](ember-memory/docs/adr/README.md) own memory detail;
 those still planned. Numbers are local to each tree. PLAN remains authoritative;
 indexes link decisions to actual phase status and acceptance evidence.
 
+## Windows launcher
+
+Run `uv sync --locked` and `.\scripts\setup_livekit.ps1` from the checkout.
+Double-click `start.bat` to select a deployment from `.local\config`. Only
+`deployment*.toml` files are listed. Stop Ember with Ctrl+C before switching.
+See [Windows Strata setup](ember-agent/docs/strata.md) or the
+[Ollama setup](ember-agent/README.md#setup-and-running-from-windows-powershell)
+to create a local deployment on a fresh clone. Startup never downloads models.
+
 ## Phase 3 LiveKit text runtime
 
 Run the explicit dependency setup once: `./scripts/setup_livekit.ps1`. Existing

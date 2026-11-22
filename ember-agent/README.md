@@ -17,10 +17,12 @@ uv sync --locked
 .\scripts\setup_livekit.ps1
 ```
 
-Copy `config/deployment.example.toml` to a private local configuration, set the
-actual Ollama tag and full digest from `/api/tags`, and set LiveKit mode to
-`managed` with the installed executable path. Relative paths resolve against
-the configuration file. Startup performs no downloads.
+From the workspace root, copy `ember-agent/config/deployment.example.toml` to
+`.local/config/deployment.non-mtp.toml`. Set the actual Ollama tag and full
+digest from `/api/tags` and set `[services.livekit].mode` to `managed`. Relative
+paths resolve against the configuration file: change the example's
+`../../.local/` prefixes to `../` after copying. Use `start.bat` to select the
+local deployment. Startup performs no downloads.
 
 The existing ignored machine configs `.local/config/deployment.non-mtp.toml`
 and `.local/config/deployment.mtp.toml` contain verified model pins and the
