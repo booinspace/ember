@@ -16,7 +16,7 @@ from ember_agent.inference.contracts import GatewayRequest
 from ember_agent.inference.upstream import NativeFrame, NativeFunction, NativeMessage, NativeTool
 from ember_agent.runtime.config import HarnessSettings
 from ember_agent.runtime.harness import open_harness
-from ember_agent.runtime.opencode_harness import open_opencode
+from ember_agent.runtime.opencode_harness import _prepare, open_opencode
 from ember_agent.runtime.task_router import (
     TaskRouter,
     TextInspectionProvider,
@@ -87,6 +87,27 @@ def test_unqualified_harness_rejected_before_launch(
             await gateway.aclose()
 
     asyncio.run(run())
+
+
+def test_unreadable_opencode_executable_reports_access_denied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    settings = HarnessSettings(
+        provider="opencode",
+        command=(str(tmp_path / "opencode"),),
+        revision="2.3.2",
+        profile_sha256="0" * 64,
+        workspace=tmp_path / "workspace",
+    )
+
+    def deny_resolve(path: Path, *, strict: bool = False) -> Path:
+        raise PermissionError(13, "Access denied", str(path))
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Path, "resolve", deny_resolve)
+        with pytest.raises(TaskConflict, match="^opencode_executable_access_denied$"):
+            _prepare(config, settings)
 
 
 @pytest.mark.integration

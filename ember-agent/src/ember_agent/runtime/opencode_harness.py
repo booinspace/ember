@@ -240,9 +240,12 @@ def _prepare(config: DeploymentConfig, settings: HarnessSettings) -> tuple[str, 
         raise TaskConflict("opencode_version_unsupported")
     if settings.tools or settings.skills or settings.private_recall:
         raise TaskConflict("opencode_optional_capability_unqualified")
-    executable = Path(settings.command[0]).resolve(strict=True)
-    with executable.open("rb") as stream:
-        digest = file_digest(stream, "sha256").hexdigest()
+    try:
+        executable = Path(settings.command[0]).resolve(strict=True)
+        with executable.open("rb") as stream:
+            digest = file_digest(stream, "sha256").hexdigest()
+    except PermissionError as error:
+        raise TaskConflict("opencode_executable_access_denied") from error
     if digest != settings.profile_sha256:
         raise TaskConflict("opencode_executable_pin_mismatch")
     workspace = settings.workspace.resolve(strict=True)

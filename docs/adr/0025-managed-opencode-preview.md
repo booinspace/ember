@@ -46,7 +46,10 @@ still governs the separate listener.
 2. To try the preview, use a separate synthetic deployment and a dedicated,
    non-sensitive workspace outside and not containing the data or runtime roots.
    Install OpenCode 2.3.2 separately; Ember neither downloads nor upgrades it.
-   Pin the exact executable bytes using their lowercase SHA-256 digest. An example
+   On Windows, verify the installed executable is readable and runnable by Ember's
+   unelevated account. Moving it out of an elevated staging directory can retain
+   administrator-only permissions. Pin the exact executable bytes using their
+   lowercase SHA-256 digest. An example
    declaration (replace both absolute paths and the digest):
 
    ```toml
@@ -88,7 +91,8 @@ EMBER_TEST_OPENCODE=/absolute/path/to/opencode uv run --locked python -m pytest 
 Real OpenCode 2.3.2 servers on macOS and Miku Windows ran `glob`, `grep`, and two
 `read` calls per task through Ember's P2 gateway, returning both synthetic fixture
 markers. The deterministic upstream supplied tool calls and checked correlated tool
-results. The test also covered realtime reservation, subscriber cancellation without
+results. On Miku, the test also passed under the unelevated interactive account
+used by Ember, after granting that account read/execute on the pinned executable. The test also covered realtime reservation, subscriber cancellation without
 runner release, denied tools and paths, and an active worker crash without disabling
 native tasks. Observed P2 requests were bound to the task. This does not qualify live
 Strata, production process ownership, or browser/voice operation. Linux was not tested.
