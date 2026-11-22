@@ -87,8 +87,9 @@ Do not vendor external agent frameworks into either core.
   Strata are selectable through the same gateway, with no automatic fallback. Managed OpenCode
   2.3.2 is a default-off P2 task preview for synthetic, non-sensitive goals and files only.
   Only workspace `read`, `glob`, and `grep` are offered. No OS sandbox or egress enforcement.
-  A real macOS tool loop used a deterministic upstream, not live Strata; Windows reuses Job
-  Objects but is unqualified; Linux is unqualified. Keep prompt inspection ephemeral and
+  Miku's Strata profiles opt in for a synthetic workspace. macOS and Miku Windows tool loops
+  passed with a deterministic upstream, not live Strata. Production Windows and Linux remain
+  unqualified. Keep prompt inspection ephemeral and
   revalidate authority before disclosure. Hermes tasks and Desktop are removed. Do not migrate
   private data or transfer earlier Hermes evidence to this preview. See the
   [acceptance mapping](docs/adr/0025-managed-opencode-preview.md#acceptance-mapping).

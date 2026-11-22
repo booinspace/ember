@@ -62,12 +62,18 @@ still governs the separate listener.
    ```
 
 3. Validate the config with `ember doctor --config <deployment.toml>`; this is not
-   runtime readiness. Start only the synthetic deployment and use **Tasks** when
-   OpenCode is reported available. Use synthetic goals and files only. Task text and
-   bounded results can enter Ember's operational task records, even though OpenCode
-   uses fresh sessions. Do not pass secrets, private repositories, or personal context.
-   To disable the preview, remove `[harness]` and relaunch; do not change the memory
-   stores or copy prior task/chat data.
+   runtime readiness. Use **Tasks** when OpenCode is reported available. Use synthetic
+   goals and files only. Task text and bounded results can enter Ember's operational
+   task records, even though OpenCode uses fresh sessions. Do not pass secrets, private
+   repositories, or personal context. To disable the preview, remove `[harness]` and
+   relaunch; do not change the memory stores or copy prior task/chat data.
+
+Miku's tracked `deployment.strata.toml` and `deployment.strata-mtp.toml` explicitly
+opt into the preview for a dedicated synthetic fixture workspace. They pin the
+installed Windows x64 baseline binary under `.local/tools/opencode/2.3.2/`. Use
+`Read fixture.txt and return its exact contents.` to smoke-test after relaunch;
+expect `EMBER_MIKU_SYNTHETIC_PREVIEW_232`. The independent memory MCP is not
+attached to the worker.
 
 ## Acceptance mapping
 
@@ -79,26 +85,23 @@ locked development environment installed:
 EMBER_TEST_OPENCODE=/absolute/path/to/opencode uv run --locked python -m pytest ember-agent/tests/test_opencode_harness.py -m integration
 ```
 
-A real OpenCode 2.3.2 server on macOS ran `glob`, `grep`, and two `read` calls
-per task through Ember's P2 gateway, returning both synthetic fixture markers.
-The deterministic upstream supplied tool calls and checked correlated tool results.
-The test also covered realtime reservation, subscriber cancellation without runner
-release, denied tools and paths, and an active worker crash without disabling native
-tasks. Observed P2 requests were
-bound to the task. This is not live Strata evidence, model-quality evidence, or full
-browser/voice operation. A skipped integration or passing offline suite closes no
-unmeasured gate. Windows reuses Job Objects for process ownership but has not been
-qualified for this adapter. Linux has not been qualified either. There is no OS
-sandbox or enforced egress boundary on any platform.
+Real OpenCode 2.3.2 servers on macOS and Miku Windows ran `glob`, `grep`, and two
+`read` calls per task through Ember's P2 gateway, returning both synthetic fixture
+markers. The deterministic upstream supplied tool calls and checked correlated tool
+results. The test also covered realtime reservation, subscriber cancellation without
+runner release, denied tools and paths, and an active worker crash without disabling
+native tasks. Observed P2 requests were bound to the task. This does not qualify live
+Strata, production process ownership, or browser/voice operation. Linux was not tested.
+There is no OS sandbox or enforced egress boundary on any platform.
 
 | PLAN gate | Evidence and disposition for this preview |
 |---|---|
-| P11-AC-01 | **Full gate not run.** macOS observation covers the pinned server's basic session and streamed tool-loop transport. Full compatibility, actual runner budgets and other platforms are unqualified. |
+| P11-AC-01 | **Full gate not run.** macOS and Miku Windows observations cover the pinned server's basic session and streamed tool-loop transport. Full compatibility, live runner budgets, and Linux are unqualified. |
 | P11-AC-02 | **Full gate not run.** Task-scoped ingress and P2 routing were observed with the deterministic upstream. No live Strata or comprehensive auxiliary-call/no-egress qualification. |
 | P11-AC-03 | **Blocked.** Fresh sessions and bounded final text/tool status were observed; required personal context is deliberately unavailable. Interactive input, task updates, resume and artifacts are not offered. |
 | P11-AC-04 | **Blocked.** Denied capabilities, path checks, temporary state and process ownership are not OS-enforced isolation; no egress enforcement. No private data use. |
 | P11-AC-05 | **Full gate not run.** Revocation of task model ingress and cleanup are implemented. Installed-platform fault and process-tree coverage is not established; there is no personal-context copy to qualify for forgetting or purge. Gateway drain is separate. |
-| P11-AC-06 | **Full gate not run.** Actual macOS `read` and bounded receipt are partial evidence only. This is a built-in OpenCode read under narrow adapter policy, not a live Ember MCP broker, actual-model, or attention-delivery qualification. |
+| P11-AC-06 | **Full gate not run.** Real `read`, `glob`, and `grep` calls and bounded receipts are partial evidence only. This is a built-in OpenCode read under narrow adapter policy, not a live Ember MCP broker, actual-model, or attention-delivery qualification. |
 | P11-AC-07 | **Full gate not run.** Default-off composition leaves existing core/native/MCP paths in place. No full provider-removal acceptance across character, continuity, ordinary/deep recall, and tools is claimed by the smoke. |
 | P12-AC-01–06 | **Blocked for runtime qualification.** No selected live skill provider, progressive loading, or page reading. Portable contracts/assets and historical Hermes evidence do not qualify OpenCode. |
 

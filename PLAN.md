@@ -5210,11 +5210,11 @@ records and attention, character continuity, capture, memory, and sole P2 model
 admission. No private recall, external MCP tools, shell, edits, live skills, or
 page reading are provided. There is no OS sandbox or enforced network egress.
 
-A real macOS OpenCode tool loop was observed against a deterministic gateway
-upstream, not live Strata. Windows reuses existing Job Objects for process ownership
-but is unqualified; Linux is also unqualified. P11-AC-01–07 and P12-AC-01–06 remain
-open for a production provider. Offline checks or a narrow real-server test cannot
-close those gates. Phase 13 cancellation and native release remain separate.
+Real macOS and Miku Windows OpenCode tool loops passed with a deterministic gateway
+upstream, not live Strata. Miku's tracked Strata profiles opt into the synthetic
+preview. Production Windows and Linux remain unqualified. P11-AC-01–07 and
+P12-AC-01–06 remain open for a production provider. Offline checks or a narrow
+real-server test cannot close those gates. Phase 13 cancellation and native release remain separate.
 
 Hermes delegation, Desktop, launch/setup adapters, and Hermes public search have
 been removed. Browser text and voice remain independent. Remove retired settings
