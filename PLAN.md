@@ -5412,9 +5412,9 @@ latency, coding retry cost and recall isolation under the candidate workload.
 
 ### Follow-up on Miku
 
-Try `--prefill 128` and `--prefill 64` as isolated profiles on Miku. Compare
-added warm first-PCM p95 during long prompt prefill and active decode, and
-measure OpenCode time to first token and prompt throughput against the current
-`--prefill auto` profile with the same prompts. Enable live preemption only
-if a candidate stays within the 200 ms p95 gate, preserves acceptable OpenCode
-performance and passes the remaining Phase 13 acceptance checks.
+The isolated 128- and 64-token profiles added 233 ms and 156 ms respectively
+at warm first-PCM p95 during long prefill. Neither met the coding budget. On
+matched long OpenCode prompts, median time to first token increased from
+6.68 s on `--prefill auto` to 31.29 s and 37.34 s. Keep `--prefill auto` and
+conservative scheduling. The [comparison](docs/phase-13-validation.md#miku-follow-up-with-128--and-64-token-chunks)
+records both gates and the raw report location.

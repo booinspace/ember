@@ -75,6 +75,40 @@ Raw synthetic trial and receipt logs are under `.local/phase13-voice-preemption-
 Miku returned to the normal profile with conservative gateway health and
 a responding web UI.
 
+### Miku follow-up with 128- and 64-token chunks
+
+The running `--prefill auto` profile supplied the coding baseline on
+`a6a3a7c`. The isolated candidates kept the same model, 131,072-token context,
+MTP, int8 KV and 8,192-token output reserve. Each profile completed six
+measured synthetic OpenCode requests per prompt length through the P5 gateway,
+after warmup. The prompts were about 1,059 and 11,258 tokens. The coding
+budget allowed up to 10% worse median time to first token or native prompt
+throughput for either length.
+
+| Profile | Short prompt TTFT p50 | Short prompt tokens/s p50 | Long prompt TTFT p50 | Long prompt tokens/s p50 |
+| --- | ---: | ---: | ---: | ---: |
+| `auto` | 1.20 s | 899 | 6.68 s | 1,692 |
+| `128` | 2.83 s | 377 | 31.29 s | 360 |
+| `64` | 3.46 s | 308 | 37.34 s | 302 |
+
+The 96-token replies on `auto` decoded at a median of 208 tokens/s for short
+prompts and 204 tokens/s for long prompts. Median decode throughput across
+all three profiles and both prompt lengths ranged from 203 to 210 tokens/s.
+
+Each candidate completed 20 interleaved warm samples per voice condition.
+Added latency compares each candidate with its own idle first-PCM p95.
+All 80 contended trials verified native abort and same-runner reuse.
+
+| Profile | Idle first PCM p95 | Added p95 during decode | Added p95 during long prefill |
+| --- | ---: | ---: | ---: |
+| `128` | 340 ms | −70 ms | +233 ms |
+| `64` | 334 ms | −47 ms | +156 ms |
+
+The 128-token profile missed the 200 ms voice gate. The 64-token profile
+cleared it. Both exceeded the coding budget. Long-prompt throughput fell by
+79% and 82% respectively, so live preemption remains disabled. Raw results
+are under `.local/phase13-prefill-128-64/` on Miku.
+
 ## Exclusive Strata desktop acceptance — 22 November 2026
 
 The patched `d96ad10` source overlay ran on Miku in the existing desktop
