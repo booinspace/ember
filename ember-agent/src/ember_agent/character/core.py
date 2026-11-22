@@ -151,9 +151,11 @@ class CharacterCore:
         thinking_available: bool = False,
         output_ceiling: int = 1192,
         recall_enabled: bool = True,
+        natural_deep_recall: bool = False,
     ) -> None:
         self.memory = memory
         self.recall_enabled = recall_enabled
+        self.natural_deep_recall = natural_deep_recall
         self.model = model
         self.model_tag = model_tag
         self.input_ceiling = min(input_ceiling, 24576)

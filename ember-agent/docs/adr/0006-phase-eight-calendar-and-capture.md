@@ -52,8 +52,11 @@ recheck the same certificate. Buffered media revocation/real audio tests remain 
 Deep service orchestration uses typed ABI results, exact excerpts and existing
 related reads; the character business layer still knows no SQL. Full results stay
 in an ephemeral bounded inspector, with separately budgeted P0 prompt selection.
-No extra planning, model summarization, ownership or implicit automatic deep trigger
-is introduced. Completed embedding-cache hits are reused; new deep CPU encodes are
+The initial implementation introduced no extra planning, model summarization,
+ownership or implicit automatic deep trigger. The opt-in `natural_deep_recall`
+setting now uses v1 phrase matching at the same voice and text entry points,
+without changing service limits or permissions. Completed embedding-cache hits
+are reused; new deep CPU encodes are
 deferred until the stronger shared-resource gate is measured.
 
 A coalesced room connection lifecycle drains media before release of the gateway

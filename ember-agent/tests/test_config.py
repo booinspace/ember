@@ -82,6 +82,17 @@ def test_pending_pin_validates_without_state_or_runtime_readiness(config_path: P
         load_config(config_path, require_model_pin=True)
 
 
+def test_natural_deep_recall_is_opt_in(config_path: Path) -> None:
+    text = config_path.read_text(encoding="utf-8")
+    assert "natural_deep_recall = false" in text
+    config_path.write_text(text.replace("natural_deep_recall = false", ""), encoding="utf-8")
+    assert not load_config(config_path).natural_deep_recall
+    config_path.write_text(
+        text.replace("natural_deep_recall = false", "natural_deep_recall = true"), encoding="utf-8"
+    )
+    assert load_config(config_path).natural_deep_recall
+
+
 def test_paths_resolve_relative_to_config_file(config_path: Path) -> None:
     config = load_config(config_path)
     assert config.data_root == (config_path.parent / "../../.local/data").resolve()

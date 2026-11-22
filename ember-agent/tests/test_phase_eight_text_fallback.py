@@ -75,11 +75,14 @@ def test_authenticated_http_turn_requires_delivery_receipt_and_blocks_background
             character = engine.create_character().store_id
             memory = InProcessAsyncMemoryClient(engine.character(character))
             sink = ArchiveDialogueSink(engine.archive(character), ensure_subject(engine, character))
-            core = CharacterCore(memory, FakeModel(), model_tag="synthetic", sink=sink)
+            core = CharacterCore(
+                memory, FakeModel(), model_tag="synthetic", sink=sink, natural_deep_recall=True
+            )
             deep = DeepRecallService(character, lambda _: memory, validation=memory)
+            deep_question = "Do you remember our NAS outage last year?"
 
             async def investigate(query: str, observation: TurnObservation) -> DeepRecallResult:
-                assert query == "NAS" and observation.text == "/recall NAS"
+                assert query == observation.text == deep_question
                 return DeepRecallResult(
                     request_id=observation.request_id,
                     character_id=character,
@@ -169,7 +172,7 @@ def test_authenticated_http_turn_requires_delivery_receipt_and_blocks_background
                     deep_id = str(uuid4())
                     deep_reply = await client.post(
                         "/api/text/turn",
-                        json={"session_id": identity, "request_id": deep_id, "text": "/recall NAS"},
+                        json={"session_id": identity, "request_id": deep_id, "text": deep_question},
                     )
                     assert deep_reply.status_code == 200 and "deferred" in deep_reply.json()["text"]
                     assert (

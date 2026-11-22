@@ -2,6 +2,9 @@
 # Relative paths resolve against this file's directory, not the shell's cwd.
 config_version = 1
 active_profile = "primary"
+# Route specific questions like "Do you remember what caused the NAS outage?"
+# to deep recall in voice and browser chat. Ordinary turns stay on fast recall.
+natural_deep_recall = false
 
 [paths]
 data_root = "../../.local/data"

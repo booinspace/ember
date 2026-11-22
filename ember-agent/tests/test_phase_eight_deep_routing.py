@@ -8,6 +8,7 @@ import pytest
 from livekit.agents import llm
 
 from ember_agent.character.core import CharacterCore, TurnObservation
+from ember_agent.character.recall_intent import deep_recall_query
 from ember_agent.inference.contracts import GatewayError
 from ember_agent.memory.backends.dialogue import ArchiveDialogueSink
 from ember_agent.memory.deep_contracts import DeepRecallResult
@@ -21,19 +22,52 @@ from ember_memory_engine.capture import CaptureService
 from .test_character import FakeModel
 
 
-@pytest.mark.parametrize("text", ["/recall NAS problems", "Recall deeply NAS problems"])
-def test_explicit_deep_input_is_archived_before_deferred_recall(tmp_path: Path, text: str) -> None:
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Hey Ember, do you remember when we moved last year?", True),
+        ("What do you recall about our NAS outage?", True),
+        ("Can you remember our first trip?", True),
+        ("Remember when we adopted Milo?", True),
+        ("Remember to check the NAS tomorrow.", False),
+        ("I remember when we checked the NAS.", False),
+        ("Do you remember anything about that?", False),
+        ("What caused the NAS outage?", False),
+    ],
+)
+def test_natural_deep_recall_is_opt_in_and_specific(text: str, expected: bool) -> None:
+    assert deep_recall_query(text) is None
+    assert deep_recall_query(text, natural=True) == (text if expected else None)
+
+
+@pytest.mark.parametrize(
+    ("text", "query", "natural"),
+    [
+        ("/recall NAS problems", "NAS problems", False),
+        ("Recall deeply NAS problems", "NAS problems", False),
+        (
+            "Do you remember what caused the NAS outage?",
+            "Do you remember what caused the NAS outage?",
+            True,
+        ),
+    ],
+)
+def test_deep_input_is_archived_before_deferred_recall(
+    tmp_path: Path, text: str, query: str, natural: bool
+) -> None:
     with CanonicalEngine(tmp_path / "data") as engine:
         character = engine.create_character().store_id
         sink = ArchiveDialogueSink(engine.archive(character), ensure_subject(engine, character))
         memory = InProcessAsyncMemoryClient(engine.character(character))
 
         async def exercise() -> None:
-            core = CharacterCore(memory, FakeModel(), model_tag="synthetic", sink=sink)
+            core = CharacterCore(
+                memory, FakeModel(), model_tag="synthetic", sink=sink, natural_deep_recall=natural
+            )
             request_id = uuid4()
 
-            async def investigate(query: str, observation: TurnObservation) -> DeepRecallResult:
-                assert query == "NAS problems"
+            async def investigate(selected: str, observation: TurnObservation) -> DeepRecallResult:
+                assert selected == query
                 assert observation.text == text and observation.request_id == request_id
                 assert len(CaptureService(engine, character).pending()) == 1
                 return DeepRecallResult(

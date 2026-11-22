@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from pydantic import Field
 
 from ..character.core import CharacterCore, TurnObservation
+from ..character.recall_intent import deep_recall_query
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
@@ -162,12 +163,11 @@ class DirectTextSession:
             if investigation is None:
                 raise GatewayError("deep_context_invalidated")
         else:
-            for prefix in ("/recall ", "recall deeply "):
-                if text.strip().casefold().startswith(prefix):
-                    investigation = await self.investigate(
-                        text.strip()[len(prefix) :].strip(), observation
-                    )
-                    break
+            query = deep_recall_query(
+                text, natural=self.core.recall_enabled and self.core.natural_deep_recall
+            )
+            if query:
+                investigation = await self.investigate(query, observation)
         prepared = await self.core.prepare(
             text, observation=observation, investigation=investigation
         )

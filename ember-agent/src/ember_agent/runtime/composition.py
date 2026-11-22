@@ -141,6 +141,7 @@ class LocalRuntime:
                 personality=self.personality,
                 sink=self.sink,
                 timezone=config.recall_timezone,
+                natural_deep_recall=config.natural_deep_recall,
                 interpreter=CalendarInterpreter(
                     self.model,
                     config.model_tag,

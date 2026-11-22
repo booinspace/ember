@@ -1726,9 +1726,10 @@ construction simply because deep recall is installed.
 
 Phase 8 exposes an explicit browser "Recall deeply" action and text command/control
 against the running application's owner. A supported explicit spoken request can use
-a deterministic control phrase; it does not need another routing LLM. Optional automatic
-selection is opt-in, versioned and explains its trigger; ambiguous intent asks/offers
-rather than silently making every conversational question expensive.
+a deterministic control phrase; it does not need another routing LLM. The opt-in
+`natural_deep_recall` setting also recognizes leading, specific recall questions in
+voice and text using deterministic v1 rules. It leaves other turns on ordinary recall
+and uses the same bounded service and admission rules as the explicit commands.
 
 Example: investigate the NAS/Tailscale/MagicDNS/AdGuard/OPNsense project, distinguish
 other networking incidents, and answer with the best-supported reconstruction or a

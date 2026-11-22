@@ -158,7 +158,12 @@ does not start a per-turn status worker.
 ## Deep recall and calendar interpretation
 
 Use the browser Recall deeply action, direct text /recall QUESTION, or the
-spoken phrase recall deeply QUESTION after transcription. Inspection
+spoken phrase recall deeply QUESTION after transcription. To also route specific
+questions like “Do you remember what caused the NAS outage?” automatically, set
+`natural_deep_recall = true` at the top level of the deployment TOML and restart
+Ember. Vague questions, reminders, and ordinary conversation still take the fast
+path. Natural requests use the same memory permissions, limits, and deferral as
+explicit commands. Inspection
 separates bounded accepted memories from exact authorized observations. Answer
 using this recall chooses qualified rows within existing prompt categories.
 There is no additional planner/summary call or canonical belief write.

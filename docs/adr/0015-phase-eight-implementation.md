@@ -66,7 +66,12 @@ Reviewed manual batch enrichment is now implemented; its full library/seed isola
 matrix remains open. No real Qwen/audio acceptance has run while
 the primary ingest owns the GPU. Synthetic tests cannot replace those measurements.
 
-## Runtime and explicit deep recall implementation
+## Runtime and conversational deep recall implementation
+
+Optional `natural_deep_recall` routes specific, directly phrased memory questions
+from voice and text to the existing investigation before reply preparation. No
+extra model call, broader memory access, or change to ordinary recall ranking.
+See [component ADR 0006](../../ember-agent/docs/adr/0006-phase-eight-calendar-and-capture.md).
 
 Browser controls use an application-owned loopback FastAPI server and the existing
 runtime owner. Private file/fragment activation creates an HttpOnly SameSite cookie;

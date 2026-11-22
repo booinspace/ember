@@ -13,6 +13,7 @@ from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 from ember_memory_abi.errors import MemoryError
 
 from ..character.core import CharacterCore, PreparedTurn, TurnObservation
+from ..character.recall_intent import deep_recall_query
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
 from .contracts import TASK_NOTICE_TEXT, USER_IDENTITY
@@ -179,11 +180,9 @@ class EmberAgent(Agent):
             observation = await self.core.observe_input(text, request_id=request_id)
             if self.before_generation is not None:
                 await self.before_generation()
-            query = None
-            for prefix in ("/recall ", "recall deeply "):
-                if text.strip().casefold().startswith(prefix):
-                    query = text.strip()[len(prefix) :].strip()
-                    break
+            query = deep_recall_query(
+                text, natural=self.core.recall_enabled and self.core.natural_deep_recall
+            )
             if investigation is None and query is not None:
                 if not query or self.investigate is None:
                     raise GatewayError("deep_recall_unavailable")
