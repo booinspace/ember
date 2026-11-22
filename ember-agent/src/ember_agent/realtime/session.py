@@ -4,6 +4,7 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
+from time import monotonic
 from typing import TYPE_CHECKING, Protocol, cast
 from uuid import UUID, uuid4
 
@@ -12,6 +13,7 @@ from livekit.agents import (
     AgentSession,
     APIConnectOptions,
     ConversationItemAddedEvent,
+    UserStateChangedEvent,
     llm,
     room_io,
     stt,
@@ -106,6 +108,9 @@ class HostedRoom:
         self.voice = voice
         self.before_turn = before_turn
         self.connection_changed = connection_changed
+        self.voice_priority: Callable[[bool], Awaitable[None]] | None = None
+        self.voice_hold: asyncio.Task[None] | None = None
+        self.voice_activity = 0.0
         self.agent = EmberAgent(core, defer_delivery=True, investigate=investigate)
         self.agent.before_turn = self._before_turn
         self.agent.before_generation = self._reserve_generation
@@ -141,6 +146,7 @@ class HostedRoom:
         self.delivery_failed = False
         # SDK EventEmitter callback return annotations are unspecified.
         self.session.on("conversation_item_added", self._conversation_item)  # pyright: ignore[reportUnknownMemberType]
+        self.session.on("user_state_changed", self._voice_user_state)  # pyright: ignore[reportUnknownMemberType]
         self.busy = False
         self.closing = False
         self.seen: deque[str] = deque(maxlen=128)
@@ -386,6 +392,48 @@ class HostedRoom:
             self._speech_control_peer = False
             if self.connection_changed is not None:
                 self.connection_changed(False)
+
+    def _voice_user_state(self, event: UserStateChangedEvent) -> None:
+        priority = self.voice_priority
+        if (
+            priority is None
+            or event.new_state != "speaking"
+            or self.closing
+            or USER_IDENTITY not in self.room.remote_participants
+        ):
+            return
+        self.voice_activity = monotonic()
+        if self.voice_hold is None or self.voice_hold.done():
+            self.voice_hold = asyncio.create_task(
+                self._hold_voice(priority), name="ember-voice-priority"
+            )
+
+    async def _hold_voice(self, priority: Callable[[bool], Awaitable[None]]) -> None:
+        try:
+            await priority(True)
+            renew_at = monotonic() + 1.0
+            while not self.closing and USER_IDENTITY in self.room.remote_participants:
+                now = monotonic()
+                if (
+                    self.session.user_state == "speaking"
+                    or self.session.agent_state in {"thinking", "speaking"}
+                    or self.busy
+                    or self.agent.gateway_llm.active_turn is not None
+                ):
+                    self.voice_activity = now
+                if now - self.voice_activity >= 2.0:
+                    break  # Also releases false starts that never produce a turn.
+                if now >= renew_at:
+                    await priority(True)
+                    renew_at = monotonic() + 1.0
+                await asyncio.sleep(0.05)
+        except GatewayError:
+            return  # The usual gateway admission and its durable fence still apply.
+        finally:
+            try:
+                await priority(False)
+            except GatewayError:
+                pass  # Disconnect also releases the reservation via the session lease.
 
     async def quiesce(self) -> None:
         """Drain speech and generation before any realtime reservation is released."""
@@ -745,6 +793,8 @@ class HostedRoom:
     async def aclose(self) -> None:
         """Stop admission, drain the sole turn, then close session and room."""
         self.closing = True
+        if self.voice_hold is not None:
+            await self.voice_hold
         await self.stop_task_announcements()
         try:
             await self._drain_stops()

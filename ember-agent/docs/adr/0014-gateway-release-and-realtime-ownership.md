@@ -1,6 +1,6 @@
 # Agent ADR 0014 — Gateway release and realtime ownership
 
-This decision covers conservative admission. See
+This decision covers conservative admission and the Strata voice candidate. See
 [Root ADR 0024](../../../docs/adr/0024-phase-thirteen-inference-hardening.md)
 and [Phase 13 validation](../../../docs/phase-13-validation.md).
 
@@ -19,6 +19,12 @@ and [Phase 13 validation](../../../docs/phase-13-validation.md).
   before native work or waits for an active P5 to drain. A waiting P0 deadline
   withdraws the waiter while the active P5 keeps its owner. Coding streams
   remain client-visible during generation and are never replayed by the gateway.
+- In the Strata candidate, the connected LiveKit host claims a short renewable
+  reservation on detected speech onset. The host holds it through preparation,
+  model work, playback and a two-second quiet guard. A stale reservation expires.
+  The gateway blocks new P5 work while the lease is held and cancels an active
+  P5 through the owned runner. It reports `voice_preempted` only after verified
+  release and durable completion. It discards remaining output and tool calls.
 - Realtime connect and disconnect serialize with the durable session update.
   Reconnect cannot be lost behind a disconnect write. Failed runtime startup
   settles its acquisition before releasing any committed reservation. The

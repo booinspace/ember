@@ -643,3 +643,118 @@ def test_native_deadline_reports_expiry_and_fences_its_slot(tmp_path: Path) -> N
             recovered.close()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("proof", [True, False])
+def test_voice_preempts_only_owned_coding_and_waits_for_durable_release(
+    tmp_path: Path, proof: bool
+) -> None:
+    async def run() -> None:
+        config = configuration(tmp_path)
+        config = config.model_copy(
+            update={
+                "inference": config.inference.model_copy(update={"coding_api": True}),
+            }
+        )
+        native = FakeUpstream()
+        terminal = asyncio.Event()
+        eof = asyncio.Event()
+        play = asyncio.Event()
+        receipt = asyncio.Event()
+        interrupted = asyncio.Event()
+        attempts = []
+        generations = []
+        owner = ServiceOwner(tmp_path / "state")
+        first, second = (request(config, workload="P5") for _ in range(2))
+
+        async def generate(value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
+            generations.append(value.request_id)
+            if value.request_id == first.request_id:
+                yield NativeFrame(message=NativeMessage(content="partial coding answer"))
+                play.set()
+                await interrupted.wait()
+                yield NativeFrame(message=NativeMessage(content="late coding text"))
+                yield NativeFrame(done=True, done_reason="stop")
+                terminal.set()
+                await eof.wait()
+            else:
+                yield NativeFrame(message=NativeMessage(content="ready"), done=True)
+
+        async def stop(identity: object) -> None:
+            attempts.append(identity)
+            interrupted.set()
+            await receipt.wait()
+            if not proof:
+                raise GatewayError("upstream_preemption_unknown")
+
+        native.generate = generate
+        gateway = P0Gateway(config, native, record=owner.record, preempt=stop)
+        app = create_app(gateway, "voice", agent_token="agent")
+        session = uuid4()
+        route = f"/v1/realtime/{session}/voice"
+        voice = request(config)
+        foreground = None
+        try:
+            async with httpx.AsyncClient(
+                base_url="http://test", transport=httpx.ASGITransport(app=app)
+            ) as client:
+                job = await gateway.admit(first)
+                await play.wait()
+                queued = await gateway.admit(second)
+                assert (
+                    await client.put(
+                        route, headers={"Authorization": "Bearer agent"}, json={"connected": True}
+                    )
+                ).status_code == 401
+                assert not interrupted.is_set()
+                await gateway.session(session, connected=True)
+                assert (
+                    await client.put(
+                        route, headers={"Authorization": "Bearer voice"}, json={"connected": True}
+                    )
+                ).status_code == 200
+                await terminal.wait()
+                foreground = asyncio.create_task(gateway.admit(voice))
+                await asyncio.sleep(0)
+                assert not foreground.done() and gateway.active is job
+                eof.set()
+                await asyncio.sleep(0)
+                assert not foreground.done() and gateway.active is job
+                assert attempts == [first.request_id]
+                receipt.set()
+                events = [event async for event in job.events()]
+                assert [event.kind for event in events] == ["start", "text", "error"]
+                if proof:
+                    assert events[-1].code == "voice_preempted"
+                    reply = await foreground
+                    assert [event async for event in reply.events()][-1].kind == "end"
+                    assert generations == [first.request_id, voice.request_id]
+                    gateway.voice(session, reserved=False)
+                    assert [event async for event in queued.events()][-1].kind == "end"
+                else:
+                    assert events[-1].code == "upstream_preemption_unknown"
+                    with pytest.raises(GatewayError, match="quiescence_required"):
+                        await foreground
+                    assert [event async for event in queued.events()][
+                        -1
+                    ].code == "quiescence_required"
+                    assert generations == [first.request_id]
+        finally:
+            eof.set()
+            receipt.set()
+            interrupted.set()
+            if foreground is not None:
+                await asyncio.gather(foreground, return_exceptions=True)
+            await gateway.aclose()
+            owner.close()
+        recovered = ServiceOwner(tmp_path / "state")
+        try:
+            assert recovered.uncertain == (not proof)
+        finally:
+            recovered.close()
+
+    async def bounded() -> None:
+        async with asyncio.timeout(5):
+            await run()
+
+    asyncio.run(bounded())

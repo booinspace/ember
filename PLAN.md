@@ -5404,6 +5404,17 @@ under coding and audio load. A LiveKit follow-up verified reservation release
 after both synthetic browser disconnects on the updated main revision.
 
 Conservative acceptance is complete for the tested Strata profile. Active
-coding can still delay voice by the remaining generation time. Native abort,
-reusable KV and the 200 ms warm voice gate require separate qualification
-before live preemption can be enabled.
+coding can still delay voice by the remaining generation time. The isolated
+P5 candidate proved native abort and same-runner slot reuse. The current
+profile misses the 200 ms added warm voice gate during long prompt prefill.
+Enable live preemption only on a qualified profile after measuring handoff
+latency, coding retry cost and recall isolation under the candidate workload.
+
+### Follow-up on Miku
+
+Try `--prefill 128` and `--prefill 64` as isolated profiles on Miku. Compare
+added warm first-PCM p95 during long prompt prefill and active decode, and
+measure OpenCode time to first token and prompt throughput against the current
+`--prefill auto` profile with the same prompts. Enable live preemption only
+if a candidate stays within the 200 ms p95 gate, preserves acceptable OpenCode
+performance and passes the remaining Phase 13 acceptance checks.

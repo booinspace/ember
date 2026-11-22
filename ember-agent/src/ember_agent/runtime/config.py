@@ -1,6 +1,7 @@
 """Offline validated deployment contracts; never starts services or generation."""
 
 import json
+import os
 import re
 import tomllib
 from ipaddress import IPv4Address, IPv4Network
@@ -329,6 +330,7 @@ class DeploymentConfig(RuntimeModel):
     mcp_servers: tuple[MCPServerSettings, ...] = ()
     memory_mcp: MemoryMCPSettings | None = None
     inference: InferenceSettings = InferenceSettings()
+    preemption_enabled: bool = False
     hermes: HermesSettings | None = None
     hermes_client: HermesClientSettings | None = None
     harness: HarnessSettings | None = None
@@ -559,10 +561,12 @@ def _validate_services(
         settings.inference.backend in {"vllm", "strata"} and services.ollama.mode == "disabled"
     ):
         raise ConfigurationError("Ollama must remain independently managed in this deployment.")
-    if settings.gateway.preemption_enabled:
-        raise ConfigurationError(
-            "Preemption must remain disabled until measured phase 13 acceptance."
-        )
+    if settings.gateway.preemption_enabled and (
+        settings.inference.backend != "strata"
+        or not settings.inference.coding_api
+        or not settings.audio.enabled
+    ):
+        raise ConfigurationError("Voice preemption requires managed Strata, coding API and audio.")
     upstream_endpoint = services.ollama.endpoint
     if settings.inference.backend == "vllm":
         assert settings.inference.vllm is not None
@@ -571,6 +575,12 @@ def _validate_services(
         strata = settings.inference.strata
         assert strata is not None
         upstream_endpoint = strata.endpoint
+        if settings.gateway.preemption_enabled and (
+            os.environ.get("EMBER_STRATA_PREEMPTION_TEST_PIN") != strata.runner_config_sha256
+        ):
+            raise ConfigurationError(
+                "Voice preemption is available only for isolated profile qualification."
+            )
         if services.gateway.mode != "managed":
             raise ConfigurationError("Strata requires an Ember-managed gateway.")
         if (
@@ -736,6 +746,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         mcp_servers=mcp_servers,
         memory_mcp=settings.memory_mcp,
         inference=settings.inference,
+        preemption_enabled=settings.gateway.preemption_enabled,
         active_profile=settings.active_profile,
         system_prompt_file=(path.resolve().parent / settings.prompts.system_file).absolute(),
         data_root=data_root,

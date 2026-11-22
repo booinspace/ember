@@ -40,13 +40,15 @@ class Generation:
     detached: bool = False
     task: asyncio.Task[None] | None = None
     native_started: bool = False
+    native_drained: bool = False
+    preemption: asyncio.Task[None] | None = None
     sequence: int = 0
     on_detach: Callable[[], None] | None = None
     expiry: asyncio.TimerHandle | None = None
     heartbeat: asyncio.TimerHandle | None = None
 
     def emit(self, kind: str, **fields: object) -> None:
-        if self.detached:
+        if self.detached or (self.preemption is not None and kind in {"thinking", "text", "tools"}):
             return
         event = GatewayEvent.model_validate(
             {
@@ -119,6 +121,7 @@ class P0Gateway:
         sessions: tuple[UUID, ...] = (),
         record_sessions: Callable[[tuple[UUID, ...]], Awaitable[None]] | None = None,
         background_queue_limit: int = 8,
+        preempt: Callable[[UUID], Awaitable[None]] | None = None,
     ) -> None:
         self.config = config
         self.upstream = upstream
@@ -130,6 +133,8 @@ class P0Gateway:
         self.used_ids: set[UUID] = set()
         self.completed_ids: deque[UUID] = deque()
         self.sessions = set(sessions)
+        self.voice_sessions: dict[UUID, asyncio.TimerHandle] = {}
+        self.preempt = preempt
         self._session_guard = asyncio.Lock()
         self.record_sessions = record_sessions
         self.background_queue_limit = background_queue_limit
@@ -312,7 +317,7 @@ class P0Gateway:
             return
         if (
             self._live_job() is None
-            and not self.pending["P5"]
+            and (not self.pending["P5"] or self.voice_sessions)
             and (self.sessions or not any(self.pending[name] for name in ("P2", "P3", "P4")))
         ):
             return
@@ -348,7 +353,7 @@ class P0Gateway:
         if self._session_guard.locked():
             return False
         if workload == "P5":
-            return not self._foreground_waiters and self._live_job() is None
+            return not (self._foreground_waiters or self.voice_sessions or self._live_job())
         return workload == "P1" or not self.sessions
 
     async def _record(self, status: str, request: GatewayRequest) -> None:
@@ -376,7 +381,7 @@ class P0Gateway:
         if job is not None:
             self.pending["P1"].remove(job)
         elif self.sessions:
-            if not self.pending["P5"]:
+            if self.voice_sessions or not self.pending["P5"]:
                 return
             job = self.pending["P5"].popleft()
         else:
@@ -442,6 +447,8 @@ class P0Gateway:
             if isinstance(error, asyncio.CancelledError):
                 raise
         finally:
+            if job.preemption is not None:
+                await asyncio.gather(job.preemption, return_exceptions=True)
             self.active = None
             if not parked:
                 if ready is not None and not job.native_started:
@@ -479,6 +486,7 @@ class P0Gateway:
                 raise GatewayError("session_journal_failed") from error
             if not connected:
                 self.sessions.discard(identity)
+                self._release_voice(identity)
                 for job in tuple(self.pending["P1"]):
                     if job.request.context_id == identity:
                         self._remove_pending(job, "live_reservation_released")
@@ -500,6 +508,44 @@ class P0Gateway:
             if identity not in self.sessions:
                 raise GatewayError("live_reservation_released")
         self._wake_background()
+
+    def voice(self, identity: UUID, *, reserved: bool) -> None:
+        """Give a connected realtime host exclusive capacity for detected speech and playout."""
+        if self.preempt is None:
+            raise GatewayError("preemption_unavailable")
+        if not reserved:
+            self._release_voice(identity)
+            return
+        if self.closed or self.journal_failed or self.uncertain or identity not in self.sessions:
+            raise GatewayError("live_reservation_required")
+        if (renewal := self.voice_sessions.get(identity)) is not None:
+            renewal.cancel()
+        self.voice_sessions[identity] = asyncio.get_running_loop().call_later(
+            5, self._release_voice, identity
+        )
+        job = self.active
+        if (
+            job is not None
+            and job.request.workload == "P5"
+            and job.native_started
+            and not job.native_drained
+            and job.preemption is None
+        ):
+            stop = self.preempt
+
+            async def interrupt() -> None:
+                try:
+                    await stop(job.request.request_id)
+                except Exception:
+                    self.uncertain = True
+                    raise
+
+            job.preemption = asyncio.create_task(interrupt(), name="ember-strata-preemption")
+
+    def _release_voice(self, identity: UUID) -> None:
+        if (renewal := self.voice_sessions.pop(identity, None)) is not None:
+            renewal.cancel()
+            self._wake_background()
 
     async def _pump(self, job: Generation) -> None:
         request = job.request
@@ -523,6 +569,9 @@ class P0Gateway:
                 async for frame in stream:
                     if terminal:
                         raise GatewayError("upstream_frame_after_completion")
+                    terminal = frame.done
+                    if job.preemption is not None:
+                        continue
                     if request.thinking and frame.message.thinking:
                         await job.emit_live("thinking", text=frame.message.thinking)
                     text = filtered.feed(frame.message.content)
@@ -572,12 +621,18 @@ class P0Gateway:
                             )
                         else:
                             raise GatewayError("tool_stream_conflict")
-                    terminal = frame.done
                 if not terminal:
                     raise GatewayError("upstream_incomplete")
                 if frame.done_reason not in {None, "stop", "length", "tool_calls"}:
                     raise GatewayError("upstream_unverified_completion")
+                job.native_drained = True
                 await self.upstream.verify(loaded=True)
+                if job.preemption is not None:
+                    await asyncio.shield(job.preemption)
+                    complete = True
+                    await self._record("complete", request)
+                    job.emit("error", code="voice_preempted")
+                    return
                 complete = True
                 filtered.finish()
                 # The Strata coding guard measures the prompt with its actual output reserve.
@@ -724,11 +779,14 @@ class P0Gateway:
             queued_p4=len(self.pending["P4"]),
             realtime_sessions=tuple(sorted(self.sessions, key=str)),
             features=("live_thinking_v1",),
+            scheduling="voice_preemption" if self.preempt is not None else "conservative",
         )
 
     def begin_drain(self) -> None:
         """Close admission and release queued subscribers before HTTP server shutdown."""
         self.closed = True
+        for identity in tuple(self.voice_sessions):
+            self._release_voice(identity)
         for queue in self.pending.values():
             for job in tuple(queue):
                 self._remove_pending(job, "draining")

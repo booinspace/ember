@@ -14,6 +14,9 @@ class _Prepare(Protocol):
 def main() -> int:
     """Install the coding-only guard and invoke the pinned runner's normal entry point."""
     script = Path(sys.argv.pop(1)).resolve(strict=True)
+    preemption = sys.argv[1:2] == ["--ember-preemption"]
+    if preemption:
+        sys.argv.pop(1)
     sys.argv[0] = str(script)
     sys.path.insert(0, str(script.parent.parent))
     from serve import server  # type: ignore[import-not-found]
@@ -42,6 +45,12 @@ def main() -> int:
         return ids, thinking, maximum
 
     server.Service.prepare = checked  # type: ignore[reportUnknownMemberType]
+    if preemption:
+        # The isolated Python invocation excludes the wrapper directory from sys.path.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from strata_preemption import StrataServer, install  # type: ignore[import-not-found]
+
+        install(cast(StrataServer, server))
     return cast(int, server.main())  # type: ignore[reportUnknownMemberType]
 
 

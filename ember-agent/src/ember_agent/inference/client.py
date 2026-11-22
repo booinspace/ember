@@ -115,6 +115,19 @@ class HttpGatewayClient:
         except httpx.HTTPError as error:
             raise GatewayError("realtime_reservation_failed") from error
 
+    async def voice(self, identity: UUID, *, reserved: bool) -> None:
+        """Reserve the owned session's speech and playout lane ahead of coding."""
+        try:
+            response = await self.client.put(
+                f"/v1/realtime/{identity}/voice",
+                headers=self.headers,
+                json={"connected": reserved},
+                timeout=2,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise GatewayError("realtime_reservation_failed") from error
+
     async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
         """Validate identities/order and require an explicit end; partial EOF is never success."""
         sequence = 0

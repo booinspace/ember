@@ -1,7 +1,9 @@
 """Pinned managed Strata runner behind Ember's inference gateway."""
 
+import asyncio
 import os
 import re
+from uuid import UUID
 
 import httpx
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -11,6 +13,8 @@ from .contracts import GatewayError, GatewayRequest, UpstreamPromptOverflow
 from .vllm import OpenAIStreamUpstream
 
 _REJECTION = TypeAdapter(dict[str, dict[str, str]])
+_RECEIPT = TypeAdapter(dict[str, str])
+_PREEMPTION = "/v1/ember-preemption"
 
 
 class StrataUpstream(OpenAIStreamUpstream):
@@ -25,6 +29,7 @@ class StrataUpstream(OpenAIStreamUpstream):
             raise GatewayError("upstream_configuration_mismatch")
         super().__init__(config, settings.endpoint, client)
         self.settings = settings
+        self._preemption_attested = False
 
     def _request_options(self, request: GatewayRequest) -> dict[str, JsonValue]:
         options: dict[str, JsonValue] = {}
@@ -33,7 +38,54 @@ class StrataUpstream(OpenAIStreamUpstream):
             options["reasoning_effort"] = request.reasoning_effort or "high"
         if request.workload == "P5":
             options["ember_coding_input_limit"] = self.config.max_input_tokens
+            if self.config.preemption_enabled:
+                options["ember_preemption_id"] = request.request_id.hex
         return options
+
+    async def verify(self, *, loaded: bool = False) -> None:
+        """Require an authenticated stop capability on the owned native runner."""
+        await super().verify(loaded=loaded)
+        if self.config.preemption_enabled and not self._preemption_attested:
+            try:
+                ready = await self._metadata(_PREEMPTION)
+            except (httpx.HTTPError, ValidationError) as error:
+                raise GatewayError("upstream_preemption_unavailable") from error
+            if ready != {
+                "instance": os.environ.get("EMBER_STRATA_INSTANCE_ID"),
+                "outcome": "ready",
+            }:
+                raise GatewayError("upstream_preemption_unavailable")
+            self._preemption_attested = True
+
+    async def preempt(self, identity: UUID) -> None:
+        """Wait for the exact coding request's native DONE and released admission."""
+        instance = os.environ.get("EMBER_STRATA_INSTANCE_ID")
+        if instance is None or re.fullmatch(r"[0-9a-f]{32}", instance) is None:
+            raise GatewayError("upstream_preemption_unknown")
+        try:
+            async with asyncio.timeout(6):
+                while True:
+                    async with self.client.stream(
+                        "POST", f"{_PREEMPTION}/{identity.hex}", headers=self._headers()
+                    ) as response:
+                        body = bytearray()
+                        async for chunk in response.aiter_raw():
+                            if len(body) + len(chunk) > 1024:
+                                raise GatewayError("upstream_preemption_unknown")
+                            body.extend(chunk)
+                        receipt = _RECEIPT.validate_json(body)
+                        status = response.status_code
+                    if receipt.get("instance") != instance or receipt.get("id") != identity.hex:
+                        break
+                    outcome = receipt.get("outcome")
+                    if status == 200 and outcome in {"aborted", "completed"}:
+                        return
+                    if status != 404 or outcome != "not_registered":
+                        break
+                    await asyncio.sleep(0.01)
+        except (TimeoutError, httpx.HTTPError, ValidationError) as error:
+            raise GatewayError("upstream_preemption_unknown") from error
+        raise GatewayError("upstream_preemption_unknown")
 
     async def _check_generation_status(self, response: httpx.Response) -> None:
         if (

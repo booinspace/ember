@@ -473,6 +473,8 @@ class RuntimeServices:
             entrypoint = [settings.server_script]
             if self.config.inference.coding_api:
                 entrypoint.insert(0, str(Path(__file__).with_name("strata_coding_runner.py")))
+            if self.config.preemption_enabled:
+                entrypoint.append("--ember-preemption")
             child = await self._spawn_strata_child(
                 [
                     settings.python_executable,
@@ -1013,6 +1015,12 @@ async def _run_room(
         lifecycle = CaptureLifecycle(services.instance, reserve, host.quiesce, runtime.consolidate)
         host.before_turn = lifecycle.before_turn
         host.connection_changed = lifecycle.connection_changed
+        if voice is not None and config.preemption_enabled:
+
+            async def priority(reserved: bool) -> None:
+                await reservation.voice(services.instance, reserved=reserved)
+
+            host.voice_priority = priority
         cleanup.push_async_callback(lifecycle.aclose)
         # Explicitly hosted Ember owns this room for the runtime lifetime. LiveKit
         # dependent agent participants do not keep a room alive between human visits.

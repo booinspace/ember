@@ -78,6 +78,7 @@ def _profile_binding(config: DeploymentConfig, settings: StrataSettings) -> str:
         config.model_tag,
         config.model_digest,
         config.context_tokens,
+        config.preemption_enabled,
     )
     return sha256(json.dumps(identity).encode()).hexdigest()
 

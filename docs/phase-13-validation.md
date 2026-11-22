@@ -6,6 +6,75 @@ Ollama measurements are preserved below. The
 [PLAN acceptance criteria](../PLAN.md#phase-13-acceptance-criteria-preemption-hardening)
 and [Root ADR 0024](adr/0024-phase-thirteen-inference-hardening.md) define the gates.
 
+## Strata voice preemption candidate — 22 November 2026
+
+The candidate runs on the managed single-slot SC117 Strata profile. A trusted
+LiveKit speech reservation signals the exact active P5 request. Ember waits
+for the native DONE and admission release on the same engine process. It also
+checks the normal SSE boundary, re-attests the loaded profile and settles the
+journal before admitting voice. OpenCode gets `voice_preempted` and the
+gateway never replays the interrupted step.
+
+Miku completed 12 interleaved warm trials per condition using installed CPU
+TTS and the paced PCM sink. Timing starts at the synthetic speech reservation
+and includes foreground generation and first PCM. Every coding trial had a
+verified native abort and a successful P0 on the same runner. No interrupted
+trial published a tool call. The test preserved the normal context length,
+MTP and int8 KV settings.
+
+| Condition with `--prefill auto` | First PCM p50 / p95 | Added p95 |
+| --- | ---: | ---: |
+| Idle | 208 / 356 ms | — |
+| Active coding decode | 300 / 364 ms | 8 ms |
+| Active long coding prefill | 1,125 / 1,190 ms | 834 ms |
+
+The production profile failed P13-AC-03 during prefill. The native engine
+checks STOP at prompt chunk boundaries, so a stop can wait on an in-flight
+chunk before returning DONE. The production profile stays conservative.
+
+A separate test pin
+`1e3f7e2a2a250d309060b8539ca04dda592334e3ba3694de81d185fd045e218b`
+changed only the prompt chunk size to `--prefill 256`. It completed the same
+12 trials per condition. All 24 coding requests again produced an exact
+native abort receipt and a successful foreground turn. The prefill probes
+varied their offset after observing native activity.
+
+| Condition with `--prefill 256` | First PCM p50 / p95 | Added p95 |
+| --- | ---: | ---: |
+| Idle | 197 / 343 ms | — |
+| Active coding decode | 300 / 350 ms | 7 ms |
+| Active long coding prefill | 618 / 782 ms | 439 ms |
+
+The smaller chunk improved handoff time and still failed the 200 ms gate.
+The configuration loader permits only isolated qualification against a
+matching test pin. Coding retry cost and device playout remain unqualified.
+
+The 256-token candidate passed both paired recall regressions (P13-AC-07).
+Each warm condition completed 1,000 ordinary reads with 11 or 12 overlapping
+native abort and paced PCM trials. Ordinary p95 was 32.08 ms with deep recall
+disabled, 32.52 ms with deep recall idle and 33.71 ms with deep recall active.
+The disabled and active conditions had zero reads over 150 ms. One idle
+read exceeded the budget. Deep recall deferred all 454 investigations.
+
+The final loopback Edge check started with active synthetic coding work.
+The simulated microphone triggered the LiveKit speech reservation, the
+exact P5 request ended with verified native abort and `voice_preempted`,
+and the browser received both the expected memory-backed answer and inbound
+speech audio. This check used a synthetic recording and establishes the
+end-to-end handoff. It contributes no percentile to the paced PCM matrix.
+
+The first pilot independently confirmed native abort but fenced the handoff
+because the gateway suppressed the terminal frame alongside coding output.
+A regression test now covers terminal frame, EOF and receipt order, plus
+the unknown-receipt path. The corrected timing matrix used the fixed gateway.
+
+Raw synthetic trial and receipt logs are under `.local/phase13-voice-preemption-r2/`,
+`.local/phase13-voice-preemption-prefill256/` and
+`.local/phase13-voice-preemption-browser/` on Miku. The final code passed
+1,318 tests with 29 skips, plus Ruff formatting, lint and strict Pyright.
+Miku returned to the normal profile with conservative gateway health and
+a responding web UI.
+
 ## Exclusive Strata desktop acceptance — 22 November 2026
 
 The patched `d96ad10` source overlay ran on Miku in the existing desktop

@@ -172,6 +172,41 @@ def test_doctor_offline_and_local_managed_only(tmp_path: Path) -> None:
             load_config(path)
 
 
+def test_voice_preemption_requires_the_isolated_profile_pin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, _, profile = _profile(tmp_path, 18110)
+    path = _config(tmp_path, server, profile, endpoint="http://127.0.0.1:18110", gateway_port=18111)
+    original = path.read_text(encoding="utf-8")
+    config = load_config(path)
+    assert config.inference.strata is not None
+    path.write_text(
+        original.replace("preemption_enabled = false", "preemption_enabled = true")
+        .replace("[browser]\nenabled = false", "[browser]\nenabled = true")
+        .replace("[audio]\nenabled = false", "[audio]\nenabled = true")
+        .replace(
+            '"ws://127.0.0.1:7880"\nmode = "attach"',
+            '"ws://127.0.0.1:7880"\nmode = "managed"',
+        )
+        .replace('lan_address = ""', 'lan_address = "10.254.254.11"')
+        .replace('public_origin = ""', 'public_origin = "https://ember.example.test"')
+        .replace('trusted_proxy = ""', 'trusted_proxy = "10.254.254.10"')
+        .replace('backend="strata"', 'backend="strata"\ncoding_api=true'),
+        encoding="utf-8",
+    )
+    for pin in (None, "0" * 64):
+        if pin is None:
+            monkeypatch.delenv("EMBER_STRATA_PREEMPTION_TEST_PIN", raising=False)
+        else:
+            monkeypatch.setenv("EMBER_STRATA_PREEMPTION_TEST_PIN", pin)
+        with pytest.raises(ConfigurationError, match="isolated profile qualification"):
+            load_config(path)
+    monkeypatch.setenv(
+        "EMBER_STRATA_PREEMPTION_TEST_PIN", config.inference.strata.runner_config_sha256
+    )
+    assert load_config(path).preemption_enabled
+
+
 @pytest.mark.parametrize("tamper", ["bytes", "manifest", "host", "config"])
 def test_strata_preflight_rejects_modified_or_unpinned_inputs(tmp_path: Path, tamper: str) -> None:
     port = _port()

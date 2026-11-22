@@ -213,7 +213,7 @@ class GatewayHealth(RuntimeModel):
     queued_p3: int = 0
     queued_p4: int = 0
     realtime_sessions: tuple[UUID, ...] = ()
-    scheduling: Literal["conservative"] = "conservative"
+    scheduling: Literal["conservative", "voice_preemption"] = "conservative"
     features: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
 
 

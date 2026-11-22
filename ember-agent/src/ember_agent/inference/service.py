@@ -236,6 +236,24 @@ def create_app(
             return JSONResponse({"code": error.code}, status_code=409)
         return JSONResponse({"code": "reserved" if state.connected else "released"})
 
+    @app.put("/v1/realtime/{session_id}/voice")
+    async def voice(session_id: UUID4, request: Request) -> JSONResponse:
+        if not authorized(request):
+            return JSONResponse({"code": "unauthorized"}, status_code=401)
+        try:
+            body = bytearray()
+            async for chunk in request.stream():
+                body.extend(chunk)
+                if len(body) > 1024:
+                    return JSONResponse({"code": "request_too_large"}, status_code=413)
+            state = SessionInput.model_validate_json(body)
+            gateway.voice(session_id, reserved=state.connected)
+        except ValidationError:
+            return JSONResponse({"code": "invalid_request"}, status_code=422)
+        except GatewayError as error:
+            return JSONResponse({"code": error.code}, status_code=409)
+        return JSONResponse({"code": "reserved" if state.connected else "released"})
+
     @app.post("/v1/shutdown")
     async def stop(request: Request) -> JSONResponse:
         if not authorized(request):
@@ -342,13 +360,22 @@ def serve(config: DeploymentConfig, *, acknowledge_quiescence: bool = False) -> 
         managed_strata_token(config)
     owner = ServiceOwner(config.runtime_root, acknowledge_quiescence=acknowledge_quiescence)
     try:
+        upstream = upstream_for(config)
+        preempt = None
+        if config.preemption_enabled:
+            from .strata import StrataUpstream
+
+            if not isinstance(upstream, StrataUpstream):
+                raise GatewayError("preemption_unavailable")
+            preempt = upstream.preempt
         gateway = P0Gateway(
             config,
-            upstream_for(config),
+            upstream,
             record=owner.record,
             uncertain=owner.uncertain,
             sessions=owner.sessions,
             record_sessions=owner.record_sessions,
+            preempt=preempt,
         )
         origin = urlsplit(config.services.gateway.endpoint)
         server: _GatewayServer

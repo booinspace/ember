@@ -46,7 +46,7 @@ startup_timeout_seconds = 20.0
 [gateway]
 endpoint = "http://127.0.0.1:11435"
 mode = "managed"
-# Phase 3 implements P0 first. Other classes arrive through this same gateway.
+# Live voice preemption requires a qualified Strata runner profile.
 preemption_enabled = false
 
 [providers.odysseus]

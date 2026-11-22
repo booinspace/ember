@@ -37,12 +37,19 @@ before generation leaves the slot available. The scheduler can admit P5 coding
 work during an idle realtime connection. A waiting foreground turn goes before
 queued P5 work and waits for any active P5 request to drain within its deadline.
 
-Strata can stop generation internally and publishes request activity. Ember
-verifies the runner instance and waits for normal SSE completion and clean
-transport exhaustion. Request-correlated cancellation and reusable capacity
-still need an Ember contract and live qualification. Keep the configuration
-rejection and `scheduling: conservative` health value for Strata, Ollama and
-vLLM. [Pinned Strata server](https://github.com/Niko1221/Strata/blob/v0.2.18/terminal/serve/server.py)
+The Strata voice candidate uses the managed runner's existing native STOP
+path. A private authenticated request binds Ember's P5 identity to that
+handler's cancellation event. The runner records native DONE on the same
+engine process and confirms that the handler released admission. The
+gateway also requires the SSE terminal frame, transport exhaustion, loaded
+profile verification and durable completion before scheduling voice. A
+missing receipt fences admission. The candidate applies to active P5 only.
+[Pinned Strata server](https://github.com/Niko1221/Strata/blob/v0.2.18/terminal/serve/server.py)
+
+The normal desktop profile remains conservative. The current pinned profile
+passes request-specific cancellation and same-runner slot reuse. Its long
+prefill fails the matched first-PCM latency gate. Activation requires a
+profile that meets the voice gate and the remaining acceptance criteria.
 
 An exclusive desktop probe verified task-specific cancellation and slot reuse
 through the named llama-server child and its log. The application still lacks a
