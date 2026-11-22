@@ -1,0 +1,5 @@
+# Keep Miku's snapshots byte-for-byte; deployment pins hash the runner manifests.
+/.local/config/deployment.strata.toml -text whitespace=-blank-at-eof
+/.local/config/deployment.strata-mtp.toml -text whitespace=-blank-at-eof
+/.local/config/runner.ember-strata.json -text
+/.local/config/runner.ember-strata-mtp.json -text

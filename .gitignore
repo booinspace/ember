@@ -1,5 +1,12 @@
 # Private sources, state, credentials, and local deployment configuration.
-.local/
+/.local/*
+!/.local/config/
+/.local/config/*
+# Miku's two Strata deployments and their pinned manifests contain no credentials.
+!/.local/config/deployment.strata.toml
+!/.local/config/deployment.strata-mtp.toml
+!/.local/config/runner.ember-strata.json
+!/.local/config/runner.ember-strata-mtp.json
 .cache/
 data/
 runtime-data/
