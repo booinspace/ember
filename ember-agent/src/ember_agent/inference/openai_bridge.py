@@ -35,6 +35,15 @@ from .contracts import (
 
 _OBJECT = TypeAdapter(dict[str, JsonValue])
 _LIMIT = 1024 * 1024
+# 9router rewrites Qwen Chat Completions effort levels to these budget markers.
+_QWEN_EFFORT: dict[int, CodingReasoningEffort | Literal["minimal"]] = {
+    512: "minimal",
+    1024: "low",
+    8192: "medium",
+    24576: "high",
+    32768: "xhigh",
+    128000: "max",
+}
 
 
 def sse(value: dict[str, JsonValue]) -> bytes:
@@ -226,6 +235,24 @@ class _CodingRequest(_Request[_CodingMessage]):
     # Coding history is bounded by request bytes and Strata's rendered token count.
     messages: Annotated[tuple[_CodingMessage, ...], Field(min_length=1)]
     reasoning_effort: CodingReasoningEffort | Literal["none", "minimal", "off"] | None = None
+    enable_thinking: bool | None = None
+    thinking_budget: Annotated[int, Field(gt=0, le=128000)] | None = None
+
+    def active_effort(self) -> CodingReasoningEffort | None:
+        """Normalize coding-only wire options to the gateway's bounded effort enum."""
+        # ponytail: Decode known 9router markers, not arbitrary native token budgets.
+        effort = self.reasoning_effort
+        if self.enable_thinking is not None or self.thinking_budget is not None:
+            if effort is not None:
+                raise GatewayError("unsupported_model_options")
+            if self.thinking_budget is None:
+                return "high" if self.enable_thinking else None
+            if self.enable_thinking is not True or self.thinking_budget not in _QWEN_EFFORT:
+                raise GatewayError("unsupported_model_options")
+            effort = _QWEN_EFFORT[self.thinking_budget]
+        if effort in (None, "none", "minimal", "off"):
+            return None
+        return effort
 
 
 type _CompletionRequest = _Request[_Message] | _CodingRequest
@@ -373,12 +400,7 @@ class OpenAIModelBridge:
             if schema is not None:
                 validate_model_schema(schema)
             deadline = min(self.deadline, datetime.now(UTC) + timedelta(seconds=180))
-            effort = value.reasoning_effort if isinstance(value, _CodingRequest) else None
-            match effort:
-                case None | "none" | "minimal" | "off":
-                    active_effort = None
-                case _:
-                    active_effort = effort
+            active_effort = value.active_effort() if isinstance(value, _CodingRequest) else None
             request = GatewayRequest(
                 version="0.4.0" if active_effort else "0.3.0",
                 request_id=uuid4(),

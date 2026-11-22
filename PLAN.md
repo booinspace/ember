@@ -5261,8 +5261,10 @@ and message history, and enforces the configured input budget before generation.
 An oversized coding prompt returns `context_length_exceeded` and leaves the
 gateway ready for the next request.
 
-Coding completions can opt into Strata thinking with `reasoning_effort`. The
-gateway keeps thinking separate from visible text. OpenAI clients receive it
+Coding completions opt into Strata thinking via `reasoning_effort`.
+Coding ingress also maps known Qwen-style proxy thinking-budget markers
+back to effort levels without forwarding raw budgets or changing output limits.
+The gateway keeps thinking separate from visible text. OpenAI clients receive it
 as `reasoning_content`. Ember drops reasoning replayed in assistant history
 before constructing the next prompt. The P0 browser turn view shows its own
 opt-in thinking in memory, while speech receives visible reply text.

@@ -343,9 +343,21 @@ def test_bridge_uses_real_gateway_p2_admission_and_server_owned_identity(tmp_pat
 
 
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.parametrize("effort", ["none", "high"])
+@pytest.mark.parametrize(
+    ("thinking_options", "effort"),
+    [
+        ({"reasoning_effort": "none"}, None),
+        ({"reasoning_effort": "high"}, "high"),
+        ({"enable_thinking": False}, None),
+        ({"enable_thinking": True, "thinking_budget": 24576}, "high"),
+    ],
+)
 def test_strata_coding_context_uses_native_tokens(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stream: bool, effort: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    thinking_options: dict[str, object],
+    effort: str | None,
 ) -> None:
     async def run() -> None:
         config = _config(tmp_path)
@@ -411,8 +423,9 @@ def test_strata_coding_context_uses_native_tokens(
             assert request.url.path == "/v1/chat/completions"
             body = json.loads(request.content)
             assert body["messages"] == messages
-            assert body["chat_template_kwargs"] == {"enable_thinking": effort == "high"}
-            assert body.get("reasoning_effort") == ("high" if effort == "high" else None)
+            assert body["chat_template_kwargs"] == {"enable_thinking": effort is not None}
+            assert body.get("reasoning_effort") == effort
+            assert "enable_thinking" not in body and "thinking_budget" not in body
             assert body["ember_coding_input_limit"] == 126976
             assert body["max_completion_tokens"] == 4096
             completion_calls += 1
@@ -465,7 +478,7 @@ def test_strata_coding_context_uses_native_tokens(
                 else message
                 for message in messages
             ],
-            "reasoning_effort": effort,
+            **thinking_options,
             "stream": stream,
             "stream_options": {"include_usage": True},
         }
@@ -476,6 +489,19 @@ def test_strata_coding_context_uses_native_tokens(
                 base_url="http://127.0.0.1",
                 headers={"Authorization": "Bearer separate-key"},
             ) as lan:
+                for options in (
+                    {"enable_thinking": True, "thinking_budget": 4096},
+                    {"enable_thinking": False, "thinking_budget": 24576},
+                    {"thinking_budget": 24576},
+                    {"enable_thinking": True, "reasoning_effort": "high"},
+                ):
+                    rejected = await lan.post(
+                        route, json={"model": config.model_tag, "messages": messages, **options}
+                    )
+                    assert rejected.status_code == 400
+                    assert rejected.json()["error"]["code"] == "unsupported_model_options"
+                assert completion_calls == 0
+
                 refused = await lan.post(route, json=body)
                 assert refused.status_code == (200 if stream else 400)
                 assert "context_length_exceeded" in refused.text
