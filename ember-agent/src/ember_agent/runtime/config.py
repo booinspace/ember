@@ -21,7 +21,8 @@ from pydantic import (
 from .mcp_contracts import MCPServerSettings
 
 type ManagementMode = Literal["attach", "managed", "disabled"]
-type ServiceName = Literal["ollama", "vllm", "livekit", "tts", "gateway"]
+type ServiceName = Literal["ollama", "vllm", "strata", "livekit", "tts", "gateway"]
+type InferenceBackend = Literal["ollama", "vllm", "strata"]
 type SpeechSpeed = Annotated[float, Field(ge=0.75, le=1.5, allow_inf_nan=False)]
 type PositiveInteger = Annotated[int, Field(gt=0)]
 
@@ -58,16 +59,52 @@ class VLLMSettings(RuntimeModel):
         return self
 
 
+class StrataSettings(RuntimeModel):
+    """Installed, pinned Strata profile owned only by the Ember runtime launcher."""
+
+    endpoint: str
+    version: Literal["0.2.18"] = "0.2.18"
+    python_executable: str
+    server_script: str
+    runner_config: str
+    runner_config_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    startup_timeout_seconds: Annotated[float, Field(gt=0, le=600)] = 120.0
+
+    @model_validator(mode="after")
+    def _installed_inputs(self) -> Self:
+        _validate_endpoint(ServiceSettings(endpoint=self.endpoint, mode="managed"), "strata")
+        parsed = urlsplit(self.endpoint)
+        if self.endpoint not in {
+            f"http://127.0.0.1:{parsed.port}",
+            f"http://127.0.0.1:{parsed.port}/",
+        }:
+            raise ValueError("Managed Strata requires a literal IPv4 loopback origin.")
+        if (
+            not all(
+                "\0" not in value and Path(value).is_absolute()
+                for value in (self.python_executable, self.server_script, self.runner_config)
+            )
+            or Path(self.server_script).name != "server.py"
+        ):
+            raise ValueError(
+                "Strata requires absolute installed Python, server.py and config paths."
+            )
+        return self
+
+
 class InferenceSettings(RuntimeModel):
     """Select exactly one upstream behind the unchanged gateway and admission policy."""
 
-    backend: Literal["ollama", "vllm"] = "ollama"
+    backend: InferenceBackend = "ollama"
     vllm: VLLMSettings | None = None
+    strata: StrataSettings | None = None
 
     @model_validator(mode="after")
     def _selected_runner(self) -> Self:
         if self.backend == "vllm" and self.vllm is None:
             raise ValueError("vLLM requires an explicit installed runner profile.")
+        if self.backend == "strata" and self.strata is None:
+            raise ValueError("Strata requires an explicit installed runner profile.")
         return self
 
 
@@ -508,7 +545,7 @@ def _validate_services(
     if services.livekit.mode == "managed" and services.livekit.endpoint.startswith("wss:"):
         raise ConfigurationError("Managed local LiveKit uses ws; TLS requires an attached server.")
     if services.ollama.mode != "attach" and not (
-        settings.inference.backend == "vllm" and services.ollama.mode == "disabled"
+        settings.inference.backend in {"vllm", "strata"} and services.ollama.mode == "disabled"
     ):
         raise ConfigurationError("Ollama must remain independently managed in this deployment.")
     if settings.gateway.preemption_enabled:
@@ -519,6 +556,24 @@ def _validate_services(
     if settings.inference.backend == "vllm":
         assert settings.inference.vllm is not None
         upstream_endpoint = settings.inference.vllm.endpoint
+    if settings.inference.backend == "strata":
+        strata = settings.inference.strata
+        assert strata is not None
+        upstream_endpoint = strata.endpoint
+        if services.gateway.mode != "managed":
+            raise ConfigurationError("Strata requires an Ember-managed gateway.")
+        if (
+            settings.model.expected_digest.strip().removeprefix("sha256:")
+            != strata.runner_config_sha256
+        ):
+            raise ConfigurationError("Strata model pin must match its runner config SHA-256.")
+        strata_port = urlsplit(upstream_endpoint).port
+        if any(
+            strata_port == urlsplit(service.endpoint).port
+            for name, service in services.items()
+            if name != "gateway" and service.mode != "disabled"
+        ) or (settings.browser.enabled and strata_port == urlsplit(settings.browser.endpoint).port):
+            raise ConfigurationError("Strata requires a distinct local service port.")
     if urlsplit(services.gateway.endpoint).port == urlsplit(upstream_endpoint).port:
         raise ConfigurationError("Gateway and inference upstream must have distinct endpoints.")
     if settings.providers.odysseus.mode != "disabled":

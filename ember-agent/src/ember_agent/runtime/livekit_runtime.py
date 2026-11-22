@@ -8,6 +8,7 @@ import shutil
 import socket
 import sqlite3
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -44,6 +45,7 @@ from .hermes_chat import HermesChats
 from .livekit_config import LiveKitCredentials, credentials, server_yaml
 from .processes import OwnedProcess, RuntimeLease
 from .speech_health import check_voice
+from .strata_runtime import await_strata_ready, prepare_strata_config, strata_gateway_environment
 from .task_router import (
     RecallTask,
     SummaryTask,
@@ -333,6 +335,7 @@ class RuntimeServices:
         self.credentials: LiveKitCredentials | None = None
         self.gateway_owned = False
         self.thinking_available = False
+        self._strata_directory: tempfile.TemporaryDirectory[str] | None = None
 
     async def start(self) -> LiveKitCredentials:
         """Authenticate LiveKit and the pinned gateway before exposing a room session."""
@@ -403,9 +406,113 @@ class RuntimeServices:
         await self.start_gateway()
         return self.credentials
 
+    async def _spawn_strata_child(
+        self, command: list[str], component: str, environment: dict[str, str]
+    ) -> OwnedProcess:
+        spawn = asyncio.create_task(
+            asyncio.to_thread(
+                OwnedProcess,
+                command,
+                root=self.config.runtime_root,
+                component=component,
+                instance=self.instance,
+                environment=environment,
+            )
+        )
+        try:
+            child = await asyncio.shield(spawn)
+        except asyncio.CancelledError:
+            try:
+                child = await asyncio.shield(spawn)
+            except (OSError, ConfigurationError):
+                pass
+            else:
+                await asyncio.to_thread(child.stop)
+            raise
+        self.children.append(child)
+        return child
+
+    def _gateway_command(self) -> list[str]:
+        return [sys.executable, "-m", "ember_agent", "gateway", "--config", str(self.config_path)]
+
+    async def _start_strata_gateway(self) -> None:
+        settings = self.config.inference.strata
+        gateway = self.config.services.gateway
+        if settings is None or gateway.mode != "managed":
+            raise ConfigurationError("Strata requires an Ember-managed gateway.")
+        if self.gateway_owned:
+            for child in self.children:
+                if child.component in {"strata", "gateway"}:
+                    child.check()
+            await self._await_gateway()
+            return
+        for endpoint in (settings.endpoint, gateway.endpoint):
+            if await asyncio.to_thread(port_open, endpoint):
+                raise ConfigurationError("Managed Strata or gateway endpoint is already occupied.")
+        first = len(self.children)
+        self._strata_directory = await asyncio.to_thread(
+            tempfile.TemporaryDirectory, prefix="strata-", dir=self.config.runtime_root
+        )
+        try:
+            private = Path(self._strata_directory.name)
+            snapshot = private / "runner.json"
+            await asyncio.to_thread(prepare_strata_config, self.config, settings, snapshot)
+            if await asyncio.to_thread(port_open, settings.endpoint):
+                raise ConfigurationError("Managed Strata endpoint is already occupied.")
+            origin = urlsplit(settings.endpoint)
+            ready_file = private / "ready.json"
+            token = secrets.token_urlsafe(32)
+            child = await self._spawn_strata_child(
+                [
+                    settings.python_executable,
+                    "-I",
+                    settings.server_script,
+                    "--engine",
+                    "strata",
+                    "--config",
+                    str(snapshot),
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(origin.port),
+                    "--offline",
+                    "--ready-file",
+                    str(ready_file),
+                ],
+                "strata",
+                {
+                    "STRATA_API_KEY": token,
+                    "STRATA_NO_PRESET": "1",
+                    "STRATA_OFFLINE": "1",
+                    "HF_HUB_OFFLINE": "1",
+                    "TRANSFORMERS_OFFLINE": "1",
+                },
+            )
+            identity = await await_strata_ready(self.config, settings, child, ready_file, token)
+            if await asyncio.to_thread(port_open, gateway.endpoint):
+                raise ConfigurationError("Managed Strata gateway endpoint is already occupied.")
+            await self._spawn_strata_child(
+                self._gateway_command(),
+                "gateway",
+                strata_gateway_environment(self.config, settings, token, identity),
+            )
+            self.gateway_owned = True
+            await self._await_gateway()
+        except BaseException:
+            self.gateway_owned = False
+            try:
+                for child in reversed(self.children[first:]):
+                    await asyncio.to_thread(child.stop)
+            finally:
+                del self.children[first:]
+                await self._remove_strata_directory()
+            raise
+
     async def start_gateway(self) -> None:
         """Verify/start the sole gateway independently of voice transport availability."""
-        settings = self.config.services.livekit
+        if self.config.inference.backend == "strata":
+            await self._start_strata_gateway()
+            return
         gateway = self.config.services.gateway
         if gateway.mode == "disabled":
             raise ConfigurationError(
@@ -417,25 +524,22 @@ class RuntimeServices:
             self.children.append(
                 await asyncio.to_thread(
                     OwnedProcess,
-                    [
-                        sys.executable,
-                        "-m",
-                        "ember_agent",
-                        "gateway",
-                        "--config",
-                        str(self.config_path),
-                    ],
+                    self._gateway_command(),
                     root=self.config.runtime_root,
                     component="gateway",
                     instance=self.instance,
                 )
             )
             self.gateway_owned = True
+        await self._await_gateway()
+
+    async def _await_gateway(self) -> None:
+        gateway = self.config.services.gateway
         try:
-            async with asyncio.timeout(settings.startup_timeout_seconds):
+            async with asyncio.timeout(self.config.services.livekit.startup_timeout_seconds):
                 while True:
                     for child in self.children:
-                        if child.component == "gateway":
+                        if child.component in {"gateway", "strata"}:
                             child.check()
                     try:
                         token = await asyncio.to_thread(
@@ -621,8 +725,13 @@ class RuntimeServices:
                 self.children.remove(child)
             raise
 
+    async def _remove_strata_directory(self) -> None:
+        if self._strata_directory is not None:
+            await asyncio.to_thread(self._strata_directory.cleanup)
+            self._strata_directory = None
+
     async def aclose(self) -> None:
-        """Request graceful gateway drain, then stop only the exact handles created here."""
+        """Drain gateway before stopping its owned runner; never stop an attached process."""
         if self.gateway_owned:
             try:
                 token = await asyncio.to_thread(
@@ -646,6 +755,8 @@ class RuntimeServices:
         for child in reversed(self.children):
             await asyncio.to_thread(child.stop)
         self.children.clear()
+        self.gateway_owned = False
+        await self._remove_strata_directory()
 
 
 async def run_runtime(
@@ -676,6 +787,10 @@ async def run_runtime(
             try:
                 await services.start_gateway()
             except (ConfigurationError, OSError, GatewayError, TimeoutError):
+                # Browser tasks also use gateway credentials; never expose them after an
+                # owned runner/gateway failure that might leave a foreign listener at its port.
+                if config.inference.backend == "strata":
+                    raise
                 gateway_available = False
         foreground_token = (
             await asyncio.to_thread(read_token, config.runtime_root / "gateway.token")

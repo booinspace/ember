@@ -271,6 +271,10 @@ def upstream_for(config: DeploymentConfig) -> Upstream:
         from .vllm import VLLMUpstream
 
         return VLLMUpstream(config)
+    if config.inference.backend == "strata":
+        from .strata import StrataUpstream
+
+        return StrataUpstream(config)
     return OllamaUpstream(config)
 
 
@@ -278,6 +282,10 @@ def serve(config: DeploymentConfig, *, acknowledge_quiescence: bool = False) -> 
     """Run the owned gateway; shutdown drains work without stopping its external runner."""
     if config.services.gateway.mode != "managed":
         raise GatewayError("gateway_not_managed")
+    if config.inference.backend == "strata":
+        from ..runtime.strata_runtime import managed_strata_token
+
+        managed_strata_token(config)
     owner = ServiceOwner(config.runtime_root, acknowledge_quiescence=acknowledge_quiescence)
     try:
         gateway = P0Gateway(

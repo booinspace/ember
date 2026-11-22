@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from .config import DeploymentConfig, ManagementMode, RuntimeModel, ServiceName
+from .config import DeploymentConfig, InferenceBackend, ManagementMode, RuntimeModel, ServiceName
 
 
 class ServiceHealth(RuntimeModel):
@@ -21,7 +21,7 @@ class ReadinessReport(RuntimeModel):
     character: Literal["available_unprobed"] = "available_unprobed"
     voice: Literal["disabled", "configured_unprobed", "not_configured"]
     browser: Literal["disabled", "configured_unprobed"]
-    inference_backend: Literal["ollama", "vllm"] = "ollama"
+    inference_backend: InferenceBackend = "ollama"
     model_pin: Literal["configured_unverified", "pending"]
     services: dict[ServiceName, ServiceHealth]
     odysseus: Literal["disabled"] = "disabled"
@@ -51,6 +51,11 @@ def readiness(config: DeploymentConfig) -> ReadinessReport:
             },
             **(
                 {"vllm": ServiceHealth(mode="attach")} if config.inference.backend == "vllm" else {}
+            ),
+            **(
+                {"strata": ServiceHealth(mode="managed")}
+                if config.inference.backend == "strata"
+                else {}
             ),
         },
         blockers=(

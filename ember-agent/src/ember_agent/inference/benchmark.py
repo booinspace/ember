@@ -268,6 +268,9 @@ async def run(
                 manifest["ollama_version_response"] = response.text[:256]
         except httpx.HTTPError:
             manifest["ollama_version_response"] = None
+    elif config.inference.backend == "strata":
+        manifest["decode_metric_definition"] = "strata_engine_predicted_per_second"
+        manifest["prefill_metric_definition"] = "strata_engine_prompt_ms"
     else:
         assert config.inference.vllm is not None
         manifest["configured_vllm_version"] = config.inference.vllm.version

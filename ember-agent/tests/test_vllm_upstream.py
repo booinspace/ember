@@ -20,7 +20,7 @@ from ember_agent.inference.contracts import (
     ToolFunction,
 )
 from ember_agent.inference.gateway import P0Gateway
-from ember_agent.inference.vllm import VLLMUpstream, vllm_identity_digest
+from ember_agent.inference.vllm import OpenAIStreamUpstream, VLLMUpstream, vllm_identity_digest
 from ember_agent.runtime.config import (
     DeploymentConfig,
     InferenceSettings,
@@ -1113,3 +1113,39 @@ def test_cancelled_owned_request_closes_http_and_requires_quiescence(tmp_path: P
         await gateway.aclose()
 
     asyncio.run(run())
+
+
+class _StrataStream(OpenAIStreamUpstream):
+    usage_on_finish = True
+
+    async def _attest(self) -> tuple[str, str]:
+        return self.config.model_digest, "test-instance"
+
+
+@pytest.mark.parametrize("terminal", ["[DONE]", "malformed"])
+def test_finish_chunk_with_usage(tmp_path: Path, terminal: str) -> None:
+    asyncio.run(_finish_chunk_with_usage(tmp_path, terminal))
+
+
+async def _finish_chunk_with_usage(tmp_path: Path, terminal: str) -> None:
+    config = _configuration(tmp_path)
+    final = _chunk(
+        finish="stop",
+        timings={"prompt_ms": 10.0, "predicted_per_second": 59.5},
+    ) | {"usage": _chunk(usage=True)["usage"]}
+    server = _Server(_sse(_chunk({"content": "Hello"}), final, terminal))
+    async with httpx.AsyncClient(
+        base_url="http://127.0.0.1:8080", transport=httpx.MockTransport(server.respond)
+    ) as client:
+        upstream = _StrataStream(config, "http://127.0.0.1:8080", client)
+        stream = upstream.generate(_request(config))
+        assert (await anext(stream)).message.content == "Hello"
+        if terminal == "[DONE]":
+            frame = await anext(stream)
+            assert frame.done and frame.prompt_eval_count == 12 and frame.eval_count == 3
+            assert frame.prompt_eval_duration == 10_000_000
+            assert frame.decode_tokens_per_second == 59.5
+        else:
+            with pytest.raises(GatewayError, match="invalid_upstream_stream"):
+                await anext(stream)
+        await stream.aclose()

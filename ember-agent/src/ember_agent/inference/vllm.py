@@ -218,6 +218,11 @@ class _Metrics(BackendModel):
     time_to_first_token_ms: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = None
 
 
+class _StrataTimings(BackendModel):
+    prompt_ms: Annotated[float, Field(ge=0, le=1e9, allow_inf_nan=False)] | None = None
+    predicted_per_second: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = None
+
+
 class _Chunk(BackendModel):
     id: Annotated[str, Field(min_length=1, max_length=256)]
     object: Literal["chat.completion.chunk"]
@@ -225,6 +230,7 @@ class _Chunk(BackendModel):
     choices: Annotated[list[_Choice], Field(max_length=1)]
     usage: _Usage | None = None
     metrics: _Metrics | None = None
+    timings: _StrataTimings | None = None
 
 
 def _identity_encoding(response: httpx.Response) -> None:
@@ -265,26 +271,27 @@ async def _events(response: httpx.Response) -> AsyncIterator[str]:
         raise GatewayError("stream_frame_incomplete")
 
 
-class VLLMUpstream:
-    """One explicitly installed local server; no generation fallback or server ownership."""
+class OpenAIStreamUpstream:
+    """Shared bounded OpenAI streaming transport for local runners."""
 
-    def __init__(self, config: DeploymentConfig, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self, config: DeploymentConfig, endpoint: str, client: httpx.AsyncClient | None
+    ) -> None:
         self.config = config
-        settings = config.inference.vllm
-        if settings is None or config.inference.backend != "vllm":
-            raise GatewayError("upstream_configuration_mismatch")
-        self.settings = settings
         self._instance_id: str | None = None
         self._generation_instance_id: str | None = None
         self.client = client or httpx.AsyncClient(
-            base_url=settings.endpoint,
+            base_url=endpoint,
             timeout=httpx.Timeout(180, connect=3),
             trust_env=False,
         )
 
+    api_key_environment: str | None = None
+    usage_on_finish = False
+
     def _headers(self) -> dict[str, str]:
         headers = {"Accept-Encoding": "identity"}
-        name = self.settings.api_key_environment
+        name = self.api_key_environment
         if name:
             value = os.environ.get(name, "")
             if (
@@ -326,44 +333,7 @@ class VLLMUpstream:
         return digest
 
     async def _attest(self) -> tuple[str, str]:
-        try:
-            profile = (await self._metadata("/ember/profile")).get("profile_sha256")
-            if profile != self.settings.profile_sha256:
-                raise GatewayError("upstream_profile_mismatch")
-            version = (await self._metadata("/version")).get("version")
-            settings = self.settings
-            if not isinstance(version, str) or version != settings.version:
-                raise GatewayError("upstream_version_mismatch")
-            value = (await self._metadata("/server_info?config_format=json")).get("vllm_config")
-            if not isinstance(value, dict):
-                raise GatewayError("invalid_upstream_metadata")
-            instance = value.get("instance_id")
-            if not isinstance(instance, str) or not instance.strip() or len(instance) > 256:
-                raise GatewayError("invalid_upstream_metadata")
-            model_config = value.get("model_config")
-            if not isinstance(model_config, dict):
-                raise GatewayError("invalid_upstream_metadata")
-            if model_config.get("max_model_len") != self.config.context_tokens:
-                raise GatewayError("runner_context_mismatch")
-            # The pinned GGUF plugin uses model for HF metadata and model_weights for GGUF bytes.
-            model = model_config.get("model_weights")
-            expected_file = "sha256-" + settings.artifact_sha256 + ".gguf"
-            if not isinstance(model, str) or PurePosixPath(model).name != expected_file:
-                raise GatewayError("model_artifact_mismatch")
-            digest = vllm_identity_digest(
-                version, value, settings.artifact_sha256, settings.profile_sha256
-            )
-            models = (await self._metadata("/v1/models")).get("data")
-            if (
-                not isinstance(models, list)
-                or len(models) != 1
-                or not isinstance(models[0], dict)
-                or models[0].get("id") != self.config.model_tag
-            ):
-                raise GatewayError("model_pin_mismatch")
-            return digest, instance
-        except (httpx.HTTPError, ValidationError, ValueError) as error:
-            raise GatewayError("upstream_unavailable") from error
+        raise NotImplementedError
 
     async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
         """Translate OpenAI deltas without completing before terminal usage and DONE."""
@@ -446,6 +416,13 @@ class VLLMUpstream:
                     if identifier is not None and chunk.id != identifier:
                         raise GatewayError("invalid_upstream_stream")
                     identifier = chunk.id
+                    if self.usage_on_finish and chunk.choices and chunk.usage is not None:
+                        if finish is not None or chunk.choices[0].finish_reason is None:
+                            raise GatewayError("invalid_upstream_stream")
+                        finish = chunk.choices[0].finish_reason
+                        if chunk.choices[0].delta.model_fields_set:
+                            raise GatewayError("invalid_upstream_stream")
+                        chunk = chunk.model_copy(update={"choices": []})
                     if not chunk.choices:
                         if finish is None or usage is not None or chunk.usage is None:
                             raise GatewayError("invalid_upstream_stream")
@@ -469,6 +446,10 @@ class VLLMUpstream:
                             if not math.isfinite(nanoseconds):
                                 raise GatewayError("invalid_upstream_stream")
                             prefill_duration = int(nanoseconds)
+                        if self.usage_on_finish and chunk.timings is not None:
+                            decode_rate = chunk.timings.predicted_per_second
+                            if chunk.timings.prompt_ms is not None:
+                                prefill_duration = int(chunk.timings.prompt_ms * 1_000_000)
                         continue
                     if finish is not None or chunk.usage is not None:
                         raise GatewayError("invalid_upstream_stream")
@@ -526,3 +507,55 @@ class VLLMUpstream:
     async def aclose(self) -> None:
         """Close owned HTTP connections without stopping the independently managed server."""
         await self.client.aclose()
+
+
+class VLLMUpstream(OpenAIStreamUpstream):
+    """Pinned vLLM server with independent lifecycle."""
+
+    def __init__(self, config: DeploymentConfig, client: httpx.AsyncClient | None = None) -> None:
+        settings = config.inference.vllm
+        if settings is None or config.inference.backend != "vllm":
+            raise GatewayError("upstream_configuration_mismatch")
+        super().__init__(config, settings.endpoint, client)
+        self.settings = settings
+        self.api_key_environment = settings.api_key_environment
+
+    async def _attest(self) -> tuple[str, str]:
+        try:
+            profile = (await self._metadata("/ember/profile")).get("profile_sha256")
+            if profile != self.settings.profile_sha256:
+                raise GatewayError("upstream_profile_mismatch")
+            version = (await self._metadata("/version")).get("version")
+            settings = self.settings
+            if not isinstance(version, str) or version != settings.version:
+                raise GatewayError("upstream_version_mismatch")
+            value = (await self._metadata("/server_info?config_format=json")).get("vllm_config")
+            if not isinstance(value, dict):
+                raise GatewayError("invalid_upstream_metadata")
+            instance = value.get("instance_id")
+            if not isinstance(instance, str) or not instance.strip() or len(instance) > 256:
+                raise GatewayError("invalid_upstream_metadata")
+            model_config = value.get("model_config")
+            if not isinstance(model_config, dict):
+                raise GatewayError("invalid_upstream_metadata")
+            if model_config.get("max_model_len") != self.config.context_tokens:
+                raise GatewayError("runner_context_mismatch")
+            # The pinned GGUF plugin uses model for HF metadata and model_weights for GGUF bytes.
+            model = model_config.get("model_weights")
+            expected_file = "sha256-" + settings.artifact_sha256 + ".gguf"
+            if not isinstance(model, str) or PurePosixPath(model).name != expected_file:
+                raise GatewayError("model_artifact_mismatch")
+            digest = vllm_identity_digest(
+                version, value, settings.artifact_sha256, settings.profile_sha256
+            )
+            models = (await self._metadata("/v1/models")).get("data")
+            if (
+                not isinstance(models, list)
+                or len(models) != 1
+                or not isinstance(models[0], dict)
+                or models[0].get("id") != self.config.model_tag
+            ):
+                raise GatewayError("model_pin_mismatch")
+            return digest, instance
+        except (httpx.HTTPError, ValidationError, ValueError) as error:
+            raise GatewayError("upstream_unavailable") from error
