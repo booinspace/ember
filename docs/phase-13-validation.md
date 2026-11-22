@@ -262,6 +262,16 @@ Sanitized receipts and raw synthetic trial reports are under
 with the existing deployment configuration and its gateway and browser
 readiness were verified.
 
+### Coding image history transport
+
+Local regression coverage sends four synthetic images, then eight in one
+history, then a text follow-up with the same eight. All three cross both Ember
+HTTP hops and reach the test upstream without dropping images. The last two
+exceed the old 1 MiB limit. P13-AC-05: the 8 MiB ingress and P5 transport still
+reject over-limit bodies; P0 and P2 keep their 1 MiB transport limits. The full
+local suite passed 1,189 tests with 13 skips. Live Strata vision and voice timing
+were not requalified. The deployed stack has not been updated.
+
 ## Earlier shared-runtime measurements — 22 November 2026
 
 The running desktop used commit `d96ad10` and `deployment.strata-mtp.toml`

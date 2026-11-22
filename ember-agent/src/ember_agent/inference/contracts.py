@@ -10,7 +10,6 @@ from ember_memory_abi.common import UtcTimestamp
 
 from ..runtime.config import RuntimeModel
 from .image_parts import (
-    MAX_CODING_IMAGES,
     MAX_CODING_REQUEST_BYTES,
     PROMPT_MESSAGE_CHARS,
     PromptContentPart,
@@ -122,8 +121,6 @@ class GatewayRequest(RuntimeModel):
                 or not any(isinstance(part, PromptImagePart) for part in message.parts)
             ):
                 raise ValueError("Multimodal parts require a coding user message with an image.")
-        if len(self.images) > MAX_CODING_IMAGES:
-            raise ValueError("Too many coding images.")
         if self.workload != "P5":
             if len(self.messages) > NON_CODING_MESSAGE_LIMIT:
                 raise ValueError("Non-coding requests retain the existing message limit.")

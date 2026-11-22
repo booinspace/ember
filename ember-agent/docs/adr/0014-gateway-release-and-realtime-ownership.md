@@ -20,8 +20,10 @@ and [Phase 13 validation](../../../docs/phase-13-validation.md).
   withdraws the waiter while the active P5 keeps its owner. Coding streams
   remain client-visible during generation and are never replayed by the gateway.
 - Optional Strata screenshot input stays on the bearer-authenticated P5 route.
-  The gateway validates bounded inline rasters off the realtime loop; Strata
-  expands image tokens before enforcing the coding input limit. Pin the reader
+  The OpenAI ingress and agent-authenticated P5 transport cap JSON at 8 MiB,
+  without a separate image-count cap. The gateway validates each bounded inline
+  raster off the realtime loop; Strata expands image tokens before enforcing the
+  coding input limit. Non-coding workloads keep their existing limits. Pin the reader
   and projector. Vision profiles keep live preemption disabled; unexpected
   native failures still fence admission.
 - In the Strata candidate, the connected LiveKit host claims a short renewable

@@ -5251,7 +5251,9 @@ gateway ready for the next request.
 Managed Strata can opt into screenshot input on this same coding route. Only
 P5 user messages may carry bounded inline PNG/JPEG parts. Pin the reader and
 projector, count expanded image tokens in Strata's existing input budget and
-keep live preemption off. Image generation is separate and not exposed.
+keep live preemption off. No independent image-count cap: the authenticated
+coding route and internal P5 transport each cap JSON at 8 MiB. Keep per-image
+checks and non-coding limits. Image generation is separate and not exposed.
 See [setup and 9Router requirements](ember-agent/docs/strata-vision.md).
 
 Coding completions opt into Strata thinking via `reasoning_effort`.

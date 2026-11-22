@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
 from ..inference.contracts import GatewayError, ModelClient
+from ..inference.image_parts import MAX_CODING_REQUEST_BYTES
 from ..inference.openai_bridge import OpenAIModelBridge, openai_error
 from .config import ConfigurationError, DeploymentConfig
 
@@ -81,7 +82,7 @@ def coding_routes(
             body = bytearray()
             async with asyncio.timeout(10):
                 async for chunk in request.stream():
-                    if len(body) + len(chunk) > 1024 * 1024:
+                    if len(body) + len(chunk) > MAX_CODING_REQUEST_BYTES:
                         return error("request_too_large", 413)
                     body.extend(chunk)
             result = bridge().response(bytes(body))

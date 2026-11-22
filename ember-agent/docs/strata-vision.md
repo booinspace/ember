@@ -50,10 +50,17 @@ opt in and pin the reader and projector. For a rebuild or new profile:
    `{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}`.
    Check the answer against the image. Metadata alone does not prove an encode works.
 
-Use inline PNG or JPEG only: up to four images, 512 KiB decoded and 4 million
-pixels per image, within a 1 MiB JSON body. No remote URLs, paths or animated images.
-`detail` does not override the pinned reader's token cap. Strata counts actual
-image tokens before generation; replayed attachments count toward the request limits.
+Use inline PNG or JPEG only: 512 KiB decoded and 4 million pixels per image.
+Ember has no separate image-count cap. The full coding JSON body, including
+base64, history and tools, can be up to 8 MiB. No remote URLs, paths or animated
+images. `detail` does not override the pinned reader's token cap. Strata counts
+actual image tokens before generation; replayed attachments count toward both
+budgets. A fresh coding session reduces future replay. Voice still waits for an
+active vision request to drain on the conservative profile.
+
+The HTTPS proxy and 9Router must pass the larger coding body. If Nginx has a
+smaller body limit, set `client_max_body_size 8m` only in the coding completions
+location and keep its existing proxy headers and access rules.
 
 ## Pass screenshots through 9Router
 

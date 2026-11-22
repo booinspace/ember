@@ -339,7 +339,7 @@ class OpenAIModelBridge:
         """Validate OpenAI input and bind it to the configured model and workload."""
         try:
             raw = body if isinstance(body, bytes) else json.dumps(body, allow_nan=False).encode()
-            if len(raw) > _LIMIT:
+            if len(raw) > (MAX_CODING_REQUEST_BYTES if self.coding else _LIMIT):
                 raise GatewayError("request_too_large")
             value = (_CodingRequest if self.coding else _Request[_TextMessage]).model_validate_json(
                 raw

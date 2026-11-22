@@ -37,7 +37,11 @@ before generation leaves the slot available. The scheduler can admit P5 coding
 work during an idle realtime connection. A waiting foreground turn goes before
 queued P5 work and waits for any active P5 request to drain within its deadline.
 The opt-in screenshot profile uses this same owner for image preparation and
-text generation. It is not qualified for live preemption.
+text generation. Coding clients can replay image history without a separate
+image-count cap. The authenticated coding route and internal P5 transport admit
+up to 8 MiB of JSON; per-image checks and Strata's rendered input budget remain
+in force. Non-coding limits are unchanged. Vision is not qualified for live
+preemption; image-heavy coding work can delay voice until the active request drains.
 
 The Strata voice candidate uses the managed runner's existing native STOP
 path. A private authenticated request binds Ember's P5 identity to that

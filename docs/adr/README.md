@@ -164,8 +164,8 @@ the unchanged optional listener; use it [read-only with verified local inference
 in a separately managed client, not the managed preview.
 
 [Root ADR 0024 — Phase 13 inference hardening](0024-phase-thirteen-inference-hardening.md)
-records conservative runner ownership, admission race fixes and the profile gates
-for live preemption. See [Phase 13 validation](../phase-13-validation.md) and
+records conservative runner ownership, admission race fixes, the coding image
+history budget, and the profile gates for live preemption. See [Phase 13 validation](../phase-13-validation.md) and
 [opt-in Strata screenshot setup](../../ember-agent/docs/strata-vision.md).
 
 [Root ADR 0025 — Managed OpenCode preview](0025-managed-opencode-preview.md)

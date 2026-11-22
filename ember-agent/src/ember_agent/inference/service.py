@@ -23,6 +23,7 @@ from starlette.types import Receive, Scope, Send
 from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import GatewayError, GatewayRequest
 from .gateway import Generation, P0Gateway
+from .image_parts import MAX_CODING_REQUEST_BYTES
 from .ollama import OllamaUpstream
 from .upstream import Upstream
 
@@ -295,19 +296,29 @@ def create_app(
 
     @app.post("/v1/generate", response_model=None)
     async def generate(request: Request) -> JSONResponse | StreamingResponse:
-        if not (authorized(request) or background_authorized(request) or agent_authorized(request)):
+        agent = agent_authorized(request)
+        if not (authorized(request) or background_authorized(request) or agent):
             return JSONResponse({"code": "unauthorized"}, status_code=401)
+        standard_limit = 1024 * 1024
+        # Only the trusted agent can submit P5; other workloads keep their original limit.
+        stream_limit = (
+            MAX_CODING_REQUEST_BYTES
+            if agent and gateway.config.inference.coding_api
+            else standard_limit
+        )
         body = bytearray()
         async for chunk in request.stream():
-            body.extend(chunk)
-            if len(body) > 1024 * 1024:
+            if len(body) + len(chunk) > stream_limit:
                 return JSONResponse({"code": "request_too_large"}, status_code=413)
+            body.extend(chunk)
         try:
             value = GatewayRequest.model_validate_json(body)
+            if len(body) > standard_limit and value.workload != "P5":
+                return JSONResponse({"code": "request_too_large"}, status_code=413)
             permitted = (
                 (authorized(request) and value.workload == "P0")
                 or (background_authorized(request) and value.workload in {"P3", "P4"})
-                or (agent_authorized(request) and value.workload in {"P1", "P2", "P5"})
+                or (agent and value.workload in {"P1", "P2", "P5"})
             )
             if not permitted:
                 return JSONResponse({"code": "workload_not_authorized"}, status_code=403)

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import random
 import sys
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
@@ -27,6 +28,7 @@ from ember_agent.inference.contracts import (
     ToolFunction,
 )
 from ember_agent.inference.gateway import P0Gateway
+from ember_agent.inference.image_parts import MAX_CODING_REQUEST_BYTES
 from ember_agent.inference.ollama import OllamaUpstream
 from ember_agent.inference.openai_bridge import OpenAIModelBridge
 from ember_agent.inference.service import create_app
@@ -281,7 +283,6 @@ def test_coding_vision_admits_only_bounded_inline_user_images(tmp_path: Path, vi
                         [_image_part(_image_url("JPEG").replace("image/jpeg", "image/png"))],
                         "invalid_image",
                     ),
-                    ("user", [_image_part()] * 5, "invalid_openai_request"),
                     ("system", [_image_part()], "image_input_not_supported"),
                 ):
                     response = await lan.post(
@@ -292,7 +293,9 @@ def test_coding_vision_admits_only_bounded_inline_user_images(tmp_path: Path, vi
                     assert response.status_code == 400
                     assert response.json()["error"]["code"] == code
                     assert "data:image" not in response.text
-                response = await lan.post(route, headers=headers, content=b" " * (1024**2 + 1))
+                response = await lan.post(
+                    route, headers=headers, content=b" " * (MAX_CODING_REQUEST_BYTES + 1)
+                )
                 assert response.status_code == 413
                 assert not upstream.requests and not gateway.uncertain
                 jpeg = _image_part(_image_url("JPEG"))
@@ -317,6 +320,101 @@ def test_coding_vision_admits_only_bounded_inline_user_images(tmp_path: Path, vi
                             "messages": [{"role": "user", "content": [jpeg]}],
                         }
                     )
+        finally:
+            await client.aclose()
+            await gateway.aclose()
+
+    asyncio.run(run())
+
+
+def test_coding_vision_replays_eight_images_and_accepts_a_follow_up(tmp_path: Path) -> None:
+    async def run() -> None:
+        config = _config(tmp_path).model_copy(
+            update={
+                "inference": InferenceSettings(
+                    backend="strata",
+                    strata=StrataSettings(
+                        endpoint="http://127.0.0.1:18110",
+                        python_executable=sys.executable,
+                        server_script=str(tmp_path / "server.py"),
+                        runner_config=str(tmp_path / "runner.json"),
+                        runner_config_sha256="a" * 64,
+                    ),
+                    coding_api=True,
+                    coding_vision=True,
+                )
+            }
+        )
+        upstream = _Upstream()
+        _, gateway, client = _bridge(config, upstream)
+        app = FastAPI()
+        app.include_router(coding_routes(config, client, "separate-key"))
+        # Distinct valid rasters, large enough together to cross the old body cap.
+        rng = random.Random(0)
+        images: list[dict[str, JsonValue]] = []
+        for _ in range(8):
+            buffer = BytesIO()
+            Image.frombytes("RGB", (200, 200), rng.randbytes(200 * 200 * 3)).save(buffer, "PNG")
+            images.append(
+                _image_part("data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode())
+            )
+        messages = [
+            {"role": "user", "content": images[:4]},
+            {"role": "assistant", "content": "First batch inspected."},
+            {"role": "user", "content": images[4:]},
+            {"role": "assistant", "content": "Second batch inspected."},
+            {"role": "user", "content": "hi"},
+        ]
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+            ) as lan:
+                for history_length in (1, 3, 5):
+                    body = json.dumps(
+                        {
+                            "model": config.model_tag,
+                            "messages": messages[:history_length],
+                            "stream": True,
+                        }
+                    ).encode()
+                    if history_length > 1:
+                        assert 1024**2 < len(body) < MAX_CODING_REQUEST_BYTES
+                    response = await lan.post(
+                        "/coding/v1/chat/completions",
+                        headers={"Authorization": "Bearer separate-key"},
+                        content=body,
+                    )
+                    assert response.status_code == 200
+                    assert response.text.endswith("data: [DONE]\n\n")
+                    assert "Synthetic answer" in response.text
+            assert [len(request.images) for request in upstream.requests] == [4, 8, 8]
+            assert [part.model_dump(mode="json") for part in upstream.requests[-1].images] == images
+            assert upstream.requests[-1].messages[-1].content == "hi"
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(
+                    app=create_app(gateway, "foreground", agent_token="agent")
+                ),
+                base_url="http://localhost",
+            ) as internal:
+                for token, workload, size in (
+                    ("foreground", "P0", 1024**2),
+                    ("agent", "P2", 1024**2),
+                    ("agent", "P5", MAX_CODING_REQUEST_BYTES),
+                ):
+                    # Valid small request padded past the transport cap, not the token cap.
+                    body = (
+                        _request(config, (PromptMessage(role="user", content="hi"),))
+                        .model_copy(update={"workload": workload})
+                        .model_dump_json()
+                    )
+                    response = await internal.post(
+                        "/v1/generate",
+                        headers={"Authorization": f"Bearer {token}"},
+                        content=(body + " " * size).encode(),
+                    )
+                    assert response.status_code == 413
+                    assert response.json() == {"code": "request_too_large"}
+            assert len(upstream.requests) == 3
         finally:
             await client.aclose()
             await gateway.aclose()
