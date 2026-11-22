@@ -517,7 +517,7 @@ class BuildContainer:
             "image",
             "inspect",
             "--format",
-            "{{.Id}} {{.Os}} {{if .Config.Volumes}}volumes{{else}}empty{{end}}",
+            '{{.Id}} {{.Os}} {{if index .Config "Volumes"}}volumes{{else}}empty{{end}}',
             self.image_id,
         )
         if status or raw.strip() != f"{self.image_id} linux empty".encode():
