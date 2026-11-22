@@ -521,8 +521,11 @@ def test_coding_api_shares_gateway_during_realtime_and_streams_tools(tmp_path: P
                         }
                     ],
                 )
+                submitted_at = datetime.now(UTC)
                 response = await lan.post("/coding/v1/chat/completions", json=body)
                 assert response.status_code == 200
+                deadline = datetime.fromisoformat(upstream.requests[0].deadline_at)
+                assert 599 <= (deadline - submitted_at).total_seconds() <= 601
                 frames = [
                     line[6:] for line in response.text.splitlines() if line.startswith("data: ")
                 ]
@@ -758,6 +761,7 @@ def test_strata_coding_context_uses_native_tokens(
             if request.url.path == "/v1/telemetry":
                 return json_response(200, {"instance": {"id": instance}})
             assert request.url.path == "/v1/chat/completions"
+            assert request.extensions["timeout"]["read"] == 630
             body = json.loads(request.content)
             assert body["messages"] == messages
             assert body["chat_template_kwargs"] == {"enable_thinking": effort is not None}

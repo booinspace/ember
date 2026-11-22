@@ -17,6 +17,9 @@ from .image_parts import (
 )
 
 NON_CODING_MESSAGE_LIMIT = 64
+DEFAULT_GENERATION_SECONDS = 180
+CODING_GENERATION_SECONDS = 600
+CODING_DRAIN_SECONDS = 30
 
 type CodingReasoningEffort = Literal["low", "medium", "high", "xhigh", "max"]
 

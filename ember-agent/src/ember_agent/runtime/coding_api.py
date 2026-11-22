@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
-from ..inference.contracts import GatewayError, ModelClient
+from ..inference.contracts import CODING_GENERATION_SECONDS, GatewayError, ModelClient
 from ..inference.image_parts import MAX_CODING_REQUEST_BYTES
 from ..inference.openai_bridge import OpenAIModelBridge, openai_error
 from .config import ConfigurationError, DeploymentConfig
@@ -59,7 +59,9 @@ def coding_routes(
             client,
             config,
             context_id=uuid4(),
-            deadline_at=(datetime.now(UTC) + timedelta(seconds=180)).isoformat(),
+            deadline_at=(
+                datetime.now(UTC) + timedelta(seconds=CODING_GENERATION_SECONDS)
+            ).isoformat(),
             coding=True,
         )
 
@@ -105,6 +107,8 @@ def coding_routes(
         except ClientDisconnect:
             return error("client_disconnected", 400)
         except GatewayError as exc:
+            if exc.code == "deadline_exceeded":
+                return error(exc.code, 408)
             if exc.code in {"busy", "background_queue_full"}:
                 return error(exc.code, 429)
             if exc.code == "request_too_large":

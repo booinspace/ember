@@ -49,11 +49,12 @@ and [Phase 13 validation](../../../docs/phase-13-validation.md).
 - The gateway requires a terminal native frame, clean stream exhaustion and a
   verified loaded profile before treating a stream as drained. P2–P4 publish
   validated output only after the successful completion path. Transport loss,
-  active timeout and failed release verification close admission. Journal failure
-  reports an unavailable journal and prevents new work. Queued steps get a fixed
-  failure code. Completion journaling settles under the same owner after a client
-  deadline. An expired request publishes an error once settlement finishes. A
-  persisted running or uncertain marker survives process loss.
+  active timeout without verified release and failed release verification close
+  admission. Managed Strata P5 expires the subscriber after 10 minutes (including
+  queue time) and keeps the original stream open for up to 30 more seconds to
+  verify release. Late results are discarded. Other workloads keep the existing
+  deadline behavior. Journal failure blocks new work; journal settlement still
+  belongs to the same owner. Running and uncertain markers survive process loss.
 
 Serial ownership and crash recovery apply to deployments that route generation
 through one gateway and reopen its durable runtime root. An attached runner

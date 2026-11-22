@@ -9,7 +9,13 @@ import httpx
 from pydantic import TypeAdapter, ValidationError
 
 from ..observability import notify
-from .contracts import GatewayError, GatewayEvent, GatewayHealth, GatewayRequest
+from .contracts import (
+    CODING_GENERATION_SECONDS,
+    GatewayError,
+    GatewayEvent,
+    GatewayHealth,
+    GatewayRequest,
+)
 from .frames import bounded_lines
 
 _LOG = logging.getLogger(__name__)
@@ -133,9 +139,16 @@ class HttpGatewayClient:
         """Validate identities/order and require an explicit end; partial EOF is never success."""
         sequence = 0
         started = False
+        timeout = (
+            CODING_GENERATION_SECONDS + 10 if request.workload == "P5" else httpx.USE_CLIENT_DEFAULT
+        )
         try:
             async with self.client.stream(
-                "POST", "/v1/generate", headers=self.headers, content=request.model_dump_json()
+                "POST",
+                "/v1/generate",
+                headers=self.headers,
+                content=request.model_dump_json(),
+                timeout=timeout,
             ) as response:
                 if response.status_code != 200:
                     code = await _rejection_code(response)

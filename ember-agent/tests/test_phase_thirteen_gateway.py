@@ -1,6 +1,8 @@
 """Conservative release, preflight, and realtime races through the existing gateway."""
 
 import asyncio
+import json
+import sys
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,11 +13,13 @@ import pytest
 from starlette.requests import ClientDisconnect
 from starlette.types import Message, Scope
 
+from ember_agent.inference import gateway as gateway_module
 from ember_agent.inference.client import HttpGatewayClient
 from ember_agent.inference.contracts import GatewayError, GatewayRequest
 from ember_agent.inference.gateway import P0Gateway
 from ember_agent.inference.ollama import NativeFrame, NativeMessage
 from ember_agent.inference.service import GenerationResponse, ServiceOwner, create_app
+from ember_agent.runtime.config import InferenceSettings, StrataSettings
 from ember_agent.runtime.livekit_runtime import _reserve_gateway_startup
 
 from .test_gateway import FakeUpstream, configuration, request
@@ -643,6 +647,122 @@ def test_native_deadline_reports_expiry_and_fences_its_slot(tmp_path: Path) -> N
             recovered.close()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("outcome", ["drained", "missing_eof", "missing_done", "changed_runner"])
+def test_strata_coding_deadline_keeps_slot_until_verified_drain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    monkeypatch.setattr(gateway_module, "CODING_DRAIN_SECONDS", 0.5)
+
+    async def run() -> None:
+        config = configuration(tmp_path).model_copy(
+            update={
+                "inference": InferenceSettings(
+                    backend="strata",
+                    coding_api=True,
+                    strata=StrataSettings(
+                        endpoint="http://127.0.0.1:18110",
+                        python_executable=sys.executable,
+                        server_script=str(tmp_path / "server.py"),
+                        runner_config=str(tmp_path / "runner.json"),
+                        runner_config_sha256="a" * 64,
+                    ),
+                )
+            }
+        )
+        native = FakeUpstream()
+        release = asyncio.Event()
+        terminal = asyncio.Event()
+        eof = asyncio.Event()
+        settle = asyncio.Event()
+        settling = asyncio.Event()
+        calls: list[str] = []
+        owner = ServiceOwner(tmp_path / "state")
+        state = tmp_path / "state" / "gateway-state.json"
+
+        async def generate(value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
+            calls.append(value.workload)
+            if value.workload == "P5":
+                native.started.set()
+                await release.wait()
+                yield NativeFrame(message=NativeMessage(content="late coding output"))
+                if outcome == "missing_done":
+                    return
+                yield NativeFrame(done=True, done_reason="stop")
+                terminal.set()
+                await eof.wait()
+            else:
+                yield NativeFrame(message=NativeMessage(content="voice ready"), done=True)
+
+        async def verify(*, loaded: bool = False) -> None:
+            if loaded and outcome == "changed_runner":
+                raise GatewayError("upstream_instance_changed")
+
+        async def record(status: str, value: GatewayRequest) -> None:
+            if value.workload == "P5" and status == "complete":
+                settling.set()
+                await settle.wait()
+            await owner.record(status, value)
+
+        native.generate = generate
+        native.verify = verify
+        gateway = P0Gateway(config, native, record=record)
+        voice = None
+        try:
+            deadline = datetime.now(UTC) + timedelta(milliseconds=200)
+            job = await gateway.admit(
+                request(
+                    config, workload="P5", deadline_at=deadline.isoformat().replace("+00:00", "Z")
+                )
+            )
+            await native.started.wait()
+            events = [event async for event in job.events()]
+            assert [(event.kind, event.code) for event in events] == [
+                ("start", None),
+                ("error", "deadline_exceeded"),
+            ]
+            assert (await gateway.health()).status == "busy"
+            assert json.loads(state.read_bytes())["status"] == "running"
+            voice = asyncio.create_task(gateway.admit(request(config)))
+            release.set()
+            if outcome != "missing_done":
+                await terminal.wait()
+                assert calls == ["P5"] and not voice.done()
+            if outcome != "missing_eof":
+                eof.set()
+            if outcome == "drained":
+                await settling.wait()
+                assert calls == ["P5"] and not voice.done()
+                assert json.loads(state.read_bytes())["status"] == "running"
+                settle.set()
+                reply = await voice
+                assert [event async for event in reply.events()][-1].kind == "end"
+                assert calls == ["P5", "P0"] and job.queue.empty()
+            else:
+                with pytest.raises(GatewayError, match="quiescence_required"):
+                    await voice
+                assert calls == ["P5"]
+                assert json.loads(state.read_bytes())["status"] == "uncertain"
+        finally:
+            release.set()
+            eof.set()
+            settle.set()
+            if voice is not None:
+                await asyncio.gather(voice, return_exceptions=True)
+            await gateway.aclose()
+            owner.close()
+        recovered = ServiceOwner(tmp_path / "state")
+        try:
+            assert recovered.uncertain == (outcome != "drained")
+        finally:
+            recovered.close()
+
+    async def bounded() -> None:
+        async with asyncio.timeout(5):
+            await run()
+
+    asyncio.run(bounded())
 
 
 @pytest.mark.parametrize("proof", [True, False])

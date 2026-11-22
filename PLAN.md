@@ -5257,6 +5257,11 @@ coding route and internal P5 transport each cap JSON at 8 MiB. Keep per-image
 checks and non-coding limits. Image generation is separate and not exposed.
 See [setup and 9Router requirements](ember-agent/docs/strata-vision.md).
 
+P5 coding requests have a 10-minute deadline including queueing. After expiry,
+managed Strata gets up to 30 more seconds for the existing stream to prove
+release; the subscriber gets `deadline_exceeded` and no late result. Failed
+verification still fences admission. Voice deadlines and scheduling are unchanged.
+
 Coding completions opt into Strata thinking via `reasoning_effort`.
 Coding ingress also maps known Qwen-style proxy thinking-budget markers
 back to effort levels without forwarding raw budgets or changing output limits.

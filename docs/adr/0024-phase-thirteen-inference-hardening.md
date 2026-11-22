@@ -43,6 +43,12 @@ up to 8 MiB of JSON; per-image checks and Strata's rendered input budget remain
 in force. Non-coding limits are unchanged. Vision is not qualified for live
 preemption; image-heavy coding work can delay voice until the active request drains.
 
+P5 has a 10-minute request deadline, including queueing. On managed Strata,
+expiry detaches the subscriber but preserves the original stream for up to 30
+seconds to obtain normal release proof. Verified completion and durable
+settlement reopen admission; unverified release retains the journal fence.
+This neither stops the runner nor changes voice deadlines or enables preemption.
+
 The Strata voice candidate uses the managed runner's existing native STOP
 path. A private authenticated request binds Ember's P5 identity to that
 handler's cancellation event. The runner records native DONE on the same

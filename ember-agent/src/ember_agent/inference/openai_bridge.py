@@ -16,6 +16,8 @@ from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 from ..observability import notify
 from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import (
+    CODING_GENERATION_SECONDS,
+    DEFAULT_GENERATION_SECONDS,
     NON_CODING_MESSAGE_LIMIT,
     CodingReasoningEffort,
     GatewayError,
@@ -431,7 +433,8 @@ class OpenAIModelBridge:
                 output = "text" if format_.type == "text" else "json"
             if schema is not None:
                 validate_model_schema(schema)
-            deadline = min(self.deadline, datetime.now(UTC) + timedelta(seconds=180))
+            seconds = CODING_GENERATION_SECONDS if self.coding else DEFAULT_GENERATION_SECONDS
+            deadline = min(self.deadline, datetime.now(UTC) + timedelta(seconds=seconds))
             active_effort = value.active_effort() if isinstance(value, _CodingRequest) else None
             request = GatewayRequest(
                 version="0.4.0" if active_effort else "0.3.0",
@@ -506,7 +509,7 @@ class OpenAIModelBridge:
                         if event.kind == "start":
                             yield chunk({"role": "assistant"})
                         elif event.kind == "progress":
-                            yield b": queued\n\n"
+                            yield b": progress\n\n"
                         elif event.kind == "thinking":
                             if not request.thinking:
                                 raise GatewayError("unexpected_model_reasoning")
@@ -580,7 +583,11 @@ class OpenAIModelBridge:
             request = request.model_copy(
                 update={"request_id": original.request_id, "deadline_at": original.deadline_at}
             )
-        remaining = (self.deadline - datetime.now(UTC)).total_seconds()
+        now = datetime.now(UTC)
+        remaining = min((self.deadline - now).total_seconds(), DEFAULT_GENERATION_SECONDS)
+        if self.coding:
+            # Give the gateway's deadline error time to reach this subscriber.
+            remaining = (datetime.fromisoformat(request.deadline_at) - now).total_seconds() + 5
         self._begin(request)
         self.last_input_units = max(original_units, self.last_input_units)
         stream = self.client.stream(request)
@@ -592,7 +599,7 @@ class OpenAIModelBridge:
         truncated = False
         sequence = 0
         try:
-            async with asyncio.timeout(min(remaining, 180)):
+            async with asyncio.timeout(remaining):
                 async for event in stream:
                     if (
                         event.request_id != request.request_id

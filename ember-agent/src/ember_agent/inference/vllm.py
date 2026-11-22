@@ -13,7 +13,13 @@ import httpx
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
 from ..runtime.config import DeploymentConfig
-from .contracts import GatewayError, GatewayRequest
+from .contracts import (
+    CODING_DRAIN_SECONDS,
+    CODING_GENERATION_SECONDS,
+    DEFAULT_GENERATION_SECONDS,
+    GatewayError,
+    GatewayRequest,
+)
 from .upstream import BackendModel, NativeFrame, NativeFunction, NativeMessage, NativeTool
 
 _LIMIT = 1024 * 1024
@@ -282,7 +288,7 @@ class OpenAIStreamUpstream:
         self._generation_instance_id: str | None = None
         self.client = client or httpx.AsyncClient(
             base_url=endpoint,
-            timeout=httpx.Timeout(180, connect=3),
+            timeout=httpx.Timeout(DEFAULT_GENERATION_SECONDS, connect=3),
             trust_env=False,
         )
 
@@ -407,9 +413,18 @@ class OpenAIStreamUpstream:
         decode_rate: float | None = None
         prefill_duration: int | None = None
         done = False
+        timeout = (
+            httpx.Timeout(
+                DEFAULT_GENERATION_SECONDS,
+                connect=3,
+                read=CODING_GENERATION_SECONDS + CODING_DRAIN_SECONDS,
+            )
+            if request.workload == "P5" and self.config.inference.backend == "strata"
+            else httpx.USE_CLIENT_DEFAULT
+        )
         try:
             async with self.client.stream(
-                "POST", "/v1/chat/completions", json=body, headers=self._headers()
+                "POST", "/v1/chat/completions", json=body, headers=self._headers(), timeout=timeout
             ) as response:
                 await self._check_generation_status(response)
                 _identity_encoding(response)

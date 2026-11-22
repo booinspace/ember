@@ -6,7 +6,7 @@ from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import cast
 from uuid import UUID, uuid4
@@ -16,6 +16,9 @@ from pydantic import JsonValue, TypeAdapter
 
 from ..runtime.config import DeploymentConfig
 from .contracts import (
+    CODING_DRAIN_SECONDS,
+    CODING_GENERATION_SECONDS,
+    DEFAULT_GENERATION_SECONDS,
     GatewayError,
     GatewayEvent,
     GatewayHealth,
@@ -177,8 +180,11 @@ class P0Gateway:
         if images and not self.config.inference.coding_vision:
             raise GatewayError("image_input_not_supported")
         deadline = datetime.fromisoformat(request.deadline_at.replace("Z", "+00:00"))
-        if deadline <= datetime.now(UTC):
+        now = datetime.now(UTC)
+        if deadline <= now:
             raise GatewayError("deadline_exceeded")
+        if request.workload == "P5":
+            deadline = min(deadline, now + timedelta(seconds=CODING_GENERATION_SECONDS))
         if request.workload == "P0" and self.active is not None:
             active = self.active
             if active.request.workload != "P5" or self._foreground_waiters:
@@ -295,10 +301,10 @@ class P0Gateway:
         self.completed_ids.append(job.request.request_id)
 
     def _heartbeat(self, job: Generation) -> None:
-        if job not in self.pending[job.request.workload]:
-            return
         if job.detached:
             self._remove_pending(job, "subscriber_detached")
+            return
+        if self.active is not job and job not in self.pending[job.request.workload]:
             return
         if job.queue.qsize() < job.queue.maxsize - 3:
             job.emit("progress")
@@ -401,7 +407,7 @@ class P0Gateway:
                 return
         if job.expiry is not None:
             job.expiry.cancel()
-        if job.heartbeat is not None:
+        if job.heartbeat is not None and job.request.workload != "P5":
             job.heartbeat.cancel()
         self.active = job
         job.task = asyncio.current_task()
@@ -440,6 +446,8 @@ class P0Gateway:
                 await self._record("complete", job.request)
             # Only admission was interrupted. The immutable request has never reached the runner.
             self._can_start(job)
+            if job.heartbeat is not None:
+                job.heartbeat.cancel()
             self._enqueue(job, parked=True)
             parked = True
         except (Exception, asyncio.CancelledError) as error:
@@ -462,6 +470,8 @@ class P0Gateway:
                 await asyncio.gather(job.preemption, return_exceptions=True)
             self.active = None
             if not parked:
+                if job.heartbeat is not None:
+                    job.heartbeat.cancel()
                 if ready is not None and not job.native_started:
                     self.used_ids.discard(job.request.request_id)
                 else:
@@ -571,17 +581,34 @@ class P0Gateway:
         tools: dict[int, NativeTool] = {}
         if job.sequence == 0:
             job.emit("start")
+        remaining = max(0.0, (job.deadline - datetime.now(UTC)).total_seconds())
+        drain = request.workload == "P5" and self.config.inference.backend == "strata"
+        expired = False
+
+        def expire() -> None:
+            nonlocal expired
+            expired = True
+            job.emit("error", code="deadline_exceeded")
+            job.detach()
+
+        # Keep the original stream open for release proof, never retry or infer idle
+        # from a disconnect. ponytail: bounded natural drain, not a native stop request.
+        expiry = asyncio.get_running_loop().call_later(remaining, expire) if drain else None
+        timeout = (
+            remaining + CODING_DRAIN_SECONDS
+            if drain
+            else min(remaining, DEFAULT_GENERATION_SECONDS)
+        )
         try:
-            remaining = max(0.0, (job.deadline - datetime.now(UTC)).total_seconds())
             async with (
-                asyncio.timeout(min(remaining, 180)),
+                asyncio.timeout(timeout),
                 aclosing(self.upstream.generate(request)) as stream,
             ):
                 async for frame in stream:
                     if terminal:
                         raise GatewayError("upstream_frame_after_completion")
                     terminal = frame.done
-                    if job.preemption is not None:
+                    if expired or job.preemption is not None:
                         continue
                     if request.thinking and frame.message.thinking:
                         await job.emit_live("thinking", text=frame.message.thinking)
@@ -645,7 +672,8 @@ class P0Gateway:
                     job.emit("error", code="voice_preempted")
                     return
                 complete = True
-                filtered.finish()
+                if not expired:
+                    filtered.finish()
                 # The Strata coding guard measures the prompt with its actual output reserve.
                 input_limit = self.config.max_input_tokens
                 if request.workload != "P5" or self.config.inference.backend != "strata":
@@ -656,6 +684,8 @@ class P0Gateway:
                 if frame.eval_count > request.max_output_tokens:
                     self.uncertain = True
                     raise GatewayError("upstream_output_budget_mismatch")
+                if expired:
+                    raise GatewayError("deadline_exceeded")
                 if frame.done_reason == "length" and (
                     request.output == "json"
                     or (request.workload != "P5" and (request.tools or request.workload != "P0"))
@@ -731,6 +761,9 @@ class P0Gateway:
                     "error",
                     code=error.code if isinstance(error, GatewayError) else "generation_failed",
                 )
+        finally:
+            if expiry is not None:
+                expiry.cancel()
 
     def _tools(self, request: GatewayRequest, tools: dict[int, NativeTool]) -> tuple[ToolCall, ...]:
         definitions = {item.function.name: item.function for item in request.tools}

@@ -272,6 +272,17 @@ reject over-limit bodies; P0 and P2 keep their 1 MiB transport limits. The full
 local suite passed 1,189 tests with 13 skips. Live Strata vision and voice timing
 were not requalified. The deployed stack has not been updated.
 
+### Coding timeout recovery
+
+- **P13-AC-02 / P13-AC-05, local regression passed:** Coding gets a 600-second
+  request deadline. After expiry, voice cannot take the slot until the original
+  stream ends cleanly, runner identity is verified, and completion is recorded.
+  Missing terminal frame, missing EOF, and changed runner identity all retain
+  the fence across restart. No late result or replay reaches the coding client.
+- **Live check not run:** Miku and 9Router were not used to qualify the new
+  deadline or drain path. Voice deadlines and live-preemption settings remain
+  unchanged. Full local suite: 1,193 passed, 13 skipped.
+
 ## Earlier shared-runtime measurements — 22 November 2026
 
 The running desktop used commit `d96ad10` and `deployment.strata-mtp.toml`
