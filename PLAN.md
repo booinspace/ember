@@ -5251,6 +5251,49 @@ the [harness/dashboard amendment](docs/harness-dashboard-amendment.md), and
 Desktop, WSL2 and skill evidence. Those provider-specific results do not transfer
 to OpenCode. The neutral Skills surface and portable assets are not a live provider.
 
+## Natural-language Conversation tool planning
+
+**Status:** Implemented in the isolated Mac worktree with scripted acceptance evidence.
+No deployment or live qualification authorized by this amendment.
+See [Root ADR 0027](docs/adr/0027-public-web-retrieval.md#natural-language-conversation-tool-planning-amendment),
+[Root ADR 0026](docs/adr/0026-managed-opencode-build.md#conversation-planning-and-build-prerequisites-amendment)
+and [Agent ADR 0015](ember-agent/docs/adr/0015-managed-opencode-preview.md#natural-language-conversation-tool-planning-amendment).
+
+Ember's isolated local planner proposes one typed public search, page read,
+Inspect or Build step at a time from the current user turn. Existing explicit
+commands remain shortcuts. Runtime, not the model, validates intent, tool scope,
+and exact arguments. Only an unambiguous literal public query or single URL can
+be sent without further approval. For rewritten or ambiguous input, display
+exact provider, action and argument when safe and require a fresh explicit turn.
+No pending approval or automatic resume. Hosted retrieval receives only validated
+public input and provider authentication, never recall, prior chat, other
+credentials or raw workspace data. No hosted planning fallback.
+
+Native search and page reading can run during connected chat. Inspect and Build
+use existing durable tasks and wait for Conversation disconnect before P2 work
+starts. When the user requests Inspect before Build, only a durable successful
+Inspect receipt bound to that same turn satisfies the prerequisite. Any other
+required step must also succeed; failure or cancellation blocks dependent Build.
+Build receives only a bounded, untrusted Inspect summary, not source workspace
+access. When used, verified public source references appear in the Build receipt.
+Inspect remains read-only, Build stays offline, and Web Research stays Tasks-only.
+No grants added to managed workers; no change to recall or ordinary reply policy.
+
+### Conversation tool planning preview acceptance
+
+| Preview criterion | Evidence to record | Status |
+| --- | --- | --- |
+| CTP-AC-01 — Planner isolation and intent | `test_tool_workflow.py`: turn-local requests, typed calls, batch/order rejection, unavailable tools, mentions and negation. `test_build_routing.py`: explicit shortcut and unresolved references. | Scripted Mac pass; live model reliability not measured. |
+| CTP-AC-02 — Exact public egress | Captured exact Exa request through runtime composition; page, rewrite, private-input and cancellation cases run offline. `test_hosted_web.py` checks both adapters. No pending approval token to replay. | Scripted Mac pass; live Exa and Parallel not run. |
+| CTP-AC-03 — Reservation and ordering | Composed runtime and authenticated gateway defer both chains while connected and dispatch after release. Store tests check no attempt while held; gateway suite covers reconnect during durable release. | Scripted Mac pass; reconnect with real workers and Strata not run. |
+| CTP-AC-04 — Durable prerequisite and failure | `test_inspect_build_dependency.py`: exact parent, atomic admission, detach during commit, failure, expiry, cancellation and restart reconciliation. `test_tool_workflow.py`: unavailable or cancelled retrieval. | Scripted Mac pass; live crash/recovery not qualified. |
+| CTP-AC-05 — Handoff, provenance and unchanged grants | Router checks bounded summary, source IDs/URLs and replacement of fabricated receipt fields. Pinned workers exercise isolation with scripted upstreams. Browser, recall and MCP regressions pass. | Scripted Mac pass; Windows, native Linux and physical voice not run. |
+
+Mac gate: 1,333 Python passed, 18 skipped; Ruff, Pyright and contract schema check
+passed. Pinned OpenCode/container suite: 17 passed with scripted upstreams.
+Frontend format and build passed; 32 unit and 25 browser passed, 3 live browser
+cases skipped. This does not close Phase 11/12 production gates or authorize rollout.
+
 ## Shared Strata coding endpoint — 22 November 2026
 
 An opt-in bearer-authenticated OpenAI Chat Completions endpoint on the existing

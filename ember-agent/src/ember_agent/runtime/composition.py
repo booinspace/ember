@@ -194,6 +194,7 @@ class LocalRuntime:
         core.public_web = self.core.public_web
         core.search_provider = self.core.search_provider
         core.search_unavailable = self.core.search_unavailable
+        core.plan_web = self.core.plan_web
         return core
 
     async def start_public_search(self) -> None:
@@ -205,6 +206,7 @@ class LocalRuntime:
         if settings is None:
             return
         self.core.search_provider = settings.provider
+        self.core.plan_web = True
         if settings.provider in ("exa", "parallel"):
             assert settings.api_key_env is not None
             hosted = HostedWeb(settings.provider, settings.api_key_env)

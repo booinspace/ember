@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import aclosing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,7 +12,7 @@ from time import time
 from typing import TYPE_CHECKING, Annotated, Literal, Protocol, cast
 from uuid import UUID, uuid4, uuid5
 
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, ValidationError
 
 from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.evidence import SourceRef
@@ -29,6 +29,7 @@ from .skills import Skills
 from .skills_contracts import SkillDependency
 from .task_artifacts import TaskArtifact, TaskArtifacts
 from .task_store import (
+    BuildPublicSource,
     Confirmation,
     ConfirmationRequest,
     ResearchProvider,
@@ -326,6 +327,33 @@ class TaskResult(RuntimeModel):
     dependencies: ContextDependencies | None = None
     tool_dependencies: tuple[ToolDependency, ...] = Field(default=(), max_length=8)
     skill_dependencies: tuple[SkillDependency, ...] = Field(default=(), max_length=8)
+
+
+def _workspace_inspection(result: TaskResult) -> bool:
+    """Only a managed read-only workspace summary can cross to Build.
+
+    OpenCode scopes these tool calls to its configured Inspect root. Operators must
+    keep that approved workspace synthetic and non-sensitive; free text is not a
+    reliable way to detect secrets or certify what the model summarized.
+    """
+    receipt = result.receipt
+    tools = receipt.data.get("tools")
+    return (
+        receipt.tool == "delegate"
+        and receipt.data.get("provider") == "opencode"
+        and receipt.outcome == "success"
+        and result.dependencies is None
+        and not (result.citations or result.tool_dependencies or result.skill_dependencies)
+        and isinstance(tools, list)
+        and 1 <= len(tools) <= 32
+        and all(
+            isinstance(tool, dict)
+            and tool.get("name") in ("read", "glob", "grep")
+            and tool.get("status") in ("completed", "error")
+            for tool in tools
+        )
+        and any(isinstance(tool, dict) and tool.get("status") == "completed" for tool in tools)
+    )
 
 
 class AgenticTaskProvider(Protocol):
@@ -926,10 +954,15 @@ class TaskRouter:
         tool: ToolInvocation | None = None,
         service_port: int | None = None,
         research_provider: ResearchProvider | None = None,
+        depends_on: UUID | None = None,
+        public_sources: tuple[dict[str, str] | BuildPublicSource, ...] | None = None,
     ) -> TaskHandle:
-        """Persist a scoped task before signalling the worker."""
-        if self._closing or self._worker is None or self._worker.done():
-            raise TaskConflict("task_router_unavailable")
+        """Persist a scoped task before signalling the worker. Handoffs are internal only."""
+        self._check_submission(operation)
+        if (depends_on is not None or public_sources is not None) and (
+            operation != "build" or turn_id is None
+        ):
+            raise TaskConflict("invalid_build_handoff")
         if (operation == "tool") != (tool is not None):
             raise TaskConflict("invalid_tool_submission")
         if service_port is not None and (
@@ -938,28 +971,86 @@ class TaskRouter:
             or not 1024 <= service_port <= 65535
         ):
             raise TaskConflict("invalid_build_service_port")
-        if self._provider(operation) is None:
-            raise TaskConflict("task_provider_unavailable")
         if (operation == "research" and research_provider != self.research_provider) or (
             operation != "research" and research_provider is not None
         ):
             raise TaskConflict("research_provider_consent_required")
-        handle = await self.store.submit(
-            TaskSubmission(
+        try:
+            request = TaskSubmission.model_validate(
+                {
+                    "character_id": self.character_id,
+                    "session_id": self.session_id,
+                    "turn_id": turn_id or uuid5(self.session_id, key),
+                    "idempotency_key": key,
+                    "goal": text,
+                    "operation": operation,
+                    "tool": tool,
+                    "service_port": service_port,
+                    "research_provider": research_provider,
+                    "depends_on": depends_on,
+                    "public_sources": public_sources or None,
+                }
+            )
+        except ValidationError:
+            raise TaskConflict("invalid_task_submission") from None
+        return await self._accept(self.store.submit(request))
+
+    async def submit_inspect_build(
+        self,
+        inspect_goal: str,
+        build_goal: str,
+        turn_id: UUID,
+        *,
+        public_sources: tuple[dict[str, str] | BuildPublicSource, ...] | None = None,
+    ) -> tuple[TaskHandle, TaskHandle]:
+        """Queue Inspect and its dependent Build atomically before notifying dispatch."""
+        self._check_submission("delegate")
+        self._check_submission("build")
+        try:
+            inspect = TaskSubmission(
                 character_id=self.character_id,
                 session_id=self.session_id,
-                turn_id=turn_id or uuid5(self.session_id, key),
-                idempotency_key=key,
-                goal=text,
-                operation=operation,
-                tool=tool,
-                service_port=service_port,
-                research_provider=research_provider,
+                turn_id=turn_id,
+                idempotency_key=f"inspect:{turn_id}",
+                goal=inspect_goal,
+                operation="delegate",
             )
-        )
-        self._wake.set()
-        self.events.publish()
-        return handle
+            build = TaskSubmission.model_validate(
+                {
+                    "character_id": self.character_id,
+                    "session_id": self.session_id,
+                    "turn_id": turn_id,
+                    "idempotency_key": f"build:{turn_id}",
+                    "goal": build_goal,
+                    "operation": "build",
+                    "public_sources": public_sources or None,
+                }
+            )
+        except ValidationError:
+            raise TaskConflict("invalid_task_submission") from None
+        return await self._accept(self.store.submit_inspect_build(inspect, build))
+
+    async def _accept[T](self, write: Coroutine[object, object, T]) -> T:
+        async def commit() -> T:
+            result = await write
+            self._wake.set()
+            self.events.publish()
+            return result
+
+        operation = asyncio.create_task(commit())
+        try:
+            return await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            # SQLite can still commit after the turn detaches. Publish the durable
+            # acceptance before unwinding; any accepted task is cancellable in Tasks.
+            await settled(operation)
+            raise
+
+    def _check_submission(self, operation: TaskOperation) -> None:
+        if self._closing or self._worker is None or self._worker.done():
+            raise TaskConflict("task_router_unavailable")
+        if self._provider(operation) is None:
+            raise TaskConflict("task_provider_unavailable")
 
     async def submit_turn(
         self, text: str, turn_id: UUID, *, operation: TaskOperation = "inspect"
@@ -1303,7 +1394,12 @@ class TaskRouter:
                 deadline_at=run_deadline,
             )
             async with asyncio.timeout(max(0.0, run_deadline - time())):
-                return await provider.execute(request, context, progress), context
+                provider_request = (
+                    request.model_copy(update={"public_sources": None, "depends_on": None})
+                    if request.operation == "build"
+                    else request
+                )
+                return await provider.execute(provider_request, context, progress), context
 
         async def discard_build() -> bool:
             nonlocal failure_code
@@ -1323,6 +1419,7 @@ class TaskRouter:
             result: str | None = None,
             receipt: str | None = None,
             artifact: tuple[str, int] | None = None,
+            inspected_workspace: bool = False,
         ) -> None:
             # Terminal status must not advertise uncommitted files or service ownership.
             async with self._completion_lock:
@@ -1341,7 +1438,13 @@ class TaskRouter:
                         )
                 try:
                     committed = await self.store.finish(
-                        identity, state, terminal, result=result, receipt=receipt, artifact=artifact
+                        identity,
+                        state,
+                        terminal,
+                        result=result,
+                        receipt=receipt,
+                        artifact=artifact,
+                        **({"inspected_workspace": True} if inspected_workspace else {}),
                     )
                 except Exception:
                     if build and terminal == "succeeded":
@@ -1415,6 +1518,22 @@ class TaskRouter:
                 ):
                     raise TaskConflict("build_artifact_invalid")
                 artifact = (digest, size)
+                # Provenance comes from the admitted request, never the Build worker.
+                data = dict(result.receipt.data)
+                data.pop("inspect_task_id", None)
+                data.pop("public_sources", None)
+                if request.depends_on is not None:
+                    data["inspect_task_id"] = str(request.depends_on)
+                if request.public_sources:
+                    data["public_sources"] = [
+                        source.model_dump(mode="json", exclude_none=True)
+                        for source in request.public_sources
+                    ]
+                result = result.model_copy(
+                    update={
+                        "receipt": result.receipt.model_copy(update={"data": data}),
+                    }
+                )
             elif request.operation == "review":
                 data = result.summary.encode("utf-8")
                 digest, size = (
@@ -1468,6 +1587,8 @@ class TaskRouter:
                 result=result.summary,
                 receipt=receipt,
                 artifact=artifact,
+                inspected_workspace=request.operation == "delegate"
+                and _workspace_inspection(result),
             )
 
     async def aclose(self) -> None:

@@ -106,6 +106,10 @@ Do not vendor external agent frameworks into either core.
   Keep hosted keys and private context out of worker and retrieval inputs. Only the separate,
   opt-in Research worker gets task-scoped retrieval. Inspect and Build get no search grant.
   See [preview evidence](docs/adr/0027-public-web-retrieval.md#acceptance-mapping).
+  [Conversation tool routing preview](PLAN.md#natural-language-conversation-tool-planning)
+  adds no worker grants: validate model proposals locally; never send rewritten or ambiguous
+  public input without exact user approval, or start a dependent Build without durable
+  same-turn prerequisite success. Scripted preview evidence is not rollout authorization.
 - **Inference hardening (13; root ADR 0024).** One gateway owns native generation through
   verified drain/release and durable journal settlement. P2–P4 wait until realtime sessions
   disconnect; P5 can use idle time in a connected session but yields to waiting foreground

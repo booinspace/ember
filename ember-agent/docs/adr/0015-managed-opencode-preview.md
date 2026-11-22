@@ -92,3 +92,40 @@ OS-enforced boundary and separate qualification, not simply passing local tests.
 [Agent ADR 0011](0011-hermes-delegation.md) is historical. The provider half of
 [Agent ADR 0013](0013-shared-harness-skills.md) is not live. No Hermes profile,
 chat, credentials, or private coding notes are migrated.
+
+## Natural-language Conversation tool planning amendment
+
+**Status:** Implemented and tested with scripted backends. No live rollout. See [PLAN criteria](../../../PLAN.md#conversation-tool-planning-preview-acceptance)
+and [Root ADR 0027](../../../docs/adr/0027-public-web-retrieval.md#natural-language-conversation-tool-planning-amendment).
+
+- Character runtime makes a separate, bounded planning request through Ember's
+  existing local inference gateway. Input is the current user turn, fixed tool
+  definitions, bounded untrusted same-turn public evidence, and staged task status.
+  No recall, profile, prior chat, provider credentials or workspace results go to
+  the planner. Missing local planning means no natural-language tool dispatch; no
+  hosted fallback. Explicit command shortcuts retain their existing checks.
+  Ordinary reply and recall behavior is unchanged.
+- Advertise only configured, eligible public search, public page read, Inspect
+  and Build operations. Validate one typed proposal at a time: reject batches,
+  unknown fields and invalid arguments before effects. Model output cannot grant
+  authority, choose provider, supply trusted identities or declare prerequisites
+  satisfied. Runtime checks current-turn intent and standalone task goals; ask
+  for clarification when those cannot be established. Bound steps, inputs and
+  time; no open-ended loop.
+- Reuse Ember retrieval scope checks and exact-action approval patterns. Send an
+  unambiguous, user-requested literal query or single URL only after validation.
+  Otherwise show the exact proposed public input when safe. The operator must
+  send a new provider-specific command or restate the chain with exact input.
+  There is no pending approval, generic yes response, or automatic resumption.
+  The new turn is checked independently and cannot override scope checks.
+- Reuse `TaskRouter`, durable task records/receipts and gateway admission; no new
+  worker or generic workflow service. New coupling is a typed durable binding
+  between a dependent Build, originating turn and required receipt identities.
+  Validate prerequisites before dispatch. Public retrieval may run during chat;
+  Inspect and Build remain P2 and wait for disconnect, with gateway rechecking
+  admission if Conversation reconnects. No worker starts while reservation holds.
+- Give Build a bounded, untrusted Inspect summary, not workspace access or raw
+  tool output. Carry verified public source references into its receipt when used;
+  never grant Build retrieval. Failure, cancellation, expiry or uncertain outcome
+  blocks the dependent Build; no silent downgrade or replay. See
+  [Root ADR 0026](../../../docs/adr/0026-managed-opencode-build.md#conversation-planning-and-build-prerequisites-amendment).

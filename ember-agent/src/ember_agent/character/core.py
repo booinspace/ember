@@ -48,7 +48,6 @@ from ..web_evidence import (
     PublicWebOperation,
     PublicWebProvider,
     WebEvidence,
-    allowed_public_query,
     allowed_public_url,
 )
 from .build_intent import build_goal
@@ -70,6 +69,20 @@ from .public_search import (
     public_search_query,
 )
 from .temporal import CalendarResolver, CalendarScope
+from .tool_workflow import (
+    BUILD,
+    INSPECT,
+    Intent,
+    SubmitManaged,
+    execute_workflow,
+    has_embedded_prerequisite,
+    has_tool_chain,
+    intent_for,
+    permitted_public_query,
+    planning_request,
+    public_search_query_candidate,
+    workflow_accounting,
+)
 from .turn_view import CurrentTurnView, MemoryCategory
 from .web_reply import evidence_prompt, synthesis_schema, synthesize_public_web
 
@@ -121,6 +134,7 @@ class PreparedTurn:
     local_reply: str | None = None
     prompts: PromptSnapshot | None = None
     web_evidence: WebEvidence | None = None
+    tool_intent: Intent | None = None
 
 
 _TASK_TEXT_LIMIT = 1600
@@ -226,6 +240,10 @@ class CharacterCore:
         self.task_tools: dict[str, ConversationTask] = {}
         self.task_notice: Callable[[], Awaitable[str]] | None = None
         self.submit_build: Callable[[str, UUID], Awaitable[str]] | None = None
+        self.submit_managed: SubmitManaged | None = None
+        self.inspect_ready: Callable[[], bool] = lambda: False
+        self.build_ready: Callable[[], bool] = lambda: False
+        self.plan_web = False
         self.public_search: Callable[[str], Awaitable[str]] | None = None
         self.public_page: Callable[[str], Awaitable[str]] | None = None
         self.public_web: PublicWebProvider | None = None
@@ -432,9 +450,49 @@ class CharacterCore:
                     return replace(local, local_reply=await self.submit_task(goal, identity))
                 return local
 
-        submit_build = self.submit_build
         goal = build_goal(text)
+        if (
+            self.submit_managed is not None
+            and goal
+            and (has_embedded_prerequisite(goal) or has_tool_chain(goal))
+        ):
+            return self._local_turn(
+                text,
+                identity,
+                observed_at,
+                "Put the required search or inspection first, then say what to build. "
+                "No task was queued.",
+                ("tool_plan_needs_order",),
+                observation.prompts,
+            )
+        if not stripped.casefold().startswith("build:") and hosted_web_request(text) is None:
+            intent = intent_for(text)
+            if intent is not None and (
+                (
+                    self.submit_managed is not None
+                    and (INSPECT in intent.steps or BUILD in intent.steps)
+                )
+                or (self.plan_web and INSPECT not in intent.steps and BUILD not in intent.steps)
+            ):
+                base = self._local_turn(text, identity, observed_at, "", (), observation.prompts)
+                request = planning_request(base.request, intent, text)
+                accounting = workflow_accounting(request)
+                if accounting.serialized_total <= self.input_ceiling:
+                    return replace(
+                        base,
+                        request=request,
+                        tool_intent=intent,
+                        local_reply=None,
+                        accounting=accounting,
+                    )
+                return replace(
+                    base, local_reply="That tool request is too long. Try a shorter goal."
+                )
+
+        submit_build = self.submit_build
         if goal is not None:
+            if self.submit_managed is not None and not stripped.casefold().startswith("build:"):
+                goal = ""  # A failed natural-language plan cannot become an implicit Build.
             if not goal or len(goal) > 8192:
                 reply = "Send a standalone Build: goal describing what to make, or use Tasks."
             elif submit_build is None:
@@ -453,7 +511,9 @@ class CharacterCore:
             read = operation == "read"
             if provider != self.search_provider or self.public_web is None:
                 reply = f"{provider.title()} is not available. No other provider was used."
-            elif not (allowed_public_url(value) if read else allowed_public_query(value)):
+            elif has_tool_chain(value) or not (
+                allowed_public_url(value) if read else permitted_public_query(value)
+            ):
                 reply = (
                     "Use one public HTTP(S) URL without credentials, query parameters, "
                     "or a fragment."
@@ -488,6 +548,16 @@ class CharacterCore:
                     ("public_web_input_rejected",),
                     observation.prompts,
                 )
+        if self.plan_web and (public_page_requested(text) or public_search_query_candidate(text)):
+            return self._local_turn(
+                text,
+                identity,
+                observed_at,
+                "Give one exact public search or page request, "
+                "followed by any Inspect or Build goal.",
+                ("public_web_input_rejected",),
+                observation.prompts,
+            )
         reader = self.public_page if page_url else self.public_search
         query_text = (
             page_url if page_url else public_search_query(text) if self.public_search else None
@@ -1238,6 +1308,37 @@ class CharacterCore:
             ),
         )
 
+    async def _workflow_response(self, turn: PreparedTurn) -> AsyncGenerator[GatewayEvent, None]:
+        intent = turn.tool_intent
+        assert intent is not None
+
+        def observe(request: GatewayRequest) -> None:
+            self.observation_failures += not notify(
+                self.observe_request,
+                replace(turn, request=request, accounting=workflow_accounting(request)),
+            )
+
+        events = self._local_response(replace(turn, local_reply=""))
+        async with aclosing(events):
+            async for event in events:
+                if event.kind == "text":
+                    answer = await execute_workflow(
+                        self.model,
+                        turn.request,
+                        intent,
+                        public_web=self.public_web,
+                        snippet_search=self.public_search,
+                        provider=self.search_provider,
+                        submit=self.submit_managed,
+                        input_ceiling=self.input_ceiling,
+                        inspect_ready=self.inspect_ready(),
+                        build_ready=self.build_ready(),
+                        on_request=observe,
+                        activity=self.activity,
+                    )
+                    event = event.model_copy(update={"text": answer})
+                yield event
+
     async def _local_response(self, turn: PreparedTurn) -> AsyncGenerator[GatewayEvent, None]:
         """Fixed clarification has no model inference, invented token count or recall authority."""
         assert turn.local_reply is not None
@@ -1281,10 +1382,12 @@ class CharacterCore:
             if not await self.current(turn.dependencies, turn.certificate):
                 self.turn_view.invalidate(turn.request.request_id)
                 raise GatewayError("context_invalidated")
-            if turn.local_reply is None and self.observe_request is not None:
+            if turn.tool_intent is None and turn.local_reply is None:
                 self.observation_failures += not notify(self.observe_request, turn)
             response = (
-                self._local_response(turn)
+                self._workflow_response(turn)
+                if turn.tool_intent is not None
+                else self._local_response(turn)
                 if turn.local_reply is not None
                 else synthesize_public_web(self.model, turn.request, turn.web_evidence)
                 if turn.web_evidence is not None
@@ -1386,7 +1489,7 @@ class CharacterCore:
                 complete,
                 turn.dependencies,
                 turn.certificate,
-                public_web_reply=turn.web_evidence is not None,
+                public_web_reply=turn.web_evidence is not None or turn.tool_intent is not None,
             )
         elif isinstance(self.sink, ObservedDialogueSink):
             await self.sink.commit_delivery(
@@ -1401,7 +1504,7 @@ class CharacterCore:
             turn.certificate,
             turn.request.request_id,
             complete,
-            public_web_reply=turn.web_evidence is not None,
+            public_web_reply=turn.web_evidence is not None or turn.tool_intent is not None,
         )
         self.history = [old for old in self.history if old.request_id != turn.request.request_id]
         self.history.append(observed)

@@ -92,3 +92,34 @@ tasks uncertain rather than replaying them. The container's independent 35-minut
 lifetime and auto-removal backstop cleanup; startup does not immediately reap its
 container or any uncommitted ZIP. Such ZIPs cannot be downloaded without a successful
 task and matching receipt. No production Phase 11/12 gate is waived.
+
+## Conversation planning and Build prerequisites amendment
+
+**Status:** Implemented in the isolated worktree. Scripted tests only; no rollout. See
+[Root ADR 0027](0027-public-web-retrieval.md#natural-language-conversation-tool-planning-amendment)
+and [PLAN preview criteria](../../PLAN.md#conversation-tool-planning-preview-acceptance).
+
+A standalone Build remains available. If the current turn requests Inspect
+before Build, command shortcuts cannot bypass that ordering. The router binds
+Build to that same turn's Inspect task and requires its successful durable
+receipt before dispatching Build. Never infer completion from model text,
+transient tool output, a prior turn, or an unrelated task. If the turn also
+requires public lookup, validate usable evidence before admitting any task.
+Failure, cancellation, expiry or uncertain
+completion of a prerequisite blocks dependent Build, including across restart;
+never start with missing context or silently substitute another task. Persist the
+binding in the existing operational task store so it survives disconnect, and
+recheck it at dispatch. Keep the original deadline and cancellation authority;
+no foreground planning turn is needed after disconnect.
+
+The handoff is a bounded, untrusted Inspect summary, not a workspace transfer
+or raw tool transcript. Treat it and any approved public excerpts as data, not
+instructions or grants. Inspect remains read-only; Build still starts in a fresh
+empty offline container with no source mounts, external network, or hosted tools.
+Both tasks remain P2 and wait for Conversation disconnect; gateway admission still
+fences reconnect races. A Build receipt identifies validated public retrieval used
+by recording its provider, source IDs and public URLs, not raw excerpts or private
+workspace data. For Inspect chains it also records the prerequisite task ID.
+Keep the approved Inspect workspace synthetic and non-sensitive: no filter can
+certify that a generated summary contains no secrets. No change to Tasks-only
+port grants, artifact checks, or rollback.

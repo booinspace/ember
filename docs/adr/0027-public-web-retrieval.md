@@ -1,5 +1,8 @@
 # Root ADR 0027 — Public web retrieval and Web Research preview
 
+The [Conversation planning amendment](#natural-language-conversation-tool-planning-amendment)
+extends the explicit-command path without changing provider setup.
+
 **Status:** Opt-in implementation; scripted preview evidence only. No live provider,
 Miku Strata, native Linux, or physical voice qualification.
 
@@ -41,7 +44,7 @@ See [Agent ADR 0015](../../ember-agent/docs/adr/0015-managed-opencode-preview.md
 3. After an **authorized** rollout, check Tools for capability status. Try
    `Exa search: <public query>` or `Exa read: <public URL>` in Chat (use
    `Parallel` instead when configured). The provider name authorizes the exact
-   input; ordinary conversational search phrases do not send hosted requests.
+   input. This remains a shortcut alongside the Conversation preview below.
    In Tasks select **Web Research** and confirm the named provider when submitting
    a public goal. Put each approved `Search: <public query>` and each approved URL
    on its own line. The task keeps its provider grant across restart and refuses
@@ -87,3 +90,36 @@ Dashboard tabs separate Chat, Tools, Tasks, Activity, Inference Context, Skills,
 and Memory & Settings. Tab changes do not disconnect Conversation; use the
 explicit control. Browser tests cover tab navigation, task visibility, and voice
 controls; live LAN and physical-device checks remain separate.
+
+## Natural-language Conversation tool planning amendment
+
+**Status:** Implemented in the isolated worktree; scripted tests passed. No
+live provider qualification or rollout. See
+[PLAN preview criteria](../../PLAN.md#conversation-tool-planning-preview-acceptance).
+
+Users can ask for public search, a page read, Inspect or Build in ordinary
+language. Ember's local planner sees the current user turn, typed tools, and
+bounded public excerpts or staged-task status from that turn. It proposes one
+step at a time. Ember validates intent, order, scope and arguments. The preview
+supports one public lookup followed by optional Inspect and Build, or standalone
+requests. Explicit provider commands remain shortcuts.
+
+Ember sends only a literal public query or one literal public URL clearly
+requested in the current turn. If the proposed input is rewritten, ambiguous,
+or not supplied literally, show the exact provider, action and argument when
+safe. Require a new provider command for retrieval alone or a fresh chain with
+exact input. There is no pending approval or automatic resume. Scope checks
+still reject private or credential-bearing inputs. Only the validated public
+argument and provider authentication cross the boundary, never recall, prior
+chat, other credentials, raw workspace or task output. Returned text cannot
+authorize another call.
+
+Native public retrieval may run while Conversation stays connected. Inspect
+and Build remain P2 and wait for disconnect. An Inspect-before-Build request
+requires durable same-turn Inspect success; only a bounded untrusted summary
+can reach Build. Record public provenance on the Build receipt when retrieval
+was used. Required-step failure or cancellation blocks Build. See
+[Root ADR 0026](0026-managed-opencode-build.md#conversation-planning-and-build-prerequisites-amendment)
+and [Agent ADR 0015](../../ember-agent/docs/adr/0015-managed-opencode-preview.md#natural-language-conversation-tool-planning-amendment).
+Read-only Inspect, offline Build and task-only Web Research keep their existing
+grants. No direct MCP, skills, memory or provider fallback is added.

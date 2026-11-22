@@ -22,6 +22,7 @@ from ember_memory_abi.errors import MemoryError
 from ember_memory_abi.related import ContextDependencies, RelatedRequest
 
 from ..character.core import ConversationTask
+from ..character.tool_workflow import ManagedPlan
 from ..inference.client import HttpGatewayClient
 from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallResult
@@ -211,24 +212,56 @@ async def _start_tasks(
             "When the user requests a summary, queue text quoted exactly by the user.",
             summarize,
         )
-    if router.delegate is not None:
-
-        async def delegate_task(text: str, turn_id: UUID) -> str:
-            return await router.submit_turn(text, turn_id, operation="delegate")
-
-        runtime.core.task_tools["delegate_task"] = ConversationTask(
-            "Use only for explicit read-only inspection of synthetic workspace files. "
-            "Never use for secrets, private data, writing files, running commands, or hosting. "
-            "Call with an empty object. Ember forwards the entire current user message and "
-            "reports whether it queued. Do not announce a queue or promise success yourself.",
-            delegate_task,
-            use_current_turn=True,
-        )
 
     async def build_task(text: str, turn_id: UUID) -> str:
         return await router.submit_turn(text, turn_id, operation="build")
 
+    async def submit_managed(plan: ManagedPlan, turn_id: UUID) -> str:
+        sources = (
+            tuple(
+                {
+                    "url": source.url,
+                    "title": source.title,
+                    "provider": source.provider,
+                    "source_id": source.source_id,
+                }
+                for source in plan.sources
+            )
+            or None
+        )
+        try:
+            if plan.inspect and plan.build:
+                inspect, build = await router.submit_inspect_build(
+                    plan.inspect, plan.build, turn_id, public_sources=sources
+                )
+                message = (
+                    f"Inspect queued ({str(inspect.task_id)[:8]}). "
+                    f"Build ({str(build.task_id)[:8]}) runs only if Inspect succeeds."
+                )
+            elif plan.build:
+                build = await router.submit(
+                    f"build:{turn_id}",
+                    plan.build,
+                    turn_id=turn_id,
+                    operation="build",
+                    public_sources=sources,
+                )
+                message = f"Build queued ({str(build.task_id)[:8]})."
+            elif plan.inspect:
+                inspect = await router.submit(
+                    f"inspect:{turn_id}", plan.inspect, turn_id=turn_id, operation="delegate"
+                )
+                message = f"Inspect queued ({str(inspect.task_id)[:8]})."
+            else:
+                return "No managed task was queued."
+        except TaskConflict:
+            return "Couldn't queue the requested work. Check Tools and Tasks."
+        return message + " Disconnect Conversation to let it run, then check Tasks."
+
     runtime.core.submit_build = build_task
+    runtime.core.submit_managed = submit_managed
+    runtime.core.inspect_ready = lambda: router.delegation_available
+    runtime.core.build_ready = lambda: router.build_available
     runtime.core.task_notice = router.turn_notice
     cleanup.push_async_callback(router.aclose)
     return router
