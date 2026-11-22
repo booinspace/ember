@@ -456,12 +456,16 @@ class RuntimeServices:
         try:
             private = Path(self._strata_directory.name)
             snapshot = private / "runner.json"
+            print(
+                "Verifying pinned Strata files. Large models can take several minutes.", flush=True
+            )
             await asyncio.to_thread(prepare_strata_config, self.config, settings, snapshot)
             if await asyncio.to_thread(port_open, settings.endpoint):
                 raise ConfigurationError("Managed Strata endpoint is already occupied.")
             origin = urlsplit(settings.endpoint)
             ready_file = private / "ready.json"
             token = secrets.token_urlsafe(32)
+            print("Strata file verification complete. Loading model.", flush=True)
             child = await self._spawn_strata_child(
                 [
                     settings.python_executable,
