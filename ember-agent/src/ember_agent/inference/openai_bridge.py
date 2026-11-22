@@ -18,7 +18,6 @@ from ..observability import notify
 from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import (
     NON_CODING_MESSAGE_LIMIT,
-    PROMPT_MESSAGE_CHARS,
     CodingReasoningEffort,
     GatewayError,
     GatewayEvent,
@@ -31,6 +30,12 @@ from .contracts import (
     ToolCall,
     ToolDefinition,
     ToolFunction,
+)
+from .image_parts import (
+    PROMPT_MESSAGE_CHARS,
+    PromptContentPart,
+    PromptImagePart,
+    PromptTextPart,
 )
 
 _OBJECT = TypeAdapter(dict[str, JsonValue])
@@ -170,18 +175,17 @@ class _Call(RuntimeModel):
     function: _Function
 
 
-class _TextPart(RuntimeModel):
-    type: Literal["text"]
-    text: Annotated[str, Field(max_length=100000)] = Field(repr=False)
+type _MessageText = Annotated[str, Field(max_length=PROMPT_MESSAGE_CHARS)]
 
 
 class _Message(RuntimeModel):
     role: Literal["system", "user", "assistant", "tool"]
-    content: Annotated[str, Field(max_length=100000)] | tuple[_TextPart, ...] | None = Field(
-        default=None, repr=False
-    )
     tool_calls: Annotated[tuple[_Call, ...], Field(max_length=16)] | None = None
     tool_call_id: PromptCallId | None = None
+
+
+class _TextMessage(_Message):
+    content: _MessageText | tuple[PromptTextPart, ...] | None = Field(default=None, repr=False)
 
 
 class _Schema(RuntimeModel):
@@ -225,6 +229,8 @@ class _Request[Message: _Message](RuntimeModel):
 
 
 class _CodingMessage(_Message):
+    content: _MessageText | tuple[PromptContentPart, ...] | None = Field(default=None, repr=False)
+
     # OpenCode can replay the display field. It never crosses into GatewayRequest.
     reasoning_content: str | None = Field(default=None, repr=False, exclude=True)
     reasoning: str | None = Field(default=None, repr=False, exclude=True)
@@ -255,7 +261,7 @@ class _CodingRequest(_Request[_CodingMessage]):
         return effort
 
 
-type _CompletionRequest = _Request[_Message] | _CodingRequest
+type _CompletionRequest = _Request[_TextMessage] | _CodingRequest
 
 
 @dataclass(frozen=True)
@@ -315,6 +321,12 @@ class OpenAIModelBridge:
                     "context_length": self.config.context_tokens,
                     "max_input_tokens": self.input_limit,
                     "max_output_tokens": self.output_limit,
+                    "architecture": {
+                        "input_modalities": ["text", "image"]
+                        if self.coding and self.config.inference.coding_vision
+                        else ["text"],
+                        "output_modalities": ["text"],
+                    },
                 }
             ],
         }
@@ -327,7 +339,9 @@ class OpenAIModelBridge:
             raw = body if isinstance(body, bytes) else json.dumps(body, allow_nan=False).encode()
             if len(raw) > _LIMIT:
                 raise GatewayError("request_too_large")
-            value = (_CodingRequest if self.coding else _Request[_Message]).model_validate_json(raw)
+            value = (_CodingRequest if self.coding else _Request[_TextMessage]).model_validate_json(
+                raw
+            )
             if value.model != self.config.model_tag:
                 raise GatewayError("model_not_allowlisted")
             if value.temperature is not None and value.temperature != 0.2:
@@ -365,14 +379,22 @@ class OpenAIModelBridge:
                     raise GatewayError("invalid_tool_transcript")
                 if item.role == "tool" and item.tool_call_id is None:
                     raise GatewayError("invalid_tool_transcript")
+                parts = item.content if isinstance(item.content, tuple) else ()
+                has_images = any(isinstance(part, PromptImagePart) for part in parts)
+                if has_images and not (
+                    self.coding and self.config.inference.coding_vision and item.role == "user"
+                ):
+                    raise GatewayError("image_input_not_supported")
+                text = item.content if isinstance(item.content, str) else ""
+                if parts and not has_images:
+                    text = "\n".join(
+                        part.text for part in parts if isinstance(part, PromptTextPart)
+                    )
                 messages.append(
                     PromptMessage(
                         role=item.role,
-                        content=(
-                            "\n".join(part.text for part in item.content)
-                            if isinstance(item.content, tuple)
-                            else item.content or ""
-                        ),
+                        content=text,
+                        parts=parts if has_images else (),
                         tool_call_id=item.tool_call_id,
                         tool_calls=tuple(
                             PromptToolCall(

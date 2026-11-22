@@ -5261,6 +5261,12 @@ and message history, and enforces the configured input budget before generation.
 An oversized coding prompt returns `context_length_exceeded` and leaves the
 gateway ready for the next request.
 
+Managed Strata can opt into screenshot input on this same coding route. Only
+P5 user messages may carry bounded inline PNG/JPEG parts. Pin the reader and
+projector, count expanded image tokens in Strata's existing input budget and
+keep live preemption off. Image generation is separate and not exposed.
+See [setup and 9Router requirements](ember-agent/docs/strata-vision.md).
+
 Coding completions opt into Strata thinking via `reasoning_effort`.
 Coding ingress also maps known Qwen-style proxy thinking-budget markers
 back to effort levels without forwarding raw budgets or changing output limits.

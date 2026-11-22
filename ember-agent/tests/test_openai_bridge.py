@@ -1,10 +1,12 @@
 """Task-bound OpenAI protocol mapping preserves sole-gateway ownership and tool history."""
 
 import asyncio
+import base64
 import json
 import sys
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
@@ -12,7 +14,8 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi import FastAPI
-from pydantic import ValidationError
+from PIL import Image
+from pydantic import JsonValue, ValidationError
 
 from ember_agent.inference.client import HttpGatewayClient
 from ember_agent.inference.contracts import (
@@ -210,6 +213,136 @@ def _bridge(
     return bridge, gateway, client
 
 
+def _image_url(format_: str = "PNG", size: tuple[int, int] = (16, 16)) -> str:
+    buffer = BytesIO()
+    Image.new("RGB", size, "red").save(buffer, format=format_)
+    return f"data:image/{format_.lower()};base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def _image_part(url: str | None = None) -> dict[str, JsonValue]:
+    return {"type": "image_url", "image_url": {"url": url or _image_url()}}
+
+
+@pytest.mark.parametrize("vision", [False, True])
+def test_coding_vision_admits_only_bounded_inline_user_images(tmp_path: Path, vision: bool) -> None:
+    async def run() -> None:
+        config = _config(tmp_path)
+        settings = StrataSettings(
+            endpoint="http://127.0.0.1:18110",
+            python_executable=sys.executable,
+            server_script=str(tmp_path / "server.py"),
+            runner_config=str(tmp_path / "runner.json"),
+            runner_config_sha256="a" * 64,
+        )
+        config = config.model_copy(
+            update={
+                "inference": InferenceSettings(
+                    backend="strata", strata=settings, coding_api=True, coding_vision=vision
+                )
+            }
+        )
+        upstream = _Upstream()
+        bridge, gateway, client = _bridge(config, upstream)
+        app = FastAPI()
+        app.include_router(coding_routes(config, client, "separate-key"))
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://localhost"
+            ) as lan:
+                route = "/coding/v1/chat/completions"
+                headers = {"Authorization": "Bearer separate-key"}
+                body = {
+                    "model": config.model_tag,
+                    "messages": [{"role": "user", "content": [_image_part()]}],
+                }
+                assert (await lan.post(route, json=body)).status_code == 401
+                assert (await lan.get("/coding/v1/models")).status_code == 401
+                models = (await lan.get("/coding/v1/models", headers=headers)).json()
+                assert models["data"][0]["architecture"] == {
+                    "input_modalities": ["text", "image"] if vision else ["text"],
+                    "output_modalities": ["text"],
+                }
+                if not vision:
+                    response = await lan.post(route, headers=headers, json=body)
+                    assert response.status_code == 400
+                    assert response.json()["error"]["code"] == "image_input_not_supported"
+                    assert not upstream.requests
+                    return
+                animated = BytesIO()
+                Image.new("RGB", (16, 16), "red").save(
+                    animated,
+                    format="PNG",
+                    save_all=True,
+                    append_images=[Image.new("RGB", (16, 16), "blue")],
+                )
+                animated_url = base64.b64encode(animated.getvalue()).decode()
+                oversized = base64.b64encode(bytes(512 * 1024 + 1)).decode()
+                for role, parts, code in (
+                    (
+                        "user",
+                        [_image_part("https://example.test/image.png")],
+                        "invalid_openai_request",
+                    ),
+                    ("user", [_image_part("file:///tmp/fixture.png")], "invalid_openai_request"),
+                    ("user", [_image_part(r"C:\fixture.png")], "invalid_openai_request"),
+                    ("user", [_image_part(_image_url("GIF"))], "invalid_openai_request"),
+                    ("user", [_image_part("data:image/png;base64," + oversized)], "invalid_image"),
+                    (
+                        "user",
+                        [_image_part("data:image/png;base64," + animated_url)],
+                        "invalid_image",
+                    ),
+                    ("user", [_image_part("data:image/png;base64,A")], "invalid_image"),
+                    ("user", [_image_part("data:image/png;base64,AAAA")], "invalid_image"),
+                    ("user", [_image_part(_image_url(size=(2100, 2100)))], "invalid_image"),
+                    (
+                        "user",
+                        [_image_part(_image_url("JPEG").replace("image/jpeg", "image/png"))],
+                        "invalid_image",
+                    ),
+                    ("user", [_image_part()] * 5, "invalid_openai_request"),
+                    ("system", [_image_part()], "image_input_not_supported"),
+                ):
+                    response = await lan.post(
+                        route,
+                        headers=headers,
+                        json={**body, "messages": [{"role": role, "content": parts}]},
+                    )
+                    assert response.status_code == 400
+                    assert response.json()["error"]["code"] == code
+                    assert "data:image" not in response.text
+                response = await lan.post(route, headers=headers, content=b" " * (1024**2 + 1))
+                assert response.status_code == 413
+                assert not upstream.requests and not gateway.uncertain
+                jpeg = _image_part(_image_url("JPEG"))
+                response = await lan.post(
+                    route,
+                    headers=headers,
+                    json={**body, "messages": [{"role": "user", "content": [jpeg]}]},
+                )
+                assert response.status_code == 200
+                assert len(upstream.requests) == 1
+                request = upstream.requests[0]
+                assert request.workload == "P5"
+                assert request.images[0].model_dump(mode="json") == jpeg
+                with pytest.raises(ValidationError, match="Multimodal parts require"):
+                    GatewayRequest.model_validate_json(
+                        request.model_copy(update={"workload": "P2"}).model_dump_json()
+                    )
+                with pytest.raises(GatewayError, match="invalid_openai_request"):
+                    await bridge.complete(
+                        {
+                            "model": config.model_tag,
+                            "messages": [{"role": "user", "content": [jpeg]}],
+                        }
+                    )
+        finally:
+            await client.aclose()
+            await gateway.aclose()
+
+    asyncio.run(run())
+
+
 def _body(config: DeploymentConfig) -> dict[str, object]:
     return {
         "model": config.model_tag,
@@ -352,12 +485,14 @@ def test_bridge_uses_real_gateway_p2_admission_and_server_owned_identity(tmp_pat
         ({"enable_thinking": True, "thinking_budget": 24576}, "high"),
     ],
 )
+@pytest.mark.parametrize("vision", [False, True])
 def test_strata_coding_context_uses_native_tokens(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     stream: bool,
     thinking_options: dict[str, object],
     effort: str | None,
+    vision: bool,
 ) -> None:
     async def run() -> None:
         config = _config(tmp_path)
@@ -373,14 +508,25 @@ def test_strata_coding_context_uses_native_tokens(
                 "context_tokens": 131072,
                 "max_input_tokens": 126976,
                 "output_reserve_tokens": 4096,
-                "inference": InferenceSettings(backend="strata", strata=settings, coding_api=True),
+                "inference": InferenceSettings(
+                    backend="strata", strata=settings, coding_api=True, coding_vision=vision
+                ),
             }
         )
         instance = "b" * 32
         monkeypatch.setenv("EMBER_STRATA_INSTANCE_ID", instance)
         monkeypatch.setenv("EMBER_STRATA_API_KEY", "synthetic")
         content = "long fixture line\n" * 4800
-        messages = [{"role": "user", "content": content}, {"role": "user", "content": content}]
+        messages: list[dict[str, object]] = [
+            {"role": "user", "content": content},
+            {"role": "user", "content": content},
+        ]
+        if vision:
+            messages[0]["content"] = [
+                {"type": "text", "text": content},
+                _image_part(),
+                {"type": "text", "text": "After"},
+            ]
         for index in range(32):
             call_id = f"call_fixture_{index}"
             messages.extend(
@@ -402,6 +548,7 @@ def test_strata_coding_context_uses_native_tokens(
         assert len(messages) == 66
         assert len(json.dumps(messages).encode()) > config.max_input_tokens
         completion_calls = 0
+        vision_available = False
 
         def json_response(status: int, body: dict[str, object]) -> httpx.Response:
             return httpx.Response(status, stream=httpx.ByteStream(json.dumps(body).encode()))
@@ -416,6 +563,7 @@ def test_strata_coding_context_uses_native_tokens(
                         "loaded": True,
                         "model": config.model_tag,
                         "context": {"native": 131072},
+                        "vision": {"available": vision_available},
                     },
                 )
             if request.url.path == "/v1/telemetry":
@@ -502,6 +650,13 @@ def test_strata_coding_context_uses_native_tokens(
                     assert rejected.json()["error"]["code"] == "unsupported_model_options"
                 assert completion_calls == 0
 
+                if vision:
+                    unavailable = await lan.post(route, json=body)
+                    assert unavailable.status_code == (200 if stream else 503)
+                    assert "upstream_vision_unavailable" in unavailable.text
+                    assert completion_calls == 0 and not gateway.uncertain
+                    vision_available = True
+
                 refused = await lan.post(route, json=body)
                 assert refused.status_code == (200 if stream else 400)
                 assert "context_length_exceeded" in refused.text
@@ -527,7 +682,9 @@ def test_strata_coding_context_uses_native_tokens(
             legacy = {"model": config.model_tag, "messages": messages}
             with pytest.raises(GatewayError, match="invalid_openai_request"):
                 await bridge.complete(legacy)
-            with pytest.raises(GatewayError, match="prompt_overflow"):
+            with pytest.raises(
+                GatewayError, match="invalid_openai_request" if vision else "prompt_overflow"
+            ):
                 await bridge.complete({**legacy, "messages": messages[:2]})
             assert completion_calls == 2
         finally:

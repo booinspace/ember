@@ -245,6 +245,51 @@ def test_strata_preflight_rejects_modified_or_unpinned_inputs(tmp_path: Path, ta
     assert not snapshot.exists()
 
 
+@pytest.mark.parametrize("fault", [None, "no_profile", "unlisted", "projector", "reader"])
+def test_strata_vision_requires_and_rehashes_pinned_artifacts(
+    tmp_path: Path, fault: str | None
+) -> None:
+    port = _port()
+    server, _, profile = _profile(tmp_path, port)
+    reader = tmp_path / "strata-vision.exe"
+    projector = tmp_path / "mmproj-fixture.gguf"
+    reader.write_bytes(b"reader")
+    projector.write_bytes(b"projector")
+    if fault != "no_profile":
+        profile["vision"] = {
+            "exe": str(reader),
+            "mmproj": str(projector),
+            "model": str(tmp_path / "model-00001-of-00002.gguf"),
+        }
+        pins = profile["ember_artifacts"]
+        assert isinstance(pins, dict)
+        for artifact in (reader, projector):
+            if fault != "unlisted" or artifact != projector:
+                pins[str(artifact)] = sha256(artifact.read_bytes()).hexdigest()
+
+    path = _config(tmp_path, server, profile, endpoint=f"http://127.0.0.1:{port}")
+    config = load_config(path)
+    strata = config.inference.strata
+    assert strata is not None and not strata.verify_model_checksums
+    config = config.model_copy(
+        update={
+            "inference": config.inference.model_copy(
+                update={"coding_api": True, "coding_vision": True}
+            )
+        }
+    )
+    if fault in {"projector", "reader"}:
+        (projector if fault == "projector" else reader).write_bytes(b"modified")
+    snapshot = tmp_path / "snapshot.json"
+    if fault is not None:
+        with pytest.raises(ConfigurationError):
+            prepare_strata_config(config, strata, snapshot)
+        assert not snapshot.exists()
+    else:
+        prepare_strata_config(config, strata, snapshot)
+        assert json.loads(snapshot.read_bytes())["vision"] == profile["vision"]
+
+
 def test_strata_startup_preserves_original_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

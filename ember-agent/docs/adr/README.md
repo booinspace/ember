@@ -70,4 +70,5 @@ listener, opt-in LAN HTTPS and its runtime ownership.
 neutral catalog, native loading and existing broker/context contracts.
 
 [Agent ADR 0014 — Gateway release and realtime ownership](0014-gateway-release-and-realtime-ownership.md)
-records Phase 13 admission, journal and native stream ownership.
+records Phase 13 admission, journal and native stream ownership, including
+opt-in P5 screenshots.

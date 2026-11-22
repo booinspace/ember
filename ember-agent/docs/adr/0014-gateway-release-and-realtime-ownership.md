@@ -19,6 +19,11 @@ and [Phase 13 validation](../../../docs/phase-13-validation.md).
   before native work or waits for an active P5 to drain. A waiting P0 deadline
   withdraws the waiter while the active P5 keeps its owner. Coding streams
   remain client-visible during generation and are never replayed by the gateway.
+- Optional Strata screenshot input stays on the bearer-authenticated P5 route.
+  The gateway validates bounded inline rasters off the realtime loop; Strata
+  expands image tokens before enforcing the coding input limit. Pin the reader
+  and projector. Vision profiles keep live preemption disabled; unexpected
+  native failures still fence admission.
 - In the Strata candidate, the connected LiveKit host claims a short renewable
   reservation on detected speech onset. The host holds it through preparation,
   model work, playback and a two-second quiet guard. A stale reservation expires.

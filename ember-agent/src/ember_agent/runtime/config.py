@@ -99,6 +99,7 @@ class InferenceSettings(RuntimeModel):
 
     backend: InferenceBackend = "ollama"
     coding_api: bool = False
+    coding_vision: bool = False
     coding_memory: bool = False
     coding_memory_write: bool = False
     vllm: VLLMSettings | None = None
@@ -106,6 +107,8 @@ class InferenceSettings(RuntimeModel):
 
     @model_validator(mode="after")
     def _selected_runner(self) -> Self:
+        if self.coding_vision and (not self.coding_api or self.backend != "strata"):
+            raise ValueError("Coding vision requires managed Strata and the coding API.")
         if self.coding_memory and not self.coding_api:
             raise ValueError("Coding memory requires the coding API.")
         if self.coding_memory_write and not self.coding_memory:
@@ -567,6 +570,8 @@ def _validate_services(
         or not settings.audio.enabled
     ):
         raise ConfigurationError("Voice preemption requires managed Strata, coding API and audio.")
+    if settings.inference.coding_vision and settings.gateway.preemption_enabled:
+        raise ConfigurationError("Coding vision has not been qualified with live preemption.")
     upstream_endpoint = services.ollama.endpoint
     if settings.inference.backend == "vllm":
         assert settings.inference.vllm is not None

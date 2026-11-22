@@ -24,6 +24,7 @@ from .contracts import (
     ToolCall,
     UpstreamPromptOverflow,
 )
+from .image_parts import validate_images
 from .upstream import NativeFrame, NativeTool, Upstream
 from .visible import VisibleText
 
@@ -172,6 +173,9 @@ class P0Gateway:
             raise GatewayError("live_reservation_required")
         if request.workload == "P5" and not self.config.inference.coding_api:
             raise GatewayError("workload_not_authorized")
+        images = request.images
+        if images and not self.config.inference.coding_vision:
+            raise GatewayError("image_input_not_supported")
         deadline = datetime.fromisoformat(request.deadline_at.replace("Z", "+00:00"))
         if deadline <= datetime.now(UTC):
             raise GatewayError("deadline_exceeded")
@@ -409,6 +413,13 @@ class P0Gateway:
         parked = False
         recorded = False
         try:
+            images = job.request.images
+            if images and self._can_start(job):
+                # Only the active job can decode, off the realtime event loop.
+                try:
+                    await asyncio.to_thread(validate_images, images)
+                except ValueError as error:
+                    raise GatewayError("invalid_image") from error
             if self._can_start(job):
                 try:
                     async with asyncio.timeout((job.deadline - datetime.now(UTC)).total_seconds()):

@@ -6,6 +6,15 @@ Ollama measurements are preserved below. The
 [PLAN acceptance criteria](../PLAN.md#phase-13-acceptance-criteria-preemption-hardening)
 and [Root ADR 0024](adr/0024-phase-thirteen-inference-hardening.md) define the gates.
 
+## Strata coding screenshots
+
+Synthetic checks pass for bounded/authenticated coding input, ordered Strata
+forwarding, native overflow handling and reader/projector pinning. This is not
+new P13 qualification. Miku's tracked Strata profiles pin the matching SC117
+projector and reader. A native encode test and live 9Router passthrough remain
+unverified. Keep live preemption disabled; prior acceptance results apply only
+to the tested profiles.
+
 ## Strata voice preemption candidate — 22 November 2026
 
 The candidate runs on the managed single-slot SC117 Strata profile. A trusted

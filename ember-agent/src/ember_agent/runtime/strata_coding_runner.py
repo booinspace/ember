@@ -1,4 +1,4 @@
-"""Run pinned Strata with exact coding prompt admission inside its text prepare path."""
+"""Enforce coding prompt admission after Strata renders text and expands image tokens."""
 
 import sys
 from pathlib import Path

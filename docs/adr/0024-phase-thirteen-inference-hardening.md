@@ -36,6 +36,8 @@ rendered-prompt token budget for coding work. An authenticated tokenizer refusal
 before generation leaves the slot available. The scheduler can admit P5 coding
 work during an idle realtime connection. A waiting foreground turn goes before
 queued P5 work and waits for any active P5 request to drain within its deadline.
+The opt-in screenshot profile uses this same owner for image preparation and
+text generation. It is not qualified for live preemption.
 
 The Strata voice candidate uses the managed runner's existing native STOP
 path. A private authenticated request binds Ember's P5 identity to that

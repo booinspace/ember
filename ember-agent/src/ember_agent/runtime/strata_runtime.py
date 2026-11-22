@@ -44,7 +44,16 @@ _VALUE_FLAGS = {
     "--slots",
     "--batch-mtp",
 }
-_SWITCH_FLAGS = {"--resident-experts", "--mmap-experts"}
+_SWITCH_FLAGS = {"--resident-experts", "--mmap-experts", "--vision"}
+
+
+class _VisionProfile(RuntimeModel):
+    exe: str
+    mmproj: str
+    model: str
+    gpu: bool = False
+    max_tokens: int = Field(default=300, ge=1, le=1024)
+    threads: int | None = Field(default=None, ge=1, le=32)
 
 
 class _RunnerProfile(RuntimeModel):
@@ -63,6 +72,7 @@ class _RunnerProfile(RuntimeModel):
     gpu: int | None = None
     lib_dirs: list[str] = Field(default_factory=list, max_length=16)
     drafting: str
+    vision: _VisionProfile | None = None
     mtp: bool | None = None
     open_browser: bool = False
     lazy_load: bool = False
@@ -79,6 +89,7 @@ def _profile_binding(config: DeploymentConfig, settings: StrataSettings) -> str:
         config.model_digest,
         config.context_tokens,
         config.preemption_enabled,
+        config.inference.coding_vision,
     )
     return sha256(json.dumps(identity).encode()).hexdigest()
 
@@ -171,6 +182,22 @@ def _engine_paths(profile: _RunnerProfile, context: int) -> tuple[set[Path], set
         options[flag] = value
     if not {"--native", "--pack"} <= options.keys() or options.get("--max-context") != str(context):
         raise ConfigurationError("Strata requires explicit local GGUF, pack and matching context.")
+    if profile.vision is not None:
+        reader = _absolute(profile.vision.exe)
+        projector = _absolute(profile.vision.mmproj)
+        vocab_model = _absolute(profile.vision.model)
+        if (
+            reader.name not in {"strata-vision", "strata-vision.exe"}
+            or projector.suffix.lower() != ".gguf"
+            or projector in files
+            or vocab_model != _absolute(options["--native"])
+        ):
+            raise ConfigurationError(
+                "Strata vision requires a local reader, projector and pinned text GGUF."
+            )
+        files.update((reader, projector))
+    elif "--vision" in options:
+        raise ConfigurationError("Strata vision requires explicit reader and projector paths.")
     if profile.drafting == "mtp":
         if "--mtp" not in options or profile.mtp is False:
             raise ConfigurationError("Strata MTP requires an explicitly pinned local pack.")
@@ -211,7 +238,14 @@ def prepare_strata_config(
             not _absolute(directory).is_dir() for directory in profile.lib_dirs
         ):
             raise ConfigurationError("Strata installed working or library directory is missing.")
+        if config.inference.coding_vision and profile.vision is None:
+            raise ConfigurationError("Coding vision requires a pinned vision profile.")
+        if profile.vision is not None and config.preemption_enabled:
+            raise ConfigurationError("Strata vision has not been qualified with live preemption.")
         files, directories = _engine_paths(profile, config.context_tokens)
+        projector = (
+            _absolute(profile.vision.mmproj).resolve(strict=True) if profile.vision else None
+        )
         model_files = {
             path.resolve(strict=True) for path in files if path.suffix.lower() == ".gguf"
         }
@@ -243,7 +277,11 @@ def prepare_strata_config(
         if not {file.resolve(strict=True) for file in files} <= pins.keys():
             raise ConfigurationError("Strata runner references an unpinned artifact.")
         for artifact, digest in pins.items():
-            if not settings.verify_model_checksums and artifact in model_files:
+            if (
+                not settings.verify_model_checksums
+                and artifact in model_files
+                and artifact != projector
+            ):
                 continue
             with artifact.open("rb") as stream:
                 if file_digest(stream, "sha256").hexdigest() != digest:
@@ -277,6 +315,7 @@ class _Model(RuntimeModel):
     id: str
     max_model_len: int
     status: dict[str, str]
+    architecture: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class _Models(RuntimeModel):
@@ -343,10 +382,14 @@ async def await_strata_ready(
                     model.id == config.model_tag
                     and model.max_model_len == config.context_tokens
                     and model.status.get("value") == "loaded"
+                    and (
+                        not config.inference.coding_vision
+                        or "image" in model.architecture.get("input_modalities", [])
+                    )
                     for model in models.data
                 ):
                     raise ConfigurationError(
-                        "Owned Strata model or context does not match deployment."
+                        "Owned Strata model, context, or modalities do not match deployment."
                     )
                 telemetry = _Telemetry.model_validate_json(
                     await _metadata(client, "/v1/telemetry", token)

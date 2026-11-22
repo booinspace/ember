@@ -27,15 +27,14 @@ def main() -> None:
     args = parser.parse_args()
     if args.context <= _OUTPUT_RESERVE:
         parser.error(f"Context must exceed the {_OUTPUT_RESERVE}-token output reserve.")
-    root = _ROOT / ".local/config"
-    runner, deployment = (
-        root / name for name in ("runner.ember-strata.json", "deployment.strata.toml")
-    )
-    if runner.exists() or deployment.exists():
-        parser.error("Move both existing Strata profile files aside before regenerating.")
-
     python, server = (path.resolve(strict=True) for path in (args.python, args.server))
     raw = json.loads(args.runner.read_text(encoding="utf-8-sig"))
+    name = "strata-vision" if raw.get("vision") else "strata"
+    root = _ROOT / ".local/config"
+    runner = root / f"runner.ember-{name}.json"
+    deployment = root / f"deployment.{name}.toml"
+    if runner.exists() or deployment.exists():
+        parser.error("Move both existing target profiles aside before regenerating.")
     for key in ("log", "gpus_asked", "args_written"):
         raw.pop(key, None)
     if raw.get("mtp") is False:

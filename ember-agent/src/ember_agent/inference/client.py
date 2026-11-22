@@ -20,6 +20,7 @@ _REJECTIONS = frozenset(
         "workload_not_authorized",
         "request_too_large",
         "invalid_request",
+        "image_input_not_supported",
         "draining",
         "model_not_allowlisted",
         "journal_unavailable",

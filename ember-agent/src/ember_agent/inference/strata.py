@@ -119,6 +119,11 @@ class StrataUpstream(OpenAIStreamUpstream):
                 raise GatewayError("upstream_unavailable")
             if status.get("model") != self.config.model_tag:
                 raise GatewayError("model_pin_mismatch")
+            vision = status.get("vision")
+            if self.config.inference.coding_vision and (
+                not isinstance(vision, dict) or vision.get("available") is not True
+            ):
+                raise GatewayError("upstream_vision_unavailable")
             context = status.get("context")
             if not isinstance(context, dict) or context.get("native") != self.config.context_tokens:
                 raise GatewayError("runner_context_mismatch")

@@ -109,7 +109,14 @@ def coding_routes(
         except GatewayError as exc:
             if exc.code in {"busy", "background_queue_full"}:
                 return error(exc.code, 429)
-            if exc.code in {"quiescence_required", "gateway_transport_failed", "draining"}:
+            if exc.code == "request_too_large":
+                return error(exc.code, 413)
+            if exc.code in {
+                "quiescence_required",
+                "gateway_transport_failed",
+                "draining",
+                "upstream_vision_unavailable",
+            }:
                 return error(exc.code, 503)
             return error(exc.code, 400)
         finally:

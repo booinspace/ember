@@ -9,9 +9,14 @@ from pydantic import UUID4, Field, JsonValue, model_validator
 from ember_memory_abi.common import UtcTimestamp
 
 from ..runtime.config import RuntimeModel
+from .image_parts import (
+    MAX_CODING_IMAGES,
+    PROMPT_MESSAGE_CHARS,
+    PromptContentPart,
+    PromptImagePart,
+)
 
 NON_CODING_MESSAGE_LIMIT = 64
-PROMPT_MESSAGE_CHARS = 100_000
 
 type CodingReasoningEffort = Literal["low", "medium", "high", "xhigh", "max"]
 
@@ -47,6 +52,7 @@ class PromptMessage(RuntimeModel):
 
     role: Literal["system", "user", "assistant", "tool"]
     content: Annotated[str, Field(max_length=PROMPT_MESSAGE_CHARS)] = Field(repr=False)
+    parts: tuple[PromptContentPart, ...] = Field(default=(), repr=False, exclude_if=lambda v: not v)
     tool_calls: Annotated[tuple[PromptToolCall, ...], Field(max_length=16)] = Field(
         default=(), exclude_if=lambda value: not value
     )
@@ -95,8 +101,28 @@ class GatewayRequest(RuntimeModel):
         default=None, exclude_if=lambda value: value is None
     )
 
+    @property
+    def images(self) -> tuple[PromptImagePart, ...]:
+        """Return all inline pictures in request order."""
+        return tuple(
+            part
+            for message in self.messages
+            for part in message.parts
+            if isinstance(part, PromptImagePart)
+        )
+
     @model_validator(mode="after")
     def _workload_limits(self) -> Self:
+        for message in self.messages:
+            if message.parts and (
+                self.workload != "P5"
+                or message.role != "user"
+                or message.content
+                or not any(isinstance(part, PromptImagePart) for part in message.parts)
+            ):
+                raise ValueError("Multimodal parts require a coding user message with an image.")
+        if len(self.images) > MAX_CODING_IMAGES:
+            raise ValueError("Too many coding images.")
         if self.workload != "P5" and len(self.messages) > NON_CODING_MESSAGE_LIMIT:
             raise ValueError("Non-coding requests retain the existing message limit.")
         if self.workload != "P5" and len(self.tools) > 16:

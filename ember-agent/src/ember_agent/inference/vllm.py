@@ -348,7 +348,14 @@ class OpenAIStreamUpstream:
         self._generation_instance_id = self._instance_id
         messages: list[JsonValue] = []
         for item in request.messages:
-            message: dict[str, JsonValue] = {"role": item.role, "content": item.content}
+            message: dict[str, JsonValue] = {
+                "role": item.role,
+                "content": [
+                    _JSON.validate_python(part.model_dump(mode="json")) for part in item.parts
+                ]
+                if item.parts
+                else item.content,
+            }
             if item.tool_calls:
                 message["tool_calls"] = [
                     {

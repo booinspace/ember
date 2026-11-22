@@ -68,6 +68,8 @@ class OllamaUpstream:
         messages: list[JsonValue] = []
         names: dict[str, str] = {}
         for item in request.messages:
+            if item.parts:
+                raise GatewayError("image_input_not_supported")
             message: dict[str, JsonValue] = {"role": item.role, "content": item.content}
             if item.tool_calls:
                 message["tool_calls"] = [
