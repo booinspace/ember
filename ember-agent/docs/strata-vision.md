@@ -78,9 +78,11 @@ In OpenCode V2, set `capabilities.input` to `["text", "image"]` in the existing
 as `["text"]` and retain alias, limits, tools and reasoning. If 9Router strips
 images, use a separate direct OpenCode provider for Ember's HTTPS coding endpoint.
 `media.image.max_base64_bytes` of `699000` can help fit a single screenshot;
-history still counts toward the total JSON cap. Use synthetic images for smoke
-checks. Avoid sending sensitive screenshots through a router configured to log
-request bodies.
+history still counts toward the total JSON cap. Older Ember builds can return
+`invalid_openai_request` when OpenCode replays a single text message over
+100,000 characters, even with a valid image. Use a fresh session as a workaround.
+Use synthetic images for smoke checks. Avoid sending sensitive screenshots
+through a router configured to log request bodies.
 
 ## Image generation is separate
 

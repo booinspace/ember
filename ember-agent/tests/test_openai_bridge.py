@@ -516,7 +516,8 @@ def test_strata_coding_context_uses_native_tokens(
         instance = "b" * 32
         monkeypatch.setenv("EMBER_STRATA_INSTANCE_ID", instance)
         monkeypatch.setenv("EMBER_STRATA_API_KEY", "synthetic")
-        content = "long fixture line\n" * 4800
+        # OpenCode can replay a single long text message alongside earlier images.
+        content = "long fixture line\n" * 7500
         messages: list[dict[str, object]] = [
             {"role": "user", "content": content},
             {"role": "user", "content": content},
@@ -682,10 +683,10 @@ def test_strata_coding_context_uses_native_tokens(
             legacy = {"model": config.model_tag, "messages": messages}
             with pytest.raises(GatewayError, match="invalid_openai_request"):
                 await bridge.complete(legacy)
-            with pytest.raises(
-                GatewayError, match="invalid_openai_request" if vision else "prompt_overflow"
-            ):
+            with pytest.raises(GatewayError, match="invalid_openai_request"):
                 await bridge.complete({**legacy, "messages": messages[:2]})
+            with pytest.raises(ValidationError, match="existing message length limit"):
+                _request(config, (PromptMessage(role="user", content="x" * 100_001),))
             assert completion_calls == 2
         finally:
             await client.aclose()

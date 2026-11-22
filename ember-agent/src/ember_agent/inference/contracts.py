@@ -11,6 +11,7 @@ from ember_memory_abi.common import UtcTimestamp
 from ..runtime.config import RuntimeModel
 from .image_parts import (
     MAX_CODING_IMAGES,
+    MAX_CODING_REQUEST_BYTES,
     PROMPT_MESSAGE_CHARS,
     PromptContentPart,
     PromptImagePart,
@@ -51,7 +52,7 @@ class PromptMessage(RuntimeModel):
     """One explicit request context item, without backend runner options."""
 
     role: Literal["system", "user", "assistant", "tool"]
-    content: Annotated[str, Field(max_length=PROMPT_MESSAGE_CHARS)] = Field(repr=False)
+    content: Annotated[str, Field(max_length=MAX_CODING_REQUEST_BYTES)] = Field(repr=False)
     parts: tuple[PromptContentPart, ...] = Field(default=(), repr=False, exclude_if=lambda v: not v)
     tool_calls: Annotated[tuple[PromptToolCall, ...], Field(max_length=16)] = Field(
         default=(), exclude_if=lambda value: not value
@@ -123,8 +124,11 @@ class GatewayRequest(RuntimeModel):
                 raise ValueError("Multimodal parts require a coding user message with an image.")
         if len(self.images) > MAX_CODING_IMAGES:
             raise ValueError("Too many coding images.")
-        if self.workload != "P5" and len(self.messages) > NON_CODING_MESSAGE_LIMIT:
-            raise ValueError("Non-coding requests retain the existing message limit.")
+        if self.workload != "P5":
+            if len(self.messages) > NON_CODING_MESSAGE_LIMIT:
+                raise ValueError("Non-coding requests retain the existing message limit.")
+            if any(len(message.content) > PROMPT_MESSAGE_CHARS for message in self.messages):
+                raise ValueError("Non-coding requests retain the existing message length limit.")
         if self.workload != "P5" and len(self.tools) > 16:
             raise ValueError("Non-coding requests retain the existing tool limit.")
         if self.reasoning_effort is not None and (self.workload != "P5" or not self.thinking):

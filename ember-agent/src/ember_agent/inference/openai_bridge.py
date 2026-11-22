@@ -32,6 +32,7 @@ from .contracts import (
     ToolFunction,
 )
 from .image_parts import (
+    MAX_CODING_REQUEST_BYTES,
     PROMPT_MESSAGE_CHARS,
     PromptContentPart,
     PromptImagePart,
@@ -176,6 +177,7 @@ class _Call(RuntimeModel):
 
 
 type _MessageText = Annotated[str, Field(max_length=PROMPT_MESSAGE_CHARS)]
+type _CodingMessageText = Annotated[str, Field(max_length=MAX_CODING_REQUEST_BYTES)]
 
 
 class _Message(RuntimeModel):
@@ -184,8 +186,12 @@ class _Message(RuntimeModel):
     tool_call_id: PromptCallId | None = None
 
 
+class _BoundedTextPart(PromptTextPart):
+    text: _MessageText = Field(repr=False)
+
+
 class _TextMessage(_Message):
-    content: _MessageText | tuple[PromptTextPart, ...] | None = Field(default=None, repr=False)
+    content: _MessageText | tuple[_BoundedTextPart, ...] | None = Field(default=None, repr=False)
 
 
 class _Schema(RuntimeModel):
@@ -229,7 +235,10 @@ class _Request[Message: _Message](RuntimeModel):
 
 
 class _CodingMessage(_Message):
-    content: _MessageText | tuple[PromptContentPart, ...] | None = Field(default=None, repr=False)
+    # Whole requests remain byte-bounded; Strata counts actual rendered history tokens.
+    content: _CodingMessageText | tuple[PromptContentPart, ...] | None = Field(
+        default=None, repr=False
+    )
 
     # OpenCode can replay the display field. It never crosses into GatewayRequest.
     reasoning_content: str | None = Field(default=None, repr=False, exclude=True)

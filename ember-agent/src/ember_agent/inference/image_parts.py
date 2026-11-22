@@ -12,6 +12,7 @@ from pydantic import Field, model_validator
 from ..runtime.config import RuntimeModel
 
 PROMPT_MESSAGE_CHARS = 100_000
+MAX_CODING_REQUEST_BYTES = 1024 * 1024
 MAX_CODING_IMAGES = 4
 MAX_IMAGE_BYTES = 512 * 1024
 MAX_IMAGE_PIXELS = 4_000_000
@@ -23,7 +24,7 @@ class PromptTextPart(RuntimeModel):
     """Ordered text in a multimodal user message."""
 
     type: Literal["text"]
-    text: Annotated[str, Field(max_length=PROMPT_MESSAGE_CHARS, repr=False)]
+    text: Annotated[str, Field(max_length=MAX_CODING_REQUEST_BYTES, repr=False)]
 
 
 class _InlineImage(RuntimeModel):
