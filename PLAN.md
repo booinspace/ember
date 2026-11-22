@@ -4247,9 +4247,10 @@ not the safety, portability or resource-budget outcomes.
 
 Owner: the existing ember-agent gateway and tested runtime profile.
 
-- **P13-AC-01:** Pin model/digest, Ollama/transport/runner/context/cancellation/GPU
-  configuration and measure baseline versus P2/P3/P4 contention, TTFT, KV/VRAM,
-  context-switch/retry costs and actual release observations.
+- **P13-AC-01:** Pin model and digests, backend, transport, runner, context,
+  cancellation and GPU configuration. Measure TTFT, KV/VRAM and slot release
+  against a matched baseline with P2/P3/P4 contention. Include P5 where coding is
+  enabled. Measure context-switch and retry cost for any live-preemption candidate.
 - **P13-AC-02:** A cancellation request is not release evidence. Interrupt the
   underlying generation, verify completion/release before admitting P0/P1, and
   prove no concurrent upstream generation across races, crash and reconnect.
@@ -5381,3 +5382,26 @@ Hermes profile. [Runbook](docs/phase-12-runbook.md), [acceptance record](docs/ph
 and [sanitized qualification/latency evidence](docs/benchmarks/2026-11-04-phase12/README.md)
 record the tests, failures corrected and current limits. Desktop, OpenClaw runtime
 and Phase 13 scheduling/capacity release remain separate work.
+
+## Phase 13 implementation status
+
+The inference gateway now owns admission through native stream drain and
+durable completion. Shutdown, realtime reconnect, request expiry and HTTP
+disconnect retain that ownership across asynchronous verification and journal
+writes. The [root ADR](docs/adr/0024-phase-thirteen-inference-hardening.md) and
+[acceptance record](docs/phase-13-validation.md) describe the implementation
+and the evidence for P13-AC-01–07.
+
+The conservative port supports managed Strata and preserves the coding workload's
+token budget and idle-gap admission. A waiting P0 turn goes before queued coding
+work and keeps its deadline while active P5 finishes. Exclusive desktop tests
+verified normal Strata drain, reconnect across active background work, restart
+fencing after a gateway crash, and browser voice with queued-workload PCM
+measurements. The controlled recall run passed the relative regression gates
+under coding and audio load. A LiveKit follow-up verified reservation release
+after both synthetic browser disconnects on the updated main revision.
+
+Conservative acceptance is complete for the tested Strata profile. Active
+coding can still delay voice by the remaining generation time. Native abort,
+reusable KV and the 200 ms warm voice gate require separate qualification
+before live preemption can be enabled.

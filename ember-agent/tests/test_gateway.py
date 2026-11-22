@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -73,7 +73,7 @@ class FakeUpstream:
         if self.fail:
             raise GatewayError("model_pin_mismatch")
 
-    async def generate(self, value: GatewayRequest) -> AsyncIterator[NativeFrame]:
+    async def generate(self, value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
         del value
         self.count += 1
         self.started.set()

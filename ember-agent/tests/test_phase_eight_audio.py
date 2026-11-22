@@ -5,17 +5,18 @@ import threading
 from array import array
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from livekit import api, rtc
 from livekit.agents import APIConnectOptions, ConversationItemAddedEvent, llm
 
 from ember_agent.audio.whisper import CpuWhisperSTT
-from ember_agent.character.core import CharacterCore
+from ember_agent.character.core import CharacterCore, TurnObservation
 from ember_agent.inference.contracts import GatewayError
-from ember_agent.realtime.contracts import RememberInput, RoomBinding
+from ember_agent.realtime.contracts import USER_IDENTITY, RememberInput, RoomBinding
 from ember_agent.realtime.session import HostedRoom
+from ember_agent.runtime.capture_lifecycle import CaptureLifecycle
 from ember_agent.runtime.livekit_config import LiveKitCredentials
 from ember_memory_engine import CanonicalEngine
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
@@ -75,6 +76,87 @@ def test_speech_media_tokens_cannot_publish_video_or_administer_rooms() -> None:
     assert claim.video.can_publish
     assert claim.video.can_publish_sources == ["microphone"]
     assert not claim.video.room_admin and not claim.video.room_create
+
+
+def test_disconnected_voice_turn_cannot_restore_realtime_reservation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def exercise(engine: CanonicalEngine) -> None:
+        character = engine.create_character().store_id
+        client = InProcessAsyncMemoryClient(engine.character(character))
+        model = FakeModel()
+        core = CharacterCore(client, model, model_tag="synthetic")
+        identity = uuid4()
+
+        async def remember(_: RememberInput) -> str:
+            return "unused"
+
+        host = HostedRoom(
+            core,
+            RoomBinding(
+                instance_id=identity,
+                character_id=character,
+                room="ember-" + uuid4().hex,
+                endpoint="ws://127.0.0.1:7880",
+            ),
+            remember,
+        )
+        peer = SimpleNamespace(identity=USER_IDENTITY)
+        participants = {USER_IDENTITY: peer}
+        monkeypatch.setattr(host, "room", SimpleNamespace(remote_participants=participants))
+        reserved, disconnected = asyncio.Event(), asyncio.Event()
+        observing, release_input = asyncio.Event(), asyncio.Event()
+        draining, release_drain = asyncio.Event(), asyncio.Event()
+        observe = core.observe_input
+
+        async def reserve(_: object, connected: bool) -> None:
+            (reserved if connected else disconnected).set()
+
+        async def observe_input(text: str, *, request_id: UUID | None = None) -> TurnObservation:
+            observing.set()
+            await release_input.wait()
+            return await observe(text, request_id=request_id)
+
+        async def quiesce() -> None:
+            draining.set()
+            await release_drain.wait()
+
+        async def consolidate(_: object) -> int:
+            return 0
+
+        monkeypatch.setattr(core, "observe_input", observe_input)
+        lifecycle = CaptureLifecycle(identity, reserve, quiesce, consolidate)
+        host.before_turn = lifecycle.before_turn
+        host.connection_changed = lifecycle.connection_changed
+        lifecycle.connection_changed(True)
+        lifecycle.start()
+        turn = asyncio.create_task(
+            host.agent.prepare_turn(
+                llm.ChatContext().add_message(role="user", content="Synthetic voice question.")
+            )
+        )
+        try:
+            async with asyncio.timeout(2):
+                await reserved.wait()
+                await observing.wait()
+                participants.clear()
+                host._participant_left(peer)
+                await draining.wait()
+                release_input.set()
+                with pytest.raises(GatewayError, match="livekit_delivery_unavailable"):
+                    await turn
+                release_drain.set()
+                await disconnected.wait()
+            assert not lifecycle.connected and not model.requests
+        finally:
+            release_input.set()
+            release_drain.set()
+            await asyncio.gather(turn, return_exceptions=True)
+            await lifecycle.aclose()
+            await client.aclose()
+
+    with CanonicalEngine(tmp_path / "data") as engine:
+        asyncio.run(exercise(engine))
 
 
 def test_sdk_receipt_archives_only_played_prefix_without_sdk_id_assumptions(tmp_path: Path) -> None:
@@ -201,6 +283,7 @@ def test_generation_retains_the_current_livekit_speech_handle(
             finally:
                 await stream.aclose()
                 await client.aclose()
+            assert host.agent.gateway_llm.generation_done.is_set()
 
         asyncio.run(exercise())
 

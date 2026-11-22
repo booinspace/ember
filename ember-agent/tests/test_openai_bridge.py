@@ -3,7 +3,7 @@
 import asyncio
 import json
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
@@ -176,7 +176,7 @@ class _Upstream:
     async def verify(self, *, loaded: bool = False) -> None:
         pass
 
-    async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
+    async def generate(self, request: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
         self.requests.append(request)
         self.started.set()
         await self.release.wait()
@@ -957,7 +957,9 @@ def test_coding_memory_uses_gateway_and_fixed_library(tmp_path: Path, stream: bo
             saved_note = "Use purple flags for the next fixture."
 
             class Scripted(_Upstream):
-                async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
+                async def generate(
+                    self, request: GatewayRequest
+                ) -> AsyncGenerator[NativeFrame, None]:
                     self.requests.append(request)
                     match len(self.requests):
                         case 1:

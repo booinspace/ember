@@ -173,3 +173,7 @@ private recall listener, opt-in LAN HTTPS and note writes; see the [setup runboo
 
 [Root ADR 0023 — Shared harness skills](0023-shared-harness-skills.md) records
 Phase 12 ownership, the portable repository and bounded native loading.
+
+[Root ADR 0024 — Phase 13 inference hardening](0024-phase-thirteen-inference-hardening.md)
+records conservative runner ownership, admission race fixes and the profile gates
+for live preemption. See [Phase 13 validation](../phase-13-validation.md).

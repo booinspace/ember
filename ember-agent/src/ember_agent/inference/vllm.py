@@ -5,7 +5,7 @@ import json
 import math
 import os
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import PurePosixPath
 from typing import Annotated, Literal
 
@@ -341,7 +341,7 @@ class OpenAIStreamUpstream:
     async def _check_generation_status(self, response: httpx.Response) -> None:
         response.raise_for_status()
 
-    async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
+    async def generate(self, request: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
         """Translate OpenAI deltas without completing before terminal usage and DONE."""
         if self._instance_id is None:
             await self.verify()
@@ -409,11 +409,13 @@ class OpenAIStreamUpstream:
                 if response.headers.get("content-type", "").split(";", 1)[0] != "text/event-stream":
                     raise GatewayError("invalid_upstream_stream")
                 async for event in _events(response):
+                    if done:
+                        raise GatewayError("upstream_frame_after_completion")
                     if event == "[DONE]":
                         if finish is None or usage is None:
                             raise GatewayError("upstream_incomplete")
                         done = True
-                        break
+                        continue
                     try:
                         chunk = _Chunk.model_validate_json(event)
                     except ValidationError as error:

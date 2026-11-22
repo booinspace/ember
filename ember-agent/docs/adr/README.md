@@ -68,3 +68,6 @@ listener, opt-in LAN HTTPS and its runtime ownership.
 
 [Agent ADR 0013 — Shared harness skills](0013-shared-harness-skills.md) records the
 neutral catalog, native loading and existing broker/context contracts.
+
+[Agent ADR 0014 — Gateway release and realtime ownership](0014-gateway-release-and-realtime-ownership.md)
+records Phase 13 admission, journal and native stream ownership.

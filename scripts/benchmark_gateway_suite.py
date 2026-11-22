@@ -15,6 +15,9 @@ CASES = (
     ("p3-queued", 8, "P3", False),
     ("p4-queued", 8, "P4", False),
     ("voice-short", 8, None, True),
+    ("voice-p2-queued", 8, "P2", True),
+    ("voice-p3-queued", 8, "P3", True),
+    ("voice-p4-queued", 8, "P4", True),
 )
 
 

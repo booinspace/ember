@@ -40,6 +40,7 @@ _REJECTIONS = frozenset(
         "external_schema_reference",
         "journal_busy",
         "journal_closed",
+        "admission_failed",
         "model_pin_mismatch",
         "runner_context_mismatch",
         "invalid_upstream_metadata",

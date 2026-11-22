@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
@@ -153,6 +154,39 @@ def test_completed_text_without_pcm_is_a_failed_voice_trial(
     asyncio.run(exercise())
 
 
+def test_gateway_rejection_releases_voice_probe_without_waiting_for_playout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ember_agent.inference import benchmark_voice
+
+    class Failed(Client):
+        async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
+            async for event in super().stream(request):
+                if event.kind == "end":
+                    raise GatewayError("model_pin_mismatch")
+                yield event
+
+    async def exercise() -> None:
+        cleaned = asyncio.Event()
+
+        async def play(text: AsyncGenerator[str, None], *args: object, **kwargs: object) -> tuple:
+            try:
+                async for _ in text:
+                    pass
+                await asyncio.Event().wait()
+                return None, None, None
+            finally:
+                cleaned.set()
+
+        monkeypatch.setattr(benchmark_voice, "play", play)
+        config = configuration(tmp_path)
+        async with asyncio.timeout(2):
+            sample = await measure(Failed(), synthetic_request(config, 0, 64), voice=config)
+        assert sample.outcome == "model_pin_mismatch" and cleaned.is_set()
+
+    asyncio.run(exercise())
+
+
 def test_pcm_sink_paces_frames_and_reports_clear_without_claiming_device_silence() -> None:
     async def exercise() -> None:
         sink = PacedOutput()
@@ -186,8 +220,8 @@ def test_run_keeps_background_queued_and_removes_only_its_reservation(
         await gateway.session(existing, connected=True)
 
         class Direct:
-            def __init__(self, *_: object) -> None:
-                pass
+            def __init__(self, *_: object, client: httpx.AsyncClient | None = None) -> None:
+                self.client = client
 
             async def health(self) -> GatewayHealth:
                 return await gateway.health()
@@ -196,13 +230,18 @@ def test_run_keeps_background_queued_and_removes_only_its_reservation(
                 await gateway.session(identity, connected=connected)
 
             async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
+                if request.workload == "P2":
+                    remaining = datetime.fromisoformat(request.deadline_at) - datetime.now(UTC)
+                    assert self.client is not None and self.client.timeout.read is not None
+                    assert 190 < remaining.total_seconds() < self.client.timeout.read
                 generation = await gateway.admit(request)
                 async with benchmark.aclosing(generation.events()) as events:
                     async for event in events:
                         yield event
 
             async def aclose(self) -> None:
-                pass
+                if self.client is not None:
+                    await self.client.aclose()
 
         monkeypatch.setattr(benchmark, "HttpGatewayClient", Direct)
         monkeypatch.setattr(benchmark, "gpu_snapshot", lambda: None)
@@ -211,10 +250,11 @@ def test_run_keeps_background_queued_and_removes_only_its_reservation(
         monkeypatch.setattr(
             benchmark.httpx,
             "AsyncClient",
-            lambda **_: real_client(
+            lambda **kwargs: real_client(
                 transport=httpx.MockTransport(
                     lambda request: httpx.Response(200, json={"version": "synthetic"})
-                )
+                ),
+                **kwargs,
             ),
         )
         output = tmp_path / "report.json"
@@ -254,7 +294,8 @@ def test_benchmark_releases_its_reservation_and_preserves_report_when_queue_chec
     clients = []
 
     class ClientDouble:
-        def __init__(self, *args: object) -> None:
+        def __init__(self, *args: object, client: httpx.AsyncClient | None = None) -> None:
+            self.client = client
             self.checks = 0
             self.sessions = []
             self.closed = False
@@ -283,6 +324,8 @@ def test_benchmark_releases_its_reservation_and_preserves_report_when_queue_chec
 
         async def aclose(self) -> None:
             self.closed = True
+            if self.client is not None:
+                await self.client.aclose()
 
     async def measured(*args: object, **kwargs: object) -> benchmark.Sample:
         return benchmark.Sample(outcome="complete", elapsed_seconds=0.1)

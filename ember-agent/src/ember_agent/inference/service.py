@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
+from socket import socket
 from threading import BoundedSemaphore
 from typing import Literal
 from urllib.parse import urlsplit
@@ -17,10 +18,11 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import UUID4, ValidationError
+from starlette.types import Receive, Scope, Send
 
 from ..runtime.config import DeploymentConfig, RuntimeModel
 from .contracts import GatewayError, GatewayRequest
-from .gateway import P0Gateway
+from .gateway import Generation, P0Gateway
 from .ollama import OllamaUpstream
 from .upstream import Upstream
 
@@ -167,6 +169,24 @@ class ServiceOwner:
         self.lock.close()
 
 
+class GenerationResponse(StreamingResponse):
+    """Withdraw queued work even when the transport disconnects before the first event."""
+
+    def __init__(self, job: Generation) -> None:
+        self.job = job
+        super().__init__(self._lines(), media_type="application/x-ndjson")
+
+    async def _lines(self) -> AsyncIterator[bytes]:
+        async for event in self.job.events():
+            yield (event.model_dump_json() + "\n").encode("utf-8")
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.job.detach()
+
+
 def create_app(
     gateway: P0Gateway,
     token: str,
@@ -222,7 +242,7 @@ def create_app(
             return JSONResponse({"code": "unauthorized"}, status_code=401)
         if shutdown is None:
             return JSONResponse({"code": "shutdown_unavailable"}, status_code=409)
-        gateway.closed = True
+        gateway.begin_drain()
         shutdown()
         return JSONResponse({"code": "draining"})
 
@@ -231,6 +251,29 @@ def create_app(
         if not (authorized(request) or background_authorized(request) or agent_authorized(request)):
             return JSONResponse({"code": "unauthorized"}, status_code=401)
         return JSONResponse((await gateway.health()).model_dump(mode="json"))
+
+    async def admit_foreground(request: Request, value: GatewayRequest) -> Generation:
+        async def wait_for_disconnect() -> None:
+            while (await request.receive())["type"] != "http.disconnect":
+                pass
+
+        admission = asyncio.create_task(gateway.admit(value))
+        disconnect = asyncio.create_task(wait_for_disconnect())
+        try:
+            await asyncio.wait((admission, disconnect), return_when=asyncio.FIRST_COMPLETED)
+            disconnect.cancel()
+            await asyncio.gather(disconnect, return_exceptions=True)
+            if not disconnect.cancelled():
+                disconnect.result()
+                raise GatewayError("subscriber_detached")
+            return admission.result()
+        except (Exception, asyncio.CancelledError):
+            disconnect.cancel()
+            admission.cancel()
+            if admission.done() and not admission.cancelled() and admission.exception() is None:
+                admission.result().detach()
+            await asyncio.gather(admission, disconnect, return_exceptions=True)
+            raise
 
     @app.post("/v1/generate", response_model=None)
     async def generate(request: Request) -> JSONResponse | StreamingResponse:
@@ -250,19 +293,30 @@ def create_app(
             )
             if not permitted:
                 return JSONResponse({"code": "workload_not_authorized"}, status_code=403)
-            job = await gateway.admit(value)
+            job = (
+                await admit_foreground(request, value)
+                if value.workload == "P0"
+                else await gateway.admit(value)
+            )
         except ValidationError:
             return JSONResponse({"code": "invalid_request"}, status_code=422)
         except GatewayError as error:
             return JSONResponse({"code": error.code}, status_code=409)
 
-        async def lines() -> AsyncIterator[bytes]:
-            async for event in job.events():
-                yield (event.model_dump_json() + "\n").encode("utf-8")
-
-        return StreamingResponse(lines(), media_type="application/x-ndjson")
+        return GenerationResponse(job)
 
     return app
+
+
+class _GatewayServer(uvicorn.Server):
+    def __init__(self, config: uvicorn.Config, gateway: P0Gateway) -> None:
+        super().__init__(config)
+        self.gateway = gateway
+
+    async def shutdown(self, sockets: list[socket] | None = None) -> None:
+        """Retire queued responses before Uvicorn waits for open connections."""
+        self.gateway.begin_drain()
+        await super().shutdown(sockets=sockets)
 
 
 def upstream_for(config: DeploymentConfig) -> Upstream:
@@ -297,12 +351,12 @@ def serve(config: DeploymentConfig, *, acknowledge_quiescence: bool = False) -> 
             record_sessions=owner.record_sessions,
         )
         origin = urlsplit(config.services.gateway.endpoint)
-        server: uvicorn.Server
+        server: _GatewayServer
 
         def shutdown() -> None:
             server.should_exit = True
 
-        server = uvicorn.Server(
+        server = _GatewayServer(
             uvicorn.Config(
                 create_app(
                     gateway,
@@ -315,7 +369,8 @@ def serve(config: DeploymentConfig, *, acknowledge_quiescence: bool = False) -> 
                 port=origin.port or 11435,
                 access_log=False,
                 log_level="warning",
-            )
+            ),
+            gateway,
         )
         server.run()
     finally:

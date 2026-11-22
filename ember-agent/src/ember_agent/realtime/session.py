@@ -457,6 +457,8 @@ class HostedRoom:
         # Previous delivery is drained and original input is durable before gateway
         # admission. A provider outage cannot lose the completed user utterance.
         if self.before_turn is not None:
+            if USER_IDENTITY not in self.room.remote_participants:
+                raise GatewayError("livekit_delivery_unavailable")
             await self.before_turn()
 
     def _conversation_item(self, event: ConversationItemAddedEvent) -> None:

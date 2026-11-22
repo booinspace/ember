@@ -250,7 +250,7 @@ def test_failed_session_journal_keeps_background_admission_closed(tmp_path: Path
 
 
 def test_weighted_agent_queue_preserves_background_progress(tmp_path: Path) -> None:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncGenerator
 
     class RecordingUpstream(FakeUpstream):
         def __init__(self) -> None:
@@ -262,7 +262,7 @@ def test_weighted_agent_queue_preserves_background_progress(tmp_path: Path) -> N
             )
             self.order: list[str] = []
 
-        async def generate(self, value: GatewayRequest) -> AsyncIterator[NativeFrame]:
+        async def generate(self, value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
             self.order.append(value.workload)
             async for frame in super().generate(value):
                 yield frame

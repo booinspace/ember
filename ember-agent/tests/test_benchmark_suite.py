@@ -57,8 +57,11 @@ def test_suite_cases_preserve_failure_reports_and_reject_reuse(
             "p3-queued",
             "p4-queued",
             "voice-short",
+            "voice-p2-queued",
+            "voice-p3-queued",
+            "voice-p4-queued",
         ]
-        assert [options["samples"] for _, options in calls] == [2, 2, 2, 2, 2, 2, 3]
+        assert [options["samples"] for _, options in calls] == [2, 2, 2, 2, 2, 2, 3, 3, 3, 3]
         assert [options["queued_workload"] for _, options in calls] == [
             None,
             None,
@@ -67,6 +70,9 @@ def test_suite_cases_preserve_failure_reports_and_reject_reuse(
             "P3",
             "P4",
             None,
+            "P2",
+            "P3",
+            "P4",
         ]
         assert all(options["output_tokens"] == 64 for _, options in calls)
     before = {p.name: p.read_bytes() for p in output.iterdir()}

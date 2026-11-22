@@ -41,6 +41,7 @@ class Sample(RuntimeModel):
 
     outcome: str
     elapsed_seconds: float = Field(ge=0)
+    admission_seconds: float | None = None
     first_visible_seconds: float | None = None
     usage: GenerationUsage | None = None
     cancellation_to_release_seconds: float | None = None
@@ -105,6 +106,7 @@ async def measure(
 ) -> Sample:
     """Measure visible streaming or consumer detachment followed by observed gateway drain."""
     first: float | None = None
+    admitted: float | None = None
     usage: GenerationUsage | None = None
     terminal = False
     started = perf_counter()
@@ -112,20 +114,29 @@ async def measure(
     sink_first: float | None = None
     sink_clear: float | None = None
 
+    voice_failure: asyncio.Future[GatewayError] = asyncio.get_running_loop().create_future()
+
     async def text() -> AsyncGenerator[str, None]:
-        nonlocal first, usage, terminal, cancelled_at
-        async with aclosing(client.stream(request)) as events:
-            async for event in events:
-                if event.kind == "text" and event.text:
-                    if first is None:
-                        first = perf_counter() - started
-                    yield event.text
-                    if cancel and voice is None:
-                        cancelled_at = perf_counter()
-                        return
-                elif event.kind == "end":
-                    terminal = True
-                    usage = event.usage
+        nonlocal first, admitted, usage, terminal, cancelled_at
+        try:
+            async with aclosing(client.stream(request)) as events:
+                async for event in events:
+                    if event.kind == "start":
+                        admitted = perf_counter() - started
+                    if event.kind == "text" and event.text:
+                        if first is None:
+                            first = perf_counter() - started
+                        yield event.text
+                        if cancel and voice is None:
+                            cancelled_at = perf_counter()
+                            return
+                    elif event.kind == "end":
+                        terminal = True
+                        usage = event.usage
+        except GatewayError as error:
+            if voice is None:
+                raise
+            voice_failure.set_result(error)
 
     try:
         if voice is None:
@@ -135,9 +146,15 @@ async def measure(
         else:
             from .benchmark_voice import play
 
-            sink_first, cancelled_at, sink_clear = await play(
-                text(), voice, started=started, interrupt=cancel
-            )
+            playback = asyncio.create_task(play(text(), voice, started=started, interrupt=cancel))
+            try:
+                await asyncio.wait((playback, voice_failure), return_when=asyncio.FIRST_COMPLETED)
+                if voice_failure.done():
+                    raise voice_failure.result()
+                sink_first, cancelled_at, sink_clear = playback.result()
+            finally:
+                playback.cancel()
+                await asyncio.gather(playback, return_exceptions=True)
         if cancel and cancelled_at is not None:
             await wait_released(client)
             released = perf_counter() - cancelled_at
@@ -148,6 +165,7 @@ async def measure(
                 if next_turn.outcome == "complete" and next_turn.first_visible_seconds is not None
                 else "benchmark_next_p0_failed",
                 elapsed_seconds=perf_counter() - started,
+                admission_seconds=admitted,
                 first_visible_seconds=first,
                 cancellation_to_release_seconds=released,
                 next_p0_first_visible_seconds=next_turn.first_visible_seconds,
@@ -164,6 +182,7 @@ async def measure(
                 else "incomplete_stream"
             ),
             elapsed_seconds=perf_counter() - started,
+            admission_seconds=admitted,
             first_visible_seconds=first,
             usage=usage,
             first_pcm_seconds=sink_first,
@@ -288,13 +307,27 @@ async def run(
             credential = (
                 "gateway-agent.token" if queued_workload == "P2" else "gateway-background.token"
             )
+            # Keep the queued fixture through all paced samples, including warmup and drain.
+            queue_seconds = 190 * (samples + 4)
             background = HttpGatewayClient(
                 config.services.gateway.endpoint,
                 (config.runtime_root / credential).read_text(encoding="utf-8").strip(),
+                client=httpx.AsyncClient(
+                    base_url=config.services.gateway.endpoint,
+                    timeout=httpx.Timeout(5, read=queue_seconds + 5),
+                    trust_env=False,
+                ),
             )
+            deadline = datetime.now(UTC) + timedelta(seconds=queue_seconds)
             step = GatewayRequest.model_validate_json(
                 synthetic_request(config, 0, 16)
-                .model_copy(update={"workload": queued_workload, "output": "json"})
+                .model_copy(
+                    update={
+                        "workload": queued_workload,
+                        "output": "json",
+                        "deadline_at": deadline.isoformat().replace("+00:00", "Z"),
+                    }
+                )
                 .model_dump_json()
             )
 
@@ -387,6 +420,8 @@ async def run(
                 "health": health.model_dump(mode="json"),
                 "voice_measurement": "paced_sdk_pcm_sink_no_network_or_device" if voice else None,
                 "physical_audio_stop_seconds": None,
+                "release_observation": "gateway_drain_after_subscriber_detach",
+                "native_abort_measured": False,
                 "gpu_sampling_interval_seconds": 0.25,
                 "gpu_samples": memory,
                 "warmup_excluded": warmup.model_dump(mode="json") if warmup else None,

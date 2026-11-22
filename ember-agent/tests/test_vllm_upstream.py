@@ -1046,19 +1046,18 @@ def test_credentials_only_use_named_environment_and_http_errors_are_safe(
     asyncio.run(run())
 
 
-def test_subscriber_detach_drains_owned_vllm_request(tmp_path: Path) -> None:
+def test_subscriber_detach_drains_vllm_transport_after_done(tmp_path: Path) -> None:
     class HeldStream(_Bytes):
         def __init__(self) -> None:
             super().__init__(_complete(_chunk({"content": "Visible"})))
-            self.started = asyncio.Event()
+            self.terminal_sent = asyncio.Event()
             self.release = asyncio.Event()
 
         async def __aiter__(self) -> AsyncIterator[bytes]:
-            self.started.set()
-            yield _sse(_chunk({"content": "First"}))
-            await self.release.wait()
             async for chunk in super().__aiter__():
                 yield chunk
+            self.terminal_sent.set()
+            await self.release.wait()
 
     async def run() -> None:
         stream = HeldStream()
@@ -1068,7 +1067,7 @@ def test_subscriber_detach_drains_owned_vllm_request(tmp_path: Path) -> None:
         job = await gateway.admit(_request(config))
         events = job.events()
         assert (await anext(events)).kind == "start"
-        await stream.started.wait()
+        await asyncio.wait_for(stream.terminal_sent.wait(), 2)
         assert (await anext(events)).kind == "text"
         await events.aclose()
         assert gateway.active is job and not stream.closed

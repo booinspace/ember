@@ -93,6 +93,12 @@ class GatewayStream(llm.LLMStream):
         self.turn = turn
         # SDK base constructor annotations omit its LLM generic parameter.
         super().__init__(model, chat_ctx=chat_ctx, tools=[], conn_options=conn_options)  # pyright: ignore[reportUnknownMemberType]
+        # The SDK can cancel this task before it enters _run.
+        self._task.add_done_callback(self._generation_finished)
+
+    def _generation_finished(self, _: asyncio.Task[None]) -> None:
+        if self.model.active_turn is self.turn:
+            self.model.generation_done.set()
 
     def _record_genai_request(self, span: object) -> None:
         """Disable SDK prompt/output capture even if an outer host enables tracing content."""
@@ -100,12 +106,9 @@ class GatewayStream(llm.LLMStream):
         self._record_content = False
 
     async def _run(self) -> None:
-        try:
-            if self.model.before_reply is not None:
-                await self.model.before_reply(self.turn)
-            await self._generate()
-        finally:
-            self.model.generation_done.set()
+        if self.model.before_reply is not None:
+            await self.model.before_reply(self.turn)
+        await self._generate()
 
     async def _generate(self) -> None:
         async with aclosing(

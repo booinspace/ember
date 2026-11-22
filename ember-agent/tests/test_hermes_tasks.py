@@ -3,7 +3,7 @@
 import asyncio
 import json
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
 from time import time
 from uuid import uuid4
@@ -41,7 +41,7 @@ class ObservedUpstream(FakeUpstream):
         super().__init__()
         self.requests: list[GatewayRequest] = []
 
-    async def generate(self, value: GatewayRequest) -> AsyncIterator[NativeFrame]:
+    async def generate(self, value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
         self.requests.append(value)
         async for frame in super().generate(value):
             yield frame

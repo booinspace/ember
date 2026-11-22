@@ -1,6 +1,6 @@
 """Backend-neutral generation frames; hidden reasoning is always ephemeral."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -52,7 +52,7 @@ class Upstream(Protocol):
         """Verify configured tag/digest, and the loaded identity after generation when requested."""
         ...
 
-    def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
+    def generate(self, request: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
         """Yield bounded native frames, keeping hidden reasoning outside contracts."""
         ...
 

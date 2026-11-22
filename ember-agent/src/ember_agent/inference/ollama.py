@@ -1,6 +1,6 @@
 """Ollama generation adapter; callers remain behind the owned gateway."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 
 import httpx
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -63,7 +63,7 @@ class OllamaUpstream:
         except (httpx.HTTPError, ValidationError) as error:
             raise GatewayError("upstream_unavailable") from error
 
-    async def generate(self, request: GatewayRequest) -> AsyncIterator[NativeFrame]:
+    async def generate(self, request: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
         """Use configured runner bounds; thinking is an explicit foreground display option."""
         messages: list[JsonValue] = []
         names: dict[str, str] = {}

@@ -59,6 +59,7 @@ from .task_router import (
 )
 from .task_store import TaskConflict
 from .text_session import DirectTextSession
+from .worker_process import settled
 
 
 async def _start_hermes_client(runtime: LocalRuntime) -> HermesChats | None:
@@ -776,6 +777,28 @@ class RuntimeServices:
         await self._remove_strata_directory()
 
 
+async def _reserve_gateway_startup(
+    client: HttpGatewayClient, identity: UUID, timeout: float
+) -> None:
+    acquisition = asyncio.create_task(client.session(identity, connected=True))
+
+    async def rollback() -> None:
+        # The server can commit the session before it finishes waiting for native drain.
+        await asyncio.gather(acquisition, return_exceptions=True)
+        await client.session(identity, connected=False)
+
+    try:
+        async with asyncio.timeout(timeout):
+            await asyncio.shield(acquisition)
+    except (Exception, asyncio.CancelledError) as startup_error:
+        try:
+            await settled(asyncio.create_task(rollback()))
+        except Exception as rollback_error:
+            startup_error.add_note("Realtime startup reservation rollback failed.")
+            raise startup_error from rollback_error
+        raise
+
+
 async def run_runtime(
     config: DeploymentConfig,
     config_path: Path,
@@ -816,8 +839,9 @@ async def run_runtime(
         cleanup.push_async_callback(reservation.aclose)
         if gateway_available:
             try:
-                async with asyncio.timeout(config.services.livekit.startup_timeout_seconds):
-                    await reservation.session(services.instance, connected=True)
+                await _reserve_gateway_startup(
+                    reservation, services.instance, config.services.livekit.startup_timeout_seconds
+                )
             except (GatewayError, OSError, TimeoutError):
                 if not config.browser.enabled:
                     raise
