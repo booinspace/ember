@@ -116,6 +116,10 @@ Receipts and patch hashes: `results/archive-hardening.jWeRQb/` on Miku. Engine t
 Local regression tests cover deadline overruns during exact reads on both delivery paths,
 rejected native submission, and logically corrupt certified payloads above and below the delivery
 limit. Offline gate: 1,525 passed, 18 skipped; Ruff, strict Pyright, schemas and root lock passed.
+Miku focused archive and restore tests: 44 passed. Paired PMB belief replay kept all 77 case ID
+sets, verdicts and coverage per lane: 63/77 seeded and 71/77 scoped. All 71 executed requests
+per lane completed. Independently rebuilt stores changed order in six cases per lane. Candidate
+p95 was 1.44 ms seeded and 1.60 ms scoped; no consistent latency gain.
 Same-path replacement during native reads and full hard read-budget accounting remain unqualified.
 
 ## Reproduce the archive ranking comparison
