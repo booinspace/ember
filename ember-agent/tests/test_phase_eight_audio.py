@@ -3,13 +3,14 @@
 import asyncio
 import threading
 from array import array
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from livekit import api, rtc
-from livekit.agents import APIConnectOptions, ConversationItemAddedEvent, llm
+from livekit.agents import APIConnectOptions, ConversationItemAddedEvent, SpeechCreatedEvent, llm
 
 from ember_agent.audio.whisper import CpuWhisperSTT
 from ember_agent.character.core import CharacterCore, TurnObservation
@@ -121,7 +122,7 @@ def test_disconnected_voice_turn_cannot_restore_realtime_reservation(
             draining.set()
             await release_drain.wait()
 
-        async def consolidate(_: object) -> int:
+        async def consolidate(_: object, __: object) -> int:
             return 0
 
         monkeypatch.setattr(core, "observe_input", observe_input)
@@ -378,6 +379,106 @@ def test_forced_speech_completion_waits_for_linked_sdk_task(
             await client.aclose()
 
         asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("receipt", [True, False], ids=["played", "unheard"])
+def test_capture_waits_for_linked_speech_and_exact_delivery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, receipt: bool
+) -> None:
+    from livekit.agents.voice.speech_handle import SpeechHandle
+
+    async def exercise(engine: CanonicalEngine) -> None:
+        character = engine.create_character().store_id
+        memory = InProcessAsyncMemoryClient(engine.character(character))
+        core = CharacterCore(memory, FakeModel(), model_tag="synthetic")
+
+        async def remember(_: RememberInput) -> str:
+            raise AssertionError("Unexpected explicit memory write.")
+
+        host = HostedRoom(
+            core,
+            RoomBinding(
+                instance_id=uuid4(),
+                character_id=character,
+                room="ember-" + uuid4().hex,
+                endpoint="ws://127.0.0.1:7880",
+            ),
+            remember,
+        )
+        monkeypatch.setattr(
+            host, "room", SimpleNamespace(remote_participants={USER_IDENTITY: None})
+        )
+        monkeypatch.setattr(type(host.session), "agent_state", property(lambda _: "listening"))
+        monkeypatch.setattr(type(host.session), "current_speech", property(lambda _: None))
+        released, delivering, delivered, idle = (asyncio.Event() for _ in range(4))
+
+        async def finish(_: UUID) -> None:
+            delivering.set()
+            await delivered.wait()
+
+        monkeypatch.setattr(host, "_speech_finished", finish)
+        turn = await core.prepare("Please call me Rowan.")
+        host.agent.gateway_llm.active_turn = turn
+        text = "".join([event.text async for event in core.stream(turn, defer_delivery=True)])
+        assert core.pending_delivery is not None
+        speech = SpeechHandle.create()
+        host._turn_speech = speech
+
+        async def playout() -> None:
+            await released.wait()
+            if receipt:
+                host._conversation_item(
+                    ConversationItemAddedEvent(
+                        item=llm.ChatMessage(role="assistant", content=[text], interrupted=False)
+                    )
+                )
+
+        linked = asyncio.create_task(playout())
+        speech._tasks.append(linked)
+
+        async def reserve(_: UUID, connected: bool) -> None:
+            assert connected or lifecycle.closed
+
+        async def quiesce() -> None:
+            raise AssertionError("Synthetic peer should remain connected.")
+
+        async def permit(_: UUID, enabled: bool) -> None:
+            assert not enabled or host.capture_idle()
+
+        async def consolidate(allowed: Callable[[], bool], context: UUID | None) -> int:
+            assert allowed() and context == lifecycle.identity
+            assert core.history[0].assistant == (text if receipt else "")
+            idle.set()
+            return 0
+
+        lifecycle = CaptureLifecycle(
+            uuid4(), reserve, quiesce, consolidate, idle=host.capture_idle, permit=permit
+        )
+        host.capture_wake = lifecycle.wake
+        host._capture_speech_created(
+            SpeechCreatedEvent(speech_handle=speech, source="generate_reply", user_initiated=False)
+        )
+        lifecycle.connection_changed(True)
+        lifecycle.start()
+        try:
+            speech._mark_done()  # SDK can mark done before linked work and receipt settle.
+            await asyncio.sleep(0)
+            assert not host.capture_idle() and not idle.is_set()
+            released.set()
+            await asyncio.wait_for(delivering.wait(), 2)
+            assert not host.capture_idle() and not idle.is_set()
+            delivered.set()
+            await asyncio.wait_for(idle.wait(), 2)
+        finally:
+            released.set()
+            delivered.set()
+            await linked
+            await host._drain_delivery()
+            await lifecycle.aclose()
+            await memory.aclose()
+
+    with CanonicalEngine(tmp_path / "data") as engine:
+        asyncio.run(exercise(engine))
 
 
 def test_receipt_does_not_release_unfinished_sdk_speech_task(tmp_path: Path) -> None:

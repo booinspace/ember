@@ -21,7 +21,7 @@ from pydantic import UUID4, ValidationError
 from starlette.types import Receive, Scope, Send
 
 from ..runtime.config import DeploymentConfig, RuntimeModel
-from .contracts import GatewayError, GatewayRequest
+from .contracts import IDLE_NATIVE_CAPTURE_FEATURE, GatewayError, GatewayRequest
 from .gateway import Generation, P0Gateway
 from .image_parts import MAX_CODING_REQUEST_BYTES
 from .ollama import OllamaUpstream
@@ -89,6 +89,18 @@ class ServiceOwner:
                 with background_path.open("x", encoding="utf-8") as stream:
                     stream.write(secrets.token_urlsafe(32))
             self.background_token = background_path.read_text(encoding="utf-8").strip()
+            capture_path = root / "gateway-capture.token"
+            if not capture_path.exists():
+                descriptor = os.open(capture_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                    stream.write(secrets.token_urlsafe(32))
+            self.capture_token = capture_path.read_text(encoding="utf-8").strip()
+            if not 32 <= len(self.capture_token) <= 128 or self.capture_token in {
+                self.token,
+                self.agent_token,
+                self.background_token,
+            }:
+                raise GatewayError("invalid_capture_gateway_token")
             if not 32 <= len(self.agent_token) <= 128 or self.agent_token in {
                 self.token,
                 self.background_token,
@@ -195,6 +207,7 @@ def create_app(
     *,
     background_token: str | None = None,
     agent_token: str | None = None,
+    capture_token: str | None = None,
 ) -> FastAPI:
     """Expose authenticated metadata/NDJSON; reject invalid requests without echoing their body."""
 
@@ -219,6 +232,11 @@ def create_app(
             request.headers.get("authorization", ""), "Bearer " + agent_token
         )
 
+    def capture_authorized(request: Request) -> bool:
+        return capture_token is not None and hmac.compare_digest(
+            request.headers.get("authorization", ""), "Bearer " + capture_token
+        )
+
     @app.put("/v1/realtime/{session_id}")
     async def session(session_id: UUID4, request: Request) -> JSONResponse:
         if not authorized(request):
@@ -236,6 +254,24 @@ def create_app(
         except GatewayError as error:
             return JSONResponse({"code": error.code}, status_code=409)
         return JSONResponse({"code": "reserved" if state.connected else "released"})
+
+    @app.put("/v1/realtime/{session_id}/capture")
+    async def capture_idle(session_id: UUID4, request: Request) -> JSONResponse:
+        if not authorized(request):
+            return JSONResponse({"code": "unauthorized"}, status_code=401)
+        try:
+            body = bytearray()
+            async for chunk in request.stream():
+                body.extend(chunk)
+                if len(body) > 1024:
+                    return JSONResponse({"code": "request_too_large"}, status_code=413)
+            state = SessionInput.model_validate_json(body)
+            gateway.capture_idle(session_id, idle=state.connected)
+        except ValidationError:
+            return JSONResponse({"code": "invalid_request"}, status_code=422)
+        except GatewayError as error:
+            return JSONResponse({"code": error.code}, status_code=409)
+        return JSONResponse({"code": "allowed" if state.connected else "fenced"})
 
     @app.put("/v1/realtime/{session_id}/voice")
     async def voice(session_id: UUID4, request: Request) -> JSONResponse:
@@ -267,9 +303,25 @@ def create_app(
 
     @app.get("/health")
     async def health(request: Request) -> JSONResponse:
-        if not (authorized(request) or background_authorized(request) or agent_authorized(request)):
+        if not (
+            authorized(request)
+            or background_authorized(request)
+            or agent_authorized(request)
+            or capture_authorized(request)
+        ):
             return JSONResponse({"code": "unauthorized"}, status_code=401)
-        return JSONResponse((await gateway.health()).model_dump(mode="json"))
+        metadata = await gateway.health()
+        if capture_token is None:
+            metadata = metadata.model_copy(
+                update={
+                    "features": tuple(
+                        feature
+                        for feature in metadata.features
+                        if feature != IDLE_NATIVE_CAPTURE_FEATURE
+                    ),
+                }
+            )
+        return JSONResponse(metadata.model_dump(mode="json"))
 
     async def admit_foreground(request: Request, value: GatewayRequest) -> Generation:
         async def wait_for_disconnect() -> None:
@@ -297,7 +349,8 @@ def create_app(
     @app.post("/v1/generate", response_model=None)
     async def generate(request: Request) -> JSONResponse | StreamingResponse:
         agent = agent_authorized(request)
-        if not (authorized(request) or background_authorized(request) or agent):
+        capture = capture_authorized(request)
+        if not (authorized(request) or background_authorized(request) or agent or capture):
             return JSONResponse({"code": "unauthorized"}, status_code=401)
         standard_limit = 1024 * 1024
         # Only the trusted agent can submit P5; other workloads keep their original limit.
@@ -319,6 +372,7 @@ def create_app(
                 (authorized(request) and value.workload == "P0")
                 or (background_authorized(request) and value.workload in {"P3", "P4"})
                 or (agent and value.workload in {"P1", "P2", "P5"})
+                or (capture and value.workload == "P3")
             )
             if not permitted:
                 return JSONResponse({"code": "workload_not_authorized"}, status_code=403)
@@ -330,7 +384,9 @@ def create_app(
             job = (
                 await admit_foreground(request, value)
                 if value.workload == "P0"
-                else await gateway.admit(value, idle_managed_task=admission is not None)
+                else await gateway.admit(
+                    value, idle_managed_task=admission is not None, idle_native_capture=capture
+                )
             )
         except ValidationError:
             return JSONResponse({"code": "invalid_request"}, status_code=422)
@@ -407,6 +463,7 @@ def serve(config: DeploymentConfig, *, acknowledge_quiescence: bool = False) -> 
                     shutdown,
                     background_token=owner.background_token,
                     agent_token=owner.agent_token,
+                    capture_token=owner.capture_token,
                 ),
                 host=origin.hostname or "127.0.0.1",
                 port=origin.port or 11435,

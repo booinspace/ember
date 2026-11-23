@@ -7,8 +7,8 @@ preemption requires separate qualification of the selected runner profile.
 Phase 13 to the existing gateway. The gateway already serializes generation and
 holds a realtime reservation for the entire connection. Keep that reservation
 while voice is connected, including speech, inference and playback. A connecting
-session waits for a running background step to drain. Workflows and non-model
-I/O keep their existing task ownership.
+session waits for a running disconnect-only step to drain. Workflows and
+non-model I/O keep their existing task ownership.
 
 A P0 handler could be cancelled while writing
 the running marker. A background request removed from its queue for verification
@@ -81,6 +81,21 @@ steps for idle admission. Inspect, Build, Web Research, and text Summary use
 this path while Conversation stays connected. Pending foreground requests and
 detected speech hold new idle P2 steps, not active native generation. A running
 step retains the single slot through verified release and journal settlement.
-Unmarked P2 and automatic P3 capture keep conservative admission. The
-`idle_managed_tasks_v1` health feature lets the dispatcher distinguish updated
+The `idle_managed_tasks_v1` health feature lets the dispatcher distinguish updated
 gateways from older ones without changing inference or tool permissions.
+
+## Connected-idle native capture
+
+`idle_native_capture_v1` is a separate health feature for native P3. Admission
+requires `gateway-capture.token`, the matching sole realtime reservation, and its
+foreground-controlled `/capture` permit. `gateway-background.token` remains
+disconnect-only. Imports, P4, and unmarked P2/P3 gain no idle permission. Older
+gateways still handle native capture after disconnect.
+
+Foreground preparation and detected speech fence steps that have not reached
+the runner. A running P3 window holds the single slot through verified drain and
+journal settlement; it can delay foreground inference and is not preempted. This
+adds no live-preemption or latency qualification. See
+[Agent ADR 0014](../../ember-agent/docs/adr/0014-gateway-release-and-realtime-ownership.md#native-capture-permit)
+for enforcement and [Root ADR 0015](0015-phase-eight-implementation.md#connected-idle-native-capture)
+for delivery and acceptance.

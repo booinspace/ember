@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+from collections.abc import Callable
 from concurrent.futures import Future
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -31,13 +32,14 @@ from ...character.conversation import CompletedTurn
 
 
 class ArchiveDialogueSink:
-    """Persist original input and delivered visible output; no automatic memory extraction."""
+    """Persist original input and delivered output; notify only after durable native input."""
 
     def __init__(self, archive: SqliteArchiveStore, subject: EntityRef | None = None) -> None:
         self.archive = archive
         self.subject = subject
         self.sessions = NativeSessions(archive)
         self.pending: set[Future[ArchiveWriteReceipt]] = set()
+        self.capture_wake: Callable[[], None] | None = None
 
     async def commit(self, context_id: UUID, user: str, delivered: str, complete: bool) -> None:
         """Legacy terminal delivery remains one atomic source batch."""
@@ -319,8 +321,16 @@ class ArchiveDialogueSink:
         future = self.archive.submit_batch(batch, keys=keys, native_turn=native)
         # The engine owns execution; this adapter owns observation/draining of the returned future.
         self.pending.add(future)
+        receipt = asyncio.wrap_future(future)
+        if user and self.subject is not None and self.capture_wake is not None:
+
+            def committed(done: asyncio.Future[ArchiveWriteReceipt]) -> None:
+                if not done.cancelled() and done.exception() is None and self.capture_wake:
+                    self.capture_wake()
+
+            receipt.add_done_callback(committed)
         try:
-            await asyncio.shield(asyncio.wrap_future(future))
+            await asyncio.shield(receipt)
         finally:
             if future.done():
                 self.pending.discard(future)

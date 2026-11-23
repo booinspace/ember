@@ -54,6 +54,7 @@ from .processing_contracts import (
     JobStatus,
     ModelWindow,
     PolicyInputs,
+    ProcessingDeferred,
     ProcessingError,
     WindowRef,
     batch_type_for,
@@ -699,6 +700,22 @@ class ProcessingService:
             )
         )
 
+    def _pause_window(self, job_id: CanonicalId, ordinal: int) -> None:
+        def write(connection: sqlite3.Connection) -> None:
+            with self.database.transaction(connection):
+                connection.execute(
+                    "UPDATE processing_windows SET status='pending',attempts=attempts-1,"
+                    "error_code=NULL WHERE job_id=? AND ordinal=? AND status='running'",
+                    (str(job_id), ordinal),
+                )
+                connection.execute(
+                    "UPDATE processing_jobs SET status='paused' "
+                    "WHERE job_id=? AND status<>'cancelled'",
+                    (str(job_id),),
+                )
+
+        self.database.write(write)
+
     def _failure(self, job_id: CanonicalId, ordinal: int, attempt: int, code: str) -> None:
         def write(connection: sqlite3.Connection) -> None:
             with self.database.transaction(connection):
@@ -743,8 +760,9 @@ class ProcessingService:
         Filesystem/SQLite work stays on one owned bounded executor. Cancellation
         pauses at a durable boundary; native work keeps ownership through draining.
         Invalid model outputs can retry; continuation also skips unavailable
-        window scopes. Unresolved gaps remain failed, while run_outcome separates
-        a finished batch from an early stop for global failures.
+        window scopes. ProcessingDeferred pauses the current window and propagates
+        without consuming an attempt. Unresolved gaps remain failed; run_outcome
+        separates a finished batch from an early stop for global failures.
         """
         from pydantic import ValidationError
 
@@ -794,7 +812,7 @@ class ProcessingService:
                     try:
                         window = await offload(partial(self._input, definition, reference))
                         if should_continue is not None and not should_continue():
-                            await offload(partial(self._set_status, job_id, "paused"))
+                            await offload(partial(self._pause_window, job_id, ordinal))
                             return await offload(partial(self.status, job_id))
                         try:
                             result = await model.extract(window)
@@ -808,6 +826,9 @@ class ProcessingService:
                         except RuntimeError as error:
                             raise ProcessingError("model_step_failed") from error
                         await offload(partial(self._finish, definition, ordinal, window, result))
+                    except ProcessingDeferred:
+                        await offload(partial(self._pause_window, job_id, ordinal))
+                        raise
                     except (ProcessingError, MemoryError) as error:
                         failure_code = (
                             error.code

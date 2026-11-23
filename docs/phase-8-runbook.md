@@ -144,16 +144,31 @@ authority; keep that link private. The authenticated client receives a room
 capability, not gateway/server credentials. Connect to chat. Recall and capture
 controls are separate; changing sources approves no import and grants no browsing.
 
-Disconnect to permit bounded native P3 capture. Connected silence never releases
-realtime capacity. Reconnect reserves P0 and pauses new extraction steps while
-the currently owned step drains. New jobs use dated native extraction; queued
-legacy jobs keep their exact specifications. Runnable backlog continues in
-bounded batches while disconnected. Failed checkpoints are shown in memory
-status and skipped until an explicit retry, so later sources can still progress.
-Missing background credentials block further idle attempts instead of spinning;
-repair the isolated gateway/token configuration and reconnect or restart to resume.
-Use Refresh memory status for aggregate capture/acceptance/index counts; it
-does not start a per-turn status worker.
+## Native capture while connected
+
+When the gateway advertises `idle_native_capture_v1`, terminal chat and both
+browser transports (LiveKit and HTTP text) keep their realtime reservation and
+run bounded native P3 capture between turns. Foreground preparation and detected
+speech fence new work. A running window keeps the model slot through verified
+drain and journal settlement, so it can delay the next reply. It is not preempted.
+Validated candidates can be staged, but acceptance waits until the turn and any
+pending playout or HTTP delivery acknowledgement settle. The existing exact native
+policy still applies.
+
+Without that feature, disconnect the browser or exit terminal chat to allow
+capture after transport drain. The managed gateway provisions the private
+`gateway-capture.token` for connected capture. `gateway-background.token` is
+still disconnect-only. Keep both credentials private; do not interchange them.
+
+Turn off **Learn from our conversations** to pause automatic extraction and
+acceptance without deleting memories or pending sources. Use **Refresh memory status**
+for capture state, checkpoint and acceptance counts, and index status. A **disabled**
+state reflects that setting; **waiting for idle** means deferred, and **realtime
+reserved** means waiting for disconnect. If capture is **blocked**, check the
+required credential in the configured runtime root. Missing credentials leave
+work pending without polling. After fixing the isolated configuration, reconnect
+or restart to resume. New jobs use dated native extraction; queued jobs keep their
+original specifications. Failed checkpoints are skipped until explicit retry.
 
 ## Deep recall and calendar interpretation
 
@@ -208,7 +223,8 @@ Inspect the reported checkpoint failure before retrying its original pinned job:
 
     & $memory capture retry --character $character --checkpoint "CHECKPOINT-KEY" --yes --root $root
 
-Restart the isolated runtime; it drains runnable capture only after disconnection.
+Restart the isolated runtime. Runnable capture resumes in a permitted idle gap,
+or only while disconnected on older gateways, if capture is enabled.
 Retry does not approve imports, replace an extractor specification or erase failed
 attempt history. Repeated invalid output can fail again and remains inspectable.
 

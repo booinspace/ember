@@ -24,7 +24,7 @@ from ember_memory_abi.related import ContextDependencies, RelatedRequest
 from ..character.core import ConversationTask
 from ..character.tool_workflow import ManagedPlan
 from ..inference.client import HttpGatewayClient
-from ..inference.contracts import GatewayError
+from ..inference.contracts import IDLE_NATIVE_CAPTURE_FEATURE, GatewayError
 from ..memory.deep_contracts import DeepRecallResult
 from ..realtime.client import RoomClient
 from ..realtime.contracts import (
@@ -36,7 +36,6 @@ from ..realtime.contracts import (
 from ..realtime.session import HostedRoom
 from .browser_control import BrowserControl
 from .browser_server import BrowserServer
-from .capture_lifecycle import CaptureLifecycle
 from .coding_api import coding_routes, coding_token
 from .composition import LocalRuntime
 from .config import ConfigurationError, DeploymentConfig
@@ -335,6 +334,7 @@ class RuntimeServices:
         self.credentials: LiveKitCredentials | None = None
         self.gateway_owned = False
         self.thinking_available = False
+        self.idle_capture_available = False
         self._strata_directory: tempfile.TemporaryDirectory[str] | None = None
 
     async def start(self) -> LiveKitCredentials:
@@ -567,6 +567,7 @@ class RuntimeServices:
                         if health.context_tokens != self.config.context_tokens:
                             raise ConfigurationError("Existing gateway context does not match.")
                         self.thinking_available = "live_thinking_v1" in health.features
+                        self.idle_capture_available = IDLE_NATIVE_CAPTURE_FEATURE in health.features
                         if (
                             health.status == "quiescence_required"
                             and self.config.inference.backend == "strata"
@@ -991,14 +992,21 @@ async def _run_room(
         host = HostedRoom(
             runtime.core, binding, remember, voice=voice, investigate=runtime.investigate
         )
-        cleanup.push_async_callback(host.aclose)
 
         async def reserve(identity: UUID, connected: bool) -> None:
             await reservation.session(identity, connected=connected)
 
-        lifecycle = CaptureLifecycle(services.instance, reserve, host.quiesce, runtime.consolidate)
+        lifecycle = runtime.bind_capture(
+            services.instance,
+            reserve,
+            host.quiesce,
+            idle=host.capture_idle,
+            permit=reservation.capture_idle if services.idle_capture_available else None,
+        )
         host.before_turn = lifecycle.before_turn
         host.connection_changed = lifecycle.connection_changed
+        host.capture_fence = lifecycle.fence
+        host.capture_wake = lifecycle.wake
         if voice is not None:
 
             async def priority(reserved: bool) -> None:
@@ -1006,6 +1014,7 @@ async def _run_room(
 
             host.voice_priority = priority
         cleanup.push_async_callback(lifecycle.aclose)
+        cleanup.push_async_callback(host.aclose)
         # Explicitly hosted Ember owns this room for the runtime lifetime. LiveKit
         # dependent agent participants do not keep a room alive between human visits.
         # A standard room-scoped host token retains identical media/data limits.
@@ -1050,7 +1059,6 @@ async def _run_room(
                 speech_options=lambda: voice.speech_options if voice is not None else None,
                 configure_speech=host.configure_speech,
                 prompt_idle=host.prompt_idle,
-                capture_changed=lifecycle.policy_changed,
             )
             browser = BrowserServer(control, config.runtime_root)
             cleanup.push_async_callback(browser.aclose)
@@ -1095,12 +1103,22 @@ async def _run_text_browser(
                 raise GatewayError("gateway_unavailable")
             await reservation.session(identity, connected=connected)
 
-        lifecycle = CaptureLifecycle(services.instance, reserve, text.quiesce, runtime.consolidate)
-        text.before_turn = lifecycle.before_turn
-        text.connection_changed = lifecycle.connection_changed
         if gateway_available:
+            lifecycle = runtime.bind_capture(
+                services.instance,
+                reserve,
+                text.quiesce,
+                idle=text.capture_idle,
+                permit=reservation.capture_idle if services.idle_capture_available else None,
+            )
+            text.before_turn = lifecycle.before_turn
+            text.connection_changed = lifecycle.connection_changed
+            text.capture_fence = lifecycle.fence
+            text.capture_wake = lifecycle.wake
             cleanup.push_async_callback(lifecycle.aclose)
             lifecycle.start()
+        # BrowserControl closes its text session after taking ownership below.
+        cleanup.push_async_callback(text.aclose)
 
         def room_token() -> str:
             raise GatewayError("livekit_unavailable")
@@ -1131,7 +1149,6 @@ async def _run_text_browser(
             answer=room_answer,
             text_session=text,
             voice_status="livekit_unavailable",
-            capture_changed=lifecycle.policy_changed,
         )
         browser = BrowserServer(control, config.runtime_root)
         cleanup.push_async_callback(browser.aclose)

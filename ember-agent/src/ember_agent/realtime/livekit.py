@@ -10,8 +10,6 @@ from livekit import rtc
 from livekit.agents import Agent, APIConnectOptions, ModelSettings, UserTurnExceededEvent, llm
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 
-from ember_memory_abi.errors import MemoryError
-
 from ..character.core import CharacterCore, PreparedTurn, TurnObservation
 from ..character.recall_intent import deep_recall_query
 from ..inference.contracts import GatewayError
@@ -152,7 +150,7 @@ class EmberAgent(Agent):
         self.investigate = investigate
         self.before_turn: Callable[[], Awaitable[None]] | None = None
         self.before_generation: Callable[[], Awaitable[None]] | None = None
-        self.prepare_failed: Callable[[], None] | None = None
+        self.prepare_finished: Callable[[bool], None] | None = None
         self.gateway_llm = GatewayLLM(core, defer_delivery=defer_delivery)
         self.reply_participant: rtc.LocalParticipant | None = None
         self.current_notice: Callable[[], UUID | None] | None = None
@@ -177,9 +175,10 @@ class EmberAgent(Agent):
         text = new_message.text_content
         if text is None or new_message.role != "user":
             raise GatewayError("invalid_user_turn")
-        if self.before_turn is not None:
-            await self.before_turn()
+        prepared = False
         try:
+            if self.before_turn is not None:
+                await self.before_turn()
             observation = await self.core.observe_input(text, request_id=request_id)
             if self.before_generation is not None:
                 await self.before_generation()
@@ -195,11 +194,11 @@ class EmberAgent(Agent):
             )
             if turn.prompts is not None:
                 await self.update_instructions(turn.prompts.instructions)
-        except (GatewayError, MemoryError, asyncio.CancelledError):
-            if self.prepare_failed is not None:
-                self.prepare_failed()
-            raise
-        self.gateway_llm.authorize(new_message.id, turn)
+            self.gateway_llm.authorize(new_message.id, turn)
+            prepared = True
+        finally:
+            if self.prepare_finished is not None:
+                self.prepare_finished(prepared)
 
     async def transcription_node(
         self, text: AsyncIterable[str], model_settings: ModelSettings

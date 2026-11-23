@@ -1,4 +1,4 @@
-"""Disconnected background work pauses on reconnect without interpreting silence as permission."""
+"""One capture owner yields to foreground without losing durable backlog."""
 
 import asyncio
 from collections.abc import Callable
@@ -22,7 +22,7 @@ def test_reconnect_reserves_foreground_and_prevents_another_background_step() ->
         async def quiesce() -> None:
             events.append(("quiesce", False))
 
-        async def consolidate(allowed: Callable[[], bool]) -> int:
+        async def consolidate(allowed: Callable[[], bool], _: UUID | None) -> int:
             assert allowed()
             steps.append(1)
             first_step.set()
@@ -48,7 +48,7 @@ def test_reconnect_reserves_foreground_and_prevents_another_background_step() ->
     asyncio.run(exercise())
 
 
-def test_connected_session_never_runs_capture_in_an_idle_gap() -> None:
+def test_legacy_gateway_never_runs_capture_while_connected() -> None:
     async def exercise() -> None:
         reservation = asyncio.Event()
 
@@ -59,19 +59,20 @@ def test_connected_session_never_runs_capture_in_an_idle_gap() -> None:
         async def quiesce() -> None:
             raise AssertionError("A connected session cannot enter background capture.")
 
-        async def consolidate(_: Callable[[], bool]) -> int:
-            raise AssertionError("Silence is not permission to invoke P3.")
+        async def consolidate(_: Callable[[], bool], __: UUID | None) -> int:
+            raise AssertionError("Legacy connected capture must not run.")
 
         lifecycle = CaptureLifecycle(uuid4(), reserve, quiesce, consolidate)
         lifecycle.connection_changed(True)
         lifecycle.start()
-        await asyncio.wait_for(reservation.wait(), 2)
-        assert lifecycle.status == "realtime_reserved"
-        reservation.clear()
-        lifecycle.policy_changed()
-        await asyncio.wait_for(reservation.wait(), 2)
-        assert lifecycle.status == "realtime_reserved"
-        await lifecycle.aclose()
+        try:
+            await asyncio.wait_for(reservation.wait(), 2)
+            assert lifecycle.status == "realtime_reserved"
+            lifecycle.wake()
+            await asyncio.sleep(0)
+            assert lifecycle.status == "realtime_reserved"
+        finally:
+            await lifecycle.aclose()
 
     asyncio.run(exercise())
 
@@ -79,32 +80,46 @@ def test_connected_session_never_runs_capture_in_an_idle_gap() -> None:
 def test_capture_policy_resumes_idle_backlog_without_another_connection_event() -> None:
     async def exercise() -> None:
         enabled = False
-        attempted = asyncio.Event()
+        reserved = asyncio.Event()
         resumed = asyncio.Event()
+        identity = uuid4()
 
         async def reserve(_: UUID, connected: bool) -> None:
-            assert not connected
+            if connected:
+                reserved.set()
 
         async def quiesce() -> None:
-            pass
+            raise AssertionError("Connected transport must remain connected.")
 
-        async def consolidate(allowed: Callable[[], bool]) -> int:
-            assert allowed()
-            attempted.set()
-            if enabled:
-                resumed.set()
+        async def permit(_: UUID, idle: bool) -> None:
+            if idle:
+                assert enabled
+
+        async def consolidate(allowed: Callable[[], bool], context: UUID | None) -> int:
+            assert enabled and allowed() and context == identity
+            resumed.set()
             return 0
 
-        lifecycle = CaptureLifecycle(uuid4(), reserve, quiesce, consolidate)
+        lifecycle = CaptureLifecycle(
+            identity,
+            reserve,
+            quiesce,
+            consolidate,
+            idle=lambda: True,
+            permit=permit,
+            enabled=lambda: enabled,
+        )
+        lifecycle.connection_changed(True)
         lifecycle.start()
-        await asyncio.wait_for(attempted.wait(), 2)
-        assert not resumed.is_set()
-        enabled = True
-        lifecycle.policy_changed()
-        await asyncio.wait_for(resumed.wait(), 2)
-        await lifecycle.aclose()
-        lifecycle.policy_changed()
-        assert not lifecycle.changed.is_set() or lifecycle.closed
+        try:
+            await asyncio.wait_for(reserved.wait(), 2)
+            assert lifecycle.status == "disabled" and not resumed.is_set()
+            enabled = True
+            lifecycle.wake()
+            await asyncio.wait_for(resumed.wait(), 2)
+            assert lifecycle.connected
+        finally:
+            await lifecycle.aclose()
 
     asyncio.run(exercise())
 
@@ -120,7 +135,7 @@ def test_idle_backlog_continues_in_bounded_batches_without_another_connection_ev
         async def quiesce() -> None:
             pass
 
-        async def consolidate(allowed: Callable[[], bool]) -> int:
+        async def consolidate(allowed: Callable[[], bool], _: UUID | None) -> int:
             nonlocal calls
             assert allowed()
             calls += 1
@@ -166,7 +181,7 @@ def test_missing_background_credentials_block_without_repeated_idle_drains(tmp_p
         async def quiesce() -> None:
             pass
 
-        async def consolidate(allowed: Callable[[], bool]) -> int:
+        async def consolidate(allowed: Callable[[], bool], _: UUID | None) -> int:
             nonlocal calls
             calls += 1
             entered.set()

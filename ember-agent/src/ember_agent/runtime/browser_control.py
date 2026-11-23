@@ -138,7 +138,6 @@ class BrowserControl:
         answer: Callable[[DeepRecallResult], Awaitable[str]],
         voice_ready: bool = False,
         voice_status: str = "disabled",
-        capture_changed: Callable[[], None] | None = None,
         lan_origin: str | None = None,
         trusted_proxy: str = "",
         text_session: DirectTextSession | None = None,
@@ -168,7 +167,6 @@ class BrowserControl:
         self.answer = answer
         self.voice_ready = voice_ready
         self.voice_status = voice_status
-        self.capture_changed = capture_changed
         self.text_session = text_session
         self.task_router = task_router
         self.speech_options = speech_options
@@ -662,10 +660,7 @@ class BrowserControl:
 
         @app.post("/api/capture")
         async def capture(value: CaptureControl) -> CaptureControl:
-            configured = await self.controls.configure_capture(value)
-            if self.capture_changed is not None:
-                self.capture_changed()
-            return configured
+            return await self.controls.configure_capture(value)
 
         def direct_text() -> DirectTextSession:
             if self.text_session is None:

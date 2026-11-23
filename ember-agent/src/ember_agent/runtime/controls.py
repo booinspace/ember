@@ -32,6 +32,7 @@ class ProcessingStatus(RuntimeModel):
     counts: dict[str, int] = Field(max_length=10)
     failure_codes: tuple[str, ...] = Field(max_length=8)
     index_status: str
+    capture_status: str = "unavailable"
 
 
 class GraphInput(RuntimeModel):

@@ -373,6 +373,7 @@ def test_text_composition_human_entry_and_stable_identity(
     runtime.core.model = FakeModel()
     session = AsyncMock()
     monkeypatch.setattr(runtime.model, "session", session)
+    monkeypatch.setattr(runtime.model, "health", AsyncMock(side_effect=GatewayError("offline")))
     asyncio.run(runtime.chat())
     runtime.close_workers()
     assert session.await_count == 2

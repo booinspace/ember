@@ -99,7 +99,7 @@ def test_authenticated_http_turn_requires_delivery_receipt_and_blocks_background
             async def reserve(_: object, connected: bool) -> None:
                 reserved.append(connected)
 
-            async def consolidate(_: object) -> int:
+            async def consolidate(_: object, __: object) -> int:
                 capture_calls.append(True)
                 return 0
 

@@ -65,11 +65,12 @@ Do not vendor external agent frameworks into either core.
   call. Natural-language deep routing and bounded calendar interpretation are separate opt-ins.
   Ordinary word recall supersedes the old six-row/768-byte limit; the 24,576-unit composer cap
   is independent of runner context. Preserve current authorization through delivery. Retain
-  original user input and only acknowledged assistant output in history. Automatic capture
-  processes eligible checkpoints as P3 after realtime disconnect. Browser read-ahead and CPU
-  voice/speed controls do not change played-prefix receipts. Installed browsers and synthetic
-  microphone/audio were tested; physical/LAN media, buffered-playout revocation, broader recall
-  quality and completed concurrent deep/scale gates remain open ([validation](docs/phase-8-validation.md)).
+  original user input and only acknowledged assistant output in history. Native P3 capture
+  runs in permitted idle gaps on supporting gateways, otherwise after disconnect. Browser
+  read-ahead and CPU voice/speed controls do not change played-prefix receipts. Installed browsers
+  and synthetic microphone/audio were tested; physical/LAN media, buffered-playout revocation,
+  broader recall quality and completed concurrent deep/scale gates remain open
+  ([validation](docs/phase-8-validation.md)).
 
 ## Tasks, tools and inference (Phases 9–13)
 
@@ -113,11 +114,11 @@ Do not vendor external agent frameworks into either core.
   same-turn prerequisite success. Scripted preview evidence is not rollout authorization.
 - **Inference hardening (13; root ADR 0024).** One gateway owns native generation through
   verified drain/release and durable journal settlement. P2–P4 wait until realtime sessions
-  disconnect except scoped P2 Tasks requests. Tasks and P5 can use idle inference time while
-  Conversation stays connected and yield before native start. A subscriber disconnect is not
-  native release. Fence uncertain ownership across restart and validate buffered P2–P4 output
-  before publishing. Only steps that never reached the runner may return to the queue. Never stop an independently managed
-  runner. Conservative mode is qualified on the tested Strata profile; active P5 can still delay
+  disconnect except scoped P2 Tasks and native P3 requests. Tasks, native capture, and P5 can use
+  idle inference time while Conversation stays connected and yield before native start. A
+  subscriber disconnect is not native release. Fence uncertain ownership across restart and
+  validate buffered P2–P4 output before publishing. Only steps that never reached the runner
+  may return to the queue. Never stop an independently managed runner. Conservative mode is qualified on the tested Strata profile; active P5 can still delay
   voice. The isolated P5 abort candidate proved same-runner reuse but failed P13-AC-03:
   added warm first-PCM p95 during long prefill was 834 ms (`--prefill auto`) and 439 ms
   (`--prefill 256`), both over 200 ms.

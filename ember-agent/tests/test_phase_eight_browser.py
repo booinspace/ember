@@ -48,7 +48,6 @@ class Controls:
 
 
 def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> None:
-    capture_changes: list[bool] = []
     with CanonicalEngine(tmp_path / "canonical") as engine:
         identity = engine.create_character().store_id
         memory = InProcessAsyncMemoryClient(engine.character(identity))
@@ -75,7 +74,6 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
             controls=Controls(),
             room_token=lambda: "synthetic_room_capability",
             answer=answer,
-            capture_changed=lambda: capture_changes.append(True),
             memory_graph=graph,
         )
         with TestClient(owner.app, base_url=ORIGIN, headers={"origin": ORIGIN}) as client:
@@ -125,7 +123,6 @@ def test_operator_authentication_origin_and_safe_validation(tmp_path: Path) -> N
             assert "hermes_chat_available" not in state and "hermes_private_recall" not in state
             assert client.get("/hermes/v1/models").status_code == 404
             assert not state["capture"]["enabled"] and state["recall"]["local_enabled"]
-            assert capture_changes == [True]
             assert (
                 client.post(
                     "/api/capture",

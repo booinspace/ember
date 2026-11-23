@@ -19,11 +19,10 @@ Carry historical selectors into retained-history dependency certificates. Keep
 profile/manual pins current. Render historical qualifiers and strict undated coverage
 in the prompt. Retain six ordinary memories and existing prompt/metadata ceilings.
 
-Native capture is engine-owned; LocalRuntime may drain a bounded batch only after
-releasing its realtime gateway reservation. Use the existing P3 HTTP adapter and
-conservative native acceptance, never imported approval authority. Missing background
-credentials or timeout leave checkpoints pending. Optional calendar interpretation defaults off; no connected-session background
-inference is added.
+Native capture and acceptance are engine-owned. LocalRuntime drains bounded P3
+batches through the existing HTTP gateway. The [connected-idle amendment](#connected-idle-native-capture)
+extends the original disconnect-only lifecycle without expanding native acceptance
+or import approval authority. Optional calendar interpretation defaults off.
 
 ## Acceptance boundaries
 
@@ -59,9 +58,9 @@ without changing service limits or permissions. Completed embedding-cache hits
 are reused; new deep CPU encodes are
 deferred until the stronger shared-resource gate is measured.
 
-A coalesced room connection lifecycle drains media before release of the gateway
-reservation and stops new extraction steps on reconnection. Background capture uses
-the durable engine checkpoints and existing P3 profile. The optional calendar
+The original room connection lifecycle drained media before releasing the gateway
+reservation and stopped new extraction steps on reconnection. Capture still uses
+durable engine checkpoints and the existing P3 profile. The optional calendar
 interpreter is independently configured, one-call, source-checked and bounded.
 See Root ADR 0015 and the acceptance tracker for remaining delivery gates.
 
@@ -88,10 +87,10 @@ Actual audio revocation remains unverified. Browser connection teardown aborts
 streams and removes audio, and cannot reopen after pending authorization completes.
 Status history uses the existing bounded map while active requests retain ownership.
 
-A demand-refreshed browser summary reports capture/acceptance/index counts. Idle
-native backlog self-continues in bounded batches, pauses on reconnect and skips
-failed checkpoints until explicit retry. No new background inference scheduler or
-per-turn status/profile machinery is added.
+A demand-refreshed browser summary reports capture/acceptance counts and index
+status. In the original disconnect-only path, bounded batches continue until
+reconnect and skip failed checkpoints until explicit retry. No new background
+inference scheduler or per-turn status/profile machinery is added.
 
 Inspector inclusion explanations reuse ABI RankingExplanation. Dates and periods
 remain separate from observation/recording clocks. Citation links match source
@@ -182,8 +181,8 @@ The composer negotiates selected dependency certification only after category an
 whole-turn trimming. It retains exact historical selectors and the relevant
 profile/history boundaries. Older backends keep conservative validation. Deep
 rows exclude current profile/manual pins, and only certified selected observations
-enter prompt dependencies. Re-enabling capture signals the existing owned lifecycle
-task; it never authorizes P3 while a browser/room session remains connected.
+enter prompt dependencies. Re-enabling capture signals the existing lifecycle
+without another connection event. At this stage, P3 still required disconnection.
 
 Unavailable LiveKit at startup now selects authenticated HTTP text using the same
 core, memory client, personality, deep service and pinned gateway. Gateway startup
@@ -334,3 +333,18 @@ OpenAI-compatible audio adapter receives configured model, voice and `tts_speed`
 startup; optional browser selection reports that same pace. Kokoro-specific provisioning
 and model/voice IDs stay at the adapter/deployment boundary. See the
 [configuration runbook](../../../docs/tts-configuration.md) and Root ADR 0015.
+
+## Connected-idle native capture
+
+One runtime-owned lifecycle handles native capture during terminal input waits
+or idle periods in hosted LiveKit and HTTP text. It gates connected P3 on
+`idle_native_capture_v1` and the selected transport's idle check without releasing
+realtime. Older gateways keep the original disconnect-only path. See [Agent ADR 0014](0014-gateway-release-and-realtime-ownership.md#native-capture-permit)
+for credential and gateway enforcement.
+
+A completed extraction window can be staged while a turn, LiveKit playout, or HTTP
+receipt is pending. The lifecycle fences acceptance as foreground starts and waits
+for any already-submitted acceptance write to settle. Resumption uses pinned jobs
+and existing exact native policy receipts, not a new import or acceptance path.
+Input, policy, connection, and delivery changes wake bounded batches; disabled
+capture pauses work, and missing credentials report blocked rather than polling.

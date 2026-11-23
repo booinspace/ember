@@ -609,6 +609,8 @@ def test_speech_worker_records_interrupted_playout_without_replay(tmp_path: Path
             _finish_announcement=lambda *args: HostedRoom._finish_announcement(host, *args),
             _settle_speech=lambda *args, **kwargs: HostedRoom._settle_speech(host, *args, **kwargs),
             _speech_finished=lambda _: asyncio.sleep(0),
+            _linked_speech_tasks=HostedRoom._linked_speech_tasks,
+            _wake_capture=lambda: None,
             _announcement=None,
         )
 

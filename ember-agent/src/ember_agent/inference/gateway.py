@@ -19,6 +19,7 @@ from .contracts import (
     CODING_DRAIN_SECONDS,
     CODING_GENERATION_SECONDS,
     DEFAULT_GENERATION_SECONDS,
+    IDLE_NATIVE_CAPTURE_FEATURE,
     GatewayError,
     GatewayEvent,
     GatewayHealth,
@@ -47,6 +48,8 @@ class Generation:
     native_drained: bool = False
     preemption: asyncio.Task[None] | None = None
     idle_managed_task: bool = False
+    idle_native_capture: bool = False
+    capture_deferred: bool = False
     sequence: int = 0
     on_detach: Callable[[], None] | None = None
     expiry: asyncio.TimerHandle | None = None
@@ -138,6 +141,7 @@ class P0Gateway:
         self.used_ids: set[UUID] = set()
         self.completed_ids: deque[UUID] = deque()
         self.sessions = set(sessions)
+        self._capture_idle_session: UUID | None = None
         self.voice_sessions: dict[UUID, asyncio.TimerHandle] = {}
         self.preempt = preempt
         self._session_guard = asyncio.Lock()
@@ -163,7 +167,11 @@ class P0Gateway:
         return len(serialized.encode("utf-8")) + 512 + 64 * len(request.messages)
 
     async def admit(
-        self, request: GatewayRequest, *, idle_managed_task: bool = False
+        self,
+        request: GatewayRequest,
+        *,
+        idle_managed_task: bool = False,
+        idle_native_capture: bool = False,
     ) -> Generation:
         """Reject auth-class/model/budget/deadline/capacity failures before upstream generation."""
         request = GatewayRequest.model_validate_json(request.model_dump_json())
@@ -175,10 +183,14 @@ class P0Gateway:
             raise GatewayError("journal_unavailable")
         if self.uncertain:
             raise GatewayError("quiescence_required")
-        if idle_managed_task and request.workload != "P2":
+        if (idle_managed_task and request.workload != "P2") or (
+            idle_native_capture and request.workload != "P3"
+        ):
             raise GatewayError("workload_not_authorized")
         if request.workload == "P1" and request.context_id not in self.sessions:
             raise GatewayError("live_reservation_required")
+        if idle_native_capture and not self._capture_permitted(request.context_id):
+            raise GatewayError("idle_capture_deferred")
         if request.workload == "P5" and not self.config.inference.coding_api:
             raise GatewayError("workload_not_authorized")
         images = request.images
@@ -190,6 +202,8 @@ class P0Gateway:
             raise GatewayError("deadline_exceeded")
         if request.workload == "P5":
             deadline = min(deadline, now + timedelta(seconds=CODING_GENERATION_SECONDS))
+        if request.workload in {"P0", "P1"}:
+            self._fence_idle_capture()
         if request.workload == "P0" and self.active is not None:
             active = self.active
             if not self._runs_between_turns(active) or self._foreground_waiters:
@@ -250,7 +264,12 @@ class P0Gateway:
             references = json.dumps(request.output_schema)
             if any(item in references for item in ("http:", "https:", "file:")):
                 raise GatewayError("external_schema_reference")
-        job = Generation(request, deadline, idle_managed_task=idle_managed_task)
+        job = Generation(
+            request,
+            deadline,
+            idle_managed_task=idle_managed_task,
+            idle_native_capture=idle_native_capture,
+        )
         self.used_ids.add(request.request_id)
         if request.workload != "P0":
             job.emit("start")
@@ -363,6 +382,10 @@ class P0Gateway:
         workload = job.request.workload
         if workload == "P1" and job.request.context_id not in self.sessions:
             raise GatewayError("live_reservation_released")
+        if job.idle_native_capture and (
+            job.capture_deferred or not self._capture_permitted(job.request.context_id)
+        ):
+            raise GatewayError("idle_capture_deferred")
         if workload == "P0":
             return True
         if self._session_guard.locked():
@@ -373,9 +396,47 @@ class P0Gateway:
 
     @staticmethod
     def _runs_between_turns(job: Generation) -> bool:
-        return job.idle_managed_task or job.request.workload == "P5"
+        return job.idle_managed_task or job.idle_native_capture or job.request.workload == "P5"
+
+    def _capture_permitted(self, identity: UUID) -> bool:
+        return self._capture_idle_session == identity and not self.voice_sessions
+
+    def capture_idle(self, identity: UUID, *, idle: bool) -> None:
+        """Only the sole realtime owner can open the native P3 lane between turns."""
+        if not idle:
+            if self._capture_idle_session == identity:
+                self._fence_idle_capture()
+            return
+        if (
+            self.closed
+            or self.journal_failed
+            or self.uncertain
+            or self.voice_sessions
+            or self._session_guard.locked()
+            or self._foreground_waiters
+            or self._live_job() is not None
+            or (self.active is not None and self.active.request.workload in {"P0", "P1"})
+            or self.sessions != {identity}
+        ):
+            raise GatewayError("idle_capture_deferred")
+        self._capture_idle_session = identity
+        self._wake_background()
+
+    def _fence_idle_capture(self) -> None:
+        if self._capture_idle_session is None:
+            return
+        self._capture_idle_session = None
+        if self.active is not None and self.active.idle_native_capture:
+            # Even a new idle gap must not revive admission from the previous gap.
+            if not self.active.native_started:
+                self.active.capture_deferred = True
+        for job in tuple(self.pending["P3"]):
+            if job.idle_native_capture:
+                self._remove_pending(job, "idle_capture_deferred")
 
     def _background_eligible(self, job: Generation) -> bool:
+        if job.idle_native_capture:
+            return self._capture_permitted(job.request.context_id)
         if job.idle_managed_task:
             return not self.voice_sessions
         if job.request.workload == "P5":
@@ -506,6 +567,8 @@ class P0Gateway:
                 if identity not in self.sessions and len(self.sessions) >= 32:
                     raise GatewayError("session_limit")
                 self.sessions.add(identity)
+            # A reservation change or turn admission closes the previous idle gap.
+            self._fence_idle_capture()
             proposed = self.sessions if connected else self.sessions - {identity}
             try:
                 if self.record_sessions is not None:
@@ -530,7 +593,7 @@ class P0Gateway:
             if (
                 active is not None
                 and active.request.workload in {"P2", "P3", "P4"}
-                and not active.idle_managed_task
+                and not self._runs_between_turns(active)
                 and active.task is not None
             ):
                 await asyncio.shield(active.task)
@@ -556,6 +619,7 @@ class P0Gateway:
         self.voice_sessions[identity] = asyncio.get_running_loop().call_later(
             5, self._release_voice, identity
         )
+        self._fence_idle_capture()
         job = self.active
         if (
             self.preempt is not None
@@ -835,7 +899,7 @@ class P0Gateway:
             queued_p3=len(self.pending["P3"]),
             queued_p4=len(self.pending["P4"]),
             realtime_sessions=tuple(sorted(self.sessions, key=str)),
-            features=("live_thinking_v1", "idle_managed_tasks_v1"),
+            features=("live_thinking_v1", "idle_managed_tasks_v1", IDLE_NATIVE_CAPTURE_FEATURE),
             scheduling="voice_preemption" if self.preempt is not None else "conservative",
         )
 

@@ -11,8 +11,10 @@ from uuid import UUID, uuid4
 from livekit import rtc
 from livekit.agents import (
     AgentSession,
+    AgentStateChangedEvent,
     APIConnectOptions,
     ConversationItemAddedEvent,
+    SpeechCreatedEvent,
     UserStateChangedEvent,
     llm,
     room_io,
@@ -108,13 +110,17 @@ class HostedRoom:
         self.voice = voice
         self.before_turn = before_turn
         self.connection_changed = connection_changed
+        self.capture_fence: Callable[[], Awaitable[None]] | None = None
+        self.capture_wake: Callable[[], None] | None = None
+        self._preparing = 0
+        self._capture_speeches: set[SpeechHandle] = set()
         self.voice_priority: Callable[[bool], Awaitable[None]] | None = None
         self.voice_hold: asyncio.Task[None] | None = None
         self.voice_activity = 0.0
         self.agent = EmberAgent(core, defer_delivery=True, investigate=investigate)
         self.agent.before_turn = self._before_turn
         self.agent.before_generation = self._reserve_generation
-        self.agent.prepare_failed = self._prepare_failed
+        self.agent.prepare_finished = self._prepare_finished
         self.permission_watch: asyncio.Task[None] | None = None
         self.permission_failure = False
         connection = SessionConnectOptions(
@@ -147,6 +153,8 @@ class HostedRoom:
         # SDK EventEmitter callback return annotations are unspecified.
         self.session.on("conversation_item_added", self._conversation_item)  # pyright: ignore[reportUnknownMemberType]
         self.session.on("user_state_changed", self._voice_user_state)  # pyright: ignore[reportUnknownMemberType]
+        self.session.on("agent_state_changed", self._capture_agent_state)  # pyright: ignore[reportUnknownMemberType]
+        self.session.on("speech_created", self._capture_speech_created)  # pyright: ignore[reportUnknownMemberType]
         self.busy = False
         self.closing = False
         self.seen: deque[str] = deque(maxlen=128)
@@ -188,6 +196,75 @@ class HostedRoom:
             ),
         )
         self._start_permission_watch()
+
+    def capture_idle(self) -> bool:
+        """Preparation, queued speech and verified delivery are foreground work."""
+        model = self.agent.gateway_llm
+        speech = self.session.current_speech
+        connected = USER_IDENTITY in self.room.remote_participants
+        return (
+            not self.closing
+            and not self.delivery_failed
+            and not self._preparing
+            and not self.busy
+            and self.active is None
+            and not self.core.busy
+            and self.core.pending_delivery is None
+            and not self.delivery_tasks
+            and model.prepared is None
+            and model.active_turn is None
+            and (speech is None or speech.done())
+            and not self._capture_speeches
+            and self._announcement is None
+            and not any(not task.done() for task in self._stops.values())
+            and (
+                not connected
+                or (
+                    self.session.agent_state == "listening"
+                    and self.session.user_state != "speaking"
+                )
+            )
+            and (self.voice_hold is None or self.voice_hold.done())
+        )
+
+    def _wake_capture(self) -> None:
+        if self.capture_wake is not None:
+            self.capture_wake()
+
+    def _capture_agent_state(self, _: AgentStateChangedEvent) -> None:
+        self._wake_capture()
+
+    def _capture_speech_created(self, event: SpeechCreatedEvent) -> None:
+        if self.capture_wake is None:
+            return
+        speech = event.speech_handle
+        prepared = self.agent.gateway_llm.prepared if event.source == "generate_reply" else None
+        self._capture_speeches.add(speech)
+        speech.add_done_callback(lambda done: self._capture_speech_finished(done, prepared))
+        self._wake_capture()
+
+    def _capture_speech_finished(
+        self, speech: SpeechHandle, prepared: tuple[str, PreparedTurn] | None
+    ) -> None:
+        # LiveKit can mark an interrupted handle done before its linked tasks settle.
+        linked = self._linked_speech_tasks(speech)
+        if linked:
+            linked[0].add_done_callback(lambda _: self._capture_speech_finished(speech, prepared))
+            return
+        self._capture_speeches.discard(speech)
+        model = self.agent.gateway_llm
+        if prepared is not None and model.prepared is prepared:
+            model.prepared = None  # The exact queued authorization never reached generation.
+            if self.active is None and not self._preparing:
+                self.busy = False
+        if (
+            self._turn_speech is speech
+            and not self.delivery_tasks
+            and model.active_turn is not None
+        ):
+            # No SDK receipt: settle as unheard, never promote generated text to history.
+            self._queue_delivery(model.active_turn.request.request_id, "", interrupted=True)
+        self._wake_capture()
 
     def prompt_idle(self) -> None:
         """Fence preparation, authorized generation and verified speech delivery together."""
@@ -293,6 +370,8 @@ class HostedRoom:
                 )
 
     async def _notice_text(self, identity: UUID) -> AsyncGenerator[str, None]:
+        if self.capture_fence is not None:
+            await self.capture_fence()
         await self._announce_speech(identity)
         current = self._announcement
         if current is not None and current.identity == identity and not current.speech.interrupted:
@@ -333,11 +412,12 @@ class HostedRoom:
             finally:
                 if announcement is not None:
                     try:
-                        if self._announcement is announcement:
-                            self._announcement = None
                         await self._speech_finished(announcement.identity)
                     finally:
+                        if self._announcement is announcement:
+                            self._announcement = None
                         announcement.finished.set()
+                        self._wake_capture()
 
     async def stop_task_announcements(self) -> None:
         """Stop the owned worker and retain uncertain delivery after interruption."""
@@ -352,9 +432,11 @@ class HostedRoom:
                 self._watch_permissions(), name="ember-room-permissions"
             )
 
-    def _prepare_failed(self) -> None:
-        if self.active is None:
+    def _prepare_finished(self, prepared: bool) -> None:
+        self._preparing -= 1
+        if not prepared and self.active is None:
             self.busy = False
+        self._wake_capture()
 
     async def _watch_permissions(self) -> None:
         # Generation can finish before buffered audio plays. A failed validator must
@@ -394,6 +476,7 @@ class HostedRoom:
                 self.connection_changed(False)
 
     def _voice_user_state(self, event: UserStateChangedEvent) -> None:
+        self._wake_capture()
         priority = self.voice_priority
         if (
             priority is None
@@ -407,6 +490,7 @@ class HostedRoom:
             self.voice_hold = asyncio.create_task(
                 self._hold_voice(priority), name="ember-voice-priority"
             )
+            self.voice_hold.add_done_callback(lambda _: self._wake_capture())
 
     async def _hold_voice(self, priority: Callable[[bool], Awaitable[None]]) -> None:
         try:
@@ -440,11 +524,16 @@ class HostedRoom:
         self.session.input.set_audio_enabled(False)
         await self.session.interrupt(force=True)
         await self.agent.gateway_llm.generation_done.wait()
-        await self._discard_unheard()
         if self.active is not None:
             await asyncio.shield(self.active)
+        for speech in tuple(self._capture_speeches):
+            await self._settle_speech(speech)
+        await self._discard_unheard()
 
     async def _before_turn(self) -> None:
+        self._preparing += 1
+        if self.capture_fence is not None:
+            await self.capture_fence()
         await self._drain_stops()
         announcement = self._announcement
         if announcement is not None:
@@ -481,18 +570,17 @@ class HostedRoom:
         """Retain the SDK handle even if its scheduler clears the current pointer."""
         self._turn_speech = self.session.current_speech
 
+    @staticmethod
+    def _linked_speech_tasks(speech: SpeechHandle) -> tuple[asyncio.Task[object], ...]:
+        # LiveKit's handle can finish before its linked tasks on forced interruption.
+        linked = cast(list[asyncio.Task[object]], speech._tasks)  # pyright: ignore[reportUnknownMemberType,reportPrivateUsage]
+        return tuple(task for task in linked if not task.done())
+
     async def _settle_speech(self, speech: SpeechHandle, *, native_generation: bool = True) -> None:
         """Fence SDK playout, linked tasks and native generation before reconciliation."""
-        # LiveKit 1.8.5 can mark an interrupted handle done before its
-        # cancelled speech tasks finish. Fence those tasks as well as playout.
         async with asyncio.timeout(190):
             await speech.wait_for_playout()
-            while True:
-                # SDK 1.8's task list has an unparameterized Task annotation.
-                linked = cast(list[asyncio.Task[object]], speech._tasks)  # pyright: ignore[reportUnknownMemberType,reportPrivateUsage]
-                tasks = tuple(task for task in linked if not task.done())
-                if not tasks:
-                    break
+            while tasks := self._linked_speech_tasks(speech):
                 if asyncio.current_task() in tasks:
                     raise GatewayError("livekit_delivery_unavailable")
                 await asyncio.gather(
@@ -515,10 +603,13 @@ class HostedRoom:
         if not isinstance(message, llm.ChatMessage) or message.role != "assistant" or turn is None:
             return
         # The SDK emits its own message ID after playout; the sole owned turn binds this receipt.
-        text = message.raw_text_content or ""
+        self._queue_delivery(
+            turn.request.request_id, message.raw_text_content or "", message.interrupted
+        )
+
+    def _queue_delivery(self, identity: UUID, text: str, interrupted: bool) -> None:
         task = asyncio.create_task(
-            self._acknowledge(turn.request.request_id, text, message.interrupted),
-            name="ember-room-delivery",
+            self._acknowledge(identity, text, interrupted), name="ember-room-delivery"
         )
         self.delivery_tasks.add(task)
 
@@ -526,17 +617,23 @@ class HostedRoom:
             self.delivery_tasks.discard(completed)
             if completed.cancelled() or completed.exception() is not None:
                 self.delivery_failed = True
+            self._wake_capture()
 
         task.add_done_callback(observed)
 
     async def _acknowledge(self, identity: UUID, text: str, interrupted: bool) -> None:
-        await self.agent.gateway_llm.generation_done.wait()
-        pending = self.core.pending_delivery
-        if pending is None or pending[0].request.request_id != identity:
+        model = self.agent.gateway_llm
+        await model.generation_done.wait()
+        turn = model.active_turn
+        if turn is None or turn.request.request_id != identity:
             return
-        complete = not interrupted and pending[2] and text == pending[1]
-        await self.core.acknowledge(pending[0].request.request_id, text, complete=complete)
-        self.agent.gateway_llm.active_turn = None
+        pending = self.core.pending_delivery
+        if pending is not None:
+            if pending[0].request.request_id != identity:
+                raise GatewayError("delivery_receipt_unknown")
+            complete = not interrupted and pending[2] and text == pending[1]
+            await self.core.acknowledge(identity, text, complete=complete)
+        model.active_turn = None
         if self.active is None:
             self.busy = False
         await self._speech_finished(identity)
@@ -556,7 +653,11 @@ class HostedRoom:
         if pending is not None:
             await self.core.acknowledge(pending[0].request.request_id, "", complete=False)
         self.agent.gateway_llm.active_turn = None
+        self.agent.gateway_llm.prepared = None
         self._turn_speech = None
+        if self.active is None and not self._preparing:
+            self.busy = False
+        self._wake_capture()
 
     def _authorize(self, data: rtc.RpcInvocationData) -> None:
         if data.caller_identity != USER_IDENTITY or self.closing:
@@ -646,9 +747,14 @@ class HostedRoom:
         )
         task = asyncio.create_task(finishing, name="ember-stop-speaking")
         self._stops[target.request_id] = task
-        # The RPC caller may disconnect; the owned fence still runs and its
-        # exception must remain observed even before shutdown joins it.
-        task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+
+        # The RPC caller may disconnect; keep observing the owned fence.
+        def stop_finished(done: asyncio.Task[str]) -> None:
+            if not done.cancelled():
+                done.exception()
+            self._wake_capture()
+
+        task.add_done_callback(stop_finished)
         # Keep bounded idempotence receipts; never evict a live owned operation.
         for identity in tuple(self._stops):
             if len(self._stops) <= 128:
@@ -717,6 +823,16 @@ class HostedRoom:
             raise rtc.RpcError(1503, "Memory operation failed.") from error
         finally:
             self.busy = False
+            self._wake_capture()
+
+    def _reply_finished(self, task: asyncio.Task[str]) -> None:
+        # RPC cancellation does not cancel the turn. Resume only after it settles.
+        if not task.cancelled():
+            task.exception()
+        if self.active is task:
+            self.active = None
+            self.busy = False
+            self._wake_capture()
 
     async def _turn(self, data: rtc.RpcInvocationData) -> str:
         self._authorize(data)
@@ -730,13 +846,9 @@ class HostedRoom:
         self.busy = True
         self.seen.append(identity)
         self.active = asyncio.create_task(self._reply(request), name="ember-room-turn")
-        try:
-            # A disconnected caller does not cancel the owned turn or release native capacity.
-            return await asyncio.shield(self.active)
-        finally:
-            if self.active.done():
-                self.busy = False
-                self.active = None
+        self.active.add_done_callback(self._reply_finished)
+        # A disconnected caller does not cancel the owned turn or release native capacity.
+        return await asyncio.shield(self.active)
 
     async def answer_investigation(self, result: DeepRecallResult) -> str:
         """A revalidated explicit inspector action reuses the sole owned SDK session."""
@@ -745,12 +857,8 @@ class HostedRoom:
         request = TurnInput(request_id=uuid4(), text=result.query)
         self.busy = True
         self.active = asyncio.create_task(self._reply(request, result), name="ember-deep-answer")
-        try:
-            return await asyncio.shield(self.active)
-        finally:
-            if self.active.done():
-                self.active = None
-                self.busy = False
+        self.active.add_done_callback(self._reply_finished)
+        return await asyncio.shield(self.active)
 
     async def _reply(
         self, request: TurnInput, investigation: DeepRecallResult | None = None
@@ -788,7 +896,6 @@ class HostedRoom:
             await self._discard_unheard()
             # CharacterCore owns bounded history; SDK copies must not become another history store.
             await self.agent.update_chat_ctx(llm.ChatContext())
-            self.busy = False
 
     async def aclose(self) -> None:
         """Stop admission, drain the sole turn, then close session and room."""

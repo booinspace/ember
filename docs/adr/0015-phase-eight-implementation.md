@@ -29,9 +29,9 @@ combined and 64 KiB, with at most 32 temporal groups of 100 references each.
 Native delivery and its capture checkpoint share the archive transaction. Bounded
 incremental jobs select exact owned user messages. Old JobRequest serialization and
 extractor 0.1.2/0.2.0 hashes remain unchanged. Capture reuses native acceptance receipts,
-and repeated acceptance cannot duplicate memories. The runtime releases its realtime
-reservation before bounded P3 consolidation; the gateway remains final GPU admission
-authority. Realtime connected-session extraction is not enabled.
+and repeated acceptance cannot duplicate memories. The gateway remains final GPU
+admission authority. The original disconnect-only lifecycle is extended by
+[connected-idle native capture](#connected-idle-native-capture).
 
 Extractor 0.3.0 has a separate dated schema and prompt. It accepts exact supporting
 calendar expressions, not model-generated timestamps. Source-relative dates use the
@@ -105,12 +105,11 @@ Input observation precedes generation so a failed answer cannot lose user input.
 Current implementation validates synthesized frames; complete buffered-transport
 revocation is still an explicit acceptance gap.
 
-One application-owned connection task coalesces join/disconnect events. It drains
-the transport before releasing the existing gateway reservation. Reconnection
-first reserves realtime capacity; a continuation predicate prevents the next P3
-step without cancelling the upstream operation or repinning an old extraction job.
-Connected-session silence never starts consolidation. This extends the existing
-lifecycle and processing loop, not inference scheduling or writer ownership.
+The original disconnect-only lifecycle coalesced join/disconnect events in one
+application-owned task. It drained the transport before releasing the gateway
+reservation. Reconnection reserved realtime capacity and paused new P3 steps
+without cancelling the running operation or repinning old jobs. The
+[connected-idle amendment](#connected-idle-native-capture) reuses this owner.
 
 Optional CalendarInterpreter defaults off independently of deep recall. Only an
 unresolved ordinary calendar request may issue one schema-constrained P0 call,
@@ -485,3 +484,19 @@ service types and runtime identifiers. A legacy TOML alias preserves existing fi
 Kokoro and Phonon retain the existing OpenAI-compatible adapter. Deployment-level
 voice/pace defaults initialize the adapter and optional browser controls consistently.
 This introduces no character, memory, gateway or Phase 9 contract dependency.
+
+## Connected-idle native capture
+
+Terminal chat, hosted LiveKit, and degraded HTTP text negotiate
+`idle_native_capture_v1` and keep the realtime reservation between turns. Native
+P3 can run in a permitted idle gap; older gateways stay disconnect-only. The
+[runtime lifecycle](../../ember-agent/docs/adr/0006-phase-eight-calendar-and-capture.md#connected-idle-native-capture)
+resumes bounded batches on activity and policy changes. The
+[gateway](0024-phase-thirteen-inference-hardening.md#connected-idle-native-capture)
+fences queued work on foreground activity but does not preempt a running window.
+
+The existing processing job stages validated output. Acceptance waits for the
+turn or delivery to settle and still uses the exact native policy and durable
+receipts. No new writer, scheduler, or import authority is introduced. Checkout
+implementation is not deployment or acceptance. [P8-AC-07](../../PLAN.md#phase-8-acceptance-criteria-automatic-capture-and-memory-source-controls)
+evidence for this path, including live latency on the exact runner profile, remains open.

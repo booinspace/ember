@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import AsyncExitStack
 from functools import partial
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import UUID4, ValidationError
 
@@ -24,6 +24,7 @@ from ember_memory_engine.library import LibraryService
 from ember_memory_engine.memory_graph import GraphQuery
 from ember_memory_engine.processing_contracts import (
     ExtractionSpec,
+    ProcessingDeferred,
     ProcessingError,
     native_temporal_specification,
 )
@@ -34,15 +35,17 @@ from ..character.core import CharacterCore, Personality, PreparedTurn, TurnObser
 from ..character.interpretation import CalendarInterpreter
 from ..character.prompts import PromptDocuments, PromptEdit, PromptSnapshot
 from ..inference.client import HttpGatewayClient
-from ..inference.contracts import GatewayError
+from ..inference.contracts import IDLE_NATIVE_CAPTURE_FEATURE, GatewayError
 from ..memory.backends.dialogue import ArchiveDialogueSink
 from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
+from .capture_lifecycle import CaptureLifecycle
 from .config import DeploymentConfig, RuntimeModel
 from .console import read_line
 from .controls import CaptureControl, GraphInput, LibraryChoice, ProcessingStatus
 from .dashboard import Dashboard
 from .prompt_files import PromptFiles
+from .worker_process import settled
 
 
 class CharacterBinding(RuntimeModel):
@@ -116,6 +119,10 @@ class LocalRuntime:
             )
             self.model.observe_event = self.dashboard.event
             self.capture = CaptureService(self.engine, binding.character_id)
+            self._capture_enabled = self.capture.settings().enabled
+            self._acceptance_lock = asyncio.Lock()
+            self.capture_lifecycle: CaptureLifecycle | None = None
+            self._terminal_idle = False
             self.sink = ArchiveDialogueSink(self.engine.archive(binding.character_id), self.subject)
             ceiling = min(
                 config.max_input_tokens,
@@ -271,6 +278,9 @@ class LocalRuntime:
             counts=counts,
             failure_codes=summary.failure_codes,
             index_status=(await self.memory.capabilities()).index_status,
+            capture_status=self.capture_lifecycle.status
+            if self.capture_lifecycle
+            else "unavailable",
         )
 
     async def libraries(self) -> tuple[LibraryChoice, ...]:
@@ -296,14 +306,27 @@ class LocalRuntime:
 
     async def configure_capture(self, value: CaptureControl) -> CaptureControl:
         """Operator-confirmed capture CAS never accepts imported claims."""
-        settings = await asyncio.wrap_future(
-            self.pool.submit(
-                self.capture.configure,
-                CaptureSettings(**value.model_dump()),
-                MutationAuthority(mode="confirmed_user"),
-            )
-        )
-        return CaptureControl(enabled=settings.enabled, revision=settings.revision)
+
+        async def configure() -> CaptureControl:
+            # Serialize policy changes with acceptance. Keep the in-loop gate in
+            # sync even if the browser disconnects after submitting its write.
+            async with self._acceptance_lock:
+                settings = await asyncio.wrap_future(
+                    self.pool.submit(
+                        self.capture.configure,
+                        CaptureSettings(**value.model_dump()),
+                        MutationAuthority(mode="confirmed_user"),
+                    )
+                )
+                self._capture_enabled = settings.enabled
+            lifecycle = self.capture_lifecycle
+            if lifecycle is not None:
+                if not settings.enabled:
+                    await lifecycle.fence()
+                lifecycle.wake()
+            return CaptureControl(enabled=settings.enabled, revision=settings.revision)
+
+        return await settled(asyncio.create_task(configure(), name="ember-capture-policy"))
 
     async def memory_graph(self, request: GraphInput) -> str:
         """Project the current character's graph into the private browser response."""
@@ -358,48 +381,92 @@ class LocalRuntime:
         receipt = await asyncio.wrap_future(self.pool.submit(self.author.create, request))
         return receipt.outcome
 
-    async def consolidate(self, should_continue: Callable[[], bool] | None = None) -> int:
-        """Process a bounded idle batch; gateway P3 admission owns GPU isolation."""
+    def bind_capture(
+        self,
+        identity: UUID,
+        reserve: Callable[[UUID, bool], Awaitable[None]],
+        quiesce: Callable[[], Awaitable[None]],
+        *,
+        idle: Callable[[], bool],
+        permit: Callable[[UUID, bool], Awaitable[None]] | None,
+    ) -> CaptureLifecycle:
+        """Bind the selected transport to the single capture owner and durable input wakeup."""
+        lifecycle = CaptureLifecycle(
+            identity,
+            reserve,
+            quiesce,
+            self.consolidate,
+            idle=idle,
+            permit=permit,
+            enabled=lambda: self._capture_enabled,
+            acceptance_lock=self._acceptance_lock,
+        )
+        self.capture_lifecycle = lifecycle
+        self.sink.capture_wake = lifecycle.wake
+        return lifecycle
+
+    async def consolidate(
+        self, should_continue: Callable[[], bool] | None = None, context_id: UUID | None = None
+    ) -> int:
+        """Process a bounded batch through the existing gateway, keeping each window's pins."""
+        if not self._capture_enabled or (should_continue is not None and not should_continue()):
+            return 0
         pending = await asyncio.wrap_future(
             self.pool.submit(self.capture.pending, runnable_only=True)
         )
         if not pending:
             return 0
-        token_path = self.config.runtime_root / "gateway-background.token"
+        token_file = "gateway-capture.token" if context_id else "gateway-background.token"
+        token_path = self.config.runtime_root / token_file
         try:
-            token = await asyncio.wrap_future(
-                self.pool.submit(token_path.read_text, encoding="utf-8")
-            )
-        except FileNotFoundError as error:
-            # A non-progressing pending count would make idle continuation spin.
+            token = (
+                await asyncio.wrap_future(self.pool.submit(token_path.read_text, encoding="utf-8"))
+            ).strip()
+        except OSError as error:
             raise GatewayError("native_capture_credentials_unavailable") from error
+        if not 32 <= len(token) <= 128:
+            raise GatewayError("native_capture_credentials_unavailable")
+        endpoint = self.config.services.gateway.endpoint
         model = GatewayExtractionModel(
-            self.config.services.gateway.endpoint,
-            token.strip(),
+            endpoint,
+            token,
             native_temporal_specification(
                 self.config.model_tag,
                 self.config.model_digest,
                 timezone=self.config.recall_timezone,
                 workload="P3",
             ),
+            should_continue=should_continue,
+            context_id=context_id,
         )
 
         def model_for(spec: ExtractionSpec) -> GatewayExtractionModel:
-            # The batch owner closes the shared transport once; each job retains immutable pins.
             return (
                 model
                 if model.specification == spec
                 else GatewayExtractionModel(
-                    self.config.services.gateway.endpoint, token.strip(), spec, client=model.client
+                    endpoint,
+                    token,
+                    spec,
+                    client=model.client,
+                    should_continue=should_continue,
+                    context_id=context_id,
                 )
             )
 
         try:
-            async with asyncio.timeout(90):
-                remaining = await self.capture.drain(
-                    model, self.pool, should_continue=should_continue, model_for=model_for
-                )
+            # The gateway owns each window's deadline. Don't detach a valid running
+            # window at a batch timeout; stage its result before yielding to foreground.
+            remaining = await self.capture.drain(
+                model,
+                self.pool,
+                should_continue=should_continue,
+                model_for=model_for,
+                acceptance_lock=self._acceptance_lock,
+            )
             return len(remaining)
+        except ProcessingDeferred as error:
+            raise GatewayError(error.code) from error
         except ProcessingError as error:
             raise GatewayError("native_capture_deferred") from error
         finally:
@@ -425,27 +492,50 @@ class LocalRuntime:
         self.pool.shutdown(wait=True)
 
     async def chat(self) -> None:
-        """Hold conservative realtime ownership for the entire connected terminal session."""
+        """Use console input waits as idle gaps only on a negotiated gateway."""
         identity = uuid4()
-        try:
-            await self.model.session(identity, connected=True)
+
+        async def reserve(identity: UUID, connected: bool) -> None:
+            await self.model.session(identity, connected=connected)
+
+        async def quiesce() -> None:
+            pass  # Terminal owns one turn and commits delivery before reading again.
+
+        async with AsyncExitStack() as cleanup:
+            cleanup.push_async_callback(self.aclose)
+            try:
+                health = await self.model.health()
+                connected_capture = IDLE_NATIVE_CAPTURE_FEATURE in health.features
+            except GatewayError:
+                connected_capture = False  # Preserve legacy reservation/error handling.
+            if connected_capture:
+                lifecycle = self.bind_capture(
+                    identity,
+                    reserve,
+                    quiesce,
+                    idle=lambda: self._terminal_idle,
+                    permit=self.model.capture_idle,
+                )
+                cleanup.push_async_callback(lifecycle.aclose)
+                await lifecycle.before_turn()
+                lifecycle.start()
+            else:
+                cleanup.push_async_callback(self._finish_legacy_chat, identity)
+                await reserve(identity, True)
             await self.start_public_search()
             await self._chat()
-        finally:
-            try:
-                await self.model.session(identity, connected=False)
-                try:
-                    remaining = await self.consolidate()
-                    if remaining:
-                        print(
-                            "Native capture has pending work; resume during the next idle window."
-                        )
-                except TimeoutError:
-                    print("Native consolidation paused at its durable checkpoint.")
-                except GatewayError as error:
-                    print("Native consolidation deferred: " + error.code)
-            finally:
-                await self.aclose()
+
+    async def _finish_legacy_chat(self, identity: UUID) -> None:
+        await self.model.session(identity, connected=False)
+        try:
+            async with asyncio.timeout(90):
+                remaining = await self.consolidate()
+            if remaining:
+                print("Native capture has pending work; resume during the next idle window.")
+        except TimeoutError:
+            print("Native consolidation paused at its durable checkpoint.")
+        except GatewayError as error:
+            print("Native consolidation deferred: " + error.code)
 
     async def _chat(self) -> None:
         """Foreground text loop using the same character core as the LiveKit adapter."""
@@ -455,12 +545,20 @@ class LocalRuntime:
             + ". Use /remember KEY TEXT to save; /quit to finish."
         )
         while True:
+            lifecycle = self.capture_lifecycle
+            self._terminal_idle = True
+            if lifecycle is not None:
+                lifecycle.wake()
             try:
                 text = await read_line("You: ")
             except EOFError:
                 break
+            finally:
+                self._terminal_idle = False
             if text.strip() == "/quit":
                 break
+            if lifecycle is not None:
+                await lifecycle.fence()
             if text.startswith("/remember "):
                 parts = text.split(" ", 2)
                 if len(parts) != 3:

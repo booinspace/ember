@@ -6,7 +6,31 @@ evidence below remains historical. Main-device integration is recorded in the
 2026-10-13/14 sections; the 2026-10-16 review changes have not restarted services
 or modified production memory data.
 
-## Executed verification
+## Connected-idle native capture: 2026-11-23
+
+Synthetic HTTP coverage uses real gateway HTTP contracts, a scripted upstream, and an isolated
+canonical root. The session stays connected. Foreground waits for one running P3 window to drain;
+acceptance waits for the exact reply acknowledgement. One supported claim becomes recallable with
+its original UTF-8 byte/codepoint spans; an uncertain claim stays deferred. Disabling capture
+leaves later input unprocessed. No window reruns to settle pending acceptance.
+
+| Gate | Result |
+|---|---|
+| P8-AC-01/02 | Atomic native checkpoint, supported exact-span capture, recall while connected: synthetic pass. |
+| P8-AC-03 | Capture toggle and imported candidate with an evidence grant remain separate; no automatic import approval or seed. |
+| P8-AC-06/08 | Synthetic LiveKit handle plus linked task and exact-receipt/no-receipt paths; staged-window restart and acceptance receipt replay. |
+| P8-AC-07 | Scoped P3 and sole owner, foreground preparation, P0/P1 and detected-speech fence, preflight and reopen races, EOF and journal settlement, shutdown drain and fresh permit on restart: synthetic pass. Older gateways stay disconnect-only. |
+| P8-AC-09 | Browser state reports disabled, waiting, processing and blocked conditions without per-turn polling. |
+
+Capture-only gate: **1,494 Python tests passed, 18 skipped**; final HTTP rejection-code
+regression passed in a 12-test rerun. Ruff, strict Pyright, generated schemas, Prettier, TypeScript,
+production build and **33 frontend tests** passed.
+
+Not run: real extraction quality, live browser/media playout, shared-runner latency or physical
+speech qualification. A running window can still delay foreground inference; this is not
+preemption acceptance. No live services or private memory stores were changed.
+
+## Executed verification (historical)
 
 The earlier isolated Python gate passed **601 tests, 6 skipped**, in 119.42
 seconds on 2026-10-13. Strict Pyright, Ruff formatting/lint and the locked

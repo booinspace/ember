@@ -1,6 +1,8 @@
 """Narrow optional HTTP adapter to Ember's gateway; the engine never owns inference admission."""
 
-from collections.abc import AsyncIterator
+import asyncio
+import json
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -15,6 +17,7 @@ from .processing_contracts import (
     ClaimOutput,
     ExtractionSpec,
     ModelWindow,
+    ProcessingDeferred,
     ProcessingError,
     batch_type_for,
 )
@@ -45,8 +48,29 @@ class _Event(ContractModel):
     code: str | None = None
 
 
+async def _is_capture_deferral(response: httpx.Response) -> bool:
+    # Only a small, unencoded exact-code body may change durable failure semantics.
+    if response.headers.get("content-encoding", "identity").strip().casefold() != "identity":
+        return False
+    try:
+        async with asyncio.timeout(1):
+            body = bytearray()
+            async for block in response.aiter_bytes():
+                if len(body) + len(block) > 1024:
+                    return False
+                body.extend(block)
+        # Preserve duplicate keys so they cannot masquerade as a single exact code.
+        return json.loads(body, object_pairs_hook=tuple) == (("code", "idle_capture_deferred"),)
+    except (httpx.HTTPError, ValueError, RecursionError, TimeoutError):
+        return False
+
+
 class GatewayExtractionModel:
-    """Use scoped P3/P4 credentials and validated completed JSON through one gateway."""
+    """Use scoped P3/P4 credentials and validated completed JSON through one gateway.
+
+    Check the optional loop predicate after health checks, before generation. A pinned
+    context can bind windows to a caller-owned idle session; request IDs remain fresh.
+    """
 
     def __init__(
         self,
@@ -55,6 +79,8 @@ class GatewayExtractionModel:
         specification: ExtractionSpec,
         *,
         client: httpx.AsyncClient | None = None,
+        should_continue: Callable[[], bool] | None = None,
+        context_id: CanonicalId | None = None,
     ) -> None:
         origin = urlsplit(endpoint)
         if (
@@ -69,6 +95,8 @@ class GatewayExtractionModel:
         ):
             raise ProcessingError("gateway_origin_invalid")
         self._specification = specification
+        self._should_continue = should_continue
+        self._context_id = context_id
         self.client = client or httpx.AsyncClient(base_url=endpoint, timeout=190, trust_env=False)
         self.headers = {"Authorization": "Bearer " + token}
 
@@ -93,8 +121,6 @@ class GatewayExtractionModel:
 
     async def extract(self, window: ModelWindow) -> ClaimOutput:
         """Verify model/workload health; commit nothing before an explicit validated end."""
-        import json
-
         try:
             response = await self.client.get("/health", headers=self.headers, timeout=5)
             response.raise_for_status()
@@ -122,7 +148,7 @@ class GatewayExtractionModel:
                 or health.status not in {"ready", "busy"}
             ):
                 raise ProcessingError("gateway_background_unavailable")
-            request_id, context_id = uuid4(), uuid4()
+            request_id, context_id = uuid4(), self._context_id or uuid4()
             body: dict[str, JsonValue] = {
                 "version": "0.2.0",
                 "request_id": str(request_id),
@@ -155,9 +181,13 @@ class GatewayExtractionModel:
             size = 0
             sequence = 0
             started = False
+            if self._should_continue is not None and not self._should_continue():
+                raise ProcessingDeferred()
             async with self.client.stream(
                 "POST", "/v1/generate", headers=self.headers, json=body
             ) as stream:
+                if stream.status_code == 409 and await _is_capture_deferral(stream):
+                    raise ProcessingDeferred()
                 if stream.status_code != 200:
                     raise ProcessingError("gateway_background_rejected")
                 async for line in self._lines(stream):
@@ -169,6 +199,8 @@ class GatewayExtractionModel:
                     ):
                         raise ProcessingError("gateway_stream_identity_or_order")
                     if event.kind == "error":
+                        if event.code == "idle_capture_deferred":
+                            raise ProcessingDeferred()
                         if event.code in {
                             "invalid_structured_output",
                             "structured_schema_mismatch",

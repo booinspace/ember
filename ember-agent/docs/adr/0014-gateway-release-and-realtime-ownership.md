@@ -11,12 +11,12 @@ and [Phase 13 validation](../../../docs/phase-13-validation.md).
   metadata verification by the request deadline and rechecks closure, deadline,
   subscription and realtime eligibility before any native generation.
 - P1 requires its own realtime reservation. P2–P4 use the existing weighted FIFO
-  schedule. Unmarked P2 and P3–P4 run when the connected set is empty. Only
-  authenticated Tasks P2 steps can use an idle reservation. They yield to pending
-  foreground requests and detected speech before native start. A preparing step counts
-  against its class's queue limit until it reaches the runner. When it loses
-  eligibility before native work, it returns to the head of its own queue with
-  the same deadline and request identity.
+  schedule. Of these, only authenticated idle Tasks P2 and [native capture P3](#native-capture-permit)
+  can start during a realtime connection. They yield to pending foreground requests
+  and detected speech before native start. A preparing step counts against its
+  class's queue limit until it reaches the runner. A parked step returns to the
+  head of its queue with the same deadline and request identity; fenced capture
+  steps defer instead.
 - P5 can use an idle realtime reservation. A P0 arrival parks a preparing P5
   before native work or waits for an active P5 to drain. A waiting P0 deadline
   withdraws the waiter while the active P5 keeps its owner. Coding streams
@@ -64,3 +64,19 @@ remains independently managed. The gateway closes its
 transport on shutdown and has no authority to unload the model or stop the
 service. Existing task and memory owners continue to account for their own I/O
 and external effects. The phase adds no background retry after native start.
+
+## Native capture permit
+
+The gateway advertises `idle_native_capture_v1` when configured with a distinct
+`gateway-capture.token`. That credential admits only P3 with `context_id` matching
+the sole realtime reservation and its active permit. Only the foreground credential
+can set the permit via `PUT /v1/realtime/{session_id}/capture`. P3/P4 submitted
+with `gateway-background.token` still start only without a realtime reservation.
+Imports and unmarked requests cannot use the permit.
+
+Reservation changes, foreground preparation/admission, and detected speech fence
+the permit. Queued or preparing capture steps defer with `idle_capture_deferred`
+and cannot carry over into the next idle gap. Once native work starts, the step
+still owns the slot through verified drain and journal settlement. This does not
+use Strata's P5 preemption path. See [Agent ADR 0006](0006-phase-eight-calendar-and-capture.md#connected-idle-native-capture)
+for resumption and acceptance.

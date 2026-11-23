@@ -32,6 +32,7 @@ _REJECTIONS = frozenset(
         "journal_unavailable",
         "quiescence_required",
         "live_reservation_required",
+        "idle_capture_deferred",
         "busy",
         "background_queue_full",
         "background_requires_structured_output",
@@ -124,6 +125,21 @@ class HttpGatewayClient:
             response.raise_for_status()
         except httpx.HTTPError as error:
             raise GatewayError("realtime_reservation_failed") from error
+
+    async def capture_idle(self, identity: UUID, idle: bool) -> None:
+        """Open or fence this realtime session's native capture lane, without preempting it."""
+        try:
+            response = await self.client.put(
+                f"/v1/realtime/{identity}/capture",
+                headers=self.headers,
+                json={"connected": idle},
+                timeout=2,
+            )
+            if response.status_code == 409:
+                raise GatewayError("idle_capture_deferred")
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise GatewayError("native_capture_gateway_unavailable") from error
 
     async def voice(self, identity: UUID, *, reserved: bool) -> None:
         """Reserve the owned session's speech and playout lane ahead of coding."""

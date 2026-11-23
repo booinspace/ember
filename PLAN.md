@@ -2011,8 +2011,8 @@ the same service in events or delegated research with a scoped read broker; memo
 ownership and result validation do not move to the task store.
 
 Optional model-assisted planning is deferred until the appropriate Phase 9 P1/P2
-gateway capability is implemented and verified. P3/P4 remain prohibited during a
-connected realtime session; background work cannot masquerade as P0. Phase 13 alone
+gateway capability is implemented and verified. Background work cannot masquerade as
+P0; only scoped native capture can use P3 while connected (P8-AC-07). Phase 13 alone
 can enable measured live inference preemption. Final conversational synthesis uses P0.
 
 [Root ADR 0010](docs/adr/0010-planned-deep-associative-recall-and-phase-acceptance.md)
@@ -3901,11 +3901,13 @@ dates, reviewed enrichment and historical delivery; they are distinct from deep 
   continues to require explicit source grants. Model output cannot change these
   controls.
 - **P8-AC-07:** Automatic extraction remains P3 through the single gateway with bounded queues
-  and durable checkpoints. Until Phase 13 measured preemption acceptance, process
-  after disconnection or explicit realtime suspension; a connected session's
-  apparent idle gap is not permission for background inference. Test safe draining
-  on conversation restart, no overlapping upstream generation, and truthful
-  pending/blocked status instead of delaying each conversational reply.
+  and durable checkpoints. With `idle_native_capture_v1`, the runtime can submit native P3
+  while connected and between turns without releasing its realtime reservation. Foreground
+  inference and detected speech hold queued idle P3; a running window drains without preemption.
+  Stage validated extraction output, but defer activation during a turn or pending delivery.
+  Unmarked P3/P4 and older gateways keep disconnect-only scheduling. Test connected capture,
+  priority, safe draining and resumable deferral. Measure live latency separately on the exact
+  runner profile.
 - **P8-AC-08:** Test interruption/restart without duplicate acceptance, partial commits or lost
   queued sources; failed evidence/model output remains pending/failed rather than
   weakening validation. Update compatible indexes after accepted writes and retain

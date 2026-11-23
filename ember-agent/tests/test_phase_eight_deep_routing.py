@@ -160,7 +160,12 @@ def test_gateway_admission_failure_keeps_original_input_after_delivery_drain(
 
             agent.before_turn = drain
             agent.before_generation = admit
-            agent.prepare_failed = lambda: events.append("failed")
+
+            def prepare_finished(prepared: bool) -> None:
+                assert not prepared
+                events.append("failed")
+
+            agent.prepare_finished = prepare_finished
             message = llm.ChatContext().add_message(
                 role="user", content="Synthetic original speech."
             )

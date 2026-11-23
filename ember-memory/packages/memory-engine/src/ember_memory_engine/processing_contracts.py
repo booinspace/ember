@@ -24,6 +24,13 @@ class ProcessingError(RuntimeError):
         super().__init__("Memory processing: " + code + ".")
 
 
+class ProcessingDeferred(ProcessingError):
+    """Idle native capture yielded; resume the same pinned window later."""
+
+    def __init__(self) -> None:
+        super().__init__("idle_capture_deferred")
+
+
 class ExtractionSpec(ContractModel):
     """Pinned processing identity; changed model/prompt/policy requires an explicit new job."""
 

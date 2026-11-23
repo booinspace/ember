@@ -95,6 +95,12 @@ Phase 8 implementation is in progress: [Root ADR 0015](0015-phase-eight-implemen
 deep source/alias recall, enrichment, measured performance and remaining gates.
 The experimental main-device runtime has installed browser/speech evidence; the full phase remains incomplete. See the Phase 8 runbook for the single launch command.
 
+The [connected-idle native capture amendment](0015-phase-eight-implementation.md#connected-idle-native-capture)
+is implemented in the checkout for terminal and both browser transports. It uses
+[conservative gateway admission](0024-phase-thirteen-inference-hardening.md#connected-idle-native-capture),
+not preemption. Older gateways remain disconnect-only; live latency remains unqualified.
+See the [operator runbook](../phase-8-runbook.md#native-capture-while-connected).
+
 The [2026-10-16 review](../reports/phase-8-architecture-review-20261016.md) and
 [remediation design](../phase-8-review-remediation.md) cover source qualification,
 selected prompt certificates, capture resumption and degraded browser operation.

@@ -152,12 +152,13 @@ export function Controls({
         Learn from our conversations
       </label>
       <p>
-        Native proposals use the acceptance policy. Pending work runs when
-        realtime conversation is released.
+        Native proposals follow the acceptance policy. Capture runs between
+        turns on supported gateways, or after disconnect on older ones.
       </p>
       <h3>Memory processing</h3>
       <p>
-        Index: {state.processing.index_status}. Queued:{" "}
+        Index: {state.processing.index_status}. Native capture:{" "}
+        {state.processing.capture_status.replaceAll("_", " ")}. Queued:{" "}
         {state.processing.counts.queued ?? 0}; paused:{" "}
         {state.processing.counts.paused ?? 0}; failed:{" "}
         {state.processing.counts.failed ?? 0}.

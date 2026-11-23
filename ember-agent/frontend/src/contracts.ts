@@ -52,8 +52,14 @@ export const runtimeState = z.object({
       counts: z.record(z.string(), z.number().int().nonnegative()),
       failure_codes: z.array(z.string()).max(8),
       index_status: z.string(),
+      capture_status: z.string().default("unavailable"),
     })
-    .default({ counts: {}, failure_codes: [], index_status: "unknown" }),
+    .default({
+      counts: {},
+      failure_codes: [],
+      index_status: "unknown",
+      capture_status: "unavailable",
+    }),
   deep: z.string(),
   lan_available: z.boolean().default(false),
   tasks_available: z.boolean().default(false),

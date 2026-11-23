@@ -4,6 +4,7 @@ import asyncio
 import sqlite3
 from collections.abc import Callable
 from concurrent.futures import Executor
+from contextlib import nullcontext
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from .processing_contracts import (
     ExtractionModel,
     ExtractionSpec,
     JobRequest,
+    ProcessingDeferred,
     ProcessingError,
     native_specification,
     native_temporal_specification,
@@ -228,6 +230,71 @@ class CaptureService:
             )
         )
 
+    async def _accept_candidates(
+        self,
+        job_id: CanonicalId,
+        spec: ExtractionSpec,
+        executor: Executor,
+        should_continue: Callable[[], bool] | None,
+        acceptance_lock: asyncio.Lock | None,
+    ) -> bool:
+        loop = asyncio.get_running_loop()
+        policy = DATED_POLICY if spec.extractor == "ember.atomic-claims@0.3.1" else POLICY
+
+        def accept(candidate: CanonicalId) -> bool:
+            if not self.settings().enabled:
+                return False
+            # Immutable receipts make a partially accepted delivery safe to replay.
+            NativeAcceptanceService(self.engine, self.character).accept(
+                NativeAcceptanceRequest(
+                    candidate_id=candidate,
+                    idempotency_key="native-capture:" + str(candidate),
+                    policy=policy,
+                )
+            )
+            return True
+
+        last = ""
+        while True:
+            rows = await loop.run_in_executor(
+                executor,
+                lambda last=last: self.database.read(
+                    lambda connection: connection.execute(
+                        "SELECT candidate_id FROM processing_candidates WHERE job_id=? "
+                        "AND candidate_id>? ORDER BY candidate_id LIMIT 128",
+                        (str(job_id), last),
+                    ).fetchall()
+                ),
+            )
+            if not rows:
+                return True
+            for row in rows:
+                if should_continue is not None and not should_continue():
+                    return False
+                last = row_text(row, "candidate_id")
+                async with acceptance_lock or nullcontext(None):
+                    if (
+                        acceptance_lock is not None
+                        and should_continue is not None
+                        and not should_continue()
+                    ):
+                        return False
+                    future = loop.run_in_executor(executor, accept, UUID(last))
+                    try:
+                        accepted = await asyncio.shield(future)
+                    except asyncio.CancelledError as cancelled:
+                        # Retain the acceptance fence until the native write settles.
+                        while not future.done():
+                            try:
+                                await asyncio.wait((future,))
+                            except asyncio.CancelledError:
+                                continue
+                        if not future.cancelled() and (error := future.exception()) is not None:
+                            raise cancelled from error
+                        raise
+                    if not accepted:
+                        return False
+
     async def drain(
         self,
         model: ExtractionModel,
@@ -236,11 +303,14 @@ class CaptureService:
         limit: int = 8,
         should_continue: Callable[[], bool] | None = None,
         model_for: Callable[[ExtractionSpec], ExtractionModel] | None = None,
+        acceptance_lock: asyncio.Lock | None = None,
     ) -> tuple[CaptureCheckpoint, ...]:
-        """Called only after realtime reservation release; cancellation leaves durable work.
+        """Drain bounded native capture under caller scheduling and gateway P3 admission.
 
-        Gateway admission is the final P3 guard. Caller owns and drains the executor
-        before closing the engine. No import approval, seeding or whole-history snapshot occurs.
+        The event-loop predicate can pause acceptance without discarding validated windows.
+        Hold the optional lock for one acceptance, draining it before cancellation escapes.
+        ProcessingDeferred propagates only after pausing the checkpoint. Caller owns the
+        executor and drains it before closing the engine.
         """
         loop = asyncio.get_running_loop()
         if not (await loop.run_in_executor(executor, self.settings)).enabled:
@@ -292,48 +362,24 @@ class CaptureService:
                     item.delivery_key, "processing", identity
                 ),
             )
-            outcome = await self.processing.run(
-                identity,
-                selected_model,
-                max_windows=8,
-                retry_failed=True,
-                window_attempts=3,
-                continue_on_error=True,
-                should_continue=should_continue,
-            )
-
-            # Each native decision has its own immutable receipt; retrying a partially
-            # accepted delivery cannot append duplicate memories or supports.
-            def accept(
-                identity: CanonicalId = identity, job_spec: ExtractionSpec = job_spec
-            ) -> bool:
-                last = ""
-                while True:
-                    rows = self.database.read(
-                        lambda connection, last=last: connection.execute(
-                            "SELECT candidate_id FROM processing_candidates WHERE job_id=? "
-                            "AND candidate_id>? ORDER BY candidate_id LIMIT 128",
-                            (str(identity), last),
-                        ).fetchall()
-                    )
-                    if not rows:
-                        return True
-                    for row in rows:
-                        if not self.settings().enabled:
-                            return False
-                        last = row_text(row, "candidate_id")
-                        candidate = UUID(last)
-                        NativeAcceptanceService(self.engine, self.character).accept(
-                            NativeAcceptanceRequest(
-                                candidate_id=candidate,
-                                idempotency_key="native-capture:" + str(candidate),
-                                policy=DATED_POLICY
-                                if job_spec.extractor == "ember.atomic-claims@0.3.1"
-                                else POLICY,
-                            )
-                        )
-
-            accepted_all = await loop.run_in_executor(executor, accept)
+            try:
+                outcome = await self.processing.run(
+                    identity,
+                    selected_model,
+                    max_windows=8,
+                    retry_failed=True,
+                    window_attempts=3,
+                    continue_on_error=True,
+                    should_continue=should_continue,
+                )
+                accepted_all = await self._accept_candidates(
+                    identity, job_spec, executor, should_continue, acceptance_lock
+                )
+            except (ProcessingDeferred, asyncio.CancelledError):
+                await loop.run_in_executor(
+                    executor, self._mark, item.delivery_key, "paused", identity
+                )
+                raise
             status = (
                 "complete"
                 if outcome.status == "complete" and accepted_all

@@ -44,6 +44,8 @@ class DirectTextSession:
         self.lease_seconds = lease_seconds
         self.before_turn: Callable[[], Awaitable[None]] | None = None
         self.connection_changed: Callable[[bool], None] | None = None
+        self.capture_fence: Callable[[], Awaitable[None]] | None = None
+        self.capture_wake: Callable[[], None] | None = None
         self.identity: UUID | None = None
         self.deadline = 0.0
         self.renewed = asyncio.Event()
@@ -53,6 +55,18 @@ class DirectTextSession:
         self.closed = False
         self.connecting = False
         self.delivery_lock = asyncio.Lock()
+
+    def capture_idle(self) -> bool:
+        """A buffered reply is still foreground work until its receipt settles."""
+        return (
+            not self.closed
+            and not self.connecting
+            and self.active is None
+            and not self.core.busy
+            and self.core.pending_delivery is None
+            and not self.delivery_lock.locked()
+            and (self.identity is not None or self.lease is None or self.lease.done())
+        )
 
     async def connect(self) -> UUID:
         """Reserve realtime before accepting text; a crashed browser expires and drains."""
@@ -74,11 +88,16 @@ class DirectTextSession:
             self.renewed.clear()
             self.connection_changed(True)
             self.lease = asyncio.create_task(self._watch_lease(), name="ember-http-session")
+            if self.capture_wake is not None:
+                wake = self.capture_wake
+                self.lease.add_done_callback(lambda _: wake())
             return self.identity
         finally:
             self.connecting = False
             if self.identity is None:
                 self.connection_changed(False)
+            if self.capture_wake is not None:
+                self.capture_wake()
 
     def heartbeat(self, identity: UUID) -> None:
         """Only this current authenticated transport lease can keep realtime connected."""
@@ -149,10 +168,14 @@ class DirectTextSession:
             raise
         finally:
             self.active = None
+            if self.capture_wake is not None:
+                self.capture_wake()
 
     async def _generate(
         self, request_id: UUID, text: str, investigation_id: UUID | None
     ) -> TextReply:
+        if self.capture_fence is not None:
+            await self.capture_fence()
         observation = await self.core.observe_input(text, request_id=request_id)
         if self.before_turn is None:
             raise GatewayError("text_session_unconfigured")
@@ -194,15 +217,21 @@ class DirectTextSession:
     async def acknowledge(self, identity: UUID, request_id: UUID) -> None:
         """Browser receipt binds the exact visible response to the pending core turn."""
         self.heartbeat(identity)
-        async with self.delivery_lock:
-            pending = self.core.pending_delivery
-            if pending is None or not await self.core.current(
-                pending[0].dependencies, pending[0].certificate
-            ):
-                if pending is not None:
-                    await self.core.acknowledge(pending[0].request.request_id, "", complete=False)
-                raise GatewayError("context_invalidated")
-            await self.core.acknowledge(request_id, pending[1], complete=True)
+        try:
+            async with self.delivery_lock:
+                pending = self.core.pending_delivery
+                if pending is None or not await self.core.current(
+                    pending[0].dependencies, pending[0].certificate
+                ):
+                    if pending is not None:
+                        await self.core.acknowledge(
+                            pending[0].request.request_id, "", complete=False
+                        )
+                    raise GatewayError("context_invalidated")
+                await self.core.acknowledge(request_id, pending[1], complete=True)
+        finally:
+            if self.capture_wake is not None:
+                self.capture_wake()
 
     async def aclose(self) -> None:
         """Stop admission and join the lease and its generation before closing memory."""
