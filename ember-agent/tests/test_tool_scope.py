@@ -11,6 +11,7 @@ import pytest
 from ember_agent.observability import ActivityLog
 from ember_agent.runtime.mcp_tools import MCPTools
 from ember_agent.runtime.task_router import (
+    TaskBinding,
     TaskResult,
     TaskRouter,
     TextInspectionProvider,
@@ -80,7 +81,7 @@ def test_revoked_tool_context_redacts_all_disclosure_surfaces(
             mcp=tools,
         )
         tool = identity(tools, "echo")
-        direct = router.providers["tool"]
+        direct = router.bindings["tool"].adapter
         assert direct is not None
 
         class LegacyReceipt:
@@ -111,8 +112,7 @@ def test_revoked_tool_context_redacts_all_disclosure_surfaces(
                     }
                 )
 
-        router.delegate = LegacyReceipt()
-        router.providers["delegate"] = router.delegate
+        router.bindings["delegate"] = TaskBinding(LegacyReceipt())
         await router.start()
         try:
             handle = await router.submit("extended", "Synthetic tool input", operation="delegate")

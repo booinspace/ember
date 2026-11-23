@@ -21,6 +21,7 @@ from ember_agent.observability import ActivityLog
 from ember_agent.runtime.config import BuildSettings, HarnessSettings
 from ember_agent.runtime.opencode_harness import open_build
 from ember_agent.runtime.task_router import (
+    TaskBinding,
     TaskRouter,
     TextInspectionProvider,
     TextInspectionTask,
@@ -147,8 +148,7 @@ def test_pinned_opencode_build(tmp_path: Path, service_port: int | None) -> None
                 router.build_services,
                 observe=observed.append,
             ) as provider:
-                router.providers["build"] = provider
-                router.build_health = lambda: provider.available
+                router.bindings["build"] = TaskBinding(provider, ready=lambda: provider.available)
                 await router.start()
                 try:
                     task = await router.submit(

@@ -8,6 +8,7 @@ import {
   type Investigation,
 } from "./contracts";
 import { Inspector } from "./Inspector";
+import { TaskWork } from "./TaskWork";
 import { createRequestId } from "./ids";
 import { capabilitySnapshot } from "./dashboard_contracts";
 
@@ -44,7 +45,10 @@ const operationNames: Record<Operation, string> = {
   build: "Build",
   research: "Web research",
 };
-type ReceiptOperation = Extract<Operation, "build" | "tool" | "research">;
+type ReceiptOperation = Extract<
+  Operation,
+  "build" | "delegate" | "tool" | "research"
+>;
 const snapshot = handle.extend({
   result: z.string().nullable(),
   operation: operationSchema,
@@ -699,6 +703,7 @@ export function Tasks({
               </button>
             )}
             {(itemOperation === "tool" ||
+              itemOperation === "delegate" ||
               itemOperation === "build" ||
               itemOperation === "research") && (
               <button
@@ -719,6 +724,16 @@ export function Tasks({
       {visible && receipt && (
         <section aria-label={`${operationNames[receipt.operation]} receipt`}>
           <p>Outcome: {receipt.state}</p>
+          {receipt.receipt && (
+            <TaskWork
+              key={receipt.task_id}
+              id={receipt.task_id}
+              data={receipt.receipt.data}
+              build={
+                receipt.operation === "build" && receipt.state === "succeeded"
+              }
+            />
+          )}
           {receipt.operation === "research" &&
             sources.success &&
             sources.data.length > 0 && (
@@ -752,12 +767,14 @@ export function Tasks({
             (!sources.success || sources.data.length === 0) && (
               <p>No source data was retained for this outcome.</p>
             )}
-          {receipt.operation !== "research" && (
-            <pre>
-              {receipt.receipt
-                ? JSON.stringify(receipt.receipt, null, 2)
-                : "No result data was retained for this outcome."}
-            </pre>
+          {receipt.operation !== "research" && !receipt.receipt && (
+            <p>No result data was retained for this outcome.</p>
+          )}
+          {receipt.operation !== "research" && receipt.receipt && (
+            <details>
+              <summary>Receipt details</summary>
+              <pre>{JSON.stringify(receipt.receipt, null, 2)}</pre>
+            </details>
           )}
         </section>
       )}

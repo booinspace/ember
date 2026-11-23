@@ -585,8 +585,24 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
               tool: "opencode_build",
               outcome: "applied",
               code: null,
-              data: { summary: modelText },
+              data: {
+                summary: modelText,
+                tools: [{ name: "write", status: "completed" }],
+                artifact: { names: ["src/app.html"] },
+              },
             },
+          },
+        });
+      case `/api/tasks/${id}/file-preview`:
+        expect(new URL(route.request().url()).searchParams.get("name")).toBe(
+          "src/app.html",
+        );
+        return route.fulfill({
+          json: {
+            name: "src/app.html",
+            size_bytes: 16,
+            text: "<h1>fixture</h1>",
+            truncated: false,
           },
         });
       case `/api/tasks/${id}/build-artifact`:
@@ -678,6 +694,10 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
   await expect(
     page.getByRole("region", { name: "Build receipt" }),
   ).toContainText("opencode_build");
+  await page.getByRole("button", { name: "app.html" }).click();
+  const contents = page.getByRole("region", { name: "File contents" });
+  await expect(contents.locator("code")).toHaveText("<h1>fixture</h1>");
+  await expect(contents.locator("h1")).toHaveCount(0);
 
   const service = page.getByRole("region", { name: "Active Build service" });
   await expect(

@@ -4,8 +4,10 @@ import asyncio
 import hashlib
 import json
 import re
+import sqlite3
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import aclosing
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import time
@@ -18,6 +20,7 @@ from ember_memory_abi.common import timestamp_from_datetime
 from ember_memory_abi.evidence import SourceRef
 from ember_memory_abi.related import ContextDependencies
 
+from ..character.task_work import AmbiguousWork, WorkDigest, WorkUnavailable
 from ..inference.contracts import GatewayError, GatewayRequest, ModelClient, PromptMessage
 from ..memory.deep_contracts import DeepRecallRequest
 from ..memory.deep_recall import DeepRecallService
@@ -329,7 +332,7 @@ class TaskResult(RuntimeModel):
     skill_dependencies: tuple[SkillDependency, ...] = Field(default=(), max_length=8)
 
 
-def _workspace_inspection(result: TaskResult) -> bool:
+def _workspace_inspection(result: TaskResult, binding: "TaskBinding") -> bool:
     """Only a managed read-only workspace summary can cross to Build.
 
     OpenCode scopes these tool calls to its configured Inspect root. Operators must
@@ -340,7 +343,7 @@ def _workspace_inspection(result: TaskResult) -> bool:
     tools = receipt.data.get("tools")
     return (
         receipt.tool == "delegate"
-        and receipt.data.get("provider") == "opencode"
+        and receipt.data.get("provider") == binding.provider_id
         and receipt.outcome == "success"
         and result.dependencies is None
         and not (result.citations or result.tool_dependencies or result.skill_dependencies)
@@ -348,7 +351,7 @@ def _workspace_inspection(result: TaskResult) -> bool:
         and 1 <= len(tools) <= 32
         and all(
             isinstance(tool, dict)
-            and tool.get("name") in ("read", "glob", "grep")
+            and tool.get("name") in binding.inspection_tools
             and tool.get("status") in ("completed", "error")
             for tool in tools
         )
@@ -367,6 +370,17 @@ class AgenticTaskProvider(Protocol):
     ) -> TaskResult:
         """Return a scope-bound result using only explicitly authorized operations."""
         ...
+
+
+@dataclass(frozen=True)
+class TaskBinding:
+    """Installed adapter. Only composition can designate tools as workspace reads."""
+
+    adapter: AgenticTaskProvider
+    provider_id: str = "ember"
+    label: str = "Ember"
+    ready: Callable[[], bool] = lambda: True
+    inspection_tools: tuple[str, ...] = ()
 
 
 class TextInspectionTask:
@@ -750,13 +764,10 @@ class TaskRouter:
         self.skills: Skills | None = None
         self.delegate_label = "Agentic harness"
         self.delegate_unavailable: str | None = None
-        self.delegate_health: Callable[[], bool] | None = None
         self.research_provider: ProviderId | None = None
         self.research_revision: BindingRevision | None = None
         self.research_label: str | None = None
-        self.research_health: Callable[[], bool] | None = None
         self.research_unavailable: str | None = None
-        self.build_health: Callable[[], bool] | None = None
         self.build_unavailable: str | None = None
         self.task_admission: Callable[[], Awaitable[tuple[bool, bool]]] | None = None
         self.build_artifacts = BuildArtifacts(root)
@@ -764,13 +775,13 @@ class TaskRouter:
         self.artifacts = TaskArtifacts(root)
         self.character_id = character_id
         self.session_id = session_id
+        self.conversation_id: UUID | None = None
         self.provider = provider
         self.summary = summary
         self.recall = recall
-        self.delegate = delegate
         self.validate = validate
         self.mcp = mcp
-        self.providers = {
+        providers: dict[TaskOperation, AgenticTaskProvider | None] = {
             "inspect": provider,
             "summarize": summary,
             "recall": recall,
@@ -782,12 +793,11 @@ class TaskRouter:
         self._completion_lock = asyncio.Lock()
         self.events = EventBus()
         self.attention = AttentionPolicy()
-        self.providers["review"] = DraftReviewTask(
-            self.store, self.events, self.artifacts, character_id
-        )
-        self.providers["tool"] = (
+        providers["review"] = DraftReviewTask(self.store, self.events, self.artifacts, character_id)
+        providers["tool"] = (
             MCPTask(self.store, self.events, mcp, character_id, activity=activity) if mcp else None
         )
+        self.bindings = {op: TaskBinding(adapter) for op, adapter in providers.items() if adapter}
         self._worker: asyncio.Task[None] | None = None
         self._closing = False
         self._active: (
@@ -798,28 +808,29 @@ class TaskRouter:
     @property
     def delegation_available(self) -> bool:
         """Do not advertise a failed or absent harness."""
-        return self.delegate is not None and (
-            self.delegate_health is None or self.delegate_health()
-        )
+        return self.delegate_unavailable is None and self.ready("delegate")
+
+    def ready(self, operation: TaskOperation) -> bool:
+        binding = self.bindings.get(operation)
+        return binding is not None and binding.ready()
+
+    def provider_label(self, operation: TaskOperation) -> str:
+        binding = self.bindings.get(operation)
+        return binding.label if binding else self.delegate_label
 
     @property
     def build_available(self) -> bool:
         """Advertise Build only after isolated worker qualification at startup."""
-        return (
-            self.providers["build"] is not None
-            and self.build_unavailable is None
-            and (self.build_health is None or self.build_health())
-        )
+        return self.ready("build") and self.build_unavailable is None
 
     @property
     def research_available(self) -> bool:
         """Advertise only the configured and verified Research worker."""
         return (
-            self.providers["research"] is not None
+            self.ready("research")
             and self.research_provider is not None
             and self.research_revision is not None
             and self.research_unavailable is None
-            and (self.research_health is None or self.research_health())
         )
 
     def _provider(self, operation: TaskOperation) -> AgenticTaskProvider | None:
@@ -829,7 +840,8 @@ class TaskRouter:
             operation == "build" and not self.build_available
         ):
             return None
-        return self.providers[operation]
+        binding = self.bindings.get(operation)
+        return binding.adapter if binding and binding.ready() else None
 
     async def start(self) -> None:
         """Reconcile interrupted work before accepting new work."""
@@ -885,6 +897,7 @@ class TaskRouter:
                     "character_id": self.character_id,
                     "session_id": self.session_id,
                     "turn_id": turn_id or uuid5(self.session_id, key),
+                    "conversation_id": self.conversation_id if turn_id else None,
                     "idempotency_key": key,
                     "goal": text,
                     "operation": operation,
@@ -916,6 +929,7 @@ class TaskRouter:
                 character_id=self.character_id,
                 session_id=self.session_id,
                 turn_id=turn_id,
+                conversation_id=self.conversation_id,
                 idempotency_key=f"inspect:{turn_id}",
                 goal=inspect_goal,
                 operation="delegate",
@@ -925,6 +939,7 @@ class TaskRouter:
                     "character_id": self.character_id,
                     "session_id": self.session_id,
                     "turn_id": turn_id,
+                    "conversation_id": self.conversation_id,
                     "idempotency_key": f"build:{turn_id}",
                     "goal": build_goal,
                     "operation": "build",
@@ -1030,6 +1045,23 @@ class TaskRouter:
             return TaskReceiptView(task_id=task_id, state=value.state, receipt=None)
         try:
             receipt = TaskResult.model_validate_json(value.receipt).receipt
+            if value.operation == "delegate":
+                # Generic adapters may keep private diagnostic fields in durable receipts.
+                # Project only the installed read tools; do not send the payload to the UI.
+                binding = self.bindings.get("delegate")
+                steps = receipt.data.get("tools")
+                data: dict[str, JsonValue] = {}
+                if binding and receipt.data.get("provider") == binding.provider_id:
+                    data["provider"] = binding.provider_id
+                    if isinstance(steps, list):
+                        data["tools"] = [
+                            {"name": step["name"], "status": step["status"]}
+                            for step in steps[:32]
+                            if isinstance(step, dict)
+                            and step.get("name") in binding.inspection_tools
+                            and step.get("status") in ("completed", "error")
+                        ]
+                receipt = receipt.model_copy(update={"data": data})
             return TaskReceiptView(task_id=task_id, state=value.state, receipt=receipt)
         except ValueError as error:
             raise TaskConflict("task_receipt_unavailable") from error
@@ -1187,6 +1219,46 @@ class TaskRouter:
         results = await self.store.notifications(self.character_id)
         return self.attention.update(len(pending), len(results))
 
+    async def conversation_work(
+        self, conversation: UUID, after: int | None, prefix: str
+    ) -> tuple[WorkDigest, ...]:
+        """Summaries only. Never replay mutable private/tool-dependent evidence into P0."""
+        if conversation != self.conversation_id or (
+            prefix and not re.fullmatch(r"[a-f0-9-]{8,36}", prefix)
+        ):
+            return ()
+        try:
+            rows = await self.store.completed_work(
+                self.character_id, self.session_id, conversation, after=after, prefix=prefix
+            )
+            if prefix and len(rows) > 1:
+                raise AmbiguousWork
+            work: list[WorkDigest] = []
+            for sequence, value in rows:
+                identity = value.task_id
+                summary = ""
+                if value.state == "succeeded" and value.receipt:
+                    result = TaskResult.model_validate_json(value.receipt)
+                    receipt = result.receipt
+                    if (
+                        receipt.context.character_id == self.character_id
+                        and receipt.context.session_id == self.session_id
+                        and receipt.context.task_id == identity
+                        and receipt.outcome == "success"
+                        and not (
+                            result.dependencies
+                            or result.citations
+                            or result.tool_dependencies
+                            or result.skill_dependencies
+                        )
+                        and value.operation in {"build", "delegate", "inspect", "summarize"}
+                    ):
+                        summary = result.summary[:480]
+                work.append(WorkDigest(sequence, identity, value.operation, value.state, summary))
+            return tuple(work)
+        except (ValueError, sqlite3.Error) as error:
+            raise WorkUnavailable from error
+
     async def _dispatch(self) -> None:
         retry = False
         while not self._closing:
@@ -1234,11 +1306,7 @@ class TaskRouter:
                 request.operation,
                 request_id=request.turn_id,
                 task_id=identity,
-                provider=self.delegate_label
-                if request.operation in ("delegate", "build")
-                else "OpenCode"
-                if request.operation == "research"
-                else "ember",
+                provider=self.provider_label(request.operation),
             )
             if self.activity
             else None
@@ -1498,7 +1566,7 @@ class TaskRouter:
                 receipt=receipt,
                 artifact=artifact,
                 inspected_workspace=request.operation == "delegate"
-                and _workspace_inspection(result),
+                and _workspace_inspection(result, self.bindings["delegate"]),
             )
 
     async def aclose(self) -> None:

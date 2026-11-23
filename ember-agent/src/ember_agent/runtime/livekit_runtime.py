@@ -48,6 +48,7 @@ from .strata_runtime import await_strata_ready, prepare_strata_config, strata_ga
 from .task_router import (
     RecallTask,
     SummaryTask,
+    TaskBinding,
     TaskRouter,
     TextInspectionProvider,
     TextInspectionTask,
@@ -131,10 +132,16 @@ async def _start_tasks(
             router.delegate_unavailable = "gateway_task_credentials_unavailable"
         else:
             try:
-                router.delegate, router.delegate_health = await cleanup.enter_async_context(
+                delegate, ready = await cleanup.enter_async_context(
                     open_harness(runtime.config, client, runtime.dashboard.capture)
                 )
-                router.providers["delegate"] = router.delegate
+                router.bindings["delegate"] = TaskBinding(
+                    delegate,
+                    settings.provider,
+                    router.delegate_label,
+                    ready,
+                    ("read", "glob", "grep"),
+                )
             except TaskConflict as error:
                 router.delegate_unavailable = str(error)
             except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
@@ -156,8 +163,9 @@ async def _start_tasks(
                             runtime.dashboard.capture,
                         )
                     )
-                    router.providers["build"] = build
-                    router.build_health = lambda: build.available
+                    router.bindings["build"] = TaskBinding(
+                        build, settings.provider, router.delegate_label, lambda: build.available
+                    )
                 except TaskConflict as error:
                     router.build_unavailable = str(error)
                 except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
@@ -193,13 +201,15 @@ async def _start_tasks(
                         revision=revision,
                     )
                 )
-                router.providers["research"] = research
+                router.bindings["research"] = TaskBinding(
+                    research,
+                    settings.provider,
+                    router.delegate_label,
+                    lambda: research.available and search.ready() and read.ready(),
+                )
                 router.research_provider = search.provider
                 router.research_revision = revision
                 router.research_label = search.label
-                router.research_health = lambda: (
-                    research.available and search.ready() and read.ready()
-                )
             except TaskConflict as error:
                 router.research_unavailable = str(error)
             except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
@@ -283,6 +293,8 @@ async def _start_tasks(
     runtime.core.inspect_ready = lambda: router.delegation_available
     runtime.core.build_ready = lambda: router.build_available
     runtime.core.task_notice = router.turn_notice
+    router.conversation_id = runtime.core.context_id
+    runtime.core.lookup_work = router.conversation_work
     cleanup.push_async_callback(router.aclose)
     return router
 

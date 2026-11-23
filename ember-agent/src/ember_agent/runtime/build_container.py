@@ -20,7 +20,6 @@ from .worker_process import settled
 MODEL_PORT = 17631
 WORK_DIR = "/work"
 PYTHON = "/usr/local/bin/python3"
-OPENCODE = "/usr/local/bin/opencode"
 _LOOPBACK = "127.0.0.1"
 _CHUNK = 65536
 _RELAY_SECONDS = 600
@@ -673,18 +672,18 @@ class BuildContainer:
             max_output=max_bytes,
         )
 
-    async def launch_opencode(
-        self, *args: str, env: Mapping[str, str] | None = None
+    async def launch_worker(
+        self, executable: str, *args: str, env: Mapping[str, str] | None = None
     ) -> asyncio.subprocess.Process:
         """Launch attached OpenCode under a stdin-owned supervisor; caller must drain stdout."""
         if self._opencode is not None:
             raise TaskConflict("build_opencode_already_launched")
         self._opencode = await self._exec_process(
-            PYTHON, "-I", "-S", "-c", _LAUNCH, OPENCODE, *args, env=env
+            PYTHON, "-I", "-S", "-c", _LAUNCH, executable, *args, env=env
         )
         return self._opencode
 
-    async def stop_opencode(self) -> None:
+    async def stop_worker(self) -> None:
         """Stop supervised OpenCode without dropping explicitly retained service forwards."""
         if self._opencode is not None:
             await _finish(asyncio.create_task(_stop(self._opencode, grace=3, require_grace=True)))

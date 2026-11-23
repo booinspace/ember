@@ -6,6 +6,16 @@ operator setup, evidence and open acceptance gates.
 
 ## Boundary and lifecycle
 
+### Completed task handoff
+
+`TaskBinding` associates an installed adapter with identity, health, label and approved
+inspection steps. The runtime checks handoff evidence against the selected binding. SQLite
+indexes conversational completions with the terminal outbox commit. P0 reads bounded summaries
+in its character, runtime session and conversation. Automatic delivery advances after a complete
+acknowledged answer; explicit lookup does not consume it. Raw files, private dependencies and
+tool payloads stay out of the handoff. A local tool-selection pass on current input defers the
+receipt if a native action competes with delivery. No new worker grants or inference slots.
+
 - `runtime/harness.py` selects the installed adapter at runtime composition. Reuse
   `AgenticTaskProvider`, `TaskRouter`, `ToolContext`, `TaskResult` and the existing
   receipt/attention path. CharacterCore sees optional neutral `delegate_task`, not

@@ -74,6 +74,9 @@ between documentation trees.
 
 ## Maintenance and review
 
+[Build work inspection](0026-managed-opencode-build.md#completed-work-in-tasks-and-conversation)
+covers receipt-backed file browsing and scoped conversational lookup.
+
 For every phase, use PLAN's eight checks: desired behavior, owner, existing
 abstraction, necessary new primitive, contracts/invariants, failures, acceptance
 and implementation. Record introduced coupling and meaningful tradeoffs. Update

@@ -19,6 +19,7 @@ from ember_agent.inference.upstream import NativeFrame, NativeFunction, NativeMe
 from ember_agent.runtime.config import HarnessSettings
 from ember_agent.runtime.research import PAGE, SEARCH, ResearchBroker, open_research
 from ember_agent.runtime.task_router import (
+    TaskBinding,
     TaskResult,
     TaskRouter,
     TextInspectionProvider,
@@ -306,7 +307,7 @@ def test_research_consent_survives_restart_without_switching_providers(tmp_path:
                 pytest.fail("Unapproved provider must not start")
 
         restarted = TaskRouter(tmp_path, identity, session, inspect)
-        restarted.providers["research"] = UnexpectedProvider()
+        restarted.bindings["research"] = TaskBinding(UnexpectedProvider())
         restarted.research_provider = "exa_mcp"
         restarted.research_revision = "2" * 64
         await restarted.start()
@@ -385,7 +386,7 @@ def test_research_cancel_fences_issued_permit_before_db_write(
             await store_cancel(task_id, owner)
 
         monkeypatch.setattr(router.store, "cancel", blocked_cancel)
-        router.providers["research"] = Provider()
+        router.bindings["research"] = TaskBinding(Provider())
         router.research_provider = "exa"
         router.research_revision = "1" * 64
         await router.start()
@@ -606,10 +607,9 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
                     uuid4(),
                     TextInspectionTask(ToolRouter(TextInspectionProvider(), identity)),
                 )
-                router.providers["research"] = worker
+                router.bindings["research"] = TaskBinding(worker, ready=lambda: worker.available)
                 router.research_provider = "exa"
                 router.research_revision = "1" * 64
-                router.research_health = lambda: worker.available
                 router.task_admission = task_admission
                 await router.start()
                 try:

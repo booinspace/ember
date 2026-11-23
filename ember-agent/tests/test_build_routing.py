@@ -13,6 +13,7 @@ from ember_agent.character.build_intent import build_goal
 from ember_agent.character.core import CharacterCore
 from ember_agent.inference.contracts import GatewayEvent, GatewayRequest
 from ember_agent.runtime.task_router import (
+    TaskBinding,
     TaskResult,
     TaskRouter,
     TextInspectionProvider,
@@ -114,7 +115,7 @@ def test_build_waits_without_starting_provider(tmp_path: Path, cancel: bool) -> 
             uuid4(),
             TextInspectionTask(ToolRouter(TextInspectionProvider(), character)),
         )
-        router.providers["build"] = Provider()
+        router.bindings["build"] = TaskBinding(Provider())
         router.task_admission = reserved
         await router.start()
         try:
@@ -173,7 +174,7 @@ def test_shutdown_during_realtime_probe_does_not_start_build(tmp_path: Path) -> 
         character = uuid4()
         native = TextInspectionTask(ToolRouter(TextInspectionProvider(), character))
         router = TaskRouter(tmp_path, character, uuid4(), native)
-        router.providers["build"] = native
+        router.bindings["build"] = TaskBinding(native)
         router.task_admission = probe
         await router.start()
         try:

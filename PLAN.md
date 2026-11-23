@@ -5253,6 +5253,23 @@ to OpenCode. The neutral Skills surface and portable assets are not a live provi
 
 ## Natural-language Conversation tool planning
 
+### Task work inspection and Conversation handoff
+
+Keep task execution behind operation bindings. A committed Build artifact may be
+inspected as a bounded file tree and inert text in Tasks. Conversation may use a
+bounded summary of its own completed work on its next P0 answer or on explicit
+lookup. Scope lookup to the originating conversation; never feed work to planning,
+hosted providers, or canonical memory as an independent source. Preserve offline
+Build and existing scheduling limits. Check adapter substitution, artifact identity,
+binary handling, conversation scope, and prompt budgets with synthetic fixtures.
+
+Checkout evidence: substitute Inspect adapter and receipt filtering passed in
+`test_inspect_build_dependency.py`; scoped handoff, lookup after dismissal, native
+tool priority, inert UTF-8 and binary handling passed in `test_task_work.py`.
+`tasks.check.ts` passed generated file selection and literal HTML display. Root
+gate: 1,442 passed, 18 skipped; frontend: 33 unit and 26 browser checks passed,
+3 live browser checks skipped. Live voice latency and deployment not qualified.
+
 **Status:** Implemented in the isolated Mac worktree with scripted acceptance evidence.
 No deployment or live qualification authorized by this amendment.
 See [Root ADR 0027](docs/adr/0027-public-web-retrieval.md#natural-language-conversation-tool-planning-amendment),

@@ -20,6 +20,7 @@ from ember_agent.runtime.config import HarnessSettings
 from ember_agent.runtime.harness import open_harness
 from ember_agent.runtime.opencode_harness import _prepare, open_opencode
 from ember_agent.runtime.task_router import (
+    TaskBinding,
     TaskRouter,
     TextInspectionProvider,
     TextInspectionTask,
@@ -181,7 +182,7 @@ def test_installed_opencode_runs_and_revokes_read_only_tasks(tmp_path: Path) -> 
                 router = TaskRouter(
                     config.runtime_root, character, uuid4(), native, delegate=worker
                 )
-                router.delegate_health = lambda: worker.available
+                router.bindings["delegate"] = TaskBinding(worker, ready=lambda: worker.available)
                 await router.start()
                 try:
                     realtime = uuid4()

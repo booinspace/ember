@@ -10,7 +10,13 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from ember_agent.runtime.task_router import TaskResult, TaskRouter, ToolContext, ToolReceipt
+from ember_agent.runtime.task_router import (
+    TaskBinding,
+    TaskResult,
+    TaskRouter,
+    ToolContext,
+    ToolReceipt,
+)
 from ember_agent.runtime.task_store import (
     INSPECT_REFERENCE_BYTES,
     INSPECT_REFERENCE_HEADER,
@@ -246,7 +252,7 @@ def test_detached_submission_publishes_atomic_pair(
 
         worker = NoWorker()
         router = TaskRouter(tmp_path, uuid4(), uuid4(), worker, delegate=worker)
-        router.providers["build"] = worker
+        router.bindings["build"] = TaskBinding(worker)
         router.task_admission = reserved
         entered, release = asyncio.Event(), asyncio.Event()
         commit = router.store.submit_inspect_build
@@ -305,7 +311,7 @@ def test_router_handoff_and_public_provenance(tmp_path: Path, qualified: bool) -
                             context=context,
                             tool="delegate",
                             data={
-                                "provider": "opencode",
+                                "provider": "fixture",
                                 "raw": "DO_NOT_FORWARD",
                                 "tools": [
                                     {
@@ -334,7 +340,8 @@ def test_router_handoff_and_public_provenance(tmp_path: Path, qualified: bool) -
 
         worker = Worker()
         router = TaskRouter(tmp_path, uuid4(), uuid4(), worker, delegate=worker)
-        router.providers["build"] = worker
+        router.bindings["delegate"] = TaskBinding(worker, "fixture", inspection_tools=("read",))
+        router.bindings["build"] = TaskBinding(worker)
         router.task_admission = probe
         await router.start()
         try:
@@ -377,6 +384,11 @@ def test_router_handoff_and_public_provenance(tmp_path: Path, qualified: bool) -
                 assert [request.operation for request in seen] == ["delegate"]
                 assert _attempts(router.store) == {parent.task_id}
                 return
+            public_receipt = await router.receipt(parent.task_id)
+            assert "DO_NOT_FORWARD" not in public_receipt.model_dump_json()
+            assert public_receipt.receipt and public_receipt.receipt.data["tools"] == [
+                {"name": "read", "status": "completed"}
+            ]
             assert status.state == "succeeded"
             assert [request.operation for request in seen] == ["delegate", "build"]
             goal = seen[-1].goal

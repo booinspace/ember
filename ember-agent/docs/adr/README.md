@@ -1,5 +1,8 @@
 # Agent architecture decisions
 
+[Completed task handoff](0015-managed-opencode-preview.md#completed-task-handoff) records
+adapter binding, lookup and P0 delivery boundaries.
+
 These records own character/runtime, composition, prompts, gateway and providers.
 [Root ADRs](../../../docs/adr/README.md) track phase outcomes/integration;
 [PLAN.md](../../../PLAN.md) is authoritative.

@@ -488,7 +488,9 @@ def test_build_cancel_at_commit_fences_failed_cleanup_without_stopping_dispatch(
 
         monkeypatch.setattr(router.store, "finish", cancel_before_commit)
         monkeypatch.setattr(router.build_artifacts, "delete", fail_delete)
-        router.providers["build"] = Build()
+        from ember_agent.runtime.task_router import TaskBinding
+
+        router.bindings["build"] = TaskBinding(Build())
         await router.start()
         try:
             build = await router.submit("race", "Build a synthetic file", operation="build")

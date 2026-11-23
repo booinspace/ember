@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from ..character.core import CharacterCore
 from ..web_evidence import PublicWebOperation
 from .task_router import TaskRouter
+from .task_store import TaskOperation
 
 
 class Capability(BaseModel):
@@ -27,7 +28,7 @@ class Capability(BaseModel):
 
 def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[Capability, ...]:
     """Use current discovered/granted metadata and the actual installed task owners."""
-    labels = {
+    labels: dict[TaskOperation, str] = {
         "inspect": "Inspect text",
         "summarize": "Summarize text",
         "recall": "Investigate memory",
@@ -39,11 +40,9 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             kind="native",
             name=label,
             provider="ember",
-            status="enabled" if router and router.providers[operation] else "unavailable",
+            status="enabled" if router and router.ready(operation) else "unavailable",
             operations=(operation,),
-            reason=None
-            if router and router.providers[operation]
-            else "Task provider is unavailable.",
+            reason=None if router and router.ready(operation) else "Task provider is unavailable.",
         )
         for operation, label in labels.items()
     ]
@@ -80,11 +79,11 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             id="harness",
             kind="harness",
             name="Agentic delegation",
-            provider=router.delegate_label if router else "Agentic harness",
+            provider=router.provider_label("delegate") if router else "Agentic harness",
             status="enabled"
             if router and router.delegation_available
             else "unavailable"
-            if router and (router.delegate or router.delegate_unavailable)
+            if router and ("delegate" in router.bindings or router.delegate_unavailable)
             else "unconfigured",
             operations=("delegate", "skills.list", "skills.view")
             if router and router.skills
@@ -98,13 +97,13 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             else "Task provider is unavailable.",
         )
     )
-    if router and (router.build_available or router.build_unavailable or router.providers["build"]):
+    if router and (router.build_unavailable or "build" in router.bindings):
         values.append(
             Capability(
                 id="harness.build",
                 kind="harness",
                 name="Isolated coding tasks",
-                provider="OpenCode",
+                provider=router.provider_label("build"),
                 status="enabled" if router.build_available else "unavailable",
                 operations=("build",),
                 reason=(
@@ -115,15 +114,13 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
             )
         )
 
-    if router and (
-        router.research_available or router.research_unavailable or router.providers["research"]
-    ):
+    if router and (router.research_unavailable or "research" in router.bindings):
         values.append(
             Capability(
                 id="harness.research",
                 kind="harness",
                 name="Public web research",
-                provider=router.research_provider or "OpenCode",
+                provider=router.research_provider or router.provider_label("research"),
                 provider_label=router.research_label,
                 binding_revision=router.research_revision,
                 status="enabled" if router.research_available else "unavailable",

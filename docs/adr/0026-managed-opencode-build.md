@@ -5,6 +5,15 @@ Extends [0025](0025-managed-opencode-preview.md); Inspect remains available.
 
 ## Decision
 
+### Completed work in Tasks and Conversation
+
+Open **Tasks → View receipt** for ordered tool calls and outcomes. Successful Build receipts
+include a generated file tree. Select a file to read up to 32 KiB from its digest-verified ZIP
+as inert UTF-8 text. Binary files remain downloadable. This view represents committed output.
+Conversation can discuss its own completed work on a subsequent P0 reply. Ask `Recent work` or
+`Task 1234abcd: explain the result` using the task ID. Dismissal does not delete a receipt.
+See [agent implementation](../../ember-agent/docs/adr/0015-managed-opencode-preview.md#completed-task-handoff).
+
 Build is a separate task operation, not an escalation from Inspect. An operator pins
 an installed local Linux container image. Each task gets a fresh empty writable
 workspace, a fresh pinned OpenCode 2.3.2 server and a fresh model credential. The

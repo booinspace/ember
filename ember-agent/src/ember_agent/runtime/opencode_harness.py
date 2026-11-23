@@ -847,7 +847,8 @@ async def _build_worker(
         stdin=json.dumps(intended).encode(),
         max_output=0,
     )
-    process = await container.launch_opencode(
+    process = await container.launch_worker(
+        "/usr/local/bin/opencode",
         "serve",
         "--hostname",
         "127.0.0.1",
@@ -869,7 +870,7 @@ async def _build_worker(
     async def stop() -> None:
         await container.stop_model_relay()
         await container.close_forward(port)
-        await container.stop_opencode()
+        await container.stop_worker()
 
     try:
         async with httpx.AsyncClient(

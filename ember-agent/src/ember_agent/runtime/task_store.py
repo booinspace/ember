@@ -111,6 +111,7 @@ class TaskSubmission(RuntimeModel):
 
     character_id: UUID
     session_id: UUID
+    conversation_id: UUID | None = None
     turn_id: UUID
     idempotency_key: Annotated[str, Field(min_length=1, max_length=128)]
     goal: Annotated[str, Field(min_length=1, max_length=TASK_GOAL_LIMIT, repr=False)]
@@ -234,6 +235,23 @@ class TaskStore:
                     delivery TEXT NOT NULL DEFAULT 'pending'
                 );
                 CREATE INDEX IF NOT EXISTS pending_delivery ON terminal_outbox(delivery);
+                CREATE TABLE IF NOT EXISTS conversation_completion (
+                    sequence INTEGER PRIMARY KEY, task_id TEXT NOT NULL UNIQUE REFERENCES task(id),
+                    character_id TEXT NOT NULL, session_id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS conversation_cursor ON conversation_completion(
+                    character_id,session_id,conversation_id,sequence
+                );
+                CREATE TRIGGER IF NOT EXISTS index_conversation_completion
+                AFTER INSERT ON terminal_outbox BEGIN
+                    INSERT INTO conversation_completion
+                        (sequence,task_id,character_id,session_id,conversation_id)
+                    SELECT NEW.rowid,id,character_id,session_id,
+                           json_extract(request_json,'$.conversation_id')
+                    FROM task WHERE id=NEW.task_id
+                        AND json_extract(request_json,'$.conversation_id') IS NOT NULL;
+                END;
                 CREATE TABLE IF NOT EXISTS task_effect (
                     confirmation_id TEXT PRIMARY KEY REFERENCES task_confirmation(id),
                     task_id TEXT NOT NULL REFERENCES task(id),
@@ -307,6 +325,7 @@ class TaskStore:
                 original.research_revision,
                 original.depends_on,
                 original.public_sources,
+                original.conversation_id,
             ) != (
                 request.goal,
                 request.operation,
@@ -316,6 +335,7 @@ class TaskStore:
                 request.research_revision,
                 request.depends_on,
                 request.public_sources,
+                request.conversation_id,
             ) or (
                 (request.depends_on is not None or request.public_sources)
                 and original.turn_id != request.turn_id
@@ -598,6 +618,35 @@ class TaskStore:
     async def status(self, task_id: UUID, character_id: UUID) -> TaskSnapshot | None:
         """Read only a task owned by the authenticated character."""
         return await asyncio.to_thread(self._status, task_id, character_id)
+
+    async def completed_work(
+        self, character: UUID, session: UUID, conversation: UUID, *, after: int | None, prefix: str
+    ) -> list[tuple[int, TaskSnapshot]]:
+        """Return committed conversational completions even after Tasks dismissal."""
+
+        def select() -> list[tuple[int, TaskSnapshot]]:
+            with closing(sqlite3.connect(self.path, timeout=0.1)) as db:
+                rows = db.execute(
+                    """SELECT c.sequence,t.id,t.state,
+                              json_extract(t.request_json,'$.operation'),t.receipt
+                    FROM conversation_completion c JOIN task t ON t.id=c.task_id
+                    WHERE c.character_id=? AND c.session_id=? AND c.conversation_id=?
+                    AND c.task_id LIKE ? AND c.sequence>? ORDER BY c.sequence """
+                    + ("DESC" if after is None else "ASC")
+                    + " LIMIT 4",
+                    (str(character), str(session), str(conversation), prefix + "%", after or 0),
+                )
+                return [
+                    (
+                        seq,
+                        TaskSnapshot(
+                            task_id=UUID(identity), state=state, operation=op, receipt=receipt
+                        ),
+                    )
+                    for seq, identity, state, op, receipt in rows
+                ]
+
+        return await asyncio.to_thread(select)
 
     def _status(self, task_id: UUID, character_id: UUID) -> TaskSnapshot | None:
         with closing(sqlite3.connect(self.path)) as db:

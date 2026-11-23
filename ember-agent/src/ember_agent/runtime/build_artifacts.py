@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import codecs
 import hashlib
 import io
 import json
@@ -15,6 +16,8 @@ from tempfile import NamedTemporaryFile
 from typing import BinaryIO, TypedDict, cast
 from uuid import UUID, uuid4
 from zipfile import ZipFile, ZipInfo
+
+from .config import RuntimeModel
 
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_ENTRIES = 256
@@ -133,6 +136,29 @@ class BuildArtifactMetadata(TypedDict):
     sha256: str
     size_bytes: int
     names: list[str]
+
+
+class FilePreview(RuntimeModel):
+    name: str
+    size_bytes: int
+    text: str | None
+    truncated: bool
+
+
+def preview_member(archive_bytes: bytes, name: str) -> FilePreview:
+    """Read a bounded UTF-8 prefix from a verified host-generated ZIP. Never extract."""
+    with ZipFile(io.BytesIO(archive_bytes)) as archive:
+        info = archive.getinfo(name)
+        with archive.open(info) as stream:
+            prefix = stream.read(32768)
+    truncated = len(prefix) < info.file_size
+    try:
+        text = codecs.getincrementaldecoder("utf-8")().decode(prefix, final=not truncated)
+        if any(ord(char) < 32 and char not in "\n\r\t" for char in text):
+            text = None
+    except UnicodeDecodeError:
+        text = None
+    return FilePreview(name=name, size_bytes=info.file_size, text=text, truncated=truncated)
 
 
 def _validate_name(name: str, nodes: dict[str, tuple[str, bool]]) -> None:

@@ -25,6 +25,7 @@ from ..inference.contracts import GatewayError
 from ..memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 from ..memory.deep_recall import DeepRecallService
 from ..realtime.contracts import RoomBinding
+from .build_artifacts import MAX_PATH_BYTES, FilePreview, preview_member
 from .build_services import BuildService
 from .capabilities import capability_catalog
 from .config import RuntimeModel, private_lan_address
@@ -381,6 +382,16 @@ class BrowserControl:
                         "X-Content-Type-Options": "nosniff",
                     },
                 )
+
+            @app.get("/api/tasks/{task_id}/file-preview")
+            async def task_file_preview(task_id: UUID, name: str) -> FilePreview:
+                if not 0 < len(name) <= MAX_PATH_BYTES:
+                    raise HTTPException(400, "invalid_artifact_name")
+                data = await router.read_build_artifact(task_id)
+                try:
+                    return await asyncio.to_thread(preview_member, data, name)
+                except KeyError as error:
+                    raise HTTPException(404, "artifact_member_not_found") from error
 
             @app.post("/api/tasks/{task_id}/stop-service")
             async def stop_build_service(task_id: UUID) -> dict[str, bool]:
