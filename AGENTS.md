@@ -171,3 +171,19 @@ changes run `python scripts/export_contract_schemas.py --check`. For frontend ch
 `pnpm build` and `pnpm test` in `ember-agent/frontend`; use `pnpm test:browser` for relevant browser
 coverage and record which live-service cases ran. The app command is `ember` (`ember-agent` alias);
 `ember-memory` is the maintenance command.
+
+For retrieval changes, see the [memory benchmark runbook](docs/memory-benchmark.md) for pinned
+inputs and Miku Fedora reruns. From repo root, run the offline harness tests:
+
+```sh
+uv run --locked --offline python -m pytest \
+  ember-memory/tests/test_public_memory_benchmark.py \
+  ember-memory/tests/test_synthetic_memory_benchmark.py \
+  ember-memory/tests/test_archive_speed_benchmark.py \
+  ember-memory/tests/test_archive_scale_benchmark.py
+```
+
+Use only public/synthetic inputs and fresh ignored roots; keep AMB scorer dependencies out of
+product locks. Pair baseline and candidate on the same host, with identical harness, frozen
+inputs, encoder and budgets. Keep archive retrieval, seeded beliefs and answer scores separate.
+Benchmark results do not qualify realtime recall or authorize live changes.

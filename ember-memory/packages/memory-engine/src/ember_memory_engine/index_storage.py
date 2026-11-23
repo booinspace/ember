@@ -4,6 +4,7 @@ import importlib
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
+from os import stat_result
 from pathlib import Path
 from threading import RLock
 from typing import cast
@@ -73,6 +74,10 @@ CREATE VIRTUAL TABLE vec_documents USING vec0(
 """
 
 
+def _file_identity(stat: stat_result) -> tuple[int, int, int, int, int]:
+    return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
 def connect(
     path: Path, *, immutable: bool = False, require_extension: bool = True
 ) -> sqlite3.Connection:
@@ -116,7 +121,7 @@ class IndexStore:
         self.store_id = store_id
         self._guard = RLock()
         self._leases: dict[Path, int] = {}
-        self._certificate: tuple[str, str, int, int] | None = None
+        self._certificate: tuple[str, str, tuple[int, int, int, int, int]] | None = None
 
     def active(self, budget: ReadBudget | None = None) -> tuple[IndexGeneration, Path]:
         """Read the committed pointer and verify logical generation metadata; no model loading."""
@@ -212,24 +217,24 @@ class IndexStore:
                     continue
 
     def certified(
-        self, generation: IndexGeneration, path: Path, *, cached_only: bool = False
+        self,
+        generation: IndexGeneration,
+        path: Path,
+        *,
+        cached_only: bool = False,
+        max_bytes: int | None = None,
     ) -> bool:
-        """Trust cached header projections only in an unchanged, hash-verified generation."""
+        """Trust unchanged, hash-verified files; optionally bound new verification work."""
         try:
-            stat = path.stat()
-            identity = (
-                str(generation.generation),
-                generation.file_sha256,
-                stat.st_size,
-                stat.st_mtime_ns,
-            )
+            stamp = _file_identity(path.stat())
+            identity = (str(generation.generation), generation.file_sha256, stamp)
             if identity != self._certificate:
-                if cached_only:
+                if cached_only or (max_bytes is not None and stamp[2] > max_bytes):
                     return False
-                if file_sha256(path) != generation.file_sha256 or (
-                    path.stat().st_size,
-                    path.stat().st_mtime_ns,
-                ) != (stat.st_size, stat.st_mtime_ns):
+                if (
+                    file_sha256(path) != generation.file_sha256
+                    or _file_identity(path.stat()) != stamp
+                ):
                     raise IndexError()
                 self._certificate = identity
             return True

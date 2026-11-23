@@ -3,8 +3,10 @@
 import re
 import sqlite3
 from concurrent.futures import Future, TimeoutError
-from contextlib import closing
+from contextlib import ExitStack, closing
+from dataclasses import dataclass
 from math import sqrt
+from pathlib import Path
 from time import monotonic
 from uuid import UUID
 
@@ -17,7 +19,13 @@ from ember_memory_abi.common import (
     timestamp_from_datetime,
     timestamp_to_unix_microseconds,
 )
-from ember_memory_abi.errors import AccessDeniedError, NotFoundError, SourceUnavailableError
+from ember_memory_abi.errors import (
+    AccessDeniedError,
+    InvalidEvidenceError,
+    NotFoundError,
+    SourceUnavailableError,
+)
+from ember_memory_abi.evidence import SourceRef
 from ember_memory_abi.interfaces import (
     ArchiveQuery,
     ArchiveResult,
@@ -33,7 +41,7 @@ from ember_memory_abi.memory import ArchiveChunk, Entity, FactPayload, Memory
 from ._state import CharacterState
 from .database import load_model, row_int, row_text
 from .embedding import EncodingPool
-from .errors import EmbeddingError, EngineBusyError, IndexError
+from .errors import CorruptStoreError, EmbeddingError, EngineBusyError, IndexError
 from .index_storage import IndexStore, connect
 from .read_budget import ReadBudget, bounded_connection
 from .retrieval import memory_scope
@@ -51,9 +59,184 @@ _ARCHIVE_RANKING_KEY = "ember.archive_ranking"
 _ARCHIVE_PRECISION_PROFILE = "precision_v1"
 # Similarity floor for unit-normalized embeddings, not a calibrated probability.
 _ARCHIVE_MIN_COSINE = 0.75
+_ARCHIVE_CERTIFY_BYTES = 4 * 1024 * 1024
 _ARCHIVE_FILLER = frozenset(
     "a an are at for from how it the to was were what when who with".split()
 )
+_ARCHIVE_HEADER_COLUMNS = (
+    "d.id,d.kind,d.target_id,d.source_store_id,d.record_kind,d.record_id,"
+    "d.revision,d.part_id,d.branch"
+)
+
+# Chunk IDs are global. Message/Document projections from different parts of the
+# same exact source revision compete for one result, not one result per part.
+type _ArchiveKey = str | tuple[str, str, str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class _ArchiveSnapshot:
+    generation: IndexGeneration
+    path: Path
+    certified: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _ArchiveHeader:
+    snapshot: _ArchiveSnapshot
+    document_id: int
+    key: _ArchiveKey
+    part_id: str | None
+    branch: str
+    score: float
+    ranking: tuple[RankingExplanation, ...]
+
+
+def _archive_header(
+    snapshot: _ArchiveSnapshot,
+    row: sqlite3.Row,
+    score: float,
+    ranking: tuple[RankingExplanation, ...],
+) -> _ArchiveHeader:
+    try:
+        store = row_text(row, "source_store_id")
+        if store != str(snapshot.generation.store_id):
+            raise IndexError()
+        kind = row_text(row, "kind")
+        if kind == "chunk":
+            key: _ArchiveKey = row_text(row, "target_id")
+            part_id = None
+        elif kind == "message":
+            key = (
+                store,
+                row_text(row, "record_kind"),
+                row_text(row, "record_id"),
+                row_int(row, "revision"),
+            )
+            part_id = row_text(row, "part_id")
+        else:
+            raise IndexError()
+        return _ArchiveHeader(
+            snapshot, row_int(row, "id"), key, part_id, row_text(row, "branch"), score, ranking
+        )
+    except CorruptStoreError as error:
+        raise IndexError() from error
+
+
+def _whole_source_key(reference: SourceRef) -> tuple[str, str, str, int]:
+    return (
+        str(reference.source_store_id),
+        reference.record_kind,
+        str(reference.record_id),
+        reference.record_revision,
+    )
+
+
+def _hydrate_archive(
+    state: CharacterState,
+    canonical: sqlite3.Connection,
+    query: ArchiveQuery,
+    header: _ArchiveHeader,
+    row: sqlite3.Row | None,
+) -> ArchiveResult | None:
+    payload: object = row["payload_json"] if row is not None else None
+    if not isinstance(payload, str):
+        raise IndexError()
+    if isinstance(header.key, str):
+        chunk = ArchiveChunk.model_validate_json(payload)
+        if str(chunk.chunk_id) != header.key or not chunk.source_spans:
+            raise IndexError()
+        for span in chunk.source_spans:
+            reference = span.evidence.source
+            if reference.source_store_id != header.snapshot.generation.store_id:
+                raise IndexError()
+            if not state.source_permitted(canonical, reference, "archive_search"):
+                return None
+            quote = state.resolver.validate(span.evidence)
+            if quote != chunk.text[span.start_codepoint : span.end_codepoint]:
+                raise IndexError()
+        return ArchiveResult(
+            record=chunk, score=header.score, ranking=header.ranking, branch_status=header.branch
+        )
+
+    reference = SourceRef.model_validate_json(payload)
+    if (
+        _whole_source_key(reference) != header.key
+        or reference.part_id is None
+        or str(reference.part_id) != header.part_id
+    ):
+        raise IndexError()
+    if not state.source_permitted(canonical, reference, "archive_search"):
+        return None
+    record = state.resolver.resolve(reference)
+    if not isinstance(record, (Message, Document)):
+        return None
+    if any(
+        state.source_suppressed(
+            canonical, record.source.model_copy(update={"part_id": part.part_id})
+        )
+        for part in record.parts
+    ):
+        return None
+    if query.mode == "literal" and not any(
+        part.text and query.text.casefold() in part.text.casefold() for part in record.parts
+    ):
+        return None
+    return ArchiveResult(
+        record=record, score=header.score, ranking=header.ranking, branch_status=header.branch
+    )
+
+
+def _archive_permitted(
+    state: CharacterState, canonical: sqlite3.Connection, item: ArchiveResult
+) -> bool:
+    if isinstance(item.record, ArchiveChunk):
+        return all(
+            state.source_permitted(canonical, span.evidence.source, "archive_search")
+            for span in item.record.source_spans
+        )
+    return state.source_permitted(canonical, item.record.source, "archive_search")
+
+
+def _archive_results(
+    state: CharacterState,
+    canonical: sqlite3.Connection,
+    query: ArchiveQuery,
+    ranked: list[tuple[_ArchiveHeader, ArchiveResult | None]],
+) -> tuple[ArchiveResult, ...]:
+    results: list[ArchiveResult] = []
+    seen: set[_ArchiveKey] = set()
+    with ExitStack() as reader:
+        path: Path | None = None
+        connection: sqlite3.Connection | None = None
+        for header, item in ranked:
+            if header.key in seen:
+                continue
+            if item is None:
+                # ponytail: keep one payload reader even with many granted libraries.
+                # Reuse more connections only if measured store switching warrants it.
+                if connection is None or path != header.snapshot.path:
+                    reader.close()
+                    path = header.snapshot.path
+                    connection = reader.enter_context(
+                        closing(sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True))
+                    )
+                    connection.row_factory = sqlite3.Row
+                    reader.enter_context(bounded_connection(connection, state.read_budget))
+                row = connection.execute(
+                    "SELECT payload_json FROM documents WHERE id=?", (header.document_id,)
+                ).fetchone()
+                item = _hydrate_archive(state, canonical, query, header, row)
+                if item is None:
+                    continue
+            seen.add(header.key)
+            results.append(item)
+            if len(results) == query.limit:
+                # Expiry does not bump the policy epoch. Refill from the same window;
+                # duplicates of an expired result depend on the same exact grants.
+                results = [item for item in results if _archive_permitted(state, canonical, item)]
+                if len(results) == query.limit:
+                    return tuple(results)
+        return tuple(item for item in results if _archive_permitted(state, canonical, item))
 
 
 def fts_expression(text: str) -> str:
@@ -319,12 +502,17 @@ class IndexedRetriever:
         isolated: bool = False,
         memory_words: bool = False,
         archive_precision: bool = False,
+        archive_snapshot: _ArchiveSnapshot | None = None,
     ) -> tuple[
         IndexGeneration,
         list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]],
         tuple[str, ...],
     ]:
-        generation, path = index.active(state.read_budget)
+        generation, path = (
+            (archive_snapshot.generation, archive_snapshot.path)
+            if archive_snapshot is not None
+            else index.active(state.read_budget)
+        )
         reasons: list[str] = []
         lexical: list[int] = []
         semantic: list[int] = []
@@ -474,9 +662,13 @@ class IndexedRetriever:
                     )
                 except (EmbeddingError, EngineBusyError, IndexError, TimeoutError):
                     reasons.append("semantic_deadline_or_admission_miss")
-            # Candidate computation is deadline-bounded. Final exact-ID reads are
-            # bounded by 140 memory candidates and must still enforce canonical policy.
-            connection.set_progress_handler(None, 0)
+            # Finish bounded exact-ID reads after the soft ranking deadline. Archive
+            # batches still respect the deep request's hard read budget.
+            budget = state.read_budget if archive_snapshot is not None else None
+            if budget is None:
+                connection.set_progress_handler(None, 0)
+            else:
+                connection.set_progress_handler(lambda: int(budget.exhausted()), 1000)
             ranks: dict[int, list[RankingExplanation]] = {}
             for candidates, reason in ((lexical, "LEXICAL_MATCH"), (semantic, "SEMANTIC_MATCH")):
                 for rank, identity in enumerate(candidates, 1):
@@ -500,15 +692,34 @@ class IndexedRetriever:
                     )
                 )
             result: list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]] = []
-            for identity, explanations in ranks.items():
-                row = connection.execute(
-                    "SELECT * FROM documents d WHERE d.id=? AND " + scope, (identity, *values)
-                ).fetchone()
-                if row is not None:
+            if archive_snapshot is None:
+                for identity, explanations in ranks.items():
+                    row = connection.execute(
+                        "SELECT * FROM documents d WHERE d.id=? AND " + scope, (identity, *values)
+                    ).fetchone()
+                    if row is not None:
+                        result.append(
+                            (row, sum(item.score for item in explanations), tuple(explanations))
+                        )
+            elif ranks:
+                # Preserve the second scope check, without an exact-ID read per candidate.
+                columns = _ARCHIVE_HEADER_COLUMNS
+                if not archive_snapshot.certified:
+                    columns += ",d.payload_json"
+                placeholders = ",".join("?" for _ in ranks)
+                rows = connection.execute(
+                    f"SELECT {columns} FROM documents d WHERE d.id IN ({placeholders}) AND "
+                    + scope,
+                    (*ranks, *values),
+                ).fetchall()
+                for row in rows:
+                    explanations = ranks[row_int(row, "id")]
                     result.append(
                         (row, sum(item.score for item in explanations), tuple(explanations))
                     )
-            result.sort(key=lambda item: (-item[1], row_int(item[0], "id")))
+            if archive_snapshot is None or not archive_snapshot.certified:
+                # Keep eager validation in its original order on uncertified indexes.
+                result.sort(key=lambda item: (-item[1], row_int(item[0], "id")))
             return generation, result, tuple(reasons)
 
     def memory(
@@ -773,113 +984,77 @@ class IndexedRetriever:
         identities = {self.identity, *(UUID(row_text(row, "source_store_id")) for row in stores)}
         if query.source_store_ids:
             identities.intersection_update(query.source_store_ids)
-        result: list[ArchiveResult] = []
+        candidates: list[tuple[_ArchiveHeader, ArchiveResult | None]] = []
         generations: list[str] = []
         reasons: list[str] = []
+        certify_bytes = 0 if state.read_budget is not None else _ARCHIVE_CERTIFY_BYTES
         try:
-            for identity in sorted(identities, key=str):
-                if identity not in self.indexes:
-                    reasons.append("source_index_unavailable")
-                    continue
-                if self.indexes[identity].source_coverage() == "evidence_only":
-                    reasons.append("source_library_evidence_only")
-                try:
-                    generation, candidates, partial = self._candidates(
-                        state,
-                        self.indexes[identity],
-                        scope,
-                        values,
-                        query.text,
-                        query.mode,
-                        deadline,
-                        deep=True,
-                        isolated=deep,
-                        archive_precision=precision,
-                    )
-                except IndexError:
-                    reasons.append("source_index_unavailable")
-                    continue
-                if self.indexes[identity].source_pending(generation):
-                    reasons.append("source_index_outbox_pending")
-                generations.append(str(generation.generation))
-                reasons.extend(partial)
-                for row, score, ranking in candidates:
-                    branch = row_text(row, "branch")
-                    if row_text(row, "kind") == "chunk" and query.mode != "literal":
-                        chunk = ArchiveChunk.model_validate_json(row_text(row, "payload_json"))
-                        permitted = True
-                        for span in chunk.source_spans:
-                            ref = span.evidence.source
-                            if not state.source_permitted(canonical, ref, "archive_search"):
-                                permitted = False
-                                break
-                            quote = state.resolver.validate(span.evidence)
-                            if quote != chunk.text[span.start_codepoint : span.end_codepoint]:
-                                raise IndexError()
-                        if permitted:
-                            result.append(
-                                ArchiveResult(
-                                    record=chunk, score=score, ranking=ranking, branch_status=branch
-                                )
-                            )
-                    elif row_text(row, "kind") == "message":
-                        from ember_memory_abi.evidence import SourceRef
-
-                        ref = SourceRef.model_validate_json(row_text(row, "payload_json"))
-                        if not state.source_permitted(canonical, ref, "archive_search"):
-                            continue
-                        record = state.resolver.resolve(ref)
-                        if not isinstance(record, (Message, Document)):
-                            continue
-                        if any(
-                            state.source_suppressed(
-                                canonical,
-                                record.source.model_copy(update={"part_id": part.part_id}),
-                            )
-                            for part in record.parts
-                        ):
-                            continue
-                        if query.mode == "literal" and not any(
-                            part.text and query.text.casefold() in part.text.casefold()
-                            for part in record.parts
-                        ):
-                            continue
-                        result.append(
-                            ArchiveResult(
-                                record=record, score=score, ranking=ranking, branch_status=branch
-                            )
+            with ExitStack() as leases:
+                for identity in sorted(identities, key=str):
+                    index = self.indexes.get(identity)
+                    if index is None:
+                        reasons.append("source_index_unavailable")
+                        continue
+                    if index.source_coverage() == "evidence_only":
+                        reasons.append("source_library_evidence_only")
+                    try:
+                        generation, path = index.active(state.read_budget)
+                        leases.callback(index.lease(path))
+                    except IndexError:
+                        reasons.append("source_index_unavailable")
+                        continue
+                    certified = index.certified(generation, path, cached_only=True)
+                    if not certified and certify_bytes and monotonic() < deadline:
+                        size = path.stat().st_size
+                        if size <= certify_bytes:
+                            # ponytail: cap cold hashing per request. Large reopened indexes
+                            # hydrate eagerly until build/replay certifies them.
+                            certify_bytes -= size
+                            certified = index.certified(generation, path, max_bytes=size)
+                    snapshot = _ArchiveSnapshot(generation, path, certified)
+                    try:
+                        _, rows, partial = self._candidates(
+                            state,
+                            index,
+                            scope,
+                            values,
+                            query.text,
+                            query.mode,
+                            deadline,
+                            deep=True,
+                            isolated=deep,
+                            archive_precision=precision,
+                            archive_snapshot=snapshot,
                         )
-            if not generations:
-                return None
-            result.sort(key=lambda item: -item.score)
-            seen: set[str] = set()
-            unique: list[ArchiveResult] = []
-            for item in result:
-                key = (
-                    str(item.record.chunk_id)
-                    if isinstance(item.record, ArchiveChunk)
-                    else str(item.record.source.identity_key())
-                )
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(item)
-            # Expiry can change without a policy epoch mutation while native work
-            # runs. Recheck every delivered dependency at the final boundary.
-            unique = [
-                item
-                for item in unique
-                if (
-                    all(
-                        state.source_permitted(canonical, span.evidence.source, "archive_search")
-                        for span in item.record.source_spans
+                    except IndexError:
+                        reasons.append("source_index_unavailable")
+                        continue
+                    if index.source_pending(generation):
+                        reasons.append("source_index_outbox_pending")
+                    generations.append(str(generation.generation))
+                    reasons.extend(partial)
+                    for row, score, ranking in rows:
+                        header = _archive_header(snapshot, row, score, ranking)
+                        item = None
+                        if not snapshot.certified:
+                            item = _hydrate_archive(state, canonical, query, header, row)
+                            if item is None:
+                                continue
+                        candidates.append((header, item))
+                if not generations:
+                    return None
+                # Preserve ties by store UUID and local document ID, independent of SQL order.
+                candidates.sort(
+                    key=lambda pair: (
+                        -pair[0].score,
+                        pair[0].snapshot.generation.store_id,
+                        pair[0].document_id,
                     )
-                    if isinstance(item.record, ArchiveChunk)
-                    else state.source_permitted(canonical, item.record.source, "archive_search")
                 )
-            ]
+                results = _archive_results(state, canonical, query, candidates)
             state.check_policy(canonical, epoch)
             return ArchiveSearchResponse(
-                results=tuple(unique[: query.limit]),
+                results=results,
                 coverage=RetrievalCoverage(
                     status="partial" if reasons else "complete",
                     index_status="available",
@@ -902,12 +1077,16 @@ class IndexedRetriever:
             )
         except (
             IndexError,
+            OSError,
             sqlite3.Error,
             SourceUnavailableError,
             AccessDeniedError,
+            InvalidEvidenceError,
             NotFoundError,
             ValidationError,
             ValueError,
         ):
+            if state.read_budget is not None:
+                state.read_budget.check()
             self.last_failure = "archive_projection_or_policy_changed"
             return None
