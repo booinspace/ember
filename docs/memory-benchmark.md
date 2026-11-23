@@ -319,17 +319,17 @@ also narrows to approved origins corresponding to caller-supplied scope tags.
 
 | Lane | Passes | Active passes | Mean precision | Mean recall | Retrieval p95 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Ember seeded beliefs | 63/77 | 30/43 | 76.89% | 86.05% | 1.53 ms |
-| Ember explicit scope | 71/77 | 37/43 | 86.05% | 86.05% | 1.48 ms |
+| Ember seeded beliefs | 63/77 | 30/43 | 76.89% | 86.05% | 1.64 ms |
+| Ember explicit scope | 71/77 | 37/43 | 86.05% | 86.05% | 1.63 ms |
 | Hindsight, published | 66/77 | 33/43 | 84.81% | 100% | — |
 
 Both Ember lanes completed all 71 executed requests; five skipped on empty/zero budget and one
-had no user store. All 77 cases in each lane reproduced the earlier ID sets, verdicts, and coverage.
-Order changed on 11 seeded and four scoped cases; independently rebuilt stores do not share
-recording times or UUIDs used to break ties. Scoped misses: five fuzzy/prefix cases and one
-negative-guidance case. Published Hindsight is a same-case retrieval reference, not a
-matched ingestion, answer, or latency result. Do not compare scoped scores as if both providers
-received identical filters. Raw archive quality remains the separate 21/77 result above.
+had no user store. A clean replay of `8e4fcdd` reproduced all 77 ID sets, verdicts, and coverage
+in each lane. Compared with the wrap-up overlay, order changed on seven seeded and five scoped
+cases. Independently rebuilt stores do not share recording times or UUIDs used to break ties.
+Scoped misses: five fuzzy/prefix cases and one negative-guidance case. Published Hindsight is a
+same-case retrieval reference, not a matched ingestion, answer, or latency result. The scoped
+lane received extra filters. Raw archive quality remains the separate 21/77 result above.
 
 Run once per lane on the same host, without `--encoder`:
 
@@ -340,9 +340,9 @@ uv run --locked --offline --with tiktoken==0.12.0 --with google-genai==1.66.0 --
 # Repeat with --lane explicit-scope and a new output path.
 ```
 
-Receipts: `~/ember-benchmarks/20261123-fedora/results/beliefs-wrapup.UN9F16/`. The checkout
-field retains base HEAD because the runner used an overlay. Verified SHA-256 for the engine
-files used in this replay:
+Receipts on Miku: `~/ember-benchmarks/20261123-fedora/results/beliefs-committed.5VbftR/`
+(clean `8e4fcdd`) and `~/ember-benchmarks/20261123-fedora/results/beliefs-wrapup.UN9F16/`
+(overlay; its checkout field retains base HEAD). Verified SHA-256 for replay engine files:
 
 | Engine file | SHA-256 |
 | --- | --- |
