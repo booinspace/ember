@@ -299,6 +299,9 @@ still qualify. The profile is request-scoped; no reindex, migration, or runtime 
 from 1,040 and 373 respectively to 174; forbidden-ID assertions stayed at two. The new profile is
 still 45 passes behind Hindsight. Its latency is from one sequential run, not a production SLO.
 Raw reports and code hashes: `~/ember-benchmarks/20261123-fedora/results/precision-v1-paired/`.
+A clean `8e4fcdd` replay reproduced 21/77 (6/43 active), 30.49% precision and 95.35% recall.
+All 71 executed requests completed. Receipt: `results/beliefs-committed.5VbftR/archive-precision-quality.json`.
+This independently rebuilt replay checks score, not paired speed.
 
 The paired synthetic rerun used the same fixture hash as the original Fedora baseline (120
 queries per lane, 96 with evidence labels). Both isolation checks passed in both runs.
