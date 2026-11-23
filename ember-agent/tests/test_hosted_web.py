@@ -12,6 +12,7 @@ from ember_agent.character.conversation import CompletedTurn
 from ember_agent.character.core import CharacterCore
 from ember_agent.inference.contracts import GatewayEvent, GatewayRequest, GenerationUsage
 from ember_agent.memory.backends.dialogue import ArchiveDialogueSink
+from ember_agent.public_web import PublicWeb, WebBinding
 from ember_agent.runtime.hosted_web import HostedWeb, HostedWebName
 from ember_memory_abi.interfaces import ContextRequest, RetrievalContext
 from ember_memory_engine import CanonicalEngine
@@ -231,6 +232,13 @@ def test_exa_read_binds_optional_status_to_requested_id(
     assert result.failure == (None if accepted else "unavailable")
 
 
+def exa_routes(hosted: HostedWeb) -> PublicWeb:
+    return PublicWeb(
+        WebBinding("exa", "Exa", "fixture", hosted.search),
+        WebBinding("exa", "Exa", "fixture", hosted.read),
+    )
+
+
 class SummaryModel:
     def __init__(self, response: str, *, truncated: bool = False) -> None:
         self.response = response
@@ -295,8 +303,9 @@ def test_conversation_uses_only_literal_url_and_local_validated_provenance(
             model = SummaryModel(response, truncated=truncated)
             core = CharacterCore(memory, model, model_tag="synthetic", input_ceiling=8192)
             core.history.append(CompletedTurn("PRIVATE_HISTORY", "PRIVATE_REPLY", ()))
-            core.public_web = HostedWeb("exa", _KEY_ENV, transport=httpx.MockTransport(serve))
-            core.search_provider = "exa"
+            core.public_web = exa_routes(
+                HostedWeb("exa", _KEY_ENV, transport=httpx.MockTransport(serve))
+            )
             turn = await core.prepare(f"Exa read: {_URL}")
             assert turn.local_reply is None and turn.web_evidence is not None
             assert turn.web_evidence.truncated and turn.accounting
@@ -316,18 +325,20 @@ def test_conversation_uses_only_literal_url_and_local_validated_provenance(
                 "Exa search: public query\nPRIVATE_CURRENT_COMMENTARY",
             ):
                 denied = await core.prepare(invalid)
-                assert denied.local_reply and denied.omissions == ("public_web_input_rejected",)
+                assert denied.local_reply and denied.web_evidence is None
+                assert len(requests) == 1
             events = [event async for event in core.stream(turn)]
             assert len(requests) == 1
             assert json.loads(requests[0].content)["ids"] == [_URL]
-            assert len(model.requests) == 1
+            assert sum(request.output == "json" for request in model.requests) == 1
             assert [event.kind for event in events] == ["start", "text", "end"]
             visible = events[1].text
             assert _URL in visible
             if success:
                 assert "Retrieved information." in visible and "omitted or shortened" in visible
             else:
-                assert "couldn't produce" in visible and "untrusted.example" not in visible
+                assert "Couldn't produce" in visible and "untrusted.example" not in visible
+                assert "Freshness was not verified" in visible
             core.recall_enabled = False
             followup = await core.prepare("Thanks. What else can we talk about?")
             assert visible not in followup.request.model_dump_json()
@@ -352,14 +363,15 @@ def test_archived_web_reply_preserves_receipt_without_replay(
             core = CharacterCore(
                 memory, model, model_tag="fixture", sink=sink, recall_enabled=False
             )
-            core.public_web = HostedWeb(
-                "exa",
-                _KEY_ENV,
-                transport=httpx.MockTransport(
-                    lambda _: reply({"results": [{"url": _URL, "text": "Evidence"}]})
-                ),
+            core.public_web = exa_routes(
+                HostedWeb(
+                    "exa",
+                    _KEY_ENV,
+                    transport=httpx.MockTransport(
+                        lambda _: reply({"results": [{"url": _URL, "text": "Evidence"}]})
+                    ),
+                )
             )
-            core.search_provider = "exa"
             try:
                 # Clip away the command prefix in recent; do not rely on parsing clipped input.
                 turn = await core.prepare(" " * 4096 + f"Exa read: {_URL}")

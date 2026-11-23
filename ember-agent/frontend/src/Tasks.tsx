@@ -27,13 +27,13 @@ const operationSchema = z.enum([
   "research",
 ]);
 type Operation = z.infer<typeof operationSchema>;
-const researchProviderSchema = z.enum(["exa", "exa_mcp", "parallel"]);
-type ResearchProvider = z.infer<typeof researchProviderSchema>;
-const researchProviderNames: Record<ResearchProvider, string> = {
-  exa: "Exa",
-  exa_mcp: "Exa MCP",
-  parallel: "Parallel",
-};
+const researchBindingSchema = z.object({
+  provider: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/),
+  provider_label: z.string().trim().min(1),
+  binding_revision: z.string().regex(/^[a-f0-9]{64}$/),
+});
+type ResearchBinding = z.infer<typeof researchBindingSchema>;
+const researchConsentRequired = "research_provider_consent_required";
 const operationNames: Record<Operation, string> = {
   inspect: "Text inspection",
   summarize: "Summary",
@@ -208,11 +208,14 @@ export function Tasks({
     text: string;
     operation: Operation;
     servicePort: number | undefined;
-    researchProvider: ResearchProvider | undefined;
+    researchProvider: string | undefined;
+    researchRevision: string | undefined;
   } | null>(null);
   const [text, setText] = useState("");
   const [operation, setOperation] = useState<Operation>("inspect");
-  const [hostedProvider, setHostedProvider] = useState<ResearchProvider>();
+  const [hostedBinding, setHostedBinding] = useState<ResearchBinding>();
+  const [capabilityRefresh, setCapabilityRefresh] = useState(0);
+  const [submissionError, setSubmissionError] = useState("");
   const researchHelpId = useId();
   const [port, setPort] = useState("");
   const [current, setCurrent] = useState<
@@ -236,7 +239,9 @@ export function Tasks({
   const taskId = requestedTaskId ?? current?.task_id;
   const isBuild = operation === "build";
   const isResearch = operation === "research";
-  const researchProvider = isResearch ? hostedProvider : undefined;
+  const researchBinding = isResearch ? hostedBinding : undefined;
+  const researchProvider = researchBinding?.provider;
+  const researchRevision = researchBinding?.binding_revision;
   const servicePort = isBuild && port !== "" ? Number(port) : undefined;
   const validPort =
     servicePort === undefined ||
@@ -252,9 +257,9 @@ export function Tasks({
     !busy &&
     !!text.trim() &&
     (!isBuild || (build && validPort)) &&
-    (!isResearch || researchProvider !== undefined);
+    (!isResearch || researchBinding !== undefined);
   useEffect(() => {
-    setHostedProvider(undefined);
+    setHostedBinding(undefined);
     if (!visible) return;
     const abort = new AbortController();
     void control("capabilities", capabilitySnapshot, undefined, abort.signal)
@@ -266,15 +271,13 @@ export function Tasks({
             entry.status === "enabled" &&
             entry.operations.includes("research"),
         );
-        setHostedProvider(
-          researchProviderSchema.safeParse(research?.provider).data,
-        );
+        setHostedBinding(researchBindingSchema.safeParse(research).data);
       })
       .catch(() => {
-        if (!abort.signal.aborted) setHostedProvider(undefined);
+        if (!abort.signal.aborted) setHostedBinding(undefined);
       });
     return () => abort.abort();
-  }, [visible]);
+  }, [visible, capabilityRefresh]);
   useEffect(() => {
     if (!visible) return;
     const controller = new AbortController();
@@ -338,7 +341,8 @@ export function Tasks({
       retry.current.text !== text ||
       retry.current.operation !== operation ||
       retry.current.servicePort !== servicePort ||
-      retry.current.researchProvider !== researchProvider
+      retry.current.researchProvider !== researchProvider ||
+      retry.current.researchRevision !== researchRevision
     ) {
       retry.current = {
         key: createRequestId(),
@@ -346,26 +350,42 @@ export function Tasks({
         operation,
         servicePort,
         researchProvider,
+        researchRevision,
       };
     }
     setBusy(true);
     setError("");
+    setSubmissionError("");
     try {
       const submitted = await control("tasks", handle, {
         idempotency_key: retry.current.key,
         text,
         operation,
         ...(servicePort === undefined ? {} : { service_port: servicePort }),
-        ...(researchProvider === undefined
-          ? {}
-          : { research_provider: researchProvider }),
+        ...(researchBinding && {
+          research_provider: researchBinding.provider,
+          research_revision: researchBinding.binding_revision,
+        }),
       });
       setCurrent({ ...submitted, operation });
       retry.current = null;
       setText("");
       if (isBuild) setPort("");
-    } catch {
-      setError("Task submission failed.");
+    } catch (failure) {
+      if (
+        isResearch &&
+        failure instanceof Error &&
+        (failure.message === researchConsentRequired ||
+          failure.message === "task_provider_unavailable")
+      ) {
+        setHostedBinding(undefined);
+        setCapabilityRefresh((value) => value + 1);
+        setSubmissionError(
+          "Web research provider settings changed or became unavailable. Review the current provider before choosing Queue task again.",
+        );
+      } else {
+        setSubmissionError("Task submission failed.");
+      }
     } finally {
       setBusy(false);
     }
@@ -539,8 +559,8 @@ export function Tasks({
             )}
             {build && <option value="build">Build with {provider}</option>}
             <option value="review">Review a draft</option>
-            {(hostedProvider || isResearch) && (
-              <option value="research" disabled={!hostedProvider}>
+            {(hostedBinding || isResearch) && (
+              <option value="research" disabled={!hostedBinding}>
                 Research the public web
               </option>
             )}
@@ -548,16 +568,16 @@ export function Tasks({
         </label>
         {isResearch && (
           <p id={researchHelpId}>
-            {researchProvider ? (
+            {researchBinding ? (
               <>
                 Use public information only. The hosted service{" "}
-                <strong>{researchProviderNames[researchProvider]}</strong>{" "}
-                receives your approved search queries and any public URLs read,
-                including URLs from search results. Put each exact query on its
-                own Search: line and each approved URL on a line by itself.
+                <strong>{researchBinding.provider_label}</strong> receives your
+                approved search queries and any public URLs read, including URLs
+                from search results. Put each exact query on its own Search:
+                line and each approved URL on a line by itself.
               </>
             ) : (
-              "Web research needs an available hosted provider (Exa or Parallel)."
+              "Web research needs an available hosted provider."
             )}
           </p>
         )}
@@ -585,6 +605,7 @@ export function Tasks({
           </p>
         )}
         <button disabled={!canSubmit}>Queue task</button>
+        {submissionError && <p role="alert">{submissionError}</p>}
       </form>
       {error && <p role="alert">{error}</p>}
       {visible && <ActiveBuildService expected={build} />}
@@ -650,7 +671,15 @@ export function Tasks({
               {item.state.replaceAll("_", " ")}
             </h3>
             <small>Task {item.task_id.slice(0, 8)}</small>
-            {item.result && <p className="task-result">{item.result}</p>}
+            {item.result && (
+              <p className="task-result">
+                {itemOperation === "research" &&
+                item.state === "failed" &&
+                item.result === researchConsentRequired
+                  ? "Web research provider settings changed. Reopen Tasks to check the current provider before queuing a new request."
+                  : item.result}
+              </p>
+            )}
             {item.operation === "build" && item.build_artifact && (
               <a href={`/api/tasks/${item.task_id}/build-artifact`}>
                 Download ZIP

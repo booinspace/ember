@@ -55,6 +55,7 @@ from .task_router import (
 )
 from .task_store import TaskConflict
 from .text_session import DirectTextSession
+from .web_mcp_settings import binding_revision
 from .worker_process import settled
 
 
@@ -162,31 +163,43 @@ async def _start_tasks(
                 except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):
                     router.build_unavailable = "build_startup_failed"
     if settings is not None and settings.research:
+        web = runtime.core.public_web
+        search, read = web.search_binding, web.read_binding
         if client is None:
             router.research_unavailable = "gateway_task_credentials_unavailable"
-        elif runtime.core.public_web is None or runtime.core.search_provider not in (
-            "exa",
-            "exa_mcp",
-            "parallel",
+        elif not (
+            search
+            and read
+            and search.provider == read.provider
+            and search.label == read.label
+            and not search.snippets
+            and search.ready()
+            and read.ready()
         ):
             router.research_unavailable = "research_hosted_retrieval_unavailable"
         else:
             from .research import open_research
 
+            revision = binding_revision("research-v1", search.revision, read.revision)
             try:
                 research = await cleanup.enter_async_context(
                     open_research(
                         runtime.config,
                         settings,
                         client,
-                        runtime.core.public_web,
-                        runtime.core.search_provider,
+                        web,
+                        search.provider,
                         runtime.dashboard.capture,
+                        revision=revision,
                     )
                 )
                 router.providers["research"] = research
-                router.research_provider = runtime.core.search_provider
-                router.research_health = lambda: research.available
+                router.research_provider = search.provider
+                router.research_revision = revision
+                router.research_label = search.label
+                router.research_health = lambda: (
+                    research.available and search.ready() and read.ready()
+                )
             except TaskConflict as error:
                 router.research_unavailable = str(error)
             except (ConfigurationError, OSError, TimeoutError, httpx.HTTPError, ValueError):

@@ -448,7 +448,9 @@ class OpenCodeTask:
         """Execute one task. Never resubmit after an ambiguous response."""
         research = self.research
         if research is not None and (
-            request.operation != "research" or request.research_provider != research.backend
+            request.operation != "research"
+            or request.research_provider != research.backend
+            or request.research_revision != research.revision
         ):
             raise TaskConflict("research_provider_consent_required")
         if not self.available or context.deadline_at is None or self.busy:

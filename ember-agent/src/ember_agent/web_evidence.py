@@ -22,7 +22,6 @@ MAX_WEB_SOURCES = 3
 MAX_WEB_QUERY = 400
 MAX_WEB_URL = 512
 MAX_WEB_PASSAGE = 3072
-HOSTED_WEB_LABELS = {"exa": "Exa", "parallel": "Parallel", "exa_mcp": "Exa MCP"}
 
 _HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", re.ASCII)
 _PATH = re.compile(r"[a-zA-Z0-9/._~!$&'()*+,-]*", re.ASCII)
@@ -162,6 +161,7 @@ class WebEvidence(BaseModel):
     coverage: Literal["partial", "empty", "unavailable"]
     sources: tuple[WebSource, ...] = Field(default=(), max_length=MAX_WEB_SOURCES, repr=False)
     truncated: bool = False
+    snippets: bool = False
     failure: WebFailure | None = None
 
     @model_validator(mode="after")

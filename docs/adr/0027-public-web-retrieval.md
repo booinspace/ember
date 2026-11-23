@@ -190,3 +190,65 @@ different transport to roll back; no migration.
 | P9-AC-05 / CTP-AC-03 | Runtime and gateway regressions cover idle task admission and foreground priority before native start. The pinned OpenCode 2.3.2 Research worker returned source receipts twice with one Conversation reservation held throughout, using scripted inference and retrieval. Live inference and voice were not run. |
 | P11-AC-04/05 / CTP-AC-05 | Offline `test_exa_mcp.py` and `test_research_worker.py` cover shared adapter composition, exact task grants, same-task source URLs, provider-bound consent and receipts. No direct MCP or Build grant added. |
 | Live provider/platform | Miku initialization returned HTTP 200 and an opaque dotted session ID. Pre-fix client stopped before tool dispatch. Post-fix retrieval not run. |
+
+## Declarative provider bindings
+
+Ember resolves `search_public` and `read_public_page` independently at startup.
+Each gets at most one binding. Conversation and dashboard use resolved metadata.
+Legacy `[public_search]` remains supported, including keyless `exa_mcp`. Exa REST
+and Parallel REST remain separate. Snippet-only SearXNG and installed commands
+may coexist with a custom reader. Overlapping bindings are errors, not fallbacks.
+
+Example from the offline structured-reader fixture, not a live provider:
+
+```toml
+[public_web_mcp.read]
+provider = "structured_fixture"
+label = "Structured Fixture"
+endpoint = "https://mcp.example.com/mcp"
+tool = "web_fetch"
+input_field = "urls"
+input_as_list = true
+fixed = { limit = 1, mode = "extract" }
+result = { rows = ["data", "pages"], url = "address", title = "name", passages = "body" }
+```
+
+Use `[public_web_mcp.search]` to bind search. Input is one exact literal or its
+singleton list. Fixed scalar arguments are not templates. `rows` walks up to
+four object keys in `structuredContent` to a source list. `passages` selects
+text or excerpts; optional `truncated` selects a boolean field. An unfamiliar
+text format needs a named decoder and fixtures. Do not bind a tool that needs
+a rewritten query or inferred objective. Optional `bearer_token_env` selects
+only that provider's auth. Never put secrets in endpoints, fixed arguments,
+queries or page URLs. Operator-reviewed endpoint configuration is the grant;
+readiness is local configuration, not upstream health or proof inputs are public.
+Endpoint validation is syntactic. Configure only trusted provider hostnames;
+Ember does not attest DNS or the provider's own fetch policy.
+
+Public and direct MCP share the pinned SDK session and single-call primitive,
+not transport policy, grants, sessions, or credentials. The public profile uses
+a POST-only transport for MCP `2025-06-18`: bounded JSON/SSE and one fixed tool
+call. No GET, resumption, DELETE, callbacks, discovery, or retry. Nonterminal
+results and recognizable reflections of credentials are rejected before decoding.
+Short session IDs match standalone tokens, not incidental substrings inside
+words or URLs. Named text formats use one decoder registry. Format-specific
+input guards can only narrow accepted input. Direct MCP keeps discovery, schema checks, exact write
+confirmation, and uncertain-effect receipts. Direct reads keep `ToolRouter`'s
+character/task scope and receipt checks. Public retrieval instead returns
+bounded `WebEvidence` to its authorizing caller; it does not inherit direct
+MCP grants or require a durable task to read a page in Conversation.
+
+Research needs two ready, excerpt-capable operations under one approved
+provider ID. Tasks submits the ID and combined binding revision. Ember persists
+and rechecks both before dispatch. Changes to endpoint, tool, mappings or
+credential reference require fresh consent. Revisions contain no secret values.
+Queued legacy Research without a revision needs resubmission; existing receipts
+remain readable. The worker gets only Ember's one-use task broker.
+
+To roll back a custom binding, remove its section or restore the previously
+reviewed configuration, then restart Ember through the normal authorized
+procedure. To disable hosted lookup, remove both custom bindings and any hosted
+`[public_search]` selection. Do not edit queued consent or replay tasks.
+
+See [binding acceptance gates](../../PLAN.md#shared-outbound-mcp-and-public-provider-bindings).
+No Miku rollout, live provider qualification or physical voice measurement.

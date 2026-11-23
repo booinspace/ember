@@ -209,8 +209,8 @@ def test_mcp_configuration_is_bounded_explicit_and_does_not_launch_servers(
 @pytest.fixture
 def config_path(tmp_path: Path) -> Path:
     """Provide an isolated copy of the deployment example."""
-    path = tmp_path / "config/deployment.local.toml"
-    path.parent.mkdir()
+    path = tmp_path / "ember-agent/config/deployment.local.toml"
+    path.parent.mkdir(parents=True)
     path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
     return path
 

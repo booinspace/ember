@@ -30,3 +30,11 @@ proxy inheritance and compressed bodies before untrusted bytes reach the SDK.
 See [Root ADR 0019](../../../docs/adr/0019-direct-mcp.md),
 [runbook](../../../docs/phase-10-runbook.md) and
 [validation](../../../docs/phase-10-validation.md).
+
+## Outbound client reuse
+
+`runtime/mcp_client.py` owns SDK session construction, bounded direct transports,
+and the single-call primitive. Direct MCP retains discovery, schema checks,
+actor grants, and effect receipts in the existing owners. Public retrieval uses
+a separate POST-only session profile; no direct credentials, grants, session
+state, or inbound Memory MCP listener are shared.

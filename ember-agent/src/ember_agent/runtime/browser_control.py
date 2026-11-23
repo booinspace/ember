@@ -38,7 +38,6 @@ from .task_artifacts import TaskArtifact
 from .task_router import TaskNotifications, TaskReceiptView, TaskRouter
 from .task_store import (
     Confirmation,
-    ResearchProvider,
     TaskConflict,
     TaskHandle,
     TaskOperation,
@@ -46,6 +45,7 @@ from .task_store import (
     ToolInvocation,
 )
 from .text_session import DirectTextSession, TextReply
+from .web_mcp_settings import BindingRevision, ProviderId
 
 COOKIE = "ember_session"
 
@@ -99,7 +99,8 @@ class TaskInput(RuntimeModel):
     operation: TaskOperation = "inspect"
     tool: ToolInvocation | None = None
     service_port: int | None = Field(default=None, ge=1024, le=65535)
-    research_provider: ResearchProvider | None = None
+    research_provider: ProviderId | None = None
+    research_revision: BindingRevision | None = None
 
     @model_validator(mode="after")
     def bound_operation(self) -> Self:
@@ -107,7 +108,10 @@ class TaskInput(RuntimeModel):
             raise ValueError("Tool payload must belong to the tool operation")
         if self.service_port is not None and self.operation != "build":
             raise ValueError("Service port must belong to the build operation")
-        if (self.research_provider is not None) != (self.operation == "research"):
+        if any(
+            (value is not None) != (self.operation == "research")
+            for value in (self.research_provider, self.research_revision)
+        ):
             raise ValueError("Web Research requires an explicit public retrieval provider")
         return self
 
@@ -305,6 +309,7 @@ class BrowserControl:
                     tool=value.tool,
                     service_port=value.service_port,
                     research_provider=value.research_provider,
+                    research_revision=value.research_revision,
                 )
 
             @app.get("/api/tools")

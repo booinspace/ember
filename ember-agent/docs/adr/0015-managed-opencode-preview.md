@@ -135,3 +135,11 @@ and [Root ADR 0027](../../../docs/adr/0027-public-web-retrieval.md#natural-langu
   never grant Build retrieval. Failure, cancellation, expiry or uncertain outcome
   blocks the dependent Build; no silent downgrade or replay. See
   [Root ADR 0026](../../../docs/adr/0026-managed-opencode-build.md#conversation-planning-and-build-prerequisites-amendment).
+
+## Resolved public retrieval authority
+
+Research pins the resolved pair of public operation bindings at submission and
+checks the combined revision again before dispatch and worker execution. The
+worker still sees only Ember's task-scoped one-use broker. Managed Inspect and
+Build never receive those grants. The uninstalled generic harness tool broker
+was removed; direct MCP confirmation and legacy receipt validation stay in Ember.

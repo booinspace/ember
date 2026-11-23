@@ -137,6 +137,8 @@ async function mock(page: Page, taskId?: string) {
             kind: "native",
             name: "Inspect text",
             provider: "ember",
+            provider_label: null,
+            binding_revision: null,
             status: "enabled",
             operations: ["inspect"],
             reason: null,
@@ -146,7 +148,9 @@ async function mock(page: Page, taskId?: string) {
             id: "public_search",
             kind: "public_search",
             name: "Public web search",
-            provider: "fixture",
+            provider: "fixture-web",
+            provider_label: "Fixture Web Search",
+            binding_revision: null,
             status: "enabled",
             operations: ["web_search"],
             reason: null,
@@ -298,12 +302,12 @@ test("dashboard exposes transactions and lazily inspects exact input with revoca
   await page
     .getByRole("tab", { name: "Tools & providers", exact: true })
     .click();
-  await expect(
-    page.getByRole("region", { name: "Capabilities" }),
-  ).toContainText("Agentic delegation");
-  await expect(
-    page.getByRole("region", { name: "Capabilities" }),
-  ).toContainText("unconfigured");
+  const capabilities = page.getByRole("region", { name: "Capabilities" });
+  await expect(capabilities).toContainText("Agentic delegation");
+  await expect(capabilities).toContainText("Fixture Web Search");
+  await expect(capabilities).not.toContainText("fixture-web");
+  await expect(capabilities).toContainText("ember");
+  await expect(capabilities).toContainText("unconfigured");
   await expect(page.getByLabel("Tool", { exact: true })).toBeHidden();
   await page
     .getByRole("tab", { name: "Inference context", exact: true })

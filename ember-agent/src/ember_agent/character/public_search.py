@@ -3,6 +3,8 @@
 import re
 
 from ..inference.contracts import GatewayError
+from ..public_web import WebBinding
+from ..web_evidence import PublicWebOperation
 
 _REQUEST = re.compile(
     r"^\s*(?:(?:please|can you|could you|would you|will you)\s+)*"
@@ -29,17 +31,39 @@ _PAGE_REQUEST = re.compile(
     re.IGNORECASE,
 )
 
-_HOSTED_REQUEST = re.compile(
-    r"^\s*(exa[ \t]+mcp|exa|parallel)[ \t]+(search|read):[ \t]*(.*)$", re.I | re.S
+_EXPLICIT = re.compile(
+    r"^\s*([a-z0-9](?:[a-z0-9 ._()\t-]*[a-z0-9._()-])?)[ \t]+(search|read):[ \t]*(.*)$",
+    re.I | re.S,
 )
+_LEGACY_PROVIDERS = frozenset({"exa", "exa mcp", "exa_mcp", "parallel"})
 
 
-def hosted_web_request(text: str) -> tuple[str, str, str] | None:
-    """Require a provider-named action and a literal, standalone input."""
-    match = _HOSTED_REQUEST.fullmatch(text)
+def _provider_name(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def matches_web_provider(provider: str, binding: WebBinding | None) -> bool:
+    """Match a normalized shortcut name against the binding's ID or label."""
+    return binding is not None and provider in (binding.provider, _provider_name(binding.label))
+
+
+def hosted_web_request(
+    text: str, *bindings: WebBinding | None
+) -> tuple[str, PublicWebOperation, str] | None:
+    """Recognize configured shortcuts; without bindings, recognize only legacy names."""
+    match = _EXPLICIT.fullmatch(text)
     if match is None:
         return None
-    return "_".join(match[1].lower().split()), match[2].lower(), match[3].strip(" \t")
+    provider = _provider_name(match[1])
+    if provider not in _LEGACY_PROVIDERS and not any(
+        matches_web_provider(provider, binding) for binding in bindings
+    ):
+        return None
+    return (
+        provider,
+        ("search" if match[2].casefold() == "search" else "read"),
+        match[3].strip(" \t"),
+    )
 
 
 def public_page_requested(text: str) -> bool:
@@ -48,18 +72,3 @@ def public_page_requested(text: str) -> bool:
         _PAGE_REQUEST.match(text) is not None
         and re.search(r"\b[a-z][a-z0-9+.-]*://", text, re.IGNORECASE) is not None
     )
-
-
-def public_page_url(text: str) -> str | None:
-    """Fetch only one literal URL in an explicit read request, never recalled/model-derived text."""
-    if not _PAGE_REQUEST.match(text):
-        return None
-    # A Markdown link's label is display text; only its literal destination is requested.
-    destinations = re.sub(r"\[[^\]\n]*\]\(\s*(?=<?https?://)", "", text)
-    urls = re.findall(r"https?://[^\s<>]+", destinations)
-    if len(urls) != 1:
-        return None
-    url = urls[0].rstrip(".,!?;")
-    while url.endswith(")") and url.count(")") > url.count("("):
-        url = url[:-1]
-    return url

@@ -36,3 +36,15 @@ conversation, memory, capture and the inference gateway usable.
 [validation](../phase-10-validation.md) maps the original six acceptance criteria
 and records the independent review and benchmark paper trail.
 [Agent ADR 0009](../../ember-agent/docs/adr/0009-direct-mcp.md) owns component details.
+
+## Shared outbound client
+
+Direct MCP reuses Ember's outbound client with the existing SDK transports and
+process ownership. It still lists and checks approved metadata before dispatch
+and performs one low-level call without SDK tool retries. Nonterminal results
+are rejected before legacy SDK normalization can remove their status marker.
+An approved write with such a result stays uncertain and is not replayed.
+Public web retrieval
+uses a distinct transport profile and bindings; it does not inherit any direct
+server, schema grant, credential, or write confirmation. Neither outbound profile
+changes the independent inbound Memory MCP. See [ADR 0027](0027-public-web-retrieval.md#declarative-provider-bindings).

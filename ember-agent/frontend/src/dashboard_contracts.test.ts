@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activityEvent,
+  capabilitySnapshot,
   mergeActivity,
   percent,
   promptInspection,
@@ -19,6 +20,32 @@ const event = activityEvent.parse({
   count: null,
 });
 describe("live dashboard contracts", () => {
+  it("preserves binding metadata and defaults absent fields to null", () => {
+    const capability = {
+      id: "harness.research",
+      name: "Public web research",
+      kind: "harness",
+      provider: "fixture-web",
+      status: "enabled",
+      operations: ["research"],
+      reason: null,
+      effect: null,
+    };
+    const bound = {
+      ...capability,
+      provider_label: "Fixture Web Search",
+      binding_revision: "a".repeat(64),
+    };
+    const unbound = {
+      ...capability,
+      provider_label: null,
+      binding_revision: null,
+    };
+    expect(
+      capabilitySnapshot.parse({ capabilities: [bound, unbound, capability] })
+        .capabilities,
+    ).toEqual([bound, unbound, unbound]);
+  });
   it("updates a transaction without duplicates or regressing to an old status", () => {
     const completed = {
       ...event,

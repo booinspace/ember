@@ -112,6 +112,9 @@ system_file = "prompts/system.md"
 # For an independent installed command, use these fields instead:
 # provider = "command"
 # command = ["C:/installed/python.exe", "-B", "C:/installed/public_search.py"]
+# For keyless Exa MCP search and page excerpts, use only provider = "exa_mcp".
+# Custom [public_web_mcp.search] and [public_web_mcp.read] bind operations separately.
+# See docs/adr/0027-public-web-retrieval.md for configuration and trust boundaries.
 
 # Optional OpenCode task delegation. Omit [harness] to keep delegation disabled.
 # [harness]

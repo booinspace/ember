@@ -20,6 +20,7 @@ from pydantic import (
 )
 
 from .mcp_contracts import MCPServerSettings
+from .web_mcp_settings import PublicMCPSettings
 
 type ManagementMode = Literal["attach", "managed", "disabled"]
 type ServiceName = Literal["ollama", "vllm", "strata", "livekit", "tts", "gateway"]
@@ -347,6 +348,7 @@ class DeploymentConfig(RuntimeModel):
     preemption_enabled: bool = False
     harness: HarnessSettings | None = None
     public_search: PublicSearchSettings | None = None
+    public_web_mcp: PublicMCPSettings | None = None
 
     @property
     def selected_harness(self) -> HarnessSettings | None:
@@ -433,6 +435,7 @@ class _DeploymentSettings(RuntimeModel):
     inference: InferenceSettings = InferenceSettings()
     harness: dict[str, JsonValue] | None = None
     public_search: dict[str, JsonValue] | None = None
+    public_web_mcp: dict[str, JsonValue] | None = None
     mcp_servers: list[dict[str, JsonValue]] = Field(
         default_factory=list[dict[str, JsonValue]], max_length=8
     )
@@ -746,6 +749,22 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
             "Invalid [public_search]: configure one searxng_url HTTP(S) origin, an absolute "
             "installed command, provider exa/parallel with api_key_env, or provider exa_mcp alone."
         ) from None
+    try:
+        public_mcp = (
+            PublicMCPSettings.model_validate_json(json.dumps(settings.public_web_mcp))
+            if settings.public_web_mcp is not None
+            else None
+        )
+    except ValueError:
+        raise ConfigurationError("Invalid [public_web_mcp] binding.") from None
+    if (
+        public_mcp
+        and public_search
+        and (public_mcp.search or public_search.provider in {"exa", "parallel", "exa_mcp"})
+    ):
+        raise ConfigurationError(
+            "Public retrieval bindings overlap. Select one binding per operation."
+        )
     services = _validate_services(settings, path.resolve().parent, runtime_root)
     if settings.memory_mcp is not None and settings.memory_mcp.lan_bind:
         if not public_origin:
@@ -760,6 +779,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
     return DeploymentConfig(
         harness=harness,
         public_search=public_search,
+        public_web_mcp=public_mcp,
         mcp_servers=mcp_servers,
         memory_mcp=settings.memory_mcp,
         inference=settings.inference,

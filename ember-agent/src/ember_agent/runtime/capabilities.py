@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from ..character.core import CharacterCore
-from ..web_evidence import HOSTED_WEB_LABELS
+from ..web_evidence import PublicWebOperation
 from .task_router import TaskRouter
 
 
@@ -17,6 +17,8 @@ class Capability(BaseModel):
     kind: Literal["native", "mcp", "public_search", "harness"]
     name: str
     provider: str
+    provider_label: str | None = None
+    binding_revision: str | None = None
     status: Literal["enabled", "unconfigured", "unavailable", "disabled"]
     operations: tuple[str, ...] = ()
     reason: str | None = None
@@ -45,29 +47,34 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
         )
         for operation, label in labels.items()
     ]
-    public_web_label = HOSTED_WEB_LABELS.get(core.search_provider, core.search_provider.title())
-    values.append(
-        Capability(
-            id="public_search",
-            kind="public_search",
-            name="Public web search",
-            provider=core.search_provider,
-            status="enabled"
-            if core.web_search_ready
-            else "unavailable"
-            if core.search_unavailable
-            else "unconfigured",
-            operations=("web_search", "read_page") if core.public_web else ("web_search",),
-            reason=(
-                f"In Chat, use {public_web_label} search: <public query> or "
-                f"{public_web_label} read: <public URL>. Only send public inputs."
-                if core.public_web
-                else None
-                if core.web_search_ready
-                else core.search_unavailable or "No public search provider configured."
-            ),
-        )
+    operations: tuple[tuple[PublicWebOperation, str, str], ...] = (
+        ("search", "public_search", "Public web search"),
+        ("read", "read_page", "Read public page"),
     )
+    for operation, identity, label in operations:
+        binding = core.public_web.binding(operation)
+        ready = binding is not None and binding.ready()
+        placeholder = "<public query>" if operation == "search" else "<public URL>"
+        values.append(
+            Capability(
+                id=identity,
+                kind="public_search",
+                name=label,
+                provider=binding.provider if binding else "unconfigured",
+                provider_label=binding.label if binding else None,
+                binding_revision=binding.revision if binding else None,
+                status="enabled" if ready else "unavailable" if binding else "unconfigured",
+                operations=("web_search" if operation == "search" else "read_page",),
+                reason=(
+                    f"In Chat, use {binding.label} {operation}: {placeholder}. "
+                    "Only send public inputs."
+                    if binding and ready
+                    else "Provider unavailable."
+                    if binding
+                    else "No provider configured."
+                ),
+            )
+        )
     values.append(
         Capability(
             id="harness",
@@ -117,6 +124,8 @@ def capability_catalog(core: CharacterCore, router: TaskRouter | None) -> tuple[
                 kind="harness",
                 name="Public web research",
                 provider=router.research_provider or "OpenCode",
+                provider_label=router.research_label,
+                binding_revision=router.research_revision,
                 status="enabled" if router.research_available else "unavailable",
                 operations=("research",),
                 reason=(

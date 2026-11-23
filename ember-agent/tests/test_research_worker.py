@@ -281,15 +281,20 @@ def test_research_consent_survives_restart_without_switching_providers(tmp_path:
             goal="Search: public fixture",
             operation="research",
             research_provider="exa_mcp",
+            research_revision="1" * 64,
         )
         queued = await router.store.submit(request)
         assert await router.store.claim(identity, realtime_reserved=True) is None
         assert (await router.store.active(identity))[0].state == "waiting_for_realtime"
         with pytest.raises(TaskConflict, match="idempotency_key_reused"):
             await router.store.submit(request.model_copy(update={"research_provider": "parallel"}))
-        legacy = await router.store.submit(
-            request.model_copy(update={"idempotency_key": "legacy", "research_provider": None})
-        )
+        with pytest.raises(TaskConflict, match="idempotency_key_reused"):
+            await router.store.submit(request.model_copy(update={"research_revision": "2" * 64}))
+        old_payload = request.model_dump(mode="json", exclude={"research_revision"})
+        old_payload["idempotency_key"] = "legacy"
+        legacy_request = TaskSubmission.model_validate_json(json.dumps(old_payload))
+        assert legacy_request.research_revision is None
+        legacy = await router.store.submit(legacy_request)
 
         class UnexpectedProvider:
             async def execute(
@@ -302,7 +307,8 @@ def test_research_consent_survives_restart_without_switching_providers(tmp_path:
 
         restarted = TaskRouter(tmp_path, identity, session, inspect)
         restarted.providers["research"] = UnexpectedProvider()
-        restarted.research_provider = "exa"
+        restarted.research_provider = "exa_mcp"
+        restarted.research_revision = "2" * 64
         await restarted.start()
         try:
             for task in (queued, legacy):
@@ -312,7 +318,11 @@ def test_research_consent_survives_restart_without_switching_providers(tmp_path:
             for provider in (None, "exa_mcp"):
                 with pytest.raises(TaskConflict, match="research_provider_consent_required"):
                     await restarted.submit(
-                        "fresh", request.goal, operation="research", research_provider=provider
+                        "fresh",
+                        request.goal,
+                        operation="research",
+                        research_provider=provider,
+                        research_revision="1" * 64,
                     )
         finally:
             await restarted.aclose()
@@ -377,6 +387,7 @@ def test_research_cancel_fences_issued_permit_before_db_write(
         monkeypatch.setattr(router.store, "cancel", blocked_cancel)
         router.providers["research"] = Provider()
         router.research_provider = "exa"
+        router.research_revision = "1" * 64
         await router.start()
         cancel: asyncio.Task[None] | None = None
         try:
@@ -389,7 +400,11 @@ def test_research_cancel_fences_issued_permit_before_db_write(
                 ) as http,
             ):
                 task = await router.submit(
-                    "race", f"Search: {query}", operation="research", research_provider="exa"
+                    "race",
+                    f"Search: {query}",
+                    operation="research",
+                    research_provider="exa",
+                    research_revision="1" * 64,
                 )
                 await entered.wait()
                 assert permit in broker.pending
@@ -582,7 +597,9 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
             return bool(health.realtime_sessions), "idle_managed_tasks_v1" in health.features
 
         try:
-            async with open_research(config, settings, model, Retrieval(), "exa") as worker:
+            async with open_research(
+                config, settings, model, Retrieval(), "exa", revision="1" * 64
+            ) as worker:
                 router = TaskRouter(
                     config.runtime_root,
                     identity,
@@ -591,12 +608,17 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
                 )
                 router.providers["research"] = worker
                 router.research_provider = "exa"
+                router.research_revision = "1" * 64
                 router.research_health = lambda: worker.available
                 router.task_admission = task_admission
                 await router.start()
                 try:
                     cancelled = await router.submit(
-                        "cancel", cancel_goal, operation="research", research_provider="exa"
+                        "cancel",
+                        cancel_goal,
+                        operation="research",
+                        research_provider="exa",
+                        research_revision="1" * 64,
                     )
                     try:
                         async with asyncio.timeout(8):
@@ -621,7 +643,11 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
                     ):
                         retrieval_calls.clear()
                         task = await router.submit(
-                            goal, goal, operation="research", research_provider="exa"
+                            goal,
+                            goal,
+                            operation="research",
+                            research_provider="exa",
+                            research_revision="1" * 64,
                         )
                         failed = await _terminal(router, task.task_id)
                         assert failed.state == "failed"
@@ -631,7 +657,11 @@ def test_pinned_research_loop(tmp_path: Path) -> None:
                         assert worker.available
                     for key in ("first", "second"):
                         task = await router.submit(
-                            key, good_goal, operation="research", research_provider="exa"
+                            key,
+                            good_goal,
+                            operation="research",
+                            research_provider="exa",
+                            research_revision="1" * 64,
                         )
                         result = await _terminal(router, task.task_id)
                         assert result.state == "succeeded", result.result

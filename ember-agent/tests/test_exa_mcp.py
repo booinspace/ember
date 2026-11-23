@@ -17,22 +17,23 @@ from ember_agent.character.conversation import CompletedTurn
 from ember_agent.character.tool_workflow import BUILD, PAGE, SEARCH
 from ember_agent.inference.client import HttpGatewayClient
 from ember_agent.inference.contracts import GatewayError, GatewayHealth, ToolCall
+from ember_agent.public_web import PublicWeb, WebBinding
 from ember_agent.realtime.contracts import RoomBinding
 from ember_agent.runtime import (
-    exa_mcp,
     harness,
     hosted_web,
     livekit_runtime,
     opencode_harness,
+    public_web_runtime,
     research,
 )
 from ember_agent.runtime.browser_control import TaskInput
 from ember_agent.runtime.capabilities import capability_catalog
 from ember_agent.runtime.composition import LocalRuntime
 from ember_agent.runtime.config import BuildSettings, HarnessSettings, PublicSearchSettings
-from ember_agent.runtime.exa_mcp import ExaMCP
 from ember_agent.runtime.task_router import TaskResult, ToolContext, ToolReceipt
 from ember_agent.runtime.task_store import TaskConflict, TaskSubmission
+from ember_agent.runtime.web_mcp import EXA_READ, EXA_SEARCH, MCPWeb
 from ember_agent.web_evidence import WebFailure
 
 _URL = "https://www.example.com/article"
@@ -87,6 +88,15 @@ def _tool(
     )
 
 
+def exa_web(transport: httpx.AsyncBaseTransport, *, timeout: float = 8) -> PublicWeb:
+    search = MCPWeb(EXA_SEARCH, "search", transport=transport, timeout=timeout)
+    read = MCPWeb(EXA_READ, "read", transport=transport, timeout=timeout)
+    return PublicWeb(
+        WebBinding("exa_mcp", "Exa MCP", search.revision, search),
+        WebBinding("exa_mcp", "Exa MCP", read.revision, read),
+    )
+
+
 class Server:
     def __init__(
         self, result: httpx.Response, *, sse: bool = False, session: str | None = _SESSION
@@ -120,7 +130,11 @@ class Server:
             }
             return _rpc(
                 1,
-                {"protocolVersion": _VERSION, "capabilities": {"tools": {}}},
+                {
+                    "protocolVersion": _VERSION,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "fixture", "version": "1"},
+                },
                 sse=self.sse,
                 session=self.session,
             )
@@ -135,8 +149,8 @@ class Server:
         return self.result
 
     @property
-    def adapter(self) -> ExaMCP:
-        return ExaMCP(transport=httpx.MockTransport(self))
+    def adapter(self) -> PublicWeb:
+        return exa_web(httpx.MockTransport(self))
 
 
 @pytest.mark.parametrize("operation", ["search", "read"])
@@ -172,12 +186,65 @@ def test_exact_keyless_call_and_source_evidence(
     assert server.result.is_closed
 
 
-def test_session_id_is_forwarded_as_opaque_visible_ascii() -> None:
-    session = "".join(chr(i) for i in range(0x21, 0x7F)).ljust(1024, "x")
+@pytest.mark.parametrize("field", ["content", "structuredContent"])
+def test_reflected_bearer_is_rejected_before_decoding(
+    monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    secret = "synthetic-exa-auth"
+    monkeypatch.setenv("EXA_MCP_AUTH_FIXTURE", secret)
+    binding = EXA_READ.model_copy(update={"bearer_token_env": "EXA_MCP_AUTH_FIXTURE"})
+    result: dict[str, JsonValue] = {"content": [{"type": "text", "text": _PAGE_TEXT}]}
+    unrelated = "x" * 2700 + secret
+    if field == "content":
+        result[field] = [{"type": "text", "text": _PAGE_TEXT + unrelated}]
+    else:
+        result[field] = {unrelated: "ignored"}
+    server = Server(_rpc(2, result))
+
+    def serve(request: httpx.Request) -> httpx.Response:
+        assert request.headers.pop("authorization") == "Bearer " + secret
+        assert secret.encode() not in request.content
+        return server(request)
+
+    adapter = MCPWeb(binding, "read", transport=httpx.MockTransport(serve))
+    evidence = asyncio.run(adapter(_URL))
+    assert evidence.failure == "invalid_response" and not evidence.sources
+    assert len(server.requests) == 3 and secret not in evidence.model_dump_json()
+
+
+@pytest.mark.parametrize("secret", ["web_fetch_exa", "urls", "example.com"])
+def test_bearer_cannot_appear_in_request_arguments_or_tool_name(
+    monkeypatch: pytest.MonkeyPatch, secret: str
+) -> None:
+    monkeypatch.setenv("EXA_MCP_AUTH_FIXTURE", secret)
+    binding = EXA_READ.model_copy(
+        update={"bearer_token_env": "EXA_MCP_AUTH_FIXTURE", "endpoint": "https://mcp.exa.ai/mcp"}
+    )
+
+    def forbidden(_: httpx.Request) -> httpx.Response:
+        raise AssertionError("Credential overlap made a provider request")
+
+    adapter = MCPWeb(binding, "read", transport=httpx.MockTransport(forbidden))
+    evidence = asyncio.run(adapter(_URL))
+    assert evidence.failure == "input_rejected" and not evidence.sources
+
+
+@pytest.mark.parametrize(
+    "session", ["x", "/", "text", "".join(chr(i) for i in range(0x21, 0x7F)).ljust(1024, "x")]
+)
+def test_session_id_is_forwarded_as_opaque_visible_ascii(session: str) -> None:
     server = Server(_tool(_PAGE_TEXT), session=session)
     evidence = asyncio.run(server.adapter.read(_URL))
     assert evidence.coverage == "partial" and len(server.requests) == 3
-    assert session not in evidence.model_dump_json()
+    assert evidence.sources[0].passages == ("Use strong contrast.",)
+
+
+@pytest.mark.parametrize("session", ["x", "/", ".", "text"])
+def test_short_session_id_is_rejected_as_standalone_reflection(session: str) -> None:
+    server = Server(_tool(_PAGE_TEXT + f"\n\nProvider returned ({session})."), session=session)
+    evidence = asyncio.run(server.adapter.read(_URL))
+    assert evidence.failure == "invalid_response" and not evidence.sources
+    assert len(server.requests) == 3
 
 
 @pytest.mark.parametrize(
@@ -204,7 +271,7 @@ def test_invalid_session_id_stops_before_sending_public_input(headers: tuple[byt
         )
         return response
 
-    evidence = asyncio.run(ExaMCP(transport=httpx.MockTransport(transport)).read(_URL))
+    evidence = asyncio.run(exa_web(httpx.MockTransport(transport)).read(_URL))
     assert evidence.failure == "invalid_response" and not evidence.sources
     assert [request["method"] for request in server.requests] == ["initialize"]
 
@@ -229,7 +296,7 @@ def test_invalid_inputs_do_not_even_initialize(operation: str, value: str) -> No
     def forbidden(_: httpx.Request) -> httpx.Response:
         raise AssertionError("Rejected input made a provider request")
 
-    adapter = ExaMCP(transport=httpx.MockTransport(forbidden))
+    adapter = exa_web(httpx.MockTransport(forbidden))
     evidence = asyncio.run(adapter.search(value) if operation == "search" else adapter.read(value))
     assert evidence.failure == "input_rejected" and not evidence.sources
 
@@ -288,8 +355,7 @@ def test_empty_response_matches_source_fixture(read: bool) -> None:
     assert evidence.coverage == "empty" and evidence.failure is None and not evidence.sources
 
 
-def test_timeout_has_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(exa_mcp, "_TIMEOUT", 0.01)
+def test_timeout_has_no_retry() -> None:
     server = Server(_tool(_PAGE_TEXT))
 
     async def stalled(request: httpx.Request) -> httpx.Response:
@@ -298,7 +364,7 @@ def test_timeout_has_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
             await asyncio.Event().wait()
         return response
 
-    adapter = ExaMCP(transport=httpx.MockTransport(stalled))
+    adapter = exa_web(httpx.MockTransport(stalled), timeout=0.01)
     evidence = asyncio.run(adapter.read(_URL))
     assert evidence.failure == "timeout" and len(server.requests) == 3
 
@@ -321,7 +387,7 @@ def test_cancellation_propagates_without_more_requests() -> None:
             await asyncio.Event().wait()
             raise AssertionError("Cancelled request resumed")
 
-        adapter = ExaMCP(transport=httpx.MockTransport(wait))
+        adapter = exa_web(httpx.MockTransport(wait))
         task = asyncio.create_task(adapter.search(_QUERY))
         await started.wait()
         task.cancel()
@@ -344,7 +410,7 @@ def test_composition_shares_mcp_with_tasks_only_research(
     server = Server(_tool(_SEARCH_TEXT if chain_build else _PAGE_TEXT, sse=True), sse=True)
     adapter = server.adapter
     builds: list[tuple[TaskSubmission, ToolContext]] = []
-    monkeypatch.setattr(exa_mcp, "ExaMCP", lambda: adapter)
+    monkeypatch.setattr(public_web_runtime, "_bound", lambda _, op: adapter.binding(op))
 
     def forbidden(*_: object) -> None:
         pytest.fail("Keyless retrieval must not construct a REST fallback")
@@ -382,7 +448,7 @@ def test_composition_shares_mcp_with_tasks_only_research(
         research: research.ResearchBroker,
     ) -> AsyncIterator[ResearchWorker]:
         assert settings.research
-        assert research.backend == "exa_mcp" and research.provider is adapter
+        assert research.backend == "exa_mcp" and research.provider == adapter
         assert research.tools == ("emberweb_search", "emberweb_page")
         assert client.headers.get("X-Ember-Managed-Task") == "idle"
         yield ResearchWorker()
@@ -471,12 +537,18 @@ def test_composition_shares_mcp_with_tasks_only_research(
                             "fixture", goal, operation="research", research_provider="exa"
                         )
                     task = await router.submit(
-                        "fixture", goal, operation="research", research_provider="exa_mcp"
+                        "fixture",
+                        goal,
+                        operation="research",
+                        research_provider="exa_mcp",
+                        research_revision=router.research_revision,
                     )
                     assert (await _terminal(router, task.task_id)).state == "succeeded"
                 capability = capabilities["public_search"]
                 assert capability.provider == "exa_mcp" and capability.status == "enabled"
-                assert capability.reason and "Exa MCP read:" in capability.reason
+                assert capability.reason and "Exa MCP search:" in capability.reason
+                reader = capabilities["read_page"]
+                assert reader.reason and "Exa MCP read:" in reader.reason
                 text_core = runtime.new_text_core(input_ceiling=8192, recall_enabled=False)
                 assert text_core.public_web is core.public_web
                 assert not server.requests
@@ -522,7 +594,7 @@ def test_composition_shares_mcp_with_tasks_only_research(
                 model = SummaryModel('{"answer":"Public excerpt.","sources":[1]}')
                 core.model = model
                 for denied in (f"Exa read: {_URL}", f"Parallel read: {_URL}"):
-                    assert "No other provider" in (await core.prepare(denied)).local_reply
+                    assert "No request was sent" in (await core.prepare(denied)).local_reply
                 turn = await core.prepare(f"Exa MCP read: {_URL}")
                 assert turn.web_evidence and turn.web_evidence.provider == "exa_mcp"
                 assert "PRIVATE_" not in turn.request.model_dump_json()
@@ -547,12 +619,13 @@ def test_research_broker_grants_only_exact_public_inputs_and_same_task_sources()
         return (search if len(search.requests) < 3 else page)(request)
 
     async def run() -> None:
-        broker = research.ResearchBroker(ExaMCP(transport=httpx.MockTransport(provider)), "exa_mcp")
+        broker = research.ResearchBroker(exa_web(httpx.MockTransport(provider)), "exa_mcp")
         task = TaskInput(
             idempotency_key="fixture",
             text=f"Read public guidance.\nSearch: {_QUERY}\nSearch: private notes",
             operation="research",
             research_provider="exa_mcp",
+            research_revision="1" * 64,
         )
         broker.begin("fixture", time() + 5, task.text)
         key = next(iter(broker.environment().values()))
@@ -593,8 +666,9 @@ def test_research_broker_grants_only_exact_public_inputs_and_same_task_sources()
                 grant(research.SEARCH, query=_QUERY + " rewritten")
             with pytest.raises(GatewayError, match="research_input_denied"):
                 grant(research.PAGE, url=_URL)
-            private = await call(grant(research.SEARCH, query="private notes"))
-            assert "input_rejected" in json.dumps(private) and not search.requests
+            with pytest.raises(GatewayError, match="research_input_denied"):
+                grant(research.SEARCH, query="private notes")
+            assert not search.requests
             approved = grant(research.SEARCH, query=_QUERY)
             assert not (await call(approved))["isError"]
             assert (await call(approved))["isError"]  # permit cannot be replayed
@@ -650,7 +724,6 @@ def test_natural_language_requires_literal_grant(
     async def run() -> None:
         with CanonicalEngine(tmp_path) as engine:
             fixture = Harness(engine, model)
-            fixture.core.search_provider = "exa_mcp"
             fixture.core.public_web = server.adapter
             try:
                 reply = await fixture.turn(phrase)
@@ -689,6 +762,24 @@ def test_natural_language_requires_literal_grant(
             "unexpected response",
         ),
         (
+            lambda: _rpc(
+                2,
+                {
+                    "content": [{"type": "text", "text": _PAGE_TEXT}],
+                    "resultType": "input_required",
+                },
+            ),
+            "invalid_response",
+            "failed",
+            "unexpected response",
+        ),
+        (
+            lambda: _tool(_PAGE_TEXT + "x" * 2700 + _SESSION),
+            "invalid_response",
+            "failed",
+            "unexpected response",
+        ),
+        (
             lambda: _tool("No content found for the provided URL(s)."),
             "empty",
             "succeeded",
@@ -709,7 +800,6 @@ def test_planned_page_read_preserves_safe_provider_outcome(
     async def run() -> None:
         with CanonicalEngine(tmp_path) as engine:
             fixture = Harness(engine, model)
-            fixture.core.search_provider = "exa_mcp"
             fixture.core.public_web = server.adapter
             try:
                 reply = await fixture.turn(f"What's on this page {_URL} and build a demo")

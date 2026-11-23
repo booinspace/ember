@@ -35,14 +35,17 @@ from ember_agent.inference.gateway import P0Gateway
 from ember_agent.inference.ollama import NativeFrame, NativeFunction, NativeMessage, NativeTool
 from ember_agent.inference.service import create_app
 from ember_agent.observability import ActivityLog
+from ember_agent.public_web import PublicWeb, WebBinding
 from ember_agent.realtime.contracts import RoomBinding
 from ember_agent.runtime import harness as harness_runtime
-from ember_agent.runtime import hosted_web, livekit_runtime, opencode_harness
+from ember_agent.runtime import hosted_web, livekit_runtime, opencode_harness, public_web_runtime
 from ember_agent.runtime.composition import LocalRuntime
 from ember_agent.runtime.config import BuildSettings, HarnessSettings, PublicSearchSettings
+from ember_agent.runtime.public_web_runtime import _snippet_retrieval
 from ember_agent.runtime.task_router import TaskResult, ToolContext, ToolReceipt
 from ember_agent.runtime.task_store import TaskState, TaskSubmission
 from ember_agent.web_evidence import PublicWebOperation, WebEvidence, WebSource
+from ember_memory_abi.interfaces import ContextRequest, RetrievalContext
 from ember_memory_engine import CanonicalEngine
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
 
@@ -127,9 +130,10 @@ class Harness:
         self.web = Web()
         self.plans: list[tuple[ManagedPlan, UUID]] = []
         self.core = CharacterCore(self.memory, model, model_tag="scripted", input_ceiling=8192)
-        self.core.public_web = self.web
-        self.core.search_provider = "exa"
-        self.core.plan_web = True
+        self.core.public_web = PublicWeb(
+            WebBinding("exa", "Exa", "fixture", self.web.search),
+            WebBinding("exa", "Exa", "fixture", self.web.read),
+        )
         self.core.activity = ActivityLog()
         self.core.submit_managed = self.submit
         self.core.inspect_ready = lambda: True
@@ -240,7 +244,7 @@ def test_chain_through_composed_runtime(
 
         adapter = hosted_web.HostedWeb
         monkeypatch.setenv("FIXTURE_EXA_KEY", "synthetic-key")
-        monkeypatch.setattr(hosted_web, "HostedWeb", hosted)
+        monkeypatch.setattr(public_web_runtime, "HostedWeb", hosted)
 
         class Upstream(FakeUpstream):
             async def generate(self, value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
@@ -548,16 +552,38 @@ def test_mere_mentions_do_not_grant_tools(text: str) -> None:
     assert intent_for(text) is None
 
 
-def test_no_proposal_preserves_ordinary_reply(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "text", ["How are you?", "Binary search: why is it logarithmic?", "Cold read: what is it?"]
+)
+def test_no_proposal_preserves_ordinary_reply(tmp_path: Path, text: str) -> None:
     async def run() -> None:
         model = Model("Ignored planner text", "Ordinary reply")
         with CanonicalEngine(tmp_path) as engine:
             harness = Harness(engine, model)
+            retrieve = harness.memory.retrieve_context
+            recalled: list[ContextRequest] = []
+
+            async def recall(request: ContextRequest) -> RetrievalContext:
+                assert len(model.requests) == 1 and model.requests[0].tools
+                recalled.append(request)
+                return await retrieve(request)
+
+            harness.memory.retrieve_context = recall
+            harness.core.history.extend(
+                (
+                    CompletedTurn("Binary search: what is it?", "PRIVATE_ORDINARY_REPLY", ()),
+                    CompletedTurn(f"Exa\tMCP read: {_URL}", "PRIVATE_LEGACY_WEB_REPLY", ()),
+                    CompletedTurn(
+                        f"Read {_URL}", "PRIVATE_MARKED_WEB_REPLY", (), public_web_reply=True
+                    ),
+                )
+            )
             try:
                 identity = uuid4()
-                turn = await harness.core.prepare("How are you?", request_id=identity)
+                turn = await harness.core.prepare(text, request_id=identity)
                 reply = "".join([event.text async for event in harness.core.stream(turn)])
                 assert reply == "Ordinary reply"
+                assert len(recalled) == 1
                 assert not harness.plans and not harness.web.inputs
                 planner, ordinary = model.requests
                 assert [tool.function.name for tool in planner.tools] == [
@@ -568,8 +594,34 @@ def test_no_proposal_preserves_ordinary_reply(tmp_path: Path) -> None:
                 ]
                 assert "PRIVATE_" not in planner.model_dump_json()
                 assert planner.request_id != identity == ordinary.request_id
-                assert "PRIVATE_HISTORY" in ordinary.model_dump_json()
+                prompt = ordinary.model_dump_json()
+                assert "PRIVATE_HISTORY" in prompt and "PRIVATE_ORDINARY_REPLY" in prompt
+                assert "PRIVATE_LEGACY_WEB_REPLY" not in prompt
+                assert "PRIVATE_MARKED_WEB_REPLY" not in prompt
                 assert not harness.core.history[-1].public_web_reply
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "text",
+    [f"Exa MCP read: {_URL}", f"Parallel search: {_QUERY}", f"Fixture Reader search: {_QUERY}"],
+)
+def test_unbound_provider_shortcut_never_falls_back(tmp_path: Path, text: str) -> None:
+    async def run() -> None:
+        model = Model()
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            harness.core.public_web = PublicWeb(
+                harness.core.public_web.search_binding,
+                WebBinding("fixture_reader", "Fixture Reader", "fixture", harness.web.read),
+            )
+            try:
+                turn = await harness.core.prepare(text)
+                assert turn.local_reply and "No request was sent" in turn.local_reply
+                assert not model.requests and not harness.web.inputs and not harness.plans
             finally:
                 await harness.memory.aclose()
 
@@ -609,8 +661,6 @@ def test_snippet_search_stays_snippet_only(tmp_path: Path, text: str) -> None:
         model = Model((_call(SEARCH, "query", _QUERY),), "Use strong contrast.")
         with CanonicalEngine(tmp_path) as engine:
             harness = Harness(engine, model)
-            harness.core.public_web = None
-            harness.core.search_provider = "searxng"
 
             async def search(query: str) -> str:
                 assert query == _QUERY
@@ -622,7 +672,15 @@ def test_snippet_search_stays_snippet_only(tmp_path: Path, text: str) -> None:
                     }
                 )
 
-            harness.core.public_search = search
+            harness.core.public_web = PublicWeb(
+                WebBinding(
+                    "searxng",
+                    "SearXNG",
+                    "fixture",
+                    _snippet_retrieval("searxng", search),
+                    snippets=True,
+                )
+            )
             try:
                 answer = await harness.turn(text)
                 assert "search snippets only" in answer and "excerpts" not in answer

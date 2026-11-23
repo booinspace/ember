@@ -24,12 +24,12 @@ from ..web_evidence import (
     MAX_WEB_URL,
     PublicWebOperation,
     PublicWebProvider,
-    allowed_public_query,
     allowed_public_url,
+    permitted_public_query,
 )
 from .config import DeploymentConfig, HarnessSettings
 from .opencode_harness import OpenCodeTask, open_opencode
-from .task_store import ResearchProvider, TaskConflict
+from .task_store import TaskConflict
 
 RESEARCH_AGENT = "ember-researcher"
 BROKER = "emberweb"
@@ -50,11 +50,14 @@ class ResearchBroker:
     tools = RESEARCH_TOOLS
     transport_argument = _PERMIT
 
-    def __init__(self, provider: PublicWebProvider, backend: ResearchProvider) -> None:
+    def __init__(
+        self, provider: PublicWebProvider, backend: str, revision: str | None = None
+    ) -> None:
         self._key = secrets.token_urlsafe(32)
         self._expected = f"Bearer {self._key}".encode()
         self.provider = provider
         self.backend = backend
+        self.revision = revision
         self.session: str | None = None
         self.owner: asyncio.Task[object] | None = None
         self.deadline = 0.0
@@ -202,7 +205,7 @@ class ResearchBroker:
         self.allowed_queries = {
             query
             for line in lines
-            if line.startswith("Search: ") and allowed_public_query(query := line[8:])
+            if line.startswith("Search: ") and permitted_public_query(query := line[8:])
         }
         self.allowed_pages = {url for url in lines if allowed_public_url(url)}
 
@@ -276,7 +279,11 @@ class ResearchBroker:
                     )
                 if not self._live() or self.session != session or time() >= self.deadline:
                     raise ToolError("research_task_inactive")
-                if evidence.operation != operation or evidence.provider != self.backend:
+                if (
+                    evidence.operation != operation
+                    or evidence.provider != self.backend
+                    or evidence.snippets
+                ):
                     self.incomplete = True
                     raise ToolError("research_invalid_evidence")
                 self.incomplete |= evidence.coverage != "partial"
@@ -382,17 +389,15 @@ async def open_research(
     settings: HarnessSettings,
     model: ModelClient,
     retrieval: PublicWebProvider,
-    backend: ResearchProvider,
+    backend: str,
     observe: Callable[[GatewayRequest], None] | None = None,
+    *,
+    revision: str,
 ) -> AsyncGenerator[OpenCodeTask]:
     """Give one pinned worker only access to Ember's authenticated public retrieval broker."""
-    if (
-        not settings.research
-        or settings.provider != "opencode"
-        or backend not in {"exa", "parallel", "exa_mcp"}
-    ):
+    if not settings.research or settings.provider != "opencode":
         raise TaskConflict("research_unconfigured")
     async with open_opencode(
-        config, settings, model, observe, research=ResearchBroker(retrieval, backend)
+        config, settings, model, observe, research=ResearchBroker(retrieval, backend, revision)
     ) as worker:
         yield worker

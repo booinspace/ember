@@ -14,12 +14,13 @@ from pydantic import Field, JsonValue, TypeAdapter, field_validator, model_valid
 
 from ..web_evidence import MAX_WEB_SOURCES, MAX_WEB_URL, allowed_public_url
 from .config import RuntimeModel
+from .web_mcp_settings import BindingRevision, ProviderId
 
 type TaskOperation = Literal[
     "inspect", "summarize", "recall", "review", "tool", "delegate", "build", "research"
 ]
 type ServicePort = Annotated[int, Field(ge=1024, le=65535)]
-type ResearchProvider = Literal["exa", "parallel", "exa_mcp"]
+
 type TerminalState = Literal["succeeded", "failed", "cancelled", "timed_out", "uncertain"]
 type TaskState = Literal[
     "queued",
@@ -116,7 +117,8 @@ class TaskSubmission(RuntimeModel):
     operation: TaskOperation = "inspect"
     tool: ToolInvocation | None = None
     service_port: ServicePort | None = None
-    research_provider: ResearchProvider | None = None
+    research_provider: ProviderId | None = None
+    research_revision: BindingRevision | None = None
     depends_on: UUID | None = None
     public_sources: tuple[BuildPublicSource, ...] | None = Field(
         default=None, max_length=MAX_WEB_SOURCES, repr=False
@@ -128,7 +130,9 @@ class TaskSubmission(RuntimeModel):
             raise ValueError("Tool payload must belong to the tool operation")
         if self.service_port is not None and self.operation != "build":
             raise ValueError("Service port requires Build")
-        if self.research_provider is not None and self.operation != "research":
+        if (
+            self.research_provider is not None or self.research_revision is not None
+        ) and self.operation != "research":
             raise ValueError("Research provider requires Web Research")
         if self.operation != "build" and (self.depends_on is not None or self.public_sources):
             raise ValueError("Inspect dependency and public sources require Build")
@@ -300,6 +304,7 @@ class TaskStore:
                 original.tool,
                 original.service_port,
                 original.research_provider,
+                original.research_revision,
                 original.depends_on,
                 original.public_sources,
             ) != (
@@ -308,6 +313,7 @@ class TaskStore:
                 request.tool,
                 request.service_port,
                 request.research_provider,
+                request.research_revision,
                 request.depends_on,
                 request.public_sources,
             ) or (

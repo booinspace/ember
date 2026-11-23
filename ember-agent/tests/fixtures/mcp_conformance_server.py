@@ -134,6 +134,42 @@ def build(mode: str) -> Server:
     return Server("ember-synthetic-conformance", on_list_tools=listing, on_call_tool=call)
 
 
+def legacy_nonterminal_stdio(version: str) -> None:
+    """Send a raw legacy tool result that a conforming SDK server would strip."""
+    for line in sys.stdin:
+        request = json.loads(line)
+        if "id" not in request:
+            continue
+        reply = {"jsonrpc": "2.0", "id": request["id"]}
+        match request["method"]:
+            case "initialize":
+                reply["result"] = {
+                    "protocolVersion": version,
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "legacy-fixture", "version": "1"},
+                }
+            case "tools/list":
+                reply["result"] = {
+                    "tools": [
+                        {"name": name, "inputSchema": {"type": "object"}}
+                        for name in ("echo", "write")
+                    ]
+                }
+            case "tools/call":
+                name = request["params"]["name"]
+                if marker := os.environ.get("MCP_CALL_FILE"):
+                    with Path(marker).open("a") as stream:
+                        stream.write(name + "\n")
+                reply["result"] = {
+                    "content": [{"type": "text", "text": request["params"]["arguments"]["text"]}]
+                }
+                if name == "write":
+                    reply["result"]["resultType"] = "input_required"
+            case _:
+                reply["error"] = {"code": -32601, "message": "Method not found"}
+        print(json.dumps(reply), flush=True)
+
+
 async def stdio(mode: str) -> None:
     server = build(mode)
     async with stdio_server() as (read, write):
@@ -179,6 +215,8 @@ def main() -> None:
 
             app.add_middleware(BaseHTTPMiddleware, dispatch=authorize)
         uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="critical", access_log=False)
+    elif args.mode.startswith("legacy-nonterminal:"):
+        legacy_nonterminal_stdio(args.mode.split(":", 1)[1])
     else:
         asyncio.run(stdio(args.mode))
 

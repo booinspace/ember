@@ -262,7 +262,7 @@ def test_cancelled_invocation_and_discovery_close_owned_processes(
 def test_cancellation_during_spawn_drains_the_unresumed_owned_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from ember_agent.runtime import mcp_tools
+    from ember_agent.runtime import mcp_client
 
     async def exercise() -> None:
         entered, release = asyncio.Event(), asyncio.Event()
@@ -276,7 +276,7 @@ def test_cancellation_during_spawn_drains_the_unresumed_owned_process(
             await release.wait()
             return process
 
-        monkeypatch.setattr(mcp_tools.asyncio, "create_subprocess_exec", delayed)
+        monkeypatch.setattr(mcp_client.asyncio, "create_subprocess_exec", delayed)
         provider = MCPTools((settings(),), uuid4(), uuid4())
         discovery = asyncio.create_task(provider.start())
         try:
@@ -299,7 +299,7 @@ def test_cancellation_during_spawn_drains_the_unresumed_owned_process(
 def test_repeated_cancellation_cannot_abandon_stdio_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from ember_agent.runtime import mcp_tools
+    from ember_agent.runtime import mcp_client
 
     async def exercise() -> None:
         pidfile, calls = tmp_path / "pid", tmp_path / "calls"
@@ -320,14 +320,14 @@ def test_repeated_cancellation_cannot_abandon_stdio_cleanup(
         )
         await provider.start()
         entered, release = asyncio.Event(), asyncio.Event()
-        original = mcp_tools._stop
+        original = mcp_client._stop
 
         async def controlled(process: asyncio.subprocess.Process, job: object | None) -> None:
             entered.set()
             await release.wait()
             await original(process, job)
 
-        monkeypatch.setattr(mcp_tools, "_stop", controlled)
+        monkeypatch.setattr(mcp_client, "_stop", controlled)
         execution = asyncio.create_task(
             provider.invoke(identity(provider, "hang"), {"text": "synthetic"}, context(provider))
         )

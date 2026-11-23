@@ -47,7 +47,12 @@ def evidence_prompt(evidence: WebEvidence, query: str) -> tuple[PromptMessage, .
         for index, source in enumerate(evidence.sources, 1)
     ]
     payload = json.dumps(
-        {"request": query, "sources": sources, "coverage": evidence.coverage}, ensure_ascii=False
+        {
+            "request": query,
+            "sources": sources,
+            "coverage": "search snippets only" if evidence.snippets else evidence.coverage,
+        },
+        ensure_ascii=False,
     )
     return (
         PromptMessage(role="system", content=_INSTRUCTIONS),
@@ -65,14 +70,14 @@ def _answer(text: str, evidence: WebEvidence) -> str:
         or len(set(result.sources)) != len(result.sources)
     ):
         raise ValueError("Invalid web synthesis.")
-    note = (
-        "Coverage: excerpts only; some retrieved material was omitted or shortened."
-        if evidence.truncated
-        else "Coverage: excerpts only."
-    )
-    note += " The provider may have used cached content; freshness was not verified."
     citations = "\n".join(f"- {evidence.sources[item - 1].url}" for item in result.sources)
-    return f"{answer}\n\n{note}\nSources:\n{citations}"
+    return f"{answer}\n\n{_coverage(evidence)}\nSources:\n{citations}"
+
+
+def _coverage(evidence: WebEvidence) -> str:
+    kind = "search snippets" if evidence.snippets else "excerpts"
+    clipped = " Some retrieved material was omitted or shortened." if evidence.truncated else ""
+    return f"Coverage: {kind} only.{clipped} Freshness was not verified; content may be cached."
 
 
 async def synthesize_public_web(
@@ -102,8 +107,10 @@ async def synthesize_public_web(
     except (ValidationError, ValueError, GatewayError):
         terminal = None
         answer = (
-            "Retrieved public excerpts, but couldn't produce a source-checked summary."
-            "\n\nSources retrieved:\n" + "\n".join(f"- {source.url}" for source in evidence.sources)
+            "Couldn't produce a source-checked summary.\n\n"
+            + _coverage(evidence)
+            + "\nSources retrieved:\n"
+            + "\n".join(f"- {source.url}" for source in evidence.sources)
         )
     start = GatewayEvent(
         request_id=request.request_id, context_id=request.context_id, sequence=0, kind="start"

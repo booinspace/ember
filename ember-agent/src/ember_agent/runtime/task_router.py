@@ -32,7 +32,6 @@ from .task_store import (
     BuildPublicSource,
     Confirmation,
     ConfirmationRequest,
-    ResearchProvider,
     TaskCancelled,
     TaskConflict,
     TaskHandle,
@@ -44,6 +43,7 @@ from .task_store import (
     TerminalState,
     ToolInvocation,
 )
+from .web_mcp_settings import BindingRevision, ProviderId
 from .worker_process import settled
 
 if TYPE_CHECKING:
@@ -646,7 +646,7 @@ class MCPTask:
         context: ToolContext,
         progress: Callable[[TaskState], Awaitable[None]],
     ) -> ToolReceipt:
-        """Use the same exact approval and effect fence for direct and harness calls."""
+        """Apply exact approval and effect fences to direct MCP calls."""
         try:
             definition = self.tools.definition(invocation.tool_id)
             from jsonschema import Draft202012Validator
@@ -728,112 +728,6 @@ class MCPTask:
         )
 
 
-class BrokerTool(RuntimeModel):
-    """A bounded, explicitly granted tool description; metadata never confers authority."""
-
-    id: str = Field(max_length=128)
-    description: str = Field(max_length=2048)
-    input_schema: dict[str, JsonValue]
-    effect: Literal["read", "write"]
-    authority_tag: str = Field(default="", exclude=True, repr=False)
-
-
-class HarnessToolBroker:
-    """Project explicit native/MCP grants into a task and retain execution in Ember."""
-
-    def __init__(
-        self, character: UUID, mcp: MCPTask | None, activity: ActivityLog | None = None
-    ) -> None:
-        self.native = ToolRouter(TextInspectionProvider(), character, activity=activity)
-        self.mcp = mcp
-        self.web: ToolRouter | None = None
-
-    def catalog(self, grants: tuple[str, ...]) -> tuple[BrokerTool, ...]:
-        values: list[BrokerTool] = []
-        if len(grants) > 8 or len(set(grants)) != len(grants):
-            raise TaskConflict("harness_tool_grant_invalid")
-        for identity in grants:
-            if identity == "native.inspect_text":
-                values.append(
-                    BrokerTool(
-                        id=identity,
-                        description="Count words and characters in supplied text.",
-                        input_schema=cast(dict[str, JsonValue], InspectText.model_json_schema()),
-                        effect="read",
-                    )
-                )
-            elif identity == "web.read_page" and self.web is not None:
-                values.append(
-                    BrokerTool(
-                        id=identity,
-                        description="Read one public HTML/text page; partial content is labelled.",
-                        input_schema={
-                            "type": "object",
-                            "additionalProperties": False,
-                            "properties": {"url": {"type": "string", "maxLength": 512}},
-                            "required": ["url"],
-                        },
-                        effect="read",
-                    )
-                )
-            elif self.mcp is not None:
-                definition = self.mcp.tools.definition(identity)
-                if not definition.available or definition.effect == "denied":
-                    raise TaskConflict("harness_tool_not_granted")
-                values.append(
-                    BrokerTool(
-                        id=identity,
-                        description=definition.description,
-                        input_schema=definition.input_schema,
-                        effect=definition.effect,
-                        authority_tag=self.mcp.tools.authority_tag(identity),
-                    )
-                )
-            else:
-                raise TaskConflict("harness_tool_not_granted")
-        if len(json.dumps([value.model_dump(mode="json") for value in values]).encode()) > 8192:
-            raise TaskConflict("harness_tool_catalog_too_large")
-        return tuple(values)
-
-    def valid(self, catalog: tuple[BrokerTool, ...], used: tuple[str, ...]) -> bool:
-        """Bind copied MCP context to current grants and credential identity."""
-        if not set(used) <= {tool.id for tool in catalog}:
-            return False
-        try:
-            current = {tool.id: tool for tool in self.catalog(used)}
-            return all(current.get(tool.id) == tool for tool in catalog if tool.id in used)
-        except TaskConflict:
-            return False
-
-    async def invoke(
-        self,
-        catalog: tuple[BrokerTool, ...],
-        identity: str,
-        arguments: dict[str, JsonValue],
-        context: ToolContext,
-        progress: Callable[[TaskState], Awaitable[None]],
-    ) -> ToolReceipt:
-        if identity not in {value.id for value in catalog}:
-            raise TaskConflict("harness_tool_scope_denied")
-        if identity == "native.inspect_text":
-            await progress("waiting_for_tool")
-            return await self.native.invoke(
-                "inspect_text", arguments, context, allowed=frozenset({"inspect_text"})
-            )
-        if identity == "web.read_page" and self.web is not None:
-            return await self.web.invoke(
-                "read_page", arguments, context, allowed=frozenset({"read_page"})
-            )
-        if self.mcp is None:
-            raise TaskConflict("harness_tool_not_granted")
-        receipt = await self.mcp.invoke(
-            ToolInvocation(tool_id=identity, arguments=arguments), context, progress
-        )
-        if receipt.outcome == "unknown_effect":
-            raise EffectUncertain("harness_tool_effect_uncertain")
-        return receipt
-
-
 class TaskRouter:
     """Own one dispatcher, bind admission to the runtime scope, and drain on shutdown."""
 
@@ -857,7 +751,9 @@ class TaskRouter:
         self.delegate_label = "Agentic harness"
         self.delegate_unavailable: str | None = None
         self.delegate_health: Callable[[], bool] | None = None
-        self.research_provider: ResearchProvider | None = None
+        self.research_provider: ProviderId | None = None
+        self.research_revision: BindingRevision | None = None
+        self.research_label: str | None = None
         self.research_health: Callable[[], bool] | None = None
         self.research_unavailable: str | None = None
         self.build_health: Callable[[], bool] | None = None
@@ -892,7 +788,6 @@ class TaskRouter:
         self.providers["tool"] = (
             MCPTask(self.store, self.events, mcp, character_id, activity=activity) if mcp else None
         )
-        self.broker = HarnessToolBroker(character_id, self.providers["tool"], activity)
         self._worker: asyncio.Task[None] | None = None
         self._closing = False
         self._active: (
@@ -922,6 +817,7 @@ class TaskRouter:
         return (
             self.providers["research"] is not None
             and self.research_provider is not None
+            and self.research_revision is not None
             and self.research_unavailable is None
             and (self.research_health is None or self.research_health())
         )
@@ -953,7 +849,8 @@ class TaskRouter:
         operation: TaskOperation = "inspect",
         tool: ToolInvocation | None = None,
         service_port: int | None = None,
-        research_provider: ResearchProvider | None = None,
+        research_provider: ProviderId | None = None,
+        research_revision: BindingRevision | None = None,
         depends_on: UUID | None = None,
         public_sources: tuple[dict[str, str] | BuildPublicSource, ...] | None = None,
     ) -> TaskHandle:
@@ -971,8 +868,15 @@ class TaskRouter:
             or not 1024 <= service_port <= 65535
         ):
             raise TaskConflict("invalid_build_service_port")
-        if (operation == "research" and research_provider != self.research_provider) or (
-            operation != "research" and research_provider is not None
+        if (
+            operation == "research"
+            and (
+                research_provider != self.research_provider
+                or research_revision != self.research_revision
+            )
+        ) or (
+            operation != "research"
+            and (research_provider is not None or research_revision is not None)
         ):
             raise TaskConflict("research_provider_consent_required")
         try:
@@ -987,6 +891,7 @@ class TaskRouter:
                     "tool": tool,
                     "service_port": service_port,
                     "research_provider": research_provider,
+                    "research_revision": research_revision,
                     "depends_on": depends_on,
                     "public_sources": public_sources or None,
                 }
@@ -1383,6 +1288,8 @@ class TaskRouter:
             if request.operation == "research" and (
                 request.research_provider is None
                 or request.research_provider != self.research_provider
+                or request.research_revision is None
+                or request.research_revision != self.research_revision
             ):
                 raise TaskConflict("research_provider_consent_required")
             provider = self._provider(request.operation)

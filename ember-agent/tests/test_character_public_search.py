@@ -6,6 +6,8 @@ from uuid import uuid4
 from ember_agent.character.conversation import CompletedTurn
 from ember_agent.character.core import CharacterCore
 from ember_agent.inference.contracts import GatewayError, GatewayEvent, GatewayRequest
+from ember_agent.public_web import PublicWeb, WebBinding
+from ember_agent.runtime.public_web_runtime import _snippet_retrieval
 from ember_memory_abi.interfaces import ContextRequest, RetrievalContext
 from ember_memory_abi.related import ContextDependencies, MemoryReference
 from ember_memory_engine import CanonicalEngine
@@ -69,33 +71,38 @@ def test_no_recall_excludes_memory_bound_history_and_does_not_probe_canonical_me
     asyncio.run(run())
 
 
-def test_public_search_precedes_recall_and_stays_in_the_existing_prompt_budget(
-    tmp_path: Path,
-) -> None:
+def test_explicit_snippet_search_does_not_enter_private_recall(tmp_path: Path) -> None:
     async def run() -> None:
         with CanonicalEngine(tmp_path / "data") as engine:
             character = engine.create_character()
             memory = InProcessAsyncMemoryClient(engine.character(character.store_id))
-            events: list[str] = []
-            retrieve = memory.retrieve_context
 
-            async def checked(request: ContextRequest) -> RetrievalContext:
-                events.append("recall")
-                assert events[0] == "search"
-                return await retrieve(request)
+            async def forbidden(_: ContextRequest) -> RetrievalContext:
+                raise AssertionError("Public search entered recall")
 
             async def search(query: str) -> str:
-                events.append("search")
                 assert query == "public API documentation"
-                return '{"results":[{"url":"https://public.example/","title":"Public"}]}'
+                return (
+                    '{"results":[{"url":"https://example.com/","title":"Public",'
+                    '"snippet":"Public documentation."}]}'
+                )
 
-            memory.retrieve_context = checked
+            memory.retrieve_context = forbidden
             core = CharacterCore(memory, NoGeneration(), model_tag="synthetic", input_ceiling=4096)
-            core.public_search = search
-            turn = await core.prepare("Search for public API documentation")
-            assert events[:2] == ["search", "recall"]
-            assert "https://public.example/" in turn.request.model_dump_json()
-            assert turn.accounting is not None and turn.accounting.serialized_total <= 4096
+            core.public_web = PublicWeb(
+                WebBinding(
+                    "searxng",
+                    "SearXNG",
+                    "fixture",
+                    _snippet_retrieval("searxng", search),
+                    snippets=True,
+                )
+            )
+            turn = await core.prepare("SearXNG search: public API documentation")
+            assert turn.web_evidence and turn.web_evidence.snippets
+            assert turn.web_evidence.sources[0].url == "https://example.com/"
+            assert "search snippets only" in turn.request.model_dump_json()
+            assert turn.accounting and turn.accounting.serialized_total <= 4096
 
     asyncio.run(run())
 
@@ -106,19 +113,27 @@ def test_failed_search_clarifies_without_generation_or_private_recall(tmp_path: 
             character = engine.create_character()
             memory = InProcessAsyncMemoryClient(engine.character(character.store_id))
 
-            async def search(query: str) -> str:
+            async def search(_: str) -> str:
                 raise GatewayError("public_search_unavailable")
 
-            async def forbidden(request: ContextRequest) -> RetrievalContext:
+            async def forbidden(_: ContextRequest) -> RetrievalContext:
                 raise AssertionError("Recall ran after failed public search")
 
             memory.retrieve_context = forbidden
             model = NoGeneration()
             core = CharacterCore(memory, model, model_tag="synthetic")
-            core.public_search = search
-            turn = await core.prepare("Search for public documentation")
+            core.public_web = PublicWeb(
+                WebBinding(
+                    "searxng",
+                    "SearXNG",
+                    "fixture",
+                    _snippet_retrieval("searxng", search),
+                    snippets=True,
+                )
+            )
+            turn = await core.prepare("SearXNG search: public documentation")
             assert turn.local_reply is not None and "unavailable" in turn.local_reply
             assert model.requests == []
-            assert core.history[-1].user == "Search for public documentation"
+            assert core.history[-1].user == "SearXNG search: public documentation"
 
     asyncio.run(run())

@@ -5,25 +5,19 @@ import hashlib
 import hmac
 import json
 import os
-import signal
-import subprocess
 import tempfile
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from time import time
 from typing import cast
 from uuid import UUID
 
-import anyio
-import httpx2
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from jsonschema import Draft202012Validator
-from mcp import Client, types
-from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.message import SessionMessage
+from mcp import Client
 from pydantic import JsonValue, TypeAdapter
 
+from .mcp_client import MCPClient, call_once
 from .mcp_contracts import (
     MCPDiscovery,
     MCPServerSettings,
@@ -35,7 +29,6 @@ from .task_store import TaskConflict
 
 WIRE_BYTES = 65536
 RESULT_BYTES = 3000
-CREATE_SUSPENDED = 0x00000004  # Win32 flag not exported by Python's subprocess module.
 JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 
 
@@ -128,209 +121,6 @@ def _valid(schema: dict[str, JsonValue], value: object) -> bool:
     return validate(value)
 
 
-class _LimitedBody(httpx2.AsyncByteStream):
-    def __init__(self, stream: httpx2.AsyncByteStream) -> None:
-        self.stream = stream
-
-    async def __aiter__(self) -> AsyncIterator[bytes]:
-        total = 0
-        async for chunk in self.stream:
-            total += len(chunk)
-            if total > WIRE_BYTES:
-                raise TaskConflict("mcp_wire_limit")
-            yield chunk
-
-    async def aclose(self) -> None:
-        await self.stream.aclose()
-
-
-async def _http_response(response: httpx2.Response) -> None:
-    if 300 <= response.status_code < 400:
-        raise TaskConflict("mcp_redirect_denied")
-    if response.headers.get("Content-Encoding", "identity").strip().casefold() != "identity":
-        raise TaskConflict("mcp_compression_unsupported")
-    response.stream = _LimitedBody(cast(httpx2.AsyncByteStream, response.stream))
-
-
-async def _finish_owned[T](future: asyncio.Future[T]) -> tuple[T, bool]:
-    """Retain resource ownership through repeated asyncio and AnyIO cancellation."""
-    interrupted = False
-    while True:
-        with anyio.CancelScope(shield=True):
-            try:
-                return await asyncio.shield(future), interrupted
-            except asyncio.CancelledError:
-                if future.cancelled():
-                    raise
-                interrupted = True
-
-
-async def _stop(process: asyncio.subprocess.Process, job: object | None) -> None:
-    if process.stdin is not None:
-        process.stdin.close()
-    transport = cast(asyncio.SubprocessTransport, vars(process)["_transport"])
-    for descriptor in (0, 1, 2):
-        pipe = transport.get_pipe_transport(descriptor)
-        if pipe is not None:
-            pipe.close()
-    if job is not None:
-        from .windows_job import WindowsJob
-
-        assert isinstance(job, WindowsJob)
-        await asyncio.to_thread(job.terminate_and_wait, 3.0)
-    elif os.name != "nt":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    elif process.returncode is None:
-        process.kill()
-    async with asyncio.timeout(3):
-        await process.wait()
-        if process.stdin is not None:
-            try:
-                await process.stdin.wait_closed()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-
-
-def _process_handle(process: asyncio.subprocess.Process) -> int:
-    # asyncio exposes no public original process handle; retain its native transport.
-    transport = cast(asyncio.SubprocessTransport, vars(process)["_transport"])
-    native_process: object = transport.get_extra_info("subprocess")
-    native: object = getattr(native_process, "_handle", None)
-    if not isinstance(native, int):
-        raise TaskConflict("mcp_process_ownership_unavailable")
-    return native
-
-
-def _owned_job(process: asyncio.subprocess.Process) -> object | None:
-    if os.name != "nt":
-        return None
-    from .windows_job import WindowsJob
-
-    return WindowsJob(_process_handle(process))
-
-
-@asynccontextmanager
-async def _stdio(
-    settings: MCPServerSettings, environment: dict[str, str], directory: str
-) -> AsyncGenerator[
-    tuple[
-        MemoryObjectReceiveStream[SessionMessage | Exception],
-        MemoryObjectSendStream[SessionMessage],
-    ],
-    None,
-]:
-    """Use SDK messages over owned bounded pipes; no inherited shell or stderr logging."""
-    creation = asyncio.create_task(
-        asyncio.create_subprocess_exec(
-            settings.command,
-            *settings.arguments,
-            cwd=directory,
-            env=environment,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            limit=WIRE_BYTES,
-            start_new_session=os.name != "nt",
-            creationflags=(CREATE_SUSPENDED | subprocess.CREATE_NEW_PROCESS_GROUP)
-            if os.name == "nt"
-            else 0,
-        )
-    )
-    try:
-        process = await asyncio.shield(creation)
-    except asyncio.CancelledError:
-        process, _ = await _finish_owned(creation)
-        try:
-            job = _owned_job(process)
-        except BaseException:
-            # Windows is still suspended here, so it cannot have forked an unowned child.
-            await _finish_owned(asyncio.create_task(_stop(process, None)))
-            raise
-        await _finish_owned(asyncio.create_task(_stop(process, job)))
-        raise
-    incoming, read = anyio.create_memory_object_stream[SessionMessage | Exception](1)
-    write, outgoing = anyio.create_memory_object_stream[SessionMessage](1)
-    job: object | None = None
-    tasks: list[asyncio.Task[None]] = []
-    wire_failure: TaskConflict | None = None
-    try:
-        job = _owned_job(process)
-        if job is not None:
-            from .windows_job import WindowsJob
-
-            assert isinstance(job, WindowsJob)
-            job.resume_suspended(_process_handle(process))
-
-        async def receive() -> None:
-            nonlocal wire_failure
-            assert process.stdout is not None
-            try:
-                async with incoming:
-                    for _ in range(128):
-                        try:
-                            line = await process.stdout.readline()
-                            if not line:
-                                return
-                            if len(line) > WIRE_BYTES:
-                                raise ValueError()
-                            message = types.jsonrpc_message_adapter.validate_json(
-                                line, by_name=False
-                            )
-                        except (ValueError, RecursionError):
-                            wire_failure = TaskConflict("mcp_invalid_frame")
-                            await incoming.send(wire_failure)
-                            return
-                        await incoming.send(SessionMessage(message))
-                    wire_failure = TaskConflict("mcp_message_limit")
-                    await incoming.send(wire_failure)
-            except (anyio.BrokenResourceError, anyio.ClosedResourceError):
-                pass
-
-        async def send() -> None:
-            assert process.stdin is not None
-            async with outgoing:
-                async for message in outgoing:
-                    data = message.message.model_dump_json(
-                        by_alias=True, exclude_none=True
-                    ).encode()
-                    if len(data) > WIRE_BYTES:
-                        raise TaskConflict("mcp_request_too_large")
-                    process.stdin.write(data + b"\n")
-                    await process.stdin.drain()
-
-        tasks = [asyncio.create_task(receive()), asyncio.create_task(send())]
-        yield read, write
-    except asyncio.CancelledError:
-        raise
-    except BaseException:
-        if wire_failure is not None:
-            raise wire_failure from None
-        raise
-    else:
-        if wire_failure is not None:
-            raise wire_failure
-    finally:
-
-        async def cleanup() -> None:
-            try:
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                await read.aclose()
-                await write.aclose()
-                await incoming.aclose()
-                await outgoing.aclose()
-            finally:
-                await _stop(process, job)
-
-        _, interrupted = await _finish_owned(asyncio.create_task(cleanup()))
-        if interrupted:
-            raise asyncio.CancelledError()
-
-
 class MCPTools:
     """Configured direct tools bound to exactly one runtime character and session."""
 
@@ -407,35 +197,7 @@ class MCPTools:
         self, settings: MCPServerSettings
     ) -> AsyncGenerator[tuple[Client, str], None]:
         environment, bearer, tag = self._credentials(settings)
-        async with AsyncExitStack() as stack:
-            if settings.transport == "stdio":
-                temporary = stack.enter_context(tempfile.TemporaryDirectory(prefix="ember-mcp-"))
-                transport = _stdio(settings, environment, settings.working_directory or temporary)
-            else:
-                headers = {"Accept-Encoding": "identity"}
-                if bearer:
-                    headers["Authorization"] = "Bearer " + bearer
-                http = await stack.enter_async_context(
-                    httpx2.AsyncClient(
-                        headers=headers,
-                        trust_env=False,
-                        follow_redirects=False,
-                        timeout=settings.timeout_seconds,
-                        limits=httpx2.Limits(max_connections=2, max_keepalive_connections=0),
-                        event_hooks={"response": [_http_response]},
-                    )
-                )
-                transport = streamable_http_client(
-                    settings.url, http_client=http, max_sse_event_size=WIRE_BYTES
-                )
-            client = await stack.enter_async_context(
-                Client(
-                    transport,
-                    read_timeout_seconds=settings.timeout_seconds,
-                    cache=None,
-                    client_info=types.Implementation(name="ember-direct-tools", version="0.1.0"),
-                )
-            )
+        async with MCPClient().direct(settings, environment, bearer) as client:
             yield client, tag
 
     async def _listing(
@@ -627,13 +389,8 @@ class MCPTools:
                         raise TaskConflict("mcp_metadata_changed")
                     dispatched = True
                     # The high-level call_tool retries schema/input-required rounds; this does not.
-                    result = await client.session.call_tool(
-                        definition.name, arguments, read_timeout_seconds=remaining
-                    )
-                    raw = JSON_OBJECT.validate_json(
-                        result.model_dump_json(by_alias=True, exclude_none=True)
-                    )
-                    if len(_encoded(raw)) > RESULT_BYTES or result.is_error:
+                    raw = await call_once(client.session, definition.name, arguments, remaining)
+                    if len(_encoded(raw)) > RESULT_BYTES or raw.get("isError") is True:
                         raise TaskConflict("mcp_tool_failed")
                     if definition.output_schema is not None and not _valid(
                         definition.output_schema, raw.get("structuredContent")

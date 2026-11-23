@@ -22,14 +22,14 @@ from ..inference.contracts import (
     ToolFunction,
 )
 from ..observability import ActivityLog, ActivityStatus
+from ..public_web import PAGE as PAGE
+from ..public_web import SEARCH as SEARCH
+from ..public_web import PublicWeb, WebBinding
 from ..web_evidence import (
-    HOSTED_WEB_LABELS,
     MAX_WEB_QUERY,
-    MAX_WEB_SOURCES,
     MAX_WEB_URL,
     PRIVATE_INPUT,
     PUBLIC_CONTEXT_REFERENCE,
-    PublicWebProvider,
     WebFailure,
     allowed_public_url,
     permitted_public_query,
@@ -38,8 +38,6 @@ from .build_intent import build_goal
 from .prompt_budget import PromptAccounting, message_bytes
 from .public_search import PAGE_ACTION, public_search_query
 
-SEARCH = "search_public"
-PAGE = "read_public_page"
 INSPECT = "inspect_workspace"
 BUILD = "build_app"
 _REQUEST = r"(?:(?:please|can you|could you|would you|will you)\s+)*"
@@ -131,11 +129,6 @@ def has_embedded_prerequisite(text: str) -> bool:
 
 def has_tool_chain(text: str) -> bool:
     return len(_SPLIT.split(text.strip())) > 1 or _NEGATED_ACTION.search(text) is not None
-
-
-def public_search_query_candidate(text: str) -> bool:
-    """Recognize malformed public requests without falling back to raw egress."""
-    return _SEARCH.match(text.lstrip()) is not None
 
 
 def planning_eligible(text: str) -> bool:
@@ -314,20 +307,19 @@ def _continue(
     )
 
 
-def _approval_message(operation: str, value: str, provider: str) -> str:
+def _approval_message(operation: str, value: str, binding: WebBinding) -> str:
     if operation == SEARCH and permitted_public_query(value):
         action = "search"
     elif operation == PAGE and allowed_public_url(value):
         action = "read"
     else:
         return "Provide exact public search terms or a single public URL. Nothing was sent."
-    if label := HOSTED_WEB_LABELS.get(provider):
-        return (
-            f"Nothing was sent to {label}. To approve {action} alone, send "
-            f"`{label} {action}: {value}`. To chain it with another step, "
-            "repeat your request with that exact public input. No task was queued."
-        )
-    return "Repeat the request with exact public search terms. Nothing was sent."
+    label = binding.label
+    return (
+        f"Nothing sent to {label}. To approve {action} alone, send "
+        f"`{label} {action}: {value}`. To chain it with another step, "
+        "repeat the request with exact public input. No task was queued."
+    )
 
 
 @dataclass(frozen=True)
@@ -344,63 +336,31 @@ type _RetrievalFailure = WebFailure | Literal["empty"]
 async def _retrieve(
     operation: str,
     value: str,
-    provider: str,
-    public_web: PublicWebProvider | None,
-    snippet_search: Callable[[str], Awaitable[str]] | None,
+    public_web: PublicWeb,
 ) -> _Evidence | _RetrievalFailure:
+    evidence = await public_web.retrieve("search" if operation == SEARCH else "read", value)
+    if evidence.failure is not None:
+        return evidence.failure
+    if not evidence.sources:
+        return "empty"
+    coverage = "search snippets only" if evidence.snippets else "excerpts only"
     payload: list[dict[str, str | int]] = []
     sources: list[WebReference] = []
-    clipped = False
-    if public_web is not None:
-        action = "search" if operation == SEARCH else "read"
-        evidence = await (
-            public_web.search(value) if action == "search" else public_web.read(value)
+    clipped = evidence.truncated
+    for source in evidence.sources:
+        passage = " ".join(source.passages).encode()
+        limit = 256 if evidence.snippets else 420
+        clipped |= source.truncated or len(passage) > limit
+        sources.append(WebReference(source.url, source.title, evidence.provider, uuid4().hex))
+        payload.append(
+            {
+                "source": len(sources),
+                "title": source.title,
+                "snippet" if evidence.snippets else "excerpt": passage[:limit].decode(
+                    errors="ignore"
+                ),
+            }
         )
-        if evidence.provider != provider or evidence.operation != action:
-            return "invalid_response"
-        if evidence.failure is not None:
-            return evidence.failure
-        coverage = "excerpts only"
-        clipped = evidence.truncated
-        for source in evidence.sources:
-            passage = " ".join(source.passages).encode()
-            clipped |= source.truncated or len(passage) > 420
-            sources.append(WebReference(source.url, source.title, provider, uuid4().hex))
-            payload.append(
-                {
-                    "source": len(sources),
-                    "title": source.title,
-                    "excerpt": passage[:420].decode(errors="ignore"),
-                }
-            )
-    else:
-        assert snippet_search is not None and operation == SEARCH
-        raw = await snippet_search(value)
-        if len(raw.encode()) > 2048:
-            raise GatewayError("tool_plan_bound")
-        rows = _OBJECT.validate_json(raw).get("results")
-        if not isinstance(rows, list):
-            raise GatewayError("tool_plan_invalid")
-        coverage = "search snippets only"
-        clipped = len(rows) > MAX_WEB_SOURCES
-        for row in rows[:MAX_WEB_SOURCES]:
-            if not isinstance(row, dict):
-                continue
-            url, title, text = (row.get(key) for key in ("url", "title", "snippet"))
-            if (
-                isinstance(url, str)
-                and allowed_public_url(url)
-                and isinstance(title, str)
-                and isinstance(text, str)
-                and text.strip()
-            ):
-                clipped |= len(title) > 160 or len(text) > 256
-                sources.append(WebReference(url, title[:160], provider, uuid4().hex))
-                payload.append(
-                    {"source": len(sources), "title": title[:160], "snippet": text[:256]}
-                )
-    if not sources:
-        return "empty"
     return _Evidence(
         tuple(sources),
         json.dumps({"coverage": coverage, "untrusted_sources": payload}, ensure_ascii=False),
@@ -412,19 +372,22 @@ async def _retrieve(
 async def _tracked_retrieval(
     operation: str,
     value: str,
-    provider: str,
-    public_web: PublicWebProvider | None,
-    snippet_search: Callable[[str], Awaitable[str]] | None,
+    binding: WebBinding,
+    public_web: PublicWeb,
     activity: ActivityLog | None,
     turn_id: UUID,
 ) -> _Evidence | _RetrievalFailure:
     name = "web_search" if operation == SEARCH else "read_page"
-    span = activity.begin("tool", name, request_id=turn_id, provider=provider) if activity else None
+    span = (
+        activity.begin("tool", name, request_id=turn_id, provider=binding.provider)
+        if activity
+        else None
+    )
     status: ActivityStatus = "failed"
     count = 0
     code = None
     try:
-        result = await _retrieve(operation, value, provider, public_web, snippet_search)
+        result = await _retrieve(operation, value, public_web)
         if isinstance(result, _Evidence):
             status, count = "succeeded", len(result.sources)
         else:
@@ -446,9 +409,7 @@ async def execute_workflow(
     intent: Intent,
     first_call: ToolCall,
     *,
-    public_web: PublicWebProvider | None,
-    snippet_search: Callable[[str], Awaitable[str]] | None,
-    provider: str,
+    public_web: PublicWeb,
     submit: SubmitManaged | None,
     input_ceiling: int,
     inspect_ready: bool,
@@ -464,8 +425,8 @@ async def execute_workflow(
             "Requested OpenCode step is unavailable. Check Tools; "
             "Build never falls back to Inspect."
         )
-    if (PAGE in intent.steps and public_web is None) or (
-        SEARCH in intent.steps and public_web is None and snippet_search is None
+    if (PAGE in intent.steps and public_web.read_binding is None) or (
+        SEARCH in intent.steps and public_web.search_binding is None
     ):
         return "Requested public web tool is unavailable. No other provider was used."
     inspect = build = None
@@ -496,13 +457,17 @@ async def execute_workflow(
                     raise GatewayError("tool_plan_invalid")
                 if expected in {SEARCH, PAGE}:
                     allowed = intent.query if expected == SEARCH else intent.url
+                    binding = (
+                        public_web.search_binding if expected == SEARCH else public_web.read_binding
+                    )
+                    assert binding is not None
                     if value != allowed:
-                        return _approval_message(expected, value, provider)
+                        return _approval_message(expected, value, binding)
                     evidence = await _tracked_retrieval(
-                        expected, value, provider, public_web, snippet_search, activity, turn_id
+                        expected, value, binding, public_web, activity, turn_id
                     )
                     if isinstance(evidence, str):
-                        label = HOSTED_WEB_LABELS.get(provider, provider)
+                        label = binding.label
                         detail = {
                             "empty": "returned no public excerpts",
                             "access_denied": "denied access",

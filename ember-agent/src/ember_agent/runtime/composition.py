@@ -189,42 +189,14 @@ class LocalRuntime:
         )
         core.load_prompts = self.load_prompt_snapshot
         core.activity = self.dashboard.activity
-        core.public_search = self.core.public_search
-        core.public_page = self.core.public_page
         core.public_web = self.core.public_web
-        core.search_provider = self.core.search_provider
-        core.search_unavailable = self.core.search_unavailable
-        core.plan_web = self.core.plan_web
         return core
 
     async def start_public_search(self) -> None:
-        """Compose only the configured public transport, independent of tasks and harnesses."""
-        from .exa_mcp import ExaMCP
-        from .hosted_web import HostedWeb
-        from .native_search import NativeSearch, SearXNGSearch
+        """Resolve public bindings independently of tasks and worker setup."""
+        from .public_web_runtime import resolve_public_web
 
-        settings = self.config.public_search
-        if settings is None:
-            return
-        self.core.search_provider = settings.provider
-        self.core.plan_web = True
-        if settings.provider == "exa_mcp":
-            self.core.public_web = ExaMCP()
-        elif settings.provider in ("exa", "parallel"):
-            assert settings.api_key_env is not None
-            hosted = HostedWeb(settings.provider, settings.api_key_env)
-            if not hosted.configured:
-                self.core.search_unavailable = "public_web_credentials_unavailable"
-                return
-            self.core.public_web = hosted
-        elif settings.searxng_url is not None:
-            self.core.public_search = SearXNGSearch(settings.searxng_url)
-        elif await asyncio.to_thread(Path(settings.command[0]).is_file):
-            self.core.public_search = NativeSearch(
-                settings.command, self.config.runtime_root / "public-search-homes"
-            )
-        else:
-            self.core.search_unavailable = "public_search_executable_unavailable"
+        self.core.public_web = await resolve_public_web(self.config)
 
     async def read_prompts(self) -> PromptDocuments:
         value = await asyncio.wrap_future(self.pool.submit(self.prompt_files.read))

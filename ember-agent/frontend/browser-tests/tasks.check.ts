@@ -210,14 +210,22 @@ test("Tasks show cancellable conversation-submitted work and deduplicate local s
   await expect(cancel).toHaveCount(0);
 });
 
-test("web research binds consent and retries to its hosted provider and only links receipt citations", async ({
+test("web research binds consent to the provider and revision and only links receipt citations", async ({
   page,
 }) => {
   let available = false;
-  let provider = "OpenCode";
+  let provider = "fixture-web";
+  let label: string | null = null;
+  const firstRevision = "a".repeat(64);
+  const nextRevision = "b".repeat(64);
+  let revision: string | null = firstRevision;
   let submitted = false;
   let invalid = false;
-  const attempts: { idempotency_key: string; research_provider: string }[] = [];
+  const attempts: {
+    idempotency_key: string;
+    research_provider: string;
+    research_revision: string;
+  }[] = [];
   const result = {
     task_id: id,
     state: "succeeded",
@@ -225,6 +233,13 @@ test("web research binds consent and retries to its hosted provider and only lin
     result:
       'Finding [S1]. <a href="https://example.invalid/invented">Invented</a>',
     operation: "research",
+  };
+  let showStaleTask = false;
+  const staleTask = {
+    ...result,
+    task_id: "22222222-2222-4222-8222-222222222222",
+    state: "failed",
+    result: "research_provider_consent_required",
   };
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -263,6 +278,8 @@ test("web research binds consent and retries to its hosted provider and only lin
               kind: "harness",
               name: "Public web research",
               provider,
+              provider_label: label,
+              binding_revision: revision,
               status: available ? "enabled" : "unavailable",
               operations: ["research"],
               reason: null,
@@ -276,10 +293,17 @@ test("web research binds consent and retries to its hosted provider and only lin
       expect(payload).toMatchObject({
         operation: "research",
         text: "Summarize public documentation.\nSearch: public documentation",
-        research_provider: provider,
       });
       attempts.push(payload);
-      if (attempts.length <= 2)
+      if (
+        payload.research_provider !== provider ||
+        payload.research_revision !== revision
+      )
+        return route.fulfill({
+          status: 409,
+          json: { error: "research_provider_consent_required" },
+        });
+      if (attempts.length <= 3)
         return route.fulfill({ status: 409, json: { error: "test_retry" } });
       submitted = true;
       return route.fulfill({ json: { ...result, state: "queued" } });
@@ -287,7 +311,14 @@ test("web research binds consent and retries to its hosted provider and only lin
     if (path === `/api/tasks/${id}`) return route.fulfill({ json: result });
     if (path === "/api/task-notifications")
       return route.fulfill({
-        json: { revision: 1, items: submitted ? [result] : [] },
+        json: {
+          revision: showStaleTask ? 2 : 1,
+          items: submitted
+            ? showStaleTask
+              ? [result, staleTask]
+              : [result]
+            : [],
+        },
       });
     if (path === "/api/task-confirmations") return route.fulfill({ json: [] });
     if (path === `/api/tasks/${id}/receipt`)
@@ -342,15 +373,22 @@ test("web research binds consent and retries to its hosted provider and only lin
     await tasks.click();
     await capability;
   };
-  await openTasks();
   const researchOption = page.locator('option[value="research"]');
+  label = "Fixture Search and Read";
+  await openTasks();
   await expect(researchOption).toHaveCount(0);
   available = true;
+  revision = null;
+  await chat.click();
+  await openTasks();
+  await expect(researchOption).toHaveCount(0);
+  revision = firstRevision;
+  label = null;
   await chat.click();
   await openTasks();
   await expect(researchOption).toHaveCount(0);
 
-  provider = "exa";
+  label = "Fixture Search and Read";
   await chat.click();
   await openTasks();
   await page.getByLabel("Operation").selectOption("research");
@@ -358,7 +396,7 @@ test("web research binds consent and retries to its hosted provider and only lin
   const text = "Summarize public documentation.\nSearch: public documentation";
   await question.fill(text);
   await expect(question).toHaveAccessibleDescription(
-    /Use public information only\. The hosted service Exa receives your approved search queries and any public URLs read/,
+    /Use public information only\. The hosted service Fixture Search and Read receives your approved search queries and any public URLs read/,
   );
   const queue = page.getByRole("button", { name: "Queue task" });
   const submissionError = page.getByText("Task submission failed.");
@@ -367,24 +405,49 @@ test("web research binds consent and retries to its hosted provider and only lin
     await expect.poll(() => attempts.length).toBe(count);
     await expect(submissionError).toBeVisible();
   }
+  expect(attempts[0]).toMatchObject({
+    research_provider: "fixture-web",
+    research_revision: firstRevision,
+  });
   expect(attempts[1]).toEqual(attempts[0]);
 
-  provider = "exa_mcp";
+  provider = "fixture-other";
+  label = "Other Hosted Fixture";
   await chat.click();
   await expect(disconnect).toBeVisible();
   await openTasks();
-  await expect(question).toHaveAccessibleDescription(
-    /The hosted service Exa MCP receives your approved search queries and any public URLs read/,
+  await expect(question).toHaveAccessibleDescription(/Other Hosted Fixture/);
+  await queue.click();
+  await expect.poll(() => attempts.length).toBe(3);
+  await expect(submissionError).toBeVisible();
+  expect(attempts[2]).toMatchObject({
+    research_provider: "fixture-other",
+    research_revision: firstRevision,
+  });
+  expect(attempts[2]?.idempotency_key).not.toBe(attempts[1]?.idempotency_key);
+
+  revision = nextRevision;
+  label = "Updated Hosted Fixture";
+  const refreshed = page.waitForResponse("**/api/capabilities");
+  await queue.click();
+  await refreshed;
+  await expect(page.getByRole("alert")).toContainText(
+    "Review the current provider before choosing Queue task again.",
   );
+  await expect(question).toHaveAccessibleDescription(/Updated Hosted Fixture/);
   await expect(question).toHaveValue(text);
+  await expect(queue).toBeEnabled();
+  expect(attempts).toHaveLength(4);
+  expect(attempts[3]).toEqual(attempts[2]);
+
   await queue.click();
   await expect(page.getByText(result.result, { exact: true })).toBeVisible();
-  expect(attempts.map((attempt) => attempt.research_provider)).toEqual([
-    "exa",
-    "exa",
-    "exa_mcp",
-  ]);
-  expect(attempts[2]?.idempotency_key).not.toBe(attempts[0]?.idempotency_key);
+  expect(attempts).toHaveLength(5);
+  expect(attempts[4]).toMatchObject({
+    research_provider: "fixture-other",
+    research_revision: nextRevision,
+  });
+  expect(attempts[4]?.idempotency_key).not.toBe(attempts[3]?.idempotency_key);
   await expect(page.getByRole("link", { name: "Invented" })).toHaveCount(0);
   const view = page.getByRole("button", { name: "View receipt" });
   await view.click();
@@ -403,6 +466,12 @@ test("web research binds consent and retries to its hosted provider and only lin
   await view.click();
   await expect(receipt).toContainText("No source data was retained");
   await expect(receipt.getByRole("link")).toHaveCount(0);
+
+  showStaleTask = true;
+  await expect(
+    page.getByText(/Reopen Tasks to check the current provider/),
+  ).toBeVisible();
+  expect(attempts).toHaveLength(5);
 });
 
 test("Build has a separate request, ZIP, receipt, and independently stoppable preview", async ({
@@ -471,7 +540,9 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
                 id: "harness.research",
                 kind: "harness",
                 name: "Public web research",
-                provider: "exa",
+                provider: "fixture-web",
+                provider_label: "Fixture Search and Read",
+                binding_revision: "a".repeat(64),
                 status: "enabled",
                 operations: ["research"],
                 reason: null,
@@ -487,6 +558,7 @@ test("Build has a separate request, ZIP, receipt, and independently stoppable pr
           text: "Create a synthetic page",
         });
         expect(payload).not.toHaveProperty("research_provider");
+        expect(payload).not.toHaveProperty("research_revision");
         attempts.push(payload);
         if (attempts.length < 3)
           return route.fulfill({ status: 409, json: { error: "test_retry" } });

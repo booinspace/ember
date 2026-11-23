@@ -174,6 +174,8 @@ Its [natural-language planning amendment](0027-public-web-retrieval.md#natural-l
 records the implementation and [scripted preview evidence](../../PLAN.md#conversation-tool-planning-preview-acceptance).
 [Keyless Exa MCP](0027-public-web-retrieval.md#keyless-exa-mcp-for-conversation-and-tasks)
 is an opt-in provider for Conversation and Web Research, not a direct MCP grant.
+[Declarative bindings](0027-public-web-retrieval.md#declarative-provider-bindings)
+add config-only providers, per-operation readiness, and revision-bound Research consent.
 
 [Root ADR 0026 — Isolated OpenCode Build preview](0026-managed-opencode-build.md)
 adds opt-in containerized coding and local service previews. Production gates remain open.

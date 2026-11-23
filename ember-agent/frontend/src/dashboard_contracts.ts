@@ -118,6 +118,8 @@ export const capabilitySnapshot = z.object({
         kind: z.enum(["native", "mcp", "public_search", "harness"]),
         name: z.string(),
         provider: z.string(),
+        provider_label: z.string().nullable().default(null),
+        binding_revision: z.string().nullable().default(null),
         status: z.enum(["enabled", "unconfigured", "unavailable", "disabled"]),
         operations: z.array(z.string()),
         reason: z.string().nullable(),

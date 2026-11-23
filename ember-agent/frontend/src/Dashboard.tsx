@@ -307,7 +307,7 @@ export function Capabilities({ enabled }: { enabled: boolean }) {
                 />
                 <span>
                   {item.name}
-                  <small>{item.provider}</small>
+                  <small>{item.provider_label ?? item.provider}</small>
                 </span>
                 <span className={`capability-state ${item.status}`}>
                   {item.status}

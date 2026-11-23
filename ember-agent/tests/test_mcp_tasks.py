@@ -162,8 +162,11 @@ async def terminal(router: TaskRouter, identity: UUID) -> TaskSnapshot:
             await asyncio.sleep(0.02)
 
 
+@pytest.mark.parametrize(
+    "mode", ["normal", "legacy-nonterminal:2025-06-18", "legacy-nonterminal:2025-11-25"]
+)
 def test_real_tools_use_approval_receipts_and_bound_argument_idempotency(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     calls = tmp_path / "calls.txt"
     monkeypatch.setenv("EMBER_MCP_TEST_CALLS", str(calls))
@@ -174,7 +177,7 @@ def test_real_tools_use_approval_receipts_and_bound_argument_idempotency(
             id="fixture",
             transport="stdio",
             command=sys.executable,
-            arguments=(str(FIXTURE), "normal"),
+            arguments=(str(FIXTURE), mode),
             environment={"MCP_CALL_FILE": "EMBER_MCP_TEST_CALLS"},
             grants=(
                 MCPToolGrant(name="echo", effect="read"),
@@ -229,9 +232,11 @@ def test_real_tools_use_approval_receipts_and_bound_argument_idempotency(
             with pytest.raises(TaskConflict, match="confirmation_scope_or_action_mismatch"):
                 await router.decide(approval.confirmation_id, "b" * 64, approve=True)
             await router.decide(approval.confirmation_id, approval.action_sha256, approve=True)
-            assert (await terminal(router, pending.task_id)).state == "succeeded"
+            state = "succeeded" if mode == "normal" else "uncertain"
+            outcome = "success" if mode == "normal" else "unknown_effect"
+            assert (await terminal(router, pending.task_id)).state == state
             assert calls.read_text().splitlines() == ["echo", "write"]
-            assert (await router.receipt(pending.task_id)).receipt.outcome == "success"
+            assert (await router.receipt(pending.task_id)).receipt.outcome == outcome
             assert len((await router.notifications(None)).items) == 2
         finally:
             await router.aclose()

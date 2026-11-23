@@ -5386,3 +5386,30 @@ matched long OpenCode prompts, median time to first token increased from
 6.68 s on `--prefill auto` to 31.29 s and 37.34 s. Keep `--prefill auto` and
 conservative scheduling. The [comparison](docs/phase-13-validation.md#miku-follow-up-with-128--and-64-token-chunks)
 records both gates and the raw report location.
+
+## Shared outbound MCP and public provider bindings
+
+See [Root ADR 0027](docs/adr/0027-public-web-retrieval.md#declarative-provider-bindings)
+and [Root ADR 0019](docs/adr/0019-direct-mcp.md#shared-outbound-client).
+One outbound SDK client layer serves distinct direct and public transport profiles.
+Ember resolves each public capability to one reviewed binding, with no fallback.
+Compatible structured providers require only configuration; an unknown text
+format needs only a decoder and fixtures. The planner stays local, and ordinary
+turns without a tool proposal retain recall. Research stays Tasks-only with
+one approved provider for both operations. Changing its binding revision requires
+resubmission. Inspect, Build, direct MCP and inbound Memory MCP retain separate
+authority and lifecycle. The ten dashboard tabs remain unchanged.
+
+| Gate | Offline evidence |
+| --- | --- |
+| PWB-AC-01 — Shared client, distinct authority | Passed offline: `test_exa_mcp.py` exact egress, session IDs, bounded JSON/SSE, credential reflection, nonterminal rejection and cancellation. `test_mcp_tools.py`, `test_mcp_tasks.py` direct discovery, schema/effect fences and owned shutdown. |
+| PWB-AC-02 — Config-only second reader | Passed offline: `test_web_mcp_bindings.py` TOML fixture, literal egress, auth scope, per-operation readiness, URL mismatch, clipping and freshness labels. `test_web_mcp_decoders.py` exercises a second named decoder without dispatch changes. |
+| PWB-AC-03 — Revision-bound consent | Passed offline: `test_research_worker.py` same-provider drift across restart, legacy consent and exact grants; Tasks browser checks dynamic metadata and stale consent. |
+| PWB-AC-04 — Existing boundaries | Passed offline: connected gateway, Conversation planner/recall, snippet-only search and Inspect/Build dependency regressions. |
+
+Local gates passed after independent review and fixes: 1,440 Python tests
+(18 skipped), 33 frontend unit tests, 26 browser tests (three live LAN/voice
+tests skipped), locked offline sync, contract export, lint, formatting,
+type checks and `git diff --check`.
+Evidence is fixture-backed. Live Exa MCP retrieval, a second live provider,
+Miku deployment and physical voice remain unqualified.
