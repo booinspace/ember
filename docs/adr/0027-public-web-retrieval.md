@@ -137,7 +137,8 @@ grants. No direct MCP, skills, memory or provider fallback is added.
 
 ## Keyless Exa MCP for Conversation and Tasks
 
-**Status:** Opt-in; tested with offline fixtures only. No live MCP tool call or rollout.
+**Status:** Opt-in. A live Miku probe reached initialization but sent no page-read
+call. The session fix is tested offline; live retrieval with the fix is unverified.
 
 ```toml
 [public_search]
@@ -154,12 +155,21 @@ leave Ember without a fresh, explicit request. Use only non-sensitive public inp
 Ember owns a dedicated direct IPv4 MCP transport to
 `https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa`. One bounded handshake
 and one fixed tool call per approved lookup (one search result or one page URL).
+An optional session ID is opaque [MCP visible ASCII](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#session-management),
+not a fixed token format. Accept one header of up to 1,024 bytes and echo it
+unchanged only to the fixed endpoint during that lookup. Invalid or duplicate
+headers stop the handshake before any public argument is sent.
 No tool discovery, server-initiated actions, OAuth, credentials, cookies, prior
 chat, recall, or workspace context. The adapter does not follow redirects or
 retry. It parses the provider's formatted text into bounded, untrusted excerpts
 and attributes page evidence only to the requested URL. Freshness and coverage
 are not verified. Exa documents free rate limits and direct IPv4 for keyless access;
-blocked or rate-limited requests fail without alternate providers. See [Exa MCP
+blocked or rate-limited requests fail without alternate providers. Natural-language
+Conversation shows a fixed failure reason and a content-free Activity code:
+HTTP 401/403 is `public_web_access_denied`, HTTP 429 is `public_web_rate_limited`,
+and an MCP tool error is `public_web_tool_error`. A successful response with no
+excerpts is `public_web_empty`; it cannot satisfy a dependent task. Activity
+never records the query, URL, or upstream error text. See [Exa MCP
 reference](https://exa.ai/docs/reference/exa-mcp) and the source snapshot
 [`81d687e`](https://github.com/exa-labs/exa-mcp-server/tree/81d687e7669b3769007ad46b4fd6839f7c2b6414).
 
@@ -179,4 +189,4 @@ different transport to roll back; no migration.
 | CTP-AC-01/02/04 | Offline `test_exa_mcp.py` and `test_config.py` pass: opt-in setup, exact egress and approval, private input rejection, bounded JSON/SSE, cancellation, and no fallback. |
 | P9-AC-05 / CTP-AC-03 | Runtime and gateway regressions cover idle task admission and foreground priority before native start. The pinned OpenCode 2.3.2 Research worker returned source receipts twice with one Conversation reservation held throughout, using scripted inference and retrieval. Live inference and voice were not run. |
 | P11-AC-04/05 / CTP-AC-05 | Offline `test_exa_mcp.py` and `test_research_worker.py` cover shared adapter composition, exact task grants, same-task source URLs, provider-bound consent and receipts. No direct MCP or Build grant added. |
-| Live provider/platform | Not run. Fixtures reflect published source, not measured hosted behavior. |
+| Live provider/platform | Miku initialization returned HTTP 200 and an opaque dotted session ID. Pre-fix client stopped before tool dispatch. Post-fix retrieval not run. |

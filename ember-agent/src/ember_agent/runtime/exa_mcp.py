@@ -28,7 +28,8 @@ _READ_BYTES = 2600
 _HEADERS = {"accept": "application/json, text/event-stream", "accept-encoding": "identity"}
 _OBJECT = TypeAdapter(dict[str, JsonValue])
 _FRAME_END = re.compile(rb"\r?\n\r?\n")
-_SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+# MCP 2025-06-18 session IDs are opaque visible ASCII; cap reflected header size.
+_SESSION_ID = re.compile(r"[\x21-\x7e]{1,1024}")
 # Exa strips these directives from the literal query and turns them into tool filters.
 _CATEGORY = re.compile(r"\bcategory:", re.I)
 _SEARCH = re.compile(
@@ -126,8 +127,7 @@ async def _call(client: httpx.AsyncClient, operation: PublicWebOperation, value:
         headers=headers,
         json={"jsonrpc": "2.0", "method": "notifications/initialized"},
     ) as response:
-        if response.status_code != 202:
-            raise _Failed("unavailable")
+        _require_status(response, 202)
     client.cookies.clear()
     name = "web_search_exa" if operation == "search" else "web_fetch_exa"
     arguments = (
@@ -148,7 +148,7 @@ async def _call(client: httpx.AsyncClient, operation: PublicWebOperation, value:
     ) as response:
         result = await _result(response, 2)
     if result.get("isError") is True:
-        raise _Failed("unavailable")
+        raise _Failed("tool_error")
     content = result.get("content")
     if (
         result.get("isError", False) is not False
@@ -162,9 +162,17 @@ async def _call(client: httpx.AsyncClient, operation: PublicWebOperation, value:
     return text
 
 
-async def _result(response: httpx.Response, request_id: Literal[1, 2]) -> dict[str, JsonValue]:
-    if response.status_code != 200:
+def _require_status(response: httpx.Response, expected: int) -> None:
+    if response.status_code in {401, 403}:
+        raise _Failed("access_denied")
+    if response.status_code == 429:
+        raise _Failed("rate_limited")
+    if response.status_code != expected:
         raise _Failed("unavailable")
+
+
+async def _result(response: httpx.Response, request_id: Literal[1, 2]) -> dict[str, JsonValue]:
+    _require_status(response, 200)
     mime = response.headers.get("content-type", "").split(";", 1)[0].lower().strip()
     if (
         mime not in {"application/json", "text/event-stream"}

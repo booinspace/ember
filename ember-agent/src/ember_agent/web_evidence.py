@@ -9,7 +9,14 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 PublicWebOperation = Literal["search", "read"]
 WebFailure = Literal[
-    "input_rejected", "timeout", "unavailable", "response_bound", "invalid_response"
+    "input_rejected",
+    "timeout",
+    "unavailable",
+    "response_bound",
+    "invalid_response",
+    "access_denied",
+    "rate_limited",
+    "tool_error",
 ]
 MAX_WEB_SOURCES = 3
 MAX_WEB_QUERY = 400

@@ -6,6 +6,7 @@ import re
 from collections.abc import Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
@@ -29,6 +30,7 @@ from ..web_evidence import (
     PRIVATE_INPUT,
     PUBLIC_CONTEXT_REFERENCE,
     PublicWebProvider,
+    WebFailure,
     allowed_public_url,
     permitted_public_query,
 )
@@ -336,13 +338,16 @@ class _Evidence:
     clipped: bool
 
 
+type _RetrievalFailure = WebFailure | Literal["empty"]
+
+
 async def _retrieve(
     operation: str,
     value: str,
     provider: str,
     public_web: PublicWebProvider | None,
     snippet_search: Callable[[str], Awaitable[str]] | None,
-) -> _Evidence | None:
+) -> _Evidence | _RetrievalFailure:
     payload: list[dict[str, str | int]] = []
     sources: list[WebReference] = []
     clipped = False
@@ -351,8 +356,10 @@ async def _retrieve(
         evidence = await (
             public_web.search(value) if action == "search" else public_web.read(value)
         )
-        if evidence.failure or evidence.provider != provider or evidence.operation != action:
-            return None
+        if evidence.provider != provider or evidence.operation != action:
+            return "invalid_response"
+        if evidence.failure is not None:
+            return evidence.failure
         coverage = "excerpts only"
         clipped = evidence.truncated
         for source in evidence.sources:
@@ -393,7 +400,7 @@ async def _retrieve(
                     {"source": len(sources), "title": title[:160], "snippet": text[:256]}
                 )
     if not sources:
-        return None
+        return "empty"
     return _Evidence(
         tuple(sources),
         json.dumps({"coverage": coverage, "untrusted_sources": payload}, ensure_ascii=False),
@@ -410,24 +417,27 @@ async def _tracked_retrieval(
     snippet_search: Callable[[str], Awaitable[str]] | None,
     activity: ActivityLog | None,
     turn_id: UUID,
-) -> _Evidence | None:
-    span = (
-        activity.begin("tool", operation, request_id=turn_id, provider=provider)
-        if activity
-        else None
-    )
-    result = None
+) -> _Evidence | _RetrievalFailure:
+    name = "web_search" if operation == SEARCH else "read_page"
+    span = activity.begin("tool", name, request_id=turn_id, provider=provider) if activity else None
     status: ActivityStatus = "failed"
+    count = 0
+    code = None
     try:
         result = await _retrieve(operation, value, provider, public_web, snippet_search)
-        status = "succeeded" if result else "failed"
+        if isinstance(result, _Evidence):
+            status, count = "succeeded", len(result.sources)
+        else:
+            code = "public_web_" + result
+            if result == "empty":
+                status = "succeeded"
         return result
     except asyncio.CancelledError:
         status = "cancelled"
         raise
     finally:
         if activity and span:
-            activity.update(span, status, count=len(result.sources) if result else 0)
+            activity.update(span, status, count=count, code=code)
 
 
 async def execute_workflow(
@@ -491,8 +501,20 @@ async def execute_workflow(
                     evidence = await _tracked_retrieval(
                         expected, value, provider, public_web, snippet_search, activity, turn_id
                     )
-                    if evidence is None:
-                        return "No usable public evidence. No dependent task was queued."
+                    if isinstance(evidence, str):
+                        label = HOSTED_WEB_LABELS.get(provider, provider)
+                        detail = {
+                            "empty": "returned no public excerpts",
+                            "access_denied": "denied access",
+                            "rate_limited": "rate-limited the request",
+                            "tool_error": "reported a retrieval error",
+                            "timeout": "did not respond in time",
+                            "invalid_response": "returned an unexpected response",
+                            "response_bound": "returned more data than Ember accepts",
+                            "input_rejected": "did not receive an approved public input",
+                            "unavailable": "was unavailable",
+                        }[evidence]
+                        return f"{label} {detail}. No other provider was used or task queued."
                     retrieved.append(evidence)
                     result = evidence.payload
                 elif expected == INSPECT:

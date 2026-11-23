@@ -45,6 +45,8 @@ _SEARCH_TEXT = (
 _PAGE_TEXT = f"# Example guide\nURL: {_URL}\nPublished: 2026-10-01\n\nUse strong contrast."
 _ENDPOINT = "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa"
 _VERSION = "2025-06-18"
+# Synthetic token with hosted Exa's observed shape (59 visible characters, one period).
+_SESSION = "a" * 29 + "." + "b" * 29
 
 
 class Bytes(httpx.AsyncByteStream):
@@ -61,12 +63,12 @@ class Bytes(httpx.AsyncByteStream):
 
 
 def _rpc(
-    request_id: int, result: dict[str, JsonValue], *, sse: bool = False, session: bool = False
+    request_id: int, result: dict[str, JsonValue], *, sse: bool = False, session: str | None = None
 ) -> httpx.Response:
     raw = json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}).encode()
     headers = {"set-cookie": "token=synthetic-do-not-forward"}
-    if session:
-        headers["mcp-session-id"] = "fixture-session"
+    if session is not None:
+        headers["mcp-session-id"] = session
     if sse:
         raw = b": keepalive\r\n\r\nevent: message\r\ndata: " + raw + b"\r\n\r\n"
         headers["content-type"] = "text/event-stream"
@@ -86,7 +88,9 @@ def _tool(
 
 
 class Server:
-    def __init__(self, result: httpx.Response, *, sse: bool = False, session: bool = True) -> None:
+    def __init__(
+        self, result: httpx.Response, *, sse: bool = False, session: str | None = _SESSION
+    ) -> None:
         self.result = result
         self.sse = sse
         self.session = session
@@ -121,8 +125,8 @@ class Server:
                 session=self.session,
             )
         assert request.headers["mcp-protocol-version"] == _VERSION
-        assert request.headers.get("mcp-session-id") == (
-            "fixture-session" if self.session else None
+        assert request.headers.get_list("mcp-session-id") == (
+            [] if self.session is None else [self.session]
         )
         if len(self.requests) == 2:
             assert payload == {"jsonrpc": "2.0", "method": "notifications/initialized"}
@@ -143,7 +147,7 @@ def test_exact_keyless_call_and_source_evidence(
     monkeypatch.setenv("EXA_API_KEY", "synthetic-do-not-forward")
     monkeypatch.setenv("HTTPS_PROXY", "http://user:secret@example.com:8080")
     text = _SEARCH_TEXT if operation == "search" else _PAGE_TEXT
-    server = Server(_tool(text, sse=sse), sse=sse, session=sse)
+    server = Server(_tool(text, sse=sse), sse=sse, session=_SESSION if sse else None)
     evidence = asyncio.run(
         server.adapter.search(_QUERY) if operation == "search" else server.adapter.read(_URL)
     )
@@ -164,7 +168,45 @@ def test_exact_keyless_call_and_source_evidence(
     (source,) = evidence.sources
     assert source.url == _URL and source.title == "Example guide"
     assert source.passages == ("Use strong contrast.",)
+    assert _SESSION not in evidence.model_dump_json()
     assert server.result.is_closed
+
+
+def test_session_id_is_forwarded_as_opaque_visible_ascii() -> None:
+    session = "".join(chr(i) for i in range(0x21, 0x7F)).ljust(1024, "x")
+    server = Server(_tool(_PAGE_TEXT), session=session)
+    evidence = asyncio.run(server.adapter.read(_URL))
+    assert evidence.coverage == "partial" and len(server.requests) == 3
+    assert session not in evidence.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        (b"",),
+        (b"x" * 1025,),
+        (b"a b",),
+        (b"a\tb",),
+        (b"a\rb",),
+        (b"a\nb",),
+        (b"a\x7fb",),
+        (b"a\xffb",),
+        (b"one", b"two"),
+    ],
+)
+def test_invalid_session_id_stops_before_sending_public_input(headers: tuple[bytes, ...]) -> None:
+    server = Server(_tool(_PAGE_TEXT), session=None)
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        response = server(request)
+        response.headers = httpx.Headers(
+            [*response.headers.raw, *((b"mcp-session-id", value) for value in headers)]
+        )
+        return response
+
+    evidence = asyncio.run(ExaMCP(transport=httpx.MockTransport(transport)).read(_URL))
+    assert evidence.failure == "invalid_response" and not evidence.sources
+    assert [request["method"] for request in server.requests] == ["initialize"]
 
 
 @pytest.mark.parametrize(
@@ -195,12 +237,13 @@ def test_invalid_inputs_do_not_even_initialize(operation: str, value: str) -> No
 @pytest.mark.parametrize(
     ("response", "failure"),
     [
-        (lambda: httpx.Response(403), "unavailable"),
-        (lambda: httpx.Response(429), "unavailable"),
+        (lambda: httpx.Response(401), "access_denied"),
+        (lambda: httpx.Response(403), "access_denied"),
+        (lambda: httpx.Response(429), "rate_limited"),
         (lambda: httpx.Response(302, headers={"location": "https://example.org"}), "unavailable"),
         (
             lambda: _tool("provider error includes private synthetic text", is_error=True),
-            "unavailable",
+            "tool_error",
         ),
         (lambda: _tool(_PAGE_TEXT, request_id=9), "invalid_response"),
         (lambda: _tool(_PAGE_TEXT.replace(_URL, "https://example.org")), "invalid_response"),
@@ -622,6 +665,72 @@ def test_natural_language_requires_literal_grant(
                     assert not server.requests and len(model.requests) == 1
                     command = "read" if operation == PAGE else "search"
                     assert f"Exa MCP {command}: {proposal}" in reply
+            finally:
+                await fixture.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("response", "code", "status", "message"),
+    [
+        (lambda: httpx.Response(403), "access_denied", "failed", "denied access"),
+        (lambda: httpx.Response(429), "rate_limited", "failed", "rate-limited"),
+        (
+            lambda: _tool("PRIVATE_PROVIDER_ERROR", is_error=True),
+            "tool_error",
+            "failed",
+            "retrieval error",
+        ),
+        (
+            lambda: _tool("PRIVATE_PROVIDER_ERROR"),
+            "invalid_response",
+            "failed",
+            "unexpected response",
+        ),
+        (
+            lambda: _tool("No content found for the provided URL(s)."),
+            "empty",
+            "succeeded",
+            "no public excerpts",
+        ),
+    ],
+)
+def test_planned_page_read_preserves_safe_provider_outcome(
+    tmp_path: Path, response: Callable[[], httpx.Response], code: str, status: str, message: str
+) -> None:
+    from ember_memory_engine import CanonicalEngine
+
+    from .test_tool_workflow import Harness, Model, _call
+
+    server = Server(response())
+    model = Model((_call(PAGE, "url", _URL),))
+
+    async def run() -> None:
+        with CanonicalEngine(tmp_path) as engine:
+            fixture = Harness(engine, model)
+            fixture.core.search_provider = "exa_mcp"
+            fixture.core.public_web = server.adapter
+            try:
+                reply = await fixture.turn(f"What's on this page {_URL} and build a demo")
+                assert (
+                    message in reply and "PRIVATE_PROVIDER_ERROR" not in reply and _URL not in reply
+                )
+                assert len(server.requests) == 3 and len(model.requests) == 1 and not fixture.plans
+                log = fixture.core.activity
+                assert log is not None
+                (event,) = (event for event in log.since(0) if event.kind == "tool")
+                assert event.name == "read_page" and event.provider == "exa_mcp"
+                assert (
+                    event.status == status
+                    and event.code == "public_web_" + code
+                    and event.count == 0
+                )
+                assert event.request_id == fixture.core.history[-1].request_id
+                assert (
+                    "PRIVATE_PROVIDER_ERROR" not in event.model_dump_json()
+                    and _URL not in event.model_dump_json()
+                )
             finally:
                 await fixture.memory.aclose()
 

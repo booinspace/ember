@@ -5298,7 +5298,15 @@ No grants added to managed workers; no change to recall or ordinary reply policy
 Planner routing correction: the Mac root gate passed (1,389 Python passed,
 18 skipped), and the final focused gate passed (70 tests). Mocked Exa MCP covers
 “whats on this page” with one literal URL, not a web search or workspace Inspect.
-No live deployment or voice latency measurement.
+No live deployment or voice latency measurement in that gate.
+
+Exa MCP session fix: Miku received a valid initialization with a dotted session
+ID, but Ember rejected it before sending the page URL. The adapter now accepts
+one opaque visible-ASCII session ID up to 1,024 bytes and forwards it unchanged
+within the lookup. `test_exa_mcp.py` covers the observed shape, exact forwarding,
+invalid and duplicate headers, and content-free Activity diagnostics. Only usable
+excerpts satisfy dependent work. No retry or fallback. Mac root gate: 1,406 passed,
+18 skipped. Fixed live retrieval is unverified.
 
 Previous Mac follow-up: 1,381 Python passed, 18 skipped (worktree-local `TMPDIR` avoids
 macOS symlink paths in bundle tests). Ruff, Pyright and contract schema checks
