@@ -106,6 +106,13 @@ links to already-authorized observations. Its server-rendered test verifies esca
 and rejects a different passage in the same source as a citation; live browser/media
 acceptance remains open.
 
+Miku Fedora baseline at `8e4fcdd`, using `scripts/validate_phase_eight_recall.py` and one CPU BGE
+thread, found 8/8 expected memories and all eight exact supporting passages in separate groups.
+Cross-character denial and source-switch invalidation passed. Outcome was `partial` because
+undated records and archive observations without event time were excluded. Receipt:
+`~/ember-benchmarks/20261123-fedora/results/beliefs-committed.5VbftR/deep-baseline.json`.
+This single warmed query checks retrieval and evidence, not answer reconstruction or latency.
+
 ## Acceptance tracking
 
 Implemented paths below do not substitute for complete acceptance matrices.
