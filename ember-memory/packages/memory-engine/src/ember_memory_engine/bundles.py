@@ -740,7 +740,7 @@ def _read_manifest(bundle: Path) -> BundleManifest:
             }
             or registry.execute("PRAGMA quick_check").fetchone()[0] != "ok"
             or registry.execute("PRAGMA user_version").fetchone()[0]
-            not in {2, 3, 4, 5, SCHEMA_VERSION}
+            not in {2, 3, 4, 5, 6, SCHEMA_VERSION}
         ):
             raise BundleError()
     for snapshot in manifest.stores:
@@ -760,7 +760,7 @@ def _read_manifest(bundle: Path) -> BundleManifest:
                 raise BundleError()
             if (
                 connection.execute("PRAGMA user_version").fetchone()[0]
-                not in {2, 3, 4, 5, SCHEMA_VERSION}
+                not in {2, 3, 4, 5, 6, SCHEMA_VERSION}
                 or connection.execute("PRAGMA quick_check").fetchone()[0] != "ok"
                 or connection.execute("SELECT coverage FROM store_coverage").fetchone()[0]
                 != snapshot.coverage

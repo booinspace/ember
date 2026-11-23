@@ -115,6 +115,10 @@ validates members and copied bytes, DB identity/schema/coverage, dependency pres
 then permitted evidence before publishing a new root. Providers remain disabled.
 Existing roots/bundle outputs are rejected rather than overwritten.
 
+The schema-7 reader also accepts schema-6 bundle databases. Existing restore validation
+and staged migration still apply. Synthetic schema-4/5/6 tests check unchanged memory IDs
+and exact quotes after restore; schema-6 recall selection survives migration.
+
 ## Acceptance and limits
 
 All 332 tests passed on Windows/Python 3.12.15, including 27 new engine acceptance

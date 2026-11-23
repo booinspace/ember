@@ -129,8 +129,9 @@ Current checkout ships experimental Memory ABI `0.5.0`, engine `0.7.0`, SQLite
 `user_version` `7`, derived layout `0.6.0`, and archive/bundle `0.1.0`. These are code versions,
 not published releases or proof of a private migration. Check package metadata and runtime
 constants before changing compatibility. Direct database opens support backed-up schema-6
-migration, but the bundle validator currently rejects schema-6 bundles. Root lock verification
-passes; standalone product lock checks failed offline. Do not infer packaging or restore
+migration. Linked restore accepts schema-6 bundles and migrates them before publishing a new
+root; synthetic coverage includes exact quotes and persisted recall selection. Root lock
+verification passes; standalone product lock checks failed offline. Do not infer packaging or restore
 acceptance from the root test suite.
 
 ABI 1.0 is not frozen. The [v1 criteria](PLAN.md#abi-freeze-and-v1-release-acceptance-criteria)

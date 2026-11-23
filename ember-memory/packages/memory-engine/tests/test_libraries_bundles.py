@@ -24,6 +24,7 @@ from ember_memory_abi.memory import (
     MemoryDraft,
     StringValue,
 )
+from ember_memory_abi.selection import RecallSelection
 from ember_memory_engine import CanonicalEngine, MutationAuthority, SourceGrant
 from ember_memory_engine.bundles import BundleService, restore_bundles
 from ember_memory_engine.database import load_model
@@ -992,7 +993,7 @@ def test_schema_two_upgrade_backs_up_and_retries_failed_ddl(
     assert len(tuple(root.rglob("*.schema-2*.backup.db"))) >= 3
 
 
-@pytest.mark.parametrize("version", (4, 5))
+@pytest.mark.parametrize("version", (4, 5, 6))
 def test_previous_phase_bundle_schema_restores_and_migrates(version: int, tmp_path: Path) -> None:
     from hashlib import sha256
 
@@ -1005,6 +1006,10 @@ def test_previous_phase_bundle_schema_restores_and_migrates(version: int, tmp_pa
             owner, ensure_subject(owner, character), authority=AUTHORITY
         )
         memory = authored.create(NewMemoryInput(idempotency_key="legacy", text="LEGACY_SYNTHETIC"))
+        store = owner.character(character, authority=AUTHORITY)
+        before = store.get(memory.affected[0].memory_id)
+        if version == 6:
+            store.configure_recall(RecallSelection(local_enabled=False))
         identity = memory.affected[0].memory_id
     bundle = tmp_path / "legacy-bundle"
     BundleService(data).export_character(character, bundle)
@@ -1032,19 +1037,19 @@ def test_previous_phase_bundle_schema_restores_and_migrates(version: int, tmp_pa
             continue
         with sqlite3.connect(path) as database:
             if path.name != "registry.db":
-                for table in (*phase_eight_tables, *(phase_seven_tables if version == 4 else ())):
-                    database.execute(f"DROP TABLE {table}")
-                database.execute("DROP INDEX entity_alias_fold")
+                database.execute("DROP TABLE native_turns")
+                database.execute("DROP TABLE native_sessions")
+                if version < 6:
+                    for table in (
+                        *phase_eight_tables,
+                        *(phase_seven_tables if version == 4 else ()),
+                    ):
+                        database.execute(f"DROP TABLE {table}")
+                    database.execute("DROP INDEX entity_alias_fold")
                 if version == 4:
                     database.execute("DROP INDEX pins_priority")
                     database.execute("DROP INDEX memory_recent_order")
                     database.execute("DROP INDEX materialized_source_header")
-                assert (
-                    database.execute(
-                        "SELECT 1 FROM sqlite_master WHERE name='capture_policy'"
-                    ).fetchone()
-                    is None
-                )
             database.execute("DELETE FROM schema_versions WHERE version>?", (version,))
             database.execute(f"PRAGMA user_version={version}")
         database.close()
@@ -1055,7 +1060,10 @@ def test_previous_phase_bundle_schema_restores_and_migrates(version: int, tmp_pa
     restored = tmp_path / "restored"
     restore_bundles((bundle,), restored)
     with CanonicalEngine(restored) as reopened:
-        assert reopened.character(character).get_sources(identity)[0].quote == "LEGACY_SYNTHETIC"
+        store = reopened.character(character)
+        assert store.get(identity) == before
+        assert store.get_sources(identity)[0].quote == "LEGACY_SYNTHETIC"
+        assert store.recall_selection().local_enabled == (version != 6)
         _, database = reopened.maintenance_store(character)
         assert (
             database.read(
