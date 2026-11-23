@@ -90,6 +90,11 @@ Timed engine tree SHA-256: baseline
 `1e13313c6fffa44d1c65e5909658514018a3a89a3ebf516fffd49a48c45414e8`. Both receipts retain
 base Git HEAD because the experiment used hashed overlays, not distinct Git commits.
 
+A clean `8e4fcdd` replay of the same frozen inputs reproduced every archive case's ordered
+IDs, exact provenance, and coverage: 242 synthetic and 142 executed PMB searches, no partials
+or deadline misses. This follow-up checks parity through the bundle and identity changes; it
+is not a new paired timing result. Receipts: `results/beliefs-committed.5VbftR/archive-*.json`.
+
 ## Reproduce the archive ranking comparison
 
 From the Ember repo root with Python 3.12 and uv, stage public inputs and the pinned CPU BGE
