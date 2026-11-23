@@ -500,6 +500,7 @@ def search_archive(
     epoch = state.policy_epoch(connection)
     if state.retriever is not None and query.text:
         indexed = state.retriever.archive(state, connection, query, deep=deep)
+        check_deadline(state.database.clock, query.options.deadline_at)
         if indexed is not None:
             return indexed
     results: list[ArchiveResult] = []
@@ -629,14 +630,16 @@ def search_archive(
             )
             if len(results) >= query.limit:
                 break
+    delivered = tuple(
+        item
+        for item in results
+        if not isinstance(item.record, ArchiveChunk)
+        and state.source_permitted(connection, item.record.source, "archive_search")
+    )
     state.check_policy(connection, epoch)
+    check_deadline(state.database.clock, query.options.deadline_at)
     return ArchiveSearchResponse(
-        results=tuple(
-            item
-            for item in results
-            if not isinstance(item.record, ArchiveChunk)
-            and state.source_permitted(connection, item.record.source, "archive_search")
-        ),
+        results=delivered,
         coverage=coverage(
             state,
             "canonical_archive_scan",

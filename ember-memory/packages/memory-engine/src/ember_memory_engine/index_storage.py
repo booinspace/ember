@@ -145,6 +145,14 @@ class IndexStore:
         except (OSError, sqlite3.Error, ValidationError) as error:
             raise IndexError() from error
 
+    def lease_active(
+        self, budget: ReadBudget | None = None
+    ) -> tuple[IndexGeneration, Path, Callable[[], None]]:
+        """Select and retain one published generation without a pruning gap."""
+        with self._guard:
+            generation, path = self.active(budget)
+            return generation, path, self.lease(path)
+
     def lease(self, path: Path) -> Callable[[], None]:
         """Retain an immutable file for a foreground/native job until its actual completion."""
         with self._guard:
@@ -187,9 +195,9 @@ class IndexStore:
 
     def prune(self) -> None:
         """Keep two published generations and leased/open disposable files."""
-        active, _ = self.active()
         directory = (self.directory / "generations").resolve()
         with self._guard:
+            active, _ = self.active()
             with closing(sqlite3.connect(self.directory / "search.db")) as connection:
                 rows = connection.execute(
                     "SELECT generation FROM generation_history ORDER BY rowid DESC LIMIT 2"
@@ -244,7 +252,15 @@ class IndexStore:
     def publish(self, generation: IndexGeneration) -> None:
         """Switch after validation of a separate generation; preserve prior generation files."""
         target = self.directory / "generations" / (str(generation.generation) + ".db")
-        self.certified(generation, target)
+        release = self.lease(target)
+        try:
+            self.certified(generation, target)
+            with self._guard:
+                self._publish(generation)
+        finally:
+            release()
+
+    def _publish(self, generation: IndexGeneration) -> None:
         catalog = self.directory / "search.db"
         try:
             with closing(sqlite3.connect(catalog, isolation_level=None)) as connection:
@@ -286,4 +302,4 @@ class IndexStore:
             # permission and disk errors preserve the existing pointer unchanged.
             damaged = catalog.with_suffix(".damaged-" + str(generation.generation))
             catalog.rename(damaged)
-            self.publish(generation)
+            self._publish(generation)

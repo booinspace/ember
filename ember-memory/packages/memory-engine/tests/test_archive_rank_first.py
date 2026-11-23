@@ -12,16 +12,17 @@ import pytest
 
 from ember_memory_abi.archive import ContentPart, Document, SourceRecord
 from ember_memory_abi.common import timestamp_from_datetime
-from ember_memory_abi.errors import AccessDeniedError
+from ember_memory_abi.errors import AccessDeniedError, DeadlineExceededError
 from ember_memory_abi.evidence import Evidence, SourceRef, source_text_sha256
-from ember_memory_abi.interfaces import ArchiveQuery, ForgetRequest, RememberRequest
+from ember_memory_abi.interfaces import ArchiveQuery, ForgetRequest, RememberRequest, RequestOptions
 from ember_memory_abi.memory import ArchiveChunk, MemoryDraft
 from ember_memory_abi.selection import RecallSelection
 from ember_memory_engine import indexed_retrieval
 from ember_memory_engine.bundles import BundleService, restore_bundles
 from ember_memory_engine.character import SqliteMemoryStore
+from ember_memory_engine.embedding import file_sha256
 from ember_memory_engine.engine import CanonicalEngine
-from ember_memory_engine.errors import EmbeddingError
+from ember_memory_engine.errors import EmbeddingError, EngineClosedError
 from ember_memory_engine.index_storage import IndexStore, connect
 from ember_memory_engine.library import LibraryService, SeedRequest
 from ember_memory_engine.models import SourceGrant
@@ -346,6 +347,58 @@ def test_archive_retains_its_generation_through_late_hydration(
     assert not path.exists()
 
 
+@pytest.mark.parametrize("indexed", [True, False])
+def test_archive_does_not_deliver_after_exact_read_crosses_deadline(
+    engine: CanonicalEngine,
+    store: SqliteMemoryStore,
+    source_fixture: SourceFixture,
+    clock: TestClock,
+    monkeypatch: pytest.MonkeyPatch,
+    indexed: bool,
+) -> None:
+    library = source_fixture.batch.source_store_id
+    if indexed:
+        engine.rebuild_index(library, SyntheticEncoder())
+    query = ArchiveQuery(text="café", mode="literal", source_store_ids=(library,), limit=1)
+    original = store.search_archive(query)
+    assert original.results
+    assert (original.coverage.index_status == "available") == indexed
+    resolve = engine.resolve
+
+    def delayed(reference: SourceRef) -> SourceRecord:
+        record = resolve(reference)
+        clock.advance(2)
+        return record
+
+    with monkeypatch.context() as late:
+        late.setattr(engine, "resolve", delayed)
+        options = RequestOptions(
+            deadline_at=timestamp_from_datetime(clock.now() + timedelta(seconds=1))
+        )
+        with pytest.raises(DeadlineExceededError):
+            store.search_archive(query.model_copy(update={"options": options}))
+    assert store.search_archive(query) == original
+
+
+def test_archive_releases_native_lease_when_submission_rejected(
+    engine: CanonicalEngine, store: SqliteMemoryStore, source_fixture: SourceFixture
+) -> None:
+    library = source_fixture.batch.source_store_id
+    encoder = SyntheticEncoder()
+    engine.encoding.encoder = encoder
+    engine.rebuild_index(library, encoder)
+    index = engine.indexes[library]
+    _, path = index.active()
+    engine.deep_vectors.workers.stop_admission()
+    with pytest.raises(EngineClosedError):
+        store.search_archive(
+            ArchiveQuery(text="café", mode="semantic", source_store_ids=(library,))
+        )
+    engine.rebuild_index(library, encoder)
+    engine.rebuild_index(library, encoder)
+    assert not path.exists()
+
+
 def test_archive_linked_restore_keeps_approvals_evidence_and_grants(
     engine: CanonicalEngine,
     store: SqliteMemoryStore,
@@ -462,6 +515,13 @@ def test_archive_corrupt_payload_falls_back_and_republishing_prior_generation_re
     with monkeypatch.context() as cold:
         cold.setattr(indexed_retrieval, "_ARCHIVE_CERTIFY_BYTES", 0)
         assert store.search_archive(query) == fallback
+    # A trusted manifest with a logically damaged projection exercises lazy validation.
+    index.publish(bad_generation.model_copy(update={"file_sha256": file_sha256(bad_path)}))
+    if damage == "below_delivery_limit" or damaged != full.results[0].record:
+        display = store.search_archive(query)
+        assert display.results == baseline.results
+        assert display.coverage.status == "complete"
+    assert store.search_archive(query.model_copy(update={"limit": 2})) == fallback
     assert store.get(memory_id) == canonical and store.get_sources(memory_id) == proof
 
     # Missing derived files must not prevent exact original archive/evidence access.

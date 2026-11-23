@@ -80,8 +80,10 @@ Archive ranking batches eligible headers per store, sorts by score/store UUID/ro
 hydrates unique winners across certified generations. A chunk and a whole source revision
 use separate deduplication keys. Rejected payloads backfill within the same bounded candidate
 set; delivery rechecks grants/expiry and the policy epoch. Coverage checks remain independent
-of hits. Hold generation leases through hydration and native completion. Uncertified reads
-inspect all candidate payloads; unmetered requests can hash at most 4 MiB to certify reopened
+of hits. Select and lease the active generation under the publication/prune guard. Keep leases
+through hydration and native completion; release the native lease immediately on rejected
+submission. Check the caller's explicit deadline after indexed or fallback exact reads. Uncertified
+reads inspect all candidate payloads; unmetered requests can hash at most 4 MiB to certify reopened
 files. Skipped payloads are not individually diagnosed. No schema or default ranking change.
 Opt-in `ember.archive_ranking: precision_v1` separately gates weak semantic matches and
 question filler in hybrid mode. See [paired measurements](../../../docs/memory-benchmark.md).

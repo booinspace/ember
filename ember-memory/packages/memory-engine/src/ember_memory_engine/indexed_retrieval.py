@@ -591,12 +591,14 @@ class IndexedRetriever:
                             )
                         )
                     except (EmbeddingError, EngineBusyError):
-                        release()
                         reasons.append(
                             "deep_semantic_deferred_for_foreground_isolation"
                             if isolated
                             else "semantic_deadline_or_admission_miss"
                         )
+                    finally:
+                        if vector_job is None:
+                            release()
             try:
                 if mode == "literal":
                     connection.create_function(
@@ -998,8 +1000,8 @@ class IndexedRetriever:
                     if index.source_coverage() == "evidence_only":
                         reasons.append("source_library_evidence_only")
                     try:
-                        generation, path = index.active(state.read_budget)
-                        leases.callback(index.lease(path))
+                        generation, path, release = index.lease_active(state.read_budget)
+                        leases.callback(release)
                     except IndexError:
                         reasons.append("source_index_unavailable")
                         continue

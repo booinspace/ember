@@ -95,6 +95,29 @@ IDs, exact provenance, and coverage: 242 synthetic and 142 executed PMB searches
 or deadline misses. This follow-up checks parity through the bundle and identity changes; it
 is not a new paired timing result. Receipts: `results/beliefs-committed.5VbftR/archive-*.json`.
 
+### Archive delivery hardening: paired Miku replay
+
+Compared `8e4fcdd` with the generation pinning and delivery deadline patch only. Same frozen
+stores, harness and CPU encoder; serial baseline-first and candidate-first runs. All 384 executed
+searches per arm per order matched ordered IDs, exact provenance and coverage. No partials,
+deadline misses, deferrals or searches over 500 ms. Changes are correctness fixes, not a speed win.
+
+| Order | Fixture | Distinct p95, before / after | Repeat p95, before / after |
+| --- | --- | ---: | ---: |
+| Baseline first | Synthetic | 149.61 / 149.41 ms | 144.33 / 142.76 ms |
+| Candidate first | Synthetic | 148.47 / 148.37 ms | 141.86 / 142.37 ms |
+| Baseline first | PMB | 25.40 / 25.13 ms | 13.38 / 13.64 ms |
+| Candidate first | PMB | 24.79 / 24.03 ms | 14.14 / 13.46 ms |
+
+PMB also executed two duplicate queries per first pass: p95 7.31 / 8.07 ms and 6.80 / 7.31 ms.
+Receipts and patch hashes: `results/archive-hardening.jWeRQb/` on Miku. Engine tree SHA-256:
+`6ad5088ecf12059525a12099bc3489eb9d3e26536ca6a83aa44920cb9c01df16` before,
+`ddfe0212f7daefc2dc7c3dfee33086a4eb73478793b867ce63bf5adb521c4f23` after.
+Local regression tests cover deadline overruns during exact reads on both delivery paths,
+rejected native submission, and logically corrupt certified payloads above and below the delivery
+limit. Offline gate: 1,525 passed, 18 skipped; Ruff, strict Pyright, schemas and root lock passed.
+Same-path replacement during native reads and full hard read-budget accounting remain unqualified.
+
 ## Reproduce the archive ranking comparison
 
 From the Ember repo root with Python 3.12 and uv, stage public inputs and the pinned CPU BGE
@@ -358,12 +381,13 @@ Receipts on Miku: `~/ember-benchmarks/20261123-fedora/results/beliefs-committed.
 | `retrieval.py` | `04ef1ceb5cafb8746588c33b836be0e71897077d6da1256a104215be6e0e3f7d` |
 | `character.py` | `62790a24584eeee2e92c6b898e04eb80e2513531ea8c224eeb18deaf05172a48` |
 
-Hindsight reference at [`065b164`](https://github.com/vectorize-io/hindsight/tree/065b1642dce1d8ffb5d3e87d5092ac173038b191):
-`search/tag_resolution.py` resolves fuzzy names into exact vocabulary entries before filtering;
-this is a better candidate for future experiments than relaxing canonical identity matching.
+[Hindsight](https://arxiv.org/abs/2512.12818) separates facts, experiences, summaries, and evolving
+beliefs. Its [`search/tag_resolution.py` at `065b164`](https://github.com/vectorize-io/hindsight/blob/065b1642dce1d8ffb5d3e87d5092ac173038b191/hindsight-api-slim/hindsight_api/engine/search/tag_resolution.py)
+resolves fuzzy names to exact vocabulary entries before filtering. That could address the five
+name misses without relaxing canonical identity matching or granting source access.
 [LongMemEval](https://arxiv.org/abs/2410.10813) evaluates fact-enriched index keys and time-aware
 query expansion. Test those on versioned derived data only, with original quotes and canonical
-scope unchanged. Neither was added in this pass.
+scope unchanged. Neither technique was added in this pass; the negative-guidance miss is separate.
 
 ## Public reference protocol
 
