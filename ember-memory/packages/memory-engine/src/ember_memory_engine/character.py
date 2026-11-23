@@ -37,7 +37,7 @@ from ember_memory_abi.predicates import KNOWN_MODALITIES
 from ember_memory_abi.related import RelatedRequest, RelatedResponse
 from ember_memory_abi.selection import RecallSelection
 
-from . import mutations, profile, related, retrieval, selection
+from . import identity_recall, mutations, profile, related, retrieval, selection
 from ._state import CharacterState
 from .archive import SourceResolver
 from .database import (
@@ -98,6 +98,7 @@ class SqliteMemoryStore:
             supported_kinds=("fact", "episode", "goal", "plan"),
             supported_modalities=tuple(sorted(KNOWN_MODALITIES)),
             supported_predicates=tuple(definition.name for definition in state.predicates),
+            supported_extensions=(identity_recall.IDENTITY_RECALL,),
             retrieval_modes=(
                 "hybrid_if_indexed",
                 "deep_archive_if_indexed",

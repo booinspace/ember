@@ -58,8 +58,9 @@ Ruff format/lint, strict Pyright, generated schemas and the root lock check pass
 Certification never validates payloads it skips individually. Large reopened generations use eager
 validation unless already certified; metered reads do not start cold hashing. No layout change,
 index rebuild requirement, private-store change, or deployment. P5-AC-07/08 capacity/contention
-and ordinary recall latency remain open; neither this test nor the linked restore qualifies
-legacy schema-6 bundle migration. Belief ranking and matched answer judging are separate gates.
+and ordinary recall latency remain open. Separate synthetic bundle tests restore schema 4/5/6
+into schema 7, check exact quotes, and preserve schema-6 recall selection. No private migration
+was tested. Belief ranking and matched answer judging are separate gates.
 
 ### Replay the archive speed checkpoint
 
@@ -307,6 +308,54 @@ in any of 24 cases; both returned context on all 24 unanswerable queries. Seeded
 was unchanged (87.50% recall@5, 20.00% precision@5). Keep the profile opt-in: recovering history
 also surfaced stale evidence on current-value queries. Test explicit temporal selection and typed
 corrections next; these fixtures use dated episodes, not canonical state transitions.
+
+## Approved-belief replay on Miku Fedora
+
+Same pinned 77 PMB cases, AMB scorer and request limits. No encoder, extraction, or answer model.
+The fixture adapter approved 35 public statements with exact evidence and seeded 29 independently
+into character stores; six remained history-only. It excludes pins, relations, importance hints,
+and scorer expectations. `seeded-belief` retains character and policy boundaries; `explicit-scope`
+also narrows to approved origins corresponding to caller-supplied scope tags.
+
+| Lane | Passes | Active passes | Mean precision | Mean recall | Retrieval p95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ember seeded beliefs | 63/77 | 30/43 | 76.89% | 86.05% | 1.53 ms |
+| Ember explicit scope | 71/77 | 37/43 | 86.05% | 86.05% | 1.48 ms |
+| Hindsight, published | 66/77 | 33/43 | 84.81% | 100% | — |
+
+Both Ember lanes completed all 71 executed requests; five skipped on empty/zero budget and one
+had no user store. All 77 cases in each lane reproduced the earlier ID sets, verdicts, and coverage.
+Order changed on 11 seeded and four scoped cases; independently rebuilt stores do not share
+recording times or UUIDs used to break ties. Scoped misses: five fuzzy/prefix cases and one
+negative-guidance case. Published Hindsight is a same-case retrieval reference, not a
+matched ingestion, answer, or latency result. Do not compare scoped scores as if both providers
+received identical filters. Raw archive quality remains the separate 21/77 result above.
+
+Run once per lane on the same host, without `--encoder`:
+
+```bash
+uv run --locked --offline --with tiktoken==0.12.0 --with google-genai==1.66.0 --with scipy==1.17.1 \
+  python -X utf8 -m scripts.benchmark_memory_amb --dataset precisionmembench \
+  --amb "$AMB" --fixtures "$PMB" --lane seeded-belief --output "$NEW_REPORT"
+# Repeat with --lane explicit-scope and a new output path.
+```
+
+Receipts: `~/ember-benchmarks/20261123-fedora/results/beliefs-wrapup.UN9F16/`. The checkout
+field retains base HEAD because the runner used an overlay. Verified SHA-256 for the engine
+files used in this replay:
+
+| Engine file | SHA-256 |
+| --- | --- |
+| `identity_recall.py` | `25b1a85e1b22932628a2d331e6f7bb2d4ccae4c4258bd2f6d4f95c38d02b7254` |
+| `retrieval.py` | `04ef1ceb5cafb8746588c33b836be0e71897077d6da1256a104215be6e0e3f7d` |
+| `character.py` | `62790a24584eeee2e92c6b898e04eb80e2513531ea8c224eeb18deaf05172a48` |
+
+Hindsight reference at [`065b164`](https://github.com/vectorize-io/hindsight/tree/065b1642dce1d8ffb5d3e87d5092ac173038b191):
+`search/tag_resolution.py` resolves fuzzy names into exact vocabulary entries before filtering;
+this is a better candidate for future experiments than relaxing canonical identity matching.
+[LongMemEval](https://arxiv.org/abs/2410.10813) evaluates fact-enriched index keys and time-aware
+query expansion. Test those on versioned derived data only, with original quotes and canonical
+scope unchanged. Neither was added in this pass.
 
 ## Public reference protocol
 

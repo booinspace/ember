@@ -1,6 +1,7 @@
 """Engine-internal retrieval behavior; executes on owned SQLite workers."""
 
 import sqlite3
+from time import monotonic
 from uuid import UUID
 
 from ember_memory_abi.archive import SourceRecord
@@ -28,11 +29,13 @@ from ember_memory_abi.interfaces import (
 )
 from ember_memory_abi.memory import (
     ArchiveChunk,
+    Memory,
     PinnedMemory,
 )
 
-from . import profile, related
+from . import identity_recall, profile, related
 from ._state import CharacterState
+from .archive import SourceHeaderResolver
 from .database import (
     check_deadline,
     load_model,
@@ -62,6 +65,7 @@ def memory_scope(
     recent_first: bool = False,
     metadata_only: bool = False,
     index_lookup: bool = False,
+    narrowing: tuple[str, tuple[str | int, ...]] = ("", ()),
 ) -> tuple[str, tuple[str | int, ...]]:
     """Build canonical eligibility used before both indexed and fallback candidate limits."""
     conditions = [
@@ -172,6 +176,8 @@ def memory_scope(
             + "))"
         )
         parameters.extend(values)
+    restriction, restriction_values = narrowing
+    parameters.extend(restriction_values)
     parameters.append(query.limit)
     order = (
         "r.recorded_at_us DESC,r.memory_id"
@@ -208,11 +214,123 @@ def memory_scope(
         + current
         + " WHERE "
         + " AND ".join(conditions)
+        + restriction
         + " ORDER BY "
         + order
         + " LIMIT ?"
     )
     return sql, tuple(parameters)
+
+
+def _identity_search(
+    state: CharacterState, connection: sqlite3.Connection, query: MemoryQuery, epoch: int
+) -> SearchResponse:
+    deadline = monotonic() + 0.15
+    predicate, parameters, truncated = identity_recall.narrow(query)
+    reasons = ["identity_query_word_limit"] if truncated else []
+    selected: list[Memory] = []
+    sql, values = memory_scope(state, query, metadata_only=True, narrowing=(predicate, parameters))
+    if state.read_budget is None:
+        connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
+    try:
+        for row in connection.execute(sql, values).fetchall():
+            if monotonic() >= deadline:
+                break
+            selected.append(
+                state.read_memory(
+                    connection,
+                    UUID(row_text(row, "memory_id")),
+                    row_int(row, "revision"),
+                    query.options,
+                )
+            )
+        if selected and monotonic() < deadline:
+            selected, incomplete = _qualify_identity(state, connection, query, selected)
+            if incomplete:
+                reasons.append("source_unavailable_or_changed")
+    except sqlite3.OperationalError as error:
+        if state.read_budget is not None or error.sqlite_errorcode != sqlite3.SQLITE_INTERRUPT:
+            raise
+        reasons.append("identity_soft_deadline_miss")
+    finally:
+        if state.read_budget is None:
+            connection.set_progress_handler(None, 0)
+    if monotonic() >= deadline and "identity_soft_deadline_miss" not in reasons:
+        reasons.append("identity_soft_deadline_miss")
+    if "identity_soft_deadline_miss" in reasons:
+        selected.clear()
+    check_deadline(state.database.clock, query.options.deadline_at)
+    state.check_policy(connection, epoch)
+    strict_time = (query.temporal.valid_at, query.temporal.valid_from, query.temporal.valid_until)
+    return SearchResponse(
+        results=tuple(
+            MemoryResult(
+                memory=memory,
+                score=memory.content.importance,
+                ranking=(
+                    RankingExplanation(
+                        method="exact_entity_identity_v1",
+                        score=memory.content.importance,
+                        reasons=("ENTITY_MATCH",) if query.text else ("STRUCTURED_FACT_MATCH",),
+                    ),
+                ),
+            )
+            for memory in selected
+        ),
+        coverage=RetrievalCoverage(
+            status="partial" if reasons else "complete",
+            index_status="unavailable",  # canonical path does not inspect derived indexes
+            reason_codes=(*reasons, *(("unknown_validity_excluded",) if any(strict_time) else ())),
+        ),
+    )
+
+
+def _qualify_identity(
+    state: CharacterState,
+    connection: sqlite3.Connection,
+    query: MemoryQuery,
+    selected: list[Memory],
+) -> tuple[list[Memory], bool]:
+    # Accepted revisions already prove exact spans. Check original availability, then reread
+    # eligibility at the fresh clock boundary (a grant can expire without a policy write).
+    references = {
+        item.evidence.source.identity_key(): item.evidence.source
+        for memory in selected
+        for item in memory.content.evidence
+    }
+    resolver = state.resolver
+    if not isinstance(resolver, SourceHeaderResolver):
+        return [], True
+    checked = tuple(references.values())[:256]
+    unavailable, _ = resolver.unavailable_sources(
+        checked,
+        local_connection=connection,
+        local_store_id=state.character_id,
+        call_budget=8,
+    )
+    available = {ref.identity_key() for ref in checked} - {
+        ref.identity_key() for ref in unavailable
+    }
+    keys = tuple(key for memory in selected for key in (str(memory.memory_id), memory.revision))
+    pairs = ",".join("(?,?)" for _ in selected)
+    sql, values = memory_scope(
+        state,
+        query,
+        metadata_only=True,
+        narrowing=(" AND (r.memory_id,r.revision) IN (" + pairs + ")", keys),
+    )
+    allowed = {
+        (row_text(row, "memory_id"), row_int(row, "revision"))
+        for row in connection.execute(sql, values).fetchall()
+    }
+    return [
+        memory
+        for memory in selected
+        if (str(memory.memory_id), memory.revision) in allowed
+        and all(
+            item.evidence.source.identity_key() in available for item in memory.content.evidence
+        )
+    ], len(available) != len(references)
 
 
 def search(
@@ -228,6 +346,8 @@ def search(
     if query.cursor is not None:
         raise UnsupportedQueryError()
     epoch = state.policy_epoch(connection)
+    if identity_recall.IDENTITY_RECALL in query.options.extensions:
+        return _identity_search(state, connection, query, epoch)
     terms = register_word_match(connection, query.text)
     if (
         state.retriever is not None

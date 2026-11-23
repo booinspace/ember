@@ -48,6 +48,19 @@ admission/quality acceptance remain unfinished. See [Root ADR 0015](../../../doc
 and [validation](../../../docs/phase-8-validation.md). Existing
 [Memory ADR 0008](0008-native-consolidation-and-profile.md) retains Phase 7 evidence.
 
+## Opt-in canonical identity lookup
+
+`ember.identity_recall_v1` is an optional `MemoryQuery.options` extension for structured
+search. It matches bounded exact alias phrases against character-owned canonical entities.
+`origin_store_ids`, when supplied, narrows eligible origins before the result limit; it cannot
+grant access, select another character, or start archive search. Lookup retains current
+lifecycle, temporal, suppression, selection, and grant checks. It checks source headers and
+rechecks eligibility before returning. Unavailable proof is excluded and reported as partial.
+
+No index rebuild, default ranking change, fuzzy expansion, or canonical writes. See the
+[public seeded-belief replay](../../../docs/memory-benchmark.md#approved-belief-replay-on-miku-fedora)
+for scorer boundaries and measured results.
+
 ## Bounded deep engine profile
 
 Existing owned workers accept an explicitly read-only request profile. It copies

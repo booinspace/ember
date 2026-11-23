@@ -1,11 +1,9 @@
-"""Run public AMB retrieval offline with Ember. No LLM, judge, or production store.
+"""Run public AMB retrieval offline. No LLM, judge, or production store.
 
-Clone https://github.com/vectorize-io/agent-memory-benchmark, then check out
-01bd83f3fa5245d6be3986cfab81fdd828f26acd in a separate checkout. Prepare CPU
-embedding assets with scripts/setup_embeddings.py. PrecisionMemBench
-needs both fixture JSON files from tenurehq/precisionmembench at the commit in
---help (under fixtures/), plus the isolated scorer overlay in
-docs/memory-benchmark.md. No model client is created. Run from the Ember checkout.
+Use pinned AMB checkout and PrecisionMemBench fixtures from docs/memory-benchmark.md.
+Default archive lane uses local CPU BGE assets. PrecisionMemBench seeded-belief
+and explicit-scope lanes use native structured identity lookup without an encoder.
+Run from the Ember checkout.
 """
 
 import argparse
@@ -17,12 +15,13 @@ import subprocess
 import sys
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
+from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
 from statistics import mean, median
 from tempfile import TemporaryDirectory
 from time import perf_counter
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, Field, TypeAdapter
 from scripts.benchmark_memory_amb_archive import (
@@ -32,12 +31,18 @@ from scripts.benchmark_memory_amb_archive import (
     Retrieval,
     SearchMode,
 )
+from scripts.benchmark_memory_amb_beliefs import BeliefBenchmark, BeliefLane, load_seed
 
 from ember_memory_abi.common import canonical_object_sha256
+from ember_memory_engine import CanonicalEngine, identity_recall
 from ember_memory_engine.embedding import BgeEncoder, file_sha256
 
+type Lane = Literal["archive"] | BeliefLane
 AMB_COMMIT = "01bd83f3fa5245d6be3986cfab81fdd828f26acd"
 PMB_COMMIT = "b95d6abb471c0d591c440172283dd74e7af000df"
+PMB_SCORER_FILE = "src/memory_bench/dataset/precisionmembench.py"
+PMB_SCORER_SHA256 = "66eddb9548ec00d639379b28ebd59a3fb17518ef262bf883407a68304419c165"
+DEFAULT_RESULT_LIMIT = 20
 PMB_FILES = {
     "beliefs.seed.json": "35659b3b9a581b644fc6746e1b4e902c3e7b56c0973b546bf7b0816a69e3de98",
     "retrieval.cases.json": "09e99f0852280538abe34b03570f65583fdb10df3c554b7150f0f665d5db709c",
@@ -61,12 +66,13 @@ class Params(BaseModel):
 
     amb: Path
     ember_root: Path
-    encoder: Path
+    encoder: Path | None
     output: Path
     fixtures: Path | None
     dataset: str
     split: str | None
-    mode: SearchMode
+    lane: Lane = "archive"
+    mode: SearchMode = "lexical"
     archive_ranking: ArchiveRanking
     limit: int = Field(ge=1, le=40)
     query_limit: int | None = Field(ge=1)
@@ -155,6 +161,10 @@ def _precision(amb: Path, fixtures: Path) -> PrecisionScorer:
     for name, digest in PMB_FILES.items():
         if file_sha256(fixtures / name) != digest:
             raise ValueError(f"PrecisionMemBench fixture checksum failed: {name}")
+    # Git may check this text file out with CRLF on Windows.
+    scorer_bytes = (amb / PMB_SCORER_FILE).read_bytes().replace(b"\r\n", b"\n")
+    if sha256(scorer_bytes).hexdigest() != PMB_SCORER_SHA256:
+        raise ValueError("PrecisionMemBench scorer checksum failed.")
     # Run the pinned source without importing AMB's hosted memory provider registry.
     # AMB's scorer has an optional cap switch; forbid it to preserve unmodified scoring.
     if os.environ.get("AMB_PMB_RETURN_CAP"):
@@ -209,7 +219,7 @@ def document_evidence(gold_ids: list[str], ids: tuple[str, ...]) -> dict[str, ob
     }
 
 
-def request_budget(query: PublicQuery, precision: bool) -> int | None:
+def request_budget(query: AmbQuery, precision: bool) -> int | None:
     """Extract only the public caller budget, never scorer expectations."""
     if not precision:
         return None
@@ -217,6 +227,58 @@ def request_budget(query: PublicQuery, precision: bool) -> int | None:
     if type(value) is not int or value < 0:
         raise ValueError("Missing or invalid public PrecisionMemBench request budget.")
     return value
+
+
+def request_scope(query: AmbQuery) -> tuple[str, ...]:
+    """Read explicit caller scope (never inferred from case labels or text)."""
+    return TypeAdapter(tuple[str, ...]).validate_python(query.meta.get("scope"))
+
+
+def _run_beliefs(params: Params, split: str, lane: BeliefLane) -> dict[str, object]:
+    if params.fixtures is None:
+        raise ValueError("PrecisionMemBench requires --fixtures with both pinned JSON files.")
+    scorer = _precision(params.amb, params.fixtures)
+    seeds = load_seed(params.fixtures / "beliefs.seed.json")
+    queries = tuple(scorer.queries.values())[: params.query_limit]
+    retrievals: list[Retrieval] = []
+    with (
+        TemporaryDirectory(prefix=f"ember-amb-{lane}-", dir=params.output.parent) as root,
+        CanonicalEngine(Path(root).resolve()) as engine,
+    ):
+        started = perf_counter()
+        run = BeliefBenchmark(engine, seeds, lane, params.limit)
+        ingest_ms = (perf_counter() - started) * 1000
+        for query in queries:
+            budget = request_budget(query, precision=True)
+            assert budget is not None
+            retrievals.append(
+                run.retrieve(
+                    query.query,
+                    query.user_id,
+                    budget,
+                    scope=request_scope(query) if lane == "explicit-scope" else (),
+                )
+            )
+    # Nothing read from the scorer's verdicts can affect a canonical request.
+    cases = [
+        {"query_id": query.id, **asdict(result), **scorer.score(query.id, result)}
+        for query, result in zip(queries, retrievals, strict=True)
+    ]
+    return {
+        "amb": AMB_COMMIT,
+        "dataset": "precisionmembench",
+        "split": split,
+        "lane": lane,
+        "queries": len(cases),
+        "split_queries": len(scorer.queries),
+        "ingested_documents": len(seeds),
+        "split_documents": len(seeds),
+        "source_setup": dict(run.setup),
+        "ingest_and_seed_ms": ingest_ms,
+        **_retrieval_metrics(retrievals),
+        "cases": cases,
+        **_precision_metrics(scorer, cases),
+    }
 
 
 def _run(params: Params, dataset: str, split: str, encoder: BgeEncoder) -> dict[str, object]:
@@ -279,10 +341,9 @@ def _run(params: Params, dataset: str, split: str, encoder: BgeEncoder) -> dict[
             finally:
                 run.close()
     ordered = [rows[query.id] for query in queries]
-    latencies = sorted(r.latency_ms for r in retrievals if r.coverage not in {"skipped", "no_unit"})
-    coverage = Counter(r.coverage for r in retrievals)
     report: dict[str, object] = {
         **inventory,
+        "lane": "archive",
         "queries": len(queries),
         "split_queries": len(all_queries),
         "ingested_documents": ingested,
@@ -290,24 +351,11 @@ def _run(params: Params, dataset: str, split: str, encoder: BgeEncoder) -> dict[
         "indexed_projections": index_documents,
         "indexed_vectors": index_vectors,
         "ingest_and_index_ms": ingest_ms,
-        "nonempty_queries": sum(bool(r.ids) for r in retrievals),
-        "coverage": dict(coverage),
-        "coverage_reasons": dict(Counter(reason for r in retrievals for reason in r.reasons)),
-        "retrieval_latency_ms": {
-            "samples": len(latencies),
-            "p50": median(latencies) if latencies else None,
-            "p95": latencies[(len(latencies) * 95 + 99) // 100 - 1] if latencies else None,
-        },
+        **_retrieval_metrics(retrievals),
         "cases": ordered,
     }
     if scorer is not None:
-        correct = sum(row["correct"] is True for row in ordered)
-        report.update(
-            metric="amb_precisionmembench_case_pass",
-            score=correct / len(ordered),
-            correct=correct,
-            **scorer.dataset.summary_metrics(ordered),
-        )
+        report.update(_precision_metrics(scorer, ordered))
     elif evidence_scores:
         report.update(
             metric="diagnostic_document_ids",
@@ -320,6 +368,32 @@ def _run(params: Params, dataset: str, split: str, encoder: BgeEncoder) -> dict[
     else:
         report.update(metric="retrieval_execution_only", score=None)
     return report
+
+
+def _retrieval_metrics(retrievals: list[Retrieval]) -> dict[str, object]:
+    latencies = sorted(r.latency_ms for r in retrievals if r.coverage not in {"skipped", "no_unit"})
+    return {
+        "nonempty_queries": sum(bool(r.ids) for r in retrievals),
+        "coverage": dict(Counter(r.coverage for r in retrievals)),
+        "coverage_reasons": dict(Counter(reason for r in retrievals for reason in r.reasons)),
+        "retrieval_latency_ms": {
+            "samples": len(latencies),
+            "p50": median(latencies) if latencies else None,
+            "p95": latencies[(len(latencies) * 95 + 99) // 100 - 1] if latencies else None,
+        },
+    }
+
+
+def _precision_metrics(
+    scorer: PrecisionScorer, cases: list[dict[str, object]]
+) -> dict[str, object]:
+    correct = sum(row["correct"] is True for row in cases)
+    return {
+        "metric": "amb_precisionmembench_case_pass",
+        "score": correct / len(cases),
+        "correct": correct,
+        **scorer.dataset.summary_metrics(cases),
+    }
 
 
 class PublishedRun(BaseModel):
@@ -382,7 +456,7 @@ def main() -> int:
     parser.add_argument(
         "--ember-root", type=Path, default=Path.cwd(), help="Ember checkout for version receipt"
     )
-    parser.add_argument("--encoder", type=Path, required=True, help="local pinned CPU BGE assets")
+    parser.add_argument("--encoder", type=Path, help="local pinned CPU BGE assets (archive only)")
     parser.add_argument(
         "--output", type=Path, required=True, help="new JSON path in existing directory"
     )
@@ -392,15 +466,37 @@ def main() -> int:
         "--fixtures", type=Path, help=f"local {', '.join(PMB_FILES)} at {PMB_COMMIT}"
     )
     parser.add_argument("--query-limit", type=int, help="deterministic first N queries per split")
-    parser.add_argument("--mode", choices=["lexical", "hybrid"], default="lexical")
+    parser.add_argument(
+        "--lane",
+        choices=["archive", "seeded-belief", "explicit-scope"],
+        default="archive",
+        help="belief lanes require --dataset precisionmembench",
+    )
+    parser.add_argument(
+        "--mode", choices=["lexical", "hybrid"], help="archive mode (default lexical)"
+    )
     parser.add_argument(
         "--archive-ranking",
         choices=["default", "precision_v1"],
         default="default",
         help="precision_v1 requires --mode hybrid (default: omit the ranking extension)",
     )
-    parser.add_argument("--limit", type=int, default=20, help="native result cap, max 40")
-    params = Params.model_validate(vars(parser.parse_args()))
+    parser.add_argument(
+        "--limit", type=int, default=DEFAULT_RESULT_LIMIT, help="archive result cap, max 40"
+    )
+    args = parser.parse_args()
+    if args.lane == "archive":
+        if args.encoder is None:
+            parser.error("archive lane requires --encoder")
+    else:
+        if args.dataset != "precisionmembench":
+            parser.error("belief lanes require --dataset precisionmembench")
+        if args.mode is not None or args.archive_ranking != "default" or args.encoder is not None:
+            parser.error("--mode, --archive-ranking, and --encoder are archive options")
+        if args.limit != DEFAULT_RESULT_LIMIT:
+            parser.error("belief lanes use the frozen native result cap of 20")
+    args.mode = args.mode or "lexical"
+    params = Params.model_validate(vars(args))
     if params.archive_ranking != "default" and params.mode != "hybrid":
         parser.error("--archive-ranking precision_v1 requires --mode hybrid")
     if params.split is not None and params.dataset != "beam":
@@ -413,28 +509,48 @@ def main() -> int:
             parser.error("AMB src must be unchanged from pinned commit")
     if params.output.exists() or not params.output.parent.is_dir():
         parser.error("--output must be a new file in an existing directory")
-    encoder = BgeEncoder(params.encoder)
+    encoder = BgeEncoder(params.encoder) if params.encoder is not None else None
     output: dict[str, object] = {
         "schema": "ember.public-amb@0.1.0",
         "platform": platform.platform(),
         "python": platform.python_version(),
         "ember_commit": _git(params.ember_root, "rev-parse", "HEAD").decode().strip(),
         "launcher_sha256": file_sha256(Path(__file__)),
-        "archive_adapter_sha256": file_sha256(
-            Path(__file__).with_name("benchmark_memory_amb_archive.py")
-        ),
-        "mode": params.mode,
-        "archive_ranking": params.archive_ranking,
+        "lane": params.lane,
         "result_limit": params.limit,
         "query_limit": params.query_limit,
-        "encoder": encoder.specification.model_dump(mode="json"),
+        "encoder": encoder.specification.model_dump(mode="json") if encoder is not None else None,
         "answer_llm": None,
         "judge_llm": None,
-        "retrieval": "native_granted_document_archive",
-        "ranking_unit": "native_hits_mapped_to_distinct_amb_document_ids",
-        "temporal_policy": "preserve_document_timestamps_no_query_time_filter",
         "precision_fixture_commit": PMB_COMMIT,
     }
+    if params.dataset in {"precisionmembench", "all"}:
+        output.update(precision_fixture_sha256=PMB_FILES, precision_scorer_sha256=PMB_SCORER_SHA256)
+    if params.lane == "archive":
+        output.update(
+            archive_adapter_sha256=file_sha256(
+                Path(__file__).with_name("benchmark_memory_amb_archive.py")
+            ),
+            mode=params.mode,
+            archive_ranking=params.archive_ranking,
+            retrieval="native_granted_document_archive",
+            ranking_unit="native_hits_mapped_to_distinct_amb_document_ids",
+            temporal_policy="preserve_document_timestamps_no_query_time_filter",
+        )
+    else:
+        output.update(
+            belief_adapter_sha256=file_sha256(
+                Path(__file__).with_name("benchmark_memory_amb_beliefs.py")
+            ),
+            identity_recall_sha256=file_sha256(Path(identity_recall.__file__)),
+            mode="structured",
+            retrieval="native_approved_seeded_belief_identity",
+            ranking_unit="native_accepted_ids_crosswalked_by_exact_source_evidence",
+            temporal_policy="current_guidance_only_no_validity_bounds_inferred",
+            scope_policy="explicit_caller_tags_within_user"
+            if params.lane == "explicit-scope"
+            else "user_only",
+        )
     splits = (
         SPLITS
         if params.dataset == "all"
@@ -442,10 +558,17 @@ def main() -> int:
     )
     results: list[dict[str, object]] = []
     for dataset, split in splits.items():
-        result = _run(params, dataset, split, encoder)
+        if params.lane == "archive":
+            assert encoder is not None
+            result = _run(params, dataset, split, encoder)
+        else:
+            result = _run_beliefs(params, split, params.lane)
         result["published_runs"] = _baselines(params, dataset, split, result)
         results.append(result)
-        print(f"{dataset}/{split}: {result['queries']} queries, {result['metric']}", flush=True)
+        print(
+            f"{dataset}/{split} [{params.lane}]: {result['queries']} queries, {result['metric']}",
+            flush=True,
+        )
     output["splits"] = results
     with params.output.open("x", encoding="utf-8", newline="\n") as stream:
         json.dump(output, stream, indent=2, ensure_ascii=False, allow_nan=False)
