@@ -5289,6 +5289,12 @@ No pending approval or automatic resume. Hosted retrieval receives only validate
 public input and provider authentication, never recall, prior chat, other
 credentials or raw workspace data. No hosted planning fallback.
 
+An affirmative page request may describe its target before one terminal literal URL
+(e.g. `Summarise this label's music <URL>`). The label stays local. Cooperative
+software requests (`let's build`, `lets build`, `let us build`) can validate a
+Build proposal, including after an explicit prerequisite. These are not shortcuts:
+the local planner must still propose the matching tool. Scope and chain limits stay unchanged.
+
 Native search and page reading can run during connected chat. No Tasks operation
 requires a disconnect. Inspect, Build, Web Research and text Summary share idle
 inference time through a scoped P2 lane on the existing gateway. Foreground work

@@ -112,7 +112,8 @@ same-turn evidence or staged status. The preview supports one public lookup
 followed by optional Inspect and Build. Explicit commands remain shortcuts.
 
 Ember sends only a literal public query or one literal public URL clearly
-requested in the current turn. If the proposed input is rewritten, ambiguous,
+requested in the current turn. A page request may include a descriptive label
+before the URL; the label stays local. If the proposed input is rewritten, ambiguous,
 or not supplied literally, show the exact provider, action and argument when
 safe. Require a new provider command for retrieval alone or a fresh chain with
 exact input. There is no pending approval or automatic resume. Scope checks

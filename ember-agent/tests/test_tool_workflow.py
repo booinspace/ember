@@ -517,7 +517,13 @@ def test_cancel_inflight_retrieval_prevents_build(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
-def test_public_page_without_commands_and_no_private_url_egress(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "request_text",
+    [f"Read {_URL}", f"Read the\tpage <{_URL}>", f"Summarise this labels music {_URL}"],
+)
+def test_public_page_without_commands_and_no_private_url_egress(
+    tmp_path: Path, request_text: str
+) -> None:
     async def run() -> None:
         private = "http://router.nas/secret"
         model = Model(
@@ -528,10 +534,124 @@ def test_public_page_without_commands_and_no_private_url_egress(tmp_path: Path) 
             try:
                 assert "Nothing was sent" in await harness.turn(f"Read {private}")
                 assert not harness.web.inputs
-                text = await harness.turn(f"Read {_URL}")
+                text = await harness.turn(request_text)
                 assert "Use strong contrast." in text and _URL in text
                 assert harness.web.inputs == [("read", _URL)] and not harness.plans
                 assert not model.requests[-1].tools
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "lets build a basic python hello world webapp",
+        "Let’s build a basic Python hello world webapp",
+        "Build a webapp that sends reminders when bills are due",
+        "Let us build a webapp that sends reminders when bills are due",
+    ],
+)
+def test_affirmative_build_uses_local_planner(tmp_path: Path, request_text: str) -> None:
+    async def run() -> None:
+        model = Model((_call(BUILD, "goal", "Build a Python hello world webapp"),))
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            try:
+                assert "Queued in Tasks" in await harness.turn(request_text)
+                [(plan, _)] = harness.plans
+                assert plan == ManagedPlan(build=request_text) and not harness.web.inputs
+                [request] = model.requests
+                assert BUILD in {tool.function.name for tool in request.tools}
+                assert request.messages[-1].content == request_text
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_described_page_then_cooperative_build(tmp_path: Path, available: bool) -> None:
+    async def run() -> None:
+        goal = "let's build a small website based on what you find"
+        model = Model((_call(PAGE, "url", _URL),), (_call(BUILD, "goal", "Use strong contrast"),))
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            harness.web.available = available
+            try:
+                answer = await harness.turn(f"Summarise this label's music <{_URL}>, then {goal}")
+                assert harness.web.inputs == [("read", _URL)]
+                if not available:
+                    assert "No other provider was used or task queued" in answer
+                    assert not harness.plans and len(model.requests) == 1
+                    return
+                assert "Queued in Tasks" in answer
+                first, next_step = model.requests
+                assert [tool.function.name for tool in next_step.tools] == [BUILD]
+                assert first.request_id != next_step.request_id
+                assert "Use strong contrast" in next_step.messages[-1].content
+                [(plan, _)] = harness.plans
+                assert plan.build and plan.build.startswith(goal)
+                assert plan.sources[0].url == _URL
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"Summarise this label {_URL} or https://www.example.com/other",
+        f"Summarise this label {_URL} with PRIVATE_CURRENT_COMMENTARY",
+        f"Summarise a page if I approve {_URL}",
+        f"Summarise how to read {_URL}",
+        f"Explain how you would summarize <{_URL}>",
+        f"Explain the process of summarizing <{_URL}>",
+        f"Summarise this example request to read {_URL}",
+        f"Summarise my private notes at {_URL}",
+        f"Summarise this label {_URL}?token=secret",
+    ],
+)
+def test_ambiguous_page_proposal_has_no_egress(tmp_path: Path, text: str) -> None:
+    async def run() -> None:
+        model = Model((_call(PAGE, "url", _URL),))
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            try:
+                assert "Nothing sent" in await harness.turn(text)
+                assert not harness.web.inputs and not harness.plans
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "only if I approve",
+        "only after reviewing the dashboard",
+        ", but wait for my go-ahead",
+        "pending my approval",
+    ],
+)
+@pytest.mark.parametrize("page_first", [False, True])
+def test_conditional_cooperative_build_never_queues(
+    tmp_path: Path, condition: str, page_first: bool
+) -> None:
+    async def run() -> None:
+        goal = f"Let’s build a website {condition}"
+        build = (_call(BUILD, "goal", "Build a website"),)
+        model = Model((_call(PAGE, "url", _URL),), build) if page_first else Model(build)
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            try:
+                text = f"Read {_URL}, then {goal}" if page_first else goal
+                assert "Nothing ran" in await harness.turn(text)
+                assert not harness.web.inputs and not harness.plans
+                assert len(model.requests) == 1
             finally:
                 await harness.memory.aclose()
 
