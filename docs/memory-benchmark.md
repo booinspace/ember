@@ -120,6 +120,13 @@ Miku focused archive and restore tests: 44 passed. Paired PMB belief replay kept
 sets, verdicts and coverage per lane: 63/77 seeded and 71/77 scoped. All 71 executed requests
 per lane completed. Independently rebuilt stores changed order in six cases per lane. Candidate
 p95 was 1.44 ms seeded and 1.60 ms scoped; no consistent latency gain.
+Default-ranker replay also matched ordered IDs, exact provenance and coverage on all 384
+executed searches per arm, with no partials, deadline misses, deferrals or searches over 500 ms.
+In baseline-first order, synthetic distinct/repeat p95 was 154.99/148.28 ms before and
+155.26/149.15 ms after; PMB was 25.71/15.30 ms before and 25.89/15.28 ms after.
+Two PMB duplicate searches per arm had p95 15.03 ms before and 15.59 ms after.
+Receipts: `results/archive-hardening.jWeRQb/*-default.json`. This checks parity, not a speed gain.
+
 Same-path replacement during native reads and full hard read-budget accounting remain unqualified.
 
 ## Reproduce the archive ranking comparison
