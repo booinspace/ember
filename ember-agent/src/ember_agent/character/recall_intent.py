@@ -16,6 +16,21 @@ _NATURAL_V1 = re.compile(
 )
 
 
+_SOURCE_FOLLOWUP = re.compile(
+    r"(?:what(?: was| is|'s|’s) (?:the |your )?(?:original |supporting )?source"
+    r"(?: (?:of|for) (?:that|this|that memory|this memory|the memory))?"
+    r"|where did (?:i|we) (?:say|write|mention) (?:that|this|it)"
+    r"|where did (?:you get (?:that|this|it)|(?:that|this|it) come from)"
+    r"|(?:can you )?(?:show|quote) (?:me )?the (?:original|supporting) (?:message|source|passage))"
+)
+
+
+def source_followup(text: str) -> bool:
+    """Recognize standalone source questions without browsing the archive."""
+    normalized = " ".join(text.casefold().split()).rstrip("?.!").rstrip()
+    return _SOURCE_FOLLOWUP.fullmatch(normalized) is not None
+
+
 def deep_recall_query(text: str, *, natural: bool = False) -> str | None:
     """Return explicit command query or opt-in natural question; preserve temporal wording."""
     if belief_intent(text) is not None:

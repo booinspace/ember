@@ -525,3 +525,11 @@ streaming, and acknowledgment recheck revisions, flags, temporal scope, and sour
 Initial typed retrieval and certification share a 150 ms soft deadline after capability lookup.
 Timeouts and empty results do not fall back. Ordinary recall and archive ranking are unchanged.
 See [validation](../memory-benchmark.md#typed-recall-on-miku-fedora) for scope and limits.
+
+## Supporting source follow-ups
+
+[Agent ADR 0006](../../ember-agent/docs/adr/0006-phase-eight-calendar-and-capture.md#supporting-source-follow-ups)
+records bounded exact evidence lookup after a completed reply. The
+[paired replay](../memory-benchmark.md#source-follow-up-replay) checks verbatim output and
+source controls for this path (P5-AC-04, P8-AC-26). Live transport and real-source acceptance
+were not run. Archive ranking and permissions are unchanged.

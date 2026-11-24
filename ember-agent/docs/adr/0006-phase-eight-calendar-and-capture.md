@@ -348,3 +348,14 @@ for any already-submitted acceptance write to settle. Resumption uses pinned job
 and existing exact native policy receipts, not a new import or acceptance path.
 Input, policy, connection, and delivery changes wake bounded batches; disabled
 capture pauses work, and missing credentials report blocked rather than polling.
+
+## Supporting source follow-ups
+
+Standalone questions such as “Where did I say that?” use one completed, acknowledged
+reply from the current conversation. When it had one unambiguous recalled memory and no
+competing source context, the core retains its exact supporting span and revision in memory.
+It reads that span through `evidence_read`, preserves the prior time selector, and revalidates
+before delivery. Multiple claims clarify; missing or invalid evidence abstains. Quote lookup
+has a 500 ms soft bound. No model call, archive fallback, or new persisted metadata. A
+supporting span does not prove first occurrence or model attribution. See
+[paired replay](../../../docs/memory-benchmark.md#source-follow-up-replay).

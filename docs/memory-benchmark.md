@@ -460,6 +460,26 @@ Receipts: `results/typed-recall.LbTfF7/` on Miku, copied to `.local/typed-recall
 These search-only timings predate final delivery refinements. They do not measure conflict
 certification, ordinary recall latency, or chat/answer quality. Final caller tests run on macOS.
 
+## Source follow-up replay
+
+Paired macOS replay on the source-follow-up working tree based on `137baaa`. Both arms
+ran the same synthetic conversation through the shared character core and native engine,
+with the same scripted model and four phrasings. This measures deterministic quote delivery,
+not live-model citation accuracy. Of 24 turns per arm, the new route delivered 24 exact
+supporting quotes versus zero with routing disabled. Follow-up p95 was 3.24 ms versus
+2.90 ms; those timings exclude live inference and transport. Negative cases check ambiguity,
+missing or interrupted replies, forgetting, source deselection, and invalidation before receipt.
+
+```sh
+uv run --locked --offline python -m pytest -qs \
+  ember-agent/tests/test_source_followup.py
+```
+
+Independent AMB regression: all 77 PMB verdicts, ID sets, and coverage matched `6bf3f75`
+for hybrid archive (**9/77**) and seeded current-belief (**77/77**). Archive order also
+matched on all 77 cases. Receipts: `.local/benchmarks/memory/source-followup.PPfaiE/`.
+No archive ranking, deep-recall expansion, or ingestion improvement is claimed.
+
 ## Public reference protocol
 
 Use the [Agent Memory Benchmark](https://github.com/vectorize-io/agent-memory-benchmark) split and

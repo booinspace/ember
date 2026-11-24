@@ -68,6 +68,8 @@ from .public_search import (
     public_page_requested,
     public_search_query,
 )
+from .recall_intent import source_followup
+from .source_evidence import SourceAnchor, supporting_anchor, verified_source
 from .task_work import AmbiguousWork, WorkDigest, WorkUnavailable, lookup_prefix
 from .temporal import (
     CURRENT_BELIEF,
@@ -144,6 +146,7 @@ class PreparedTurn:
     prompts: PromptSnapshot | None = None
     web_evidence: WebEvidence | None = None
     tool_plan: tuple[Intent, ToolCall] | None = None
+    source_anchor: SourceAnchor | None = None
 
 
 _TASK_TEXT_LIMIT = 1600
@@ -425,6 +428,8 @@ class CharacterCore:
                 ("deep_recall_" + investigation.outcome,),
                 observation.prompts,
             )
+        if investigation is None and source_followup(text):
+            return await self._prepare_source(observation)
         typed = belief_intent(text)
         if typed is not None and investigation is not None:
             raise GatewayError("deep_context_invalidated")
@@ -1253,7 +1258,69 @@ class CharacterCore:
         self.turn_view.prepared(
             identity, view_rows, references, certificate, historical=historical, conflicts=conflicts
         )
+        # ponytail: no model-attributed citations. Multiple prompt memories need clarification.
+        if (
+            len(view_rows) == 1
+            and view_rows[0][0] != "profile"
+            and len(references) == 1
+            and certificate is not None
+            and not (
+                work
+                or excerpt
+                or conflicts
+                or certificate.archive_sources
+                or certificate.excerpt_sources
+            )
+            and (deep_context is None or not deep_context.observations)
+        ):
+            prepared = replace(prepared, source_anchor=supporting_anchor(view_rows[0][1]))
         return prepared
+
+    async def _prepare_source(self, observation: TurnObservation) -> PreparedTurn:
+        previous = next(
+            (turn for turn in reversed(self.history) if turn.request_id != observation.request_id),
+            None,
+        )
+        reply = "I don’t have a verified supporting source for the previous reply."
+        reason = "source_followup_unavailable"
+        proof = None
+        if (
+            self.recall_enabled
+            and self.batch_validation
+            and previous is not None
+            and previous.complete
+            and previous.assistant
+            and not previous.public_web_reply
+        ):
+            anchor, parent = previous.source_anchor, previous.certificate
+            if (
+                anchor is not None
+                and parent is not None
+                and isinstance(self.memory, AsyncRelatedLookupClient)
+            ):
+                try:
+                    async with asyncio.timeout(0.5):
+                        resolved = await verified_source(self.memory, anchor, parent)
+                        if resolved is not None and await self.current((), resolved[1]):
+                            reply, proof = resolved
+                            reason = "source_followup_verified"
+                except (MemoryError, TimeoutError):
+                    pass  # Source failure is surfaced as an explicit abstention below.
+            elif len(previous.dependencies) > 1:
+                reply = "Which recalled claim should I look up?"
+                reason = "source_followup_ambiguous"
+        turn = self._local_turn(
+            observation.text,
+            observation.request_id,
+            observation.observed_at,
+            reply,
+            (reason,),
+            observation.prompts,
+        )
+        if proof is None:
+            return turn
+        refs = tuple((ref.memory_id, ref.revision) for ref in proof.memories)
+        return replace(turn, dependencies=refs, certificate=proof)
 
     @staticmethod
     def _history_messages(turn: CompletedTurn) -> tuple[PromptMessage, ...]:
@@ -1698,7 +1765,7 @@ class CharacterCore:
             raise GatewayError("delivery_receipt_invalid")
         if (
             (complete or delivered)
-            and belief_intent(turn.user) is not None
+            and (belief_intent(turn.user) is not None or source_followup(turn.user))
             and not await self.current(turn.dependencies, turn.certificate)
         ):
             await self._delivered(turn, "", False)
@@ -1736,6 +1803,7 @@ class CharacterCore:
             turn.request.request_id,
             complete,
             public_web_reply=bool(turn.work_sequence or turn.web_evidence or turn.tool_plan),
+            source_anchor=turn.source_anchor if complete and text else None,
         )
         self.history = [old for old in self.history if old.request_id != turn.request.request_id]
         self.history.append(observed)

@@ -6,6 +6,8 @@ from uuid import UUID
 
 from ember_memory_abi.related import ContextDependencies
 
+from .source_evidence import SourceAnchor
+
 
 @dataclass(frozen=True)
 class CompletedTurn:
@@ -17,6 +19,7 @@ class CompletedTurn:
     complete: bool = True
     clipped: bool = False
     public_web_reply: bool = False
+    source_anchor: SourceAnchor | None = None
 
 
 @runtime_checkable

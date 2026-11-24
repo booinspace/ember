@@ -96,6 +96,8 @@ deep source/alias recall, enrichment, measured performance and remaining gates.
 The experimental main-device runtime has installed browser/speech evidence; the full phase remains incomplete. See the Phase 8 runbook for the single launch command.
 The [current-belief preview](0015-phase-eight-implementation.md#current-belief-preview) is opt-in;
 seeded retrieval evidence does not qualify chat routing or raw-history extraction.
+[Supporting source follow-ups](0015-phase-eight-implementation.md#supporting-source-follow-ups)
+use exact evidence from the prior acknowledged reply, not archive ranking.
 
 The [connected-idle native capture amendment](0015-phase-eight-implementation.md#connected-idle-native-capture)
 is implemented in the checkout for terminal and both browser transports. It uses
