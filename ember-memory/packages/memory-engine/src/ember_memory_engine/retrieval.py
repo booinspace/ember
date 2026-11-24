@@ -33,7 +33,7 @@ from ember_memory_abi.memory import (
     PinnedMemory,
 )
 
-from . import identity_recall, profile, related
+from . import archive_relevance, identity_recall, profile, related
 from ._state import CharacterState
 from .archive import SourceHeaderResolver
 from .database import (
@@ -554,7 +554,13 @@ def search_archive(
     if query.cursor is not None:
         raise UnsupportedQueryError()
     # Refuse the retired experiment rather than silently returning a different result set.
-    if "ember.archive_ranking" in query.options.extensions:
+    if "ember.archive_ranking" in query.options.extensions or (
+        archive_relevance.OPTION in query.options.extensions
+        and (
+            query.options.extensions[archive_relevance.OPTION] != archive_relevance.PROFILE
+            or query.mode != "hybrid"
+        )
+    ):
         raise UnsupportedQueryError()
     epoch = state.policy_epoch(connection)
     if state.retriever is not None and query.text:

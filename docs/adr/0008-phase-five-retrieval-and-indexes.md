@@ -34,6 +34,13 @@ owns backend details; [the runbook](../phase-5-runbook.md) describes setup and c
    model and real local services. Record aggregate results below and in PLAN; stop
    before Phase 6 for operator architecture review.
 
+## Archive precision preview
+
+[Memory ADR 0006](../../ember-memory/docs/adr/0006-derived-retrieval-and-generations.md)
+records the opt-in archive relevance gate. [Matched replays](../memory-benchmark.md#opt-in-archive-relevance-replay)
+cover P5-AC-04 retrieval quality in this profile only. No runtime wiring, deployment,
+canonical state inference, or default change.
+
 ## Coupling and tradeoffs
 
 The application composition root optionally loads the CPU encoder and enables

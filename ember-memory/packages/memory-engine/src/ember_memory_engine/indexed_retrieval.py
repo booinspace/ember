@@ -37,6 +37,7 @@ from ember_memory_abi.interfaces import (
 )
 from ember_memory_abi.memory import ArchiveChunk, Entity, FactPayload, Memory
 
+from . import archive_relevance
 from ._state import CharacterState
 from .database import load_model, row_int, row_text
 from .embedding import EncodingPool
@@ -46,7 +47,7 @@ from .read_budget import ReadBudget, bounded_connection
 from .retrieval import memory_scope
 from .search_contracts import IndexGeneration
 from .selection import source_scope, unrestricted
-from .vector_search import VectorPool, VectorRequest
+from .vector_search import VectorHit, VectorPool, VectorRequest
 from .word_recall import (
     EXTRACTED_TEXT_SQL,
     WORD_RANKER,
@@ -494,6 +495,7 @@ class IndexedRetriever:
         isolated: bool = False,
         memory_words: bool = False,
         archive_snapshot: _ArchiveSnapshot | None = None,
+        corroborate: bool = False,
     ) -> tuple[
         IndexGeneration,
         list[tuple[sqlite3.Row, float, tuple[RankingExplanation, ...]]],
@@ -508,6 +510,7 @@ class IndexedRetriever:
         lexical: list[int] = []
         semantic: list[int] = []
         value_scores: dict[int, float] = {}
+        similarities: dict[int, float] = {}
         with (
             closing(connect(path, immutable=True, require_extension=False)) as connection,
             bounded_connection(connection, state.read_budget),
@@ -522,7 +525,7 @@ class IndexedRetriever:
                 ),
                 1000,
             )
-            vector_job: Future[tuple[int, ...]] | None = None
+            vector_job: Future[tuple[VectorHit, ...]] | None = None
             if mode not in {"lexical", "literal", "structured"}:
                 if (
                     self.pool.encoder is None
@@ -540,15 +543,16 @@ class IndexedRetriever:
                             timestamp_from_datetime(state.database.clock.now())
                         )
                         statement = (
-                            "SELECT document_id FROM vec_documents WHERE embedding MATCH ? "
-                            "AND k=40 "
+                            "SELECT document_id,distance FROM vec_documents "
+                            "WHERE embedding MATCH ? AND k=40 "
                             "AND active=1 AND valid_from<=? AND valid_until>? ORDER BY distance"
                         )
                         parameters = (now, now)
                     else:
                         statement = (
-                            "SELECT e.document_id FROM vec_documents v JOIN embedding_records e ON "
-                            "e.id=v.rowid WHERE v.embedding MATCH ? AND k=40 "
+                            "SELECT e.document_id,v.distance FROM vec_documents v "
+                            "JOIN embedding_records e ON e.id=v.rowid "
+                            "WHERE v.embedding MATCH ? AND k=40 "
                             "AND v.rowid IN (" + eligible_ids + ") ORDER BY v.distance"
                         )
                     release = index.lease(path)
@@ -633,9 +637,18 @@ class IndexedRetriever:
                 reasons.append("lexical_soft_deadline_miss")
             if vector_job is not None:
                 try:
-                    semantic = list(
-                        vector_job.result(timeout=max(0.0, deadline - monotonic() - 0.015))
-                    )
+                    hits = vector_job.result(timeout=max(0.0, deadline - monotonic() - 0.015))
+                    semantic = [hit.document_id for hit in hits]
+                    if corroborate:
+                        similarities = {
+                            hit.document_id: 1.0
+                            - (
+                                hit.distance**2 / 2
+                                if generation.distance_metric == "l2"
+                                else hit.distance
+                            )
+                            for hit in hits
+                        }
                 except (EmbeddingError, EngineBusyError, IndexError, TimeoutError):
                     reasons.append("semantic_deadline_or_admission_miss")
             # Finish bounded exact-ID reads after the soft ranking deadline. Archive
@@ -682,14 +695,28 @@ class IndexedRetriever:
                 columns = _ARCHIVE_HEADER_COLUMNS
                 if not archive_snapshot.certified:
                     columns += ",d.payload_json"
+                if corroborate:
+                    columns += ",d.text"
                 placeholders = ",".join("?" for _ in ranks)
                 rows = connection.execute(
                     f"SELECT {columns} FROM documents d WHERE d.id IN ({placeholders}) AND "
                     + scope,
                     (*ranks, *values),
                 ).fetchall()
+                topical: frozenset[str] = (
+                    archive_relevance.topical_words(text) if corroborate else frozenset()
+                )
+                best = max(similarities.values(), default=0.0)
                 for row in rows:
-                    explanations = ranks[row_int(row, "id")]
+                    identity = row_int(row, "id")
+                    if corroborate:
+                        similarity = similarities.get(identity)
+                        candidate_text = row_text(row, "text")
+                        if not archive_relevance.corroborated(
+                            topical, candidate_text, similarity, best
+                        ):
+                            continue
+                    explanations = ranks[identity]
                     result.append(
                         (row, sum(item.score for item in explanations), tuple(explanations))
                     )
@@ -949,6 +976,9 @@ class IndexedRetriever:
                 self.pool.invalidate()
             self._epoch = epoch
         deadline = monotonic() + 0.5
+        corroborate = (
+            query.options.extensions.get(archive_relevance.OPTION) == archive_relevance.PROFILE
+        )
         scope, values = _archive_eligibility(state, query)
         stores = canonical.execute(
             "SELECT DISTINCT source_store_id FROM source_grants WHERE capability='archive_search'"
@@ -996,6 +1026,7 @@ class IndexedRetriever:
                             deep=True,
                             isolated=deep,
                             archive_snapshot=snapshot,
+                            corroborate=corroborate,
                         )
                     except IndexError:
                         reasons.append("source_index_unavailable")
@@ -1036,6 +1067,7 @@ class IndexedRetriever:
                             "policy_epoch": epoch,
                             "soft_deadline_ms": 500,
                             "mode": query.mode,
+                            **({"relevance": archive_relevance.PROFILE} if corroborate else {}),
                             "temporal": query.temporal.model_dump_json(),
                         }
                     },

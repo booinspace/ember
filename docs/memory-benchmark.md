@@ -24,6 +24,37 @@ This does not close Phase 5 capacity or Phase 8 answer/latency gates. Receipts u
 `.local/benchmarks/memory/`:
 `archive-cleanup.OJfbl5/pmb-default.json` and `deep-cleanup.o1xF3c/deep.json`.
 
+## Opt-in archive relevance replay
+
+`--mode hybrid --archive-relevance corroborated_v1` keeps hybrid candidate budgets
+and RRF order. A candidate must have a topical word match within 0.08 cosine of the
+best semantic hit in its scoped store, be within 0.025 of that hit with cosine at
+least 0.64, or match three distinct topical words (two for queries with at most
+three topical words). No score cutoff depends on result count, scorer, or expected
+IDs. Without the option, all 77 ordered IDs, verdicts and coverage matched baseline.
+
+Paired local macOS runs with the pinned scorer, CPU BGE, and unchanged caller budgets:
+
+| PrecisionMemBench hybrid arm | Passes | Active passes | Mean precision | Mean recall | Unexpected-ID assertions | p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Default hybrid | 9/77 | 0/43 | 6.00% | 100% | 1,040 | 28.39 ms |
+| Default lexical | 14/77 | 3/43 | 18.80% | 95.35% | 373 | 28.22 ms |
+| Topical/semantic gate only (rejected) | 54/77 | 34/43 | 65.84% | 97.01% | 39 | 18.89 ms |
+| Gate with multi-term fallback | 54/77 | 34/43 | 65.88% | 97.34% | 39 | 20.94 ms |
+
+All arms: 71 complete, five skipped, one no store. These are retrieval scores on
+public statement text, not raw-dialogue extraction or answer scores. The rejected
+arm lost evidence on a first-30 LoCoMo smoke (mean document recall 87.78% to 83.33%).
+With the multi-term fallback, LoCoMo hit rate held at 28/30, mean recall reached
+89.44%, and p95 was 34.15 ms versus 33.85 ms default. This smoke is one conversation,
+not a full-split or rollout gate.
+
+Use the pinned [AMB command below](#public-reference-protocol), add
+`--mode hybrid --archive-relevance corroborated_v1` for the candidate, and omit
+`--archive-relevance` for the control. For LoCoMo use `--dataset locomo --query-limit 30`.
+Local receipts: `.local/archive-precision.94WPAv/` (`control.json`, `lexical.json`,
+`candidate.json`, `literal-backup.json`, and matching `locomo-*.json`).
+
 ## Historical checkpoint: rank-first archive search on Miku Fedora
 
 Paired serial replay, Fedora 45 under WSL2, Python 3.12.16, SQLite 3.53.1, one CPU BGE

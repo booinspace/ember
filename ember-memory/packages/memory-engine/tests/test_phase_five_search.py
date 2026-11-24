@@ -748,7 +748,9 @@ def test_native_sql_setup_failure_releases_lease_and_can_retry(
         VectorRequest(
             generation=path,
             canonical=engine.root / "missing.db",
-            statement="SELECT document_id FROM vec_documents WHERE embedding MATCH ? AND k=1",
+            statement=(
+                "SELECT document_id,distance FROM vec_documents WHERE embedding MATCH ? AND k=1"
+            ),
             parameters=(),
             encoding=vector,
             release=released.set,
@@ -761,7 +763,9 @@ def test_native_sql_setup_failure_releases_lease_and_can_retry(
         VectorRequest(
             generation=path,
             canonical=store.database.path,
-            statement="SELECT document_id FROM vec_documents WHERE embedding MATCH ? AND k=1",
+            statement=(
+                "SELECT document_id,distance FROM vec_documents WHERE embedding MATCH ? AND k=1"
+            ),
             parameters=(),
             encoding=vector,
             release=lambda: None,

@@ -33,7 +33,7 @@ from scripts.benchmark_memory_amb_archive import (
 from scripts.benchmark_memory_amb_beliefs import BeliefBenchmark, BeliefLane, load_seed
 
 from ember_memory_abi.common import canonical_object_sha256
-from ember_memory_engine import CanonicalEngine, identity_recall
+from ember_memory_engine import CanonicalEngine, archive_relevance, identity_recall
 from ember_memory_engine.embedding import BgeEncoder, file_sha256
 
 type Lane = Literal["archive"] | BeliefLane
@@ -72,6 +72,7 @@ class Params(BaseModel):
     split: str | None
     lane: Lane = "archive"
     mode: SearchMode = "lexical"
+    archive_relevance: str | None = None
     limit: int = Field(ge=1, le=40)
     query_limit: int | None = Field(ge=1)
 
@@ -304,7 +305,9 @@ def _run(params: Params, dataset: str, split: str, encoder: BgeEncoder) -> dict[
     groups = (units,) if scorer is not None else ((user,) for user in units)
     for group in groups:
         with TemporaryDirectory(prefix="ember-amb-", dir=params.output.parent) as root:
-            run = ArchiveBenchmark(Path(root).resolve(), encoder, params.mode, params.limit)
+            run = ArchiveBenchmark(
+                Path(root).resolve(), encoder, params.mode, params.limit, params.archive_relevance
+            )
             try:
                 for user in group:
                     if unit_docs := doc_units.get(user):
@@ -467,10 +470,13 @@ def main() -> int:
     parser.add_argument(
         "--mode", choices=["lexical", "hybrid"], help="archive mode (default lexical)"
     )
+    parser.add_argument("--archive-relevance", choices=[archive_relevance.PROFILE])
     parser.add_argument(
         "--limit", type=int, default=DEFAULT_RESULT_LIMIT, help="archive result cap, max 40"
     )
     args = parser.parse_args()
+    if args.archive_relevance and (args.lane != "archive" or args.mode != "hybrid"):
+        parser.error("--archive-relevance requires hybrid archive mode")
     if args.lane == "archive":
         if args.encoder is None:
             parser.error("archive lane requires --encoder")
@@ -517,6 +523,7 @@ def main() -> int:
             ),
             mode=params.mode,
             archive_ranking="default",
+            archive_relevance=params.archive_relevance,
             retrieval="native_granted_document_archive",
             ranking_unit="native_hits_mapped_to_distinct_amb_document_ids",
             temporal_policy="preserve_document_timestamps_no_query_time_filter",

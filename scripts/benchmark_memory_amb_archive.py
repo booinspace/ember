@@ -18,10 +18,10 @@ from ember_memory_abi.archive import (
 )
 from ember_memory_abi.common import canonical_object_sha256, timestamp_from_datetime
 from ember_memory_abi.evidence import SourceRef, source_text_sha256
-from ember_memory_abi.interfaces import ArchiveQuery
+from ember_memory_abi.interfaces import ArchiveQuery, RequestOptions
 from ember_memory_abi.memory import ArchiveChunk
 from ember_memory_abi.temporal import SourceTimestamp
-from ember_memory_engine import CanonicalEngine
+from ember_memory_engine import CanonicalEngine, archive_relevance
 from ember_memory_engine.models import SourceGrant, SourceKey
 from ember_memory_engine.search_contracts import Encoder
 
@@ -150,8 +150,12 @@ class ArchiveBenchmark:
         encoder: Encoder,
         mode: SearchMode,
         limit: int,
+        relevance: str | None = None,
     ) -> None:
         self.engine = CanonicalEngine(root, encoder=encoder)
+        self.options = RequestOptions(
+            extensions={archive_relevance.OPTION: relevance} if relevance else {}
+        )
         self.encoder = encoder
         self.mode: SearchMode = mode
         self.limit = limit
@@ -183,7 +187,13 @@ class ArchiveBenchmark:
         if unit is None:
             return Retrieval((), 0.0, "no_unit")
         source, crosswalk, character = unit
-        request = ArchiveQuery(text=query, mode=self.mode, source_store_ids=(source,), limit=limit)
+        request = ArchiveQuery(
+            text=query,
+            mode=self.mode,
+            source_store_ids=(source,),
+            limit=limit,
+            options=self.options,
+        )
         if self.mode == "hybrid":
             # Deep archive accepts only admitted query vectors. Count ordinary CPU encoding
             # here rather than prewarming on benchmark questions or changing service policy.

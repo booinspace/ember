@@ -1,7 +1,8 @@
 """Rank-first archive reads preserve exact grants, order, provenance and fallback."""
 
 import sqlite3
-from collections.abc import Callable
+import struct
+from collections.abc import Callable, Sequence
 from contextlib import closing
 from datetime import timedelta
 from pathlib import Path
@@ -17,7 +18,7 @@ from ember_memory_abi.evidence import Evidence, SourceRef, source_text_sha256
 from ember_memory_abi.interfaces import ArchiveQuery, ForgetRequest, RememberRequest, RequestOptions
 from ember_memory_abi.memory import ArchiveChunk, MemoryDraft
 from ember_memory_abi.selection import RecallSelection
-from ember_memory_engine import indexed_retrieval
+from ember_memory_engine import archive_relevance, indexed_retrieval
 from ember_memory_engine.bundles import BundleService, restore_bundles
 from ember_memory_engine.character import SqliteMemoryStore
 from ember_memory_engine.embedding import file_sha256
@@ -83,6 +84,49 @@ def _grant(
             expires_at=expires_at,
         ),
     )
+
+
+def test_opt_in_archive_relevance_keeps_exact_evidence_and_paraphrases(
+    engine: CanonicalEngine, store: SqliteMemoryStore, source_fixture: SourceFixture
+) -> None:
+    class RelevanceEncoder(SyntheticEncoder):
+        def encode(self, texts: Sequence[str], *, query: bool = False) -> tuple[bytes, ...]:
+            axes = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+            result: list[bytes] = []
+            for text in texts:
+                if query:
+                    axis = 2 if "gardening" in text else 0
+                else:
+                    axis = 0 if "Power failure" in text else 1
+                result.append(struct.pack("<384f", *axes[axis], *([0] * 381)))
+            return tuple(result)
+
+    library = source_fixture.batch.source_store_id
+    literal = _document(library, "Battery backup dates are in April. Historical notes.")
+    paraphrase = _document(library, "Power failure mitigation starts in May.")
+    noise = _document(library, "The dates are in December.")
+    denied = _document(library, "Battery backup dates are in June.")
+    _append(engine, source_fixture, literal, paraphrase, noise, denied)
+    _grant(engine, store.character_id, literal, paraphrase, noise)
+    encoder = RelevanceEncoder()
+    engine.encoding.encoder = encoder
+    engine.rebuild_index(library, encoder)
+    query = ArchiveQuery(text="battery backup dates", source_store_ids=(library,))
+    engine.encoding.query(query.text).result(timeout=2)
+    baseline = store.search_archive(query)
+    options = RequestOptions(extensions={archive_relevance.OPTION: archive_relevance.PROFILE})
+    selected = store.search_archive(query.model_copy(update={"options": options}))
+    assert baseline.coverage.status == selected.coverage.status == "complete"
+    assert len(baseline.results) > len(selected.results)
+    assert {
+        engine.validate(span.evidence)
+        for hit in selected.results
+        if isinstance(hit.record, ArchiveChunk)
+        for span in hit.record.source_spans
+    } == {literal.parts[0].text, paraphrase.parts[0].text}
+    unmatched = query.model_copy(update={"text": "gardening", "options": options})
+    engine.encoding.query(unmatched.text).result(timeout=2)
+    assert not store.search_archive(unmatched).results
 
 
 @pytest.mark.parametrize("mode", ["lexical", "semantic"])

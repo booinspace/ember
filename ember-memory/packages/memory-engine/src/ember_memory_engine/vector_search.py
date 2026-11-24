@@ -5,6 +5,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from contextlib import suppress
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 from time import monotonic
 
@@ -28,6 +29,12 @@ class VectorRequest:
     budget: ReadBudget | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class VectorHit:
+    document_id: int
+    distance: float
+
+
 class VectorPool:
     """One native owner with one cached connection; foreground and deep pools are separate."""
 
@@ -38,11 +45,11 @@ class VectorPool:
         self._connection: sqlite3.Connection | None = None
         self.error_count = 0
 
-    def submit(self, request: VectorRequest) -> Future[tuple[int, ...]]:
+    def submit(self, request: VectorRequest) -> Future[tuple[VectorHit, ...]]:
         """Queue without blocking; reject full admission before accepting more native work."""
         future = self.workers.submit(lambda: self._search(request))
 
-        def completed(job: Future[tuple[int, ...]]) -> None:
+        def completed(job: Future[tuple[VectorHit, ...]]) -> None:
             request.release()
             if not job.cancelled() and job.exception() is not None:
                 self.error_count += 1
@@ -50,7 +57,7 @@ class VectorPool:
         future.add_done_callback(completed)
         return future
 
-    def _search(self, request: VectorRequest) -> tuple[int, ...]:
+    def _search(self, request: VectorRequest) -> tuple[VectorHit, ...]:
         # Encoding may outlive its original caller. Both pools retain their slots
         # until completion; neither detaches native work on timeout/cancellation.
         vector = request.encoding.result()
@@ -93,7 +100,14 @@ class VectorPool:
                 rows = connection.execute(
                     request.statement, (vector, *request.parameters)
                 ).fetchall()
-            return tuple(dict.fromkeys(row_int(row, "document_id") for row in rows))
+            hits: dict[int, VectorHit] = {}
+            for row in rows:
+                identity = row_int(row, "document_id")
+                distance: object = row["distance"]
+                if not isinstance(distance, (int, float)) or not isfinite(distance) or distance < 0:
+                    raise IndexError()
+                hits.setdefault(identity, VectorHit(identity, distance))
+            return tuple(hits.values())
         except sqlite3.Error as error:
             raise IndexError() from error
         finally:

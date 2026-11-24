@@ -90,6 +90,14 @@ checkout. Hybrid archive requests use the existing default ranker; the old
 `ember.archive_ranking` request key is rejected rather than silently changing results. No
 migration or index rebuild. See [historical measurements](../../../docs/memory-benchmark.md).
 
+Opt-in `RequestOptions.extensions["ember.archive_relevance"] = "corroborated_v1"`
+filters hybrid archive projections before exact hydration. It uses scoped KNN distance
+and topical text overlap, preserving RRF order, candidate ceilings, and unchanged
+canonical fallback and provenance checks. Missing semantic work remains partial; strong
+multi-term literal candidates can still qualify. No new index layout or chat default.
+[Replay](../../../docs/memory-benchmark.md#opt-in-archive-relevance-replay) measures
+P5-AC-04 query precision with unchanged permission checks; capacity and rollout remain open.
+
 One derived writer (two pending), one query encoder (two pending), and distinct
 foreground/deep native owners (two pending each) protect the realtime loop.
 150 ms foreground and 500 ms archive are soft caller budgets: native operations
