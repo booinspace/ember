@@ -414,6 +414,35 @@ name misses without relaxing canonical identity matching or granting source acce
 query expansion. Test those on versioned derived data only, with original quotes and canonical
 scope unchanged. Neither technique was added in this pass; the negative-guidance miss is separate.
 
+## Current-belief preview
+
+Matched macOS replay of all 77 PrecisionMemBench cases, with the same pinned scorer, source
+approvals, seed adapter, caller scope, and result budgets. Both lanes approved 35 statements,
+seeded 29, and left six history-only. No extraction, encoder, answer model, or judge.
+
+| Lane | Passes | Active passes | Retrieval p95, final paired run |
+| --- | ---: | ---: | ---: |
+| Exact scoped identities (`explicit-scope`) | 71/77 | 37/43 | 1.47 ms |
+| Exact then bounded aliases (`current-belief`) | 77/77 | 43/43 | 2.09 ms |
+
+Both runs preserved every baseline pass and coverage (71 complete, five skipped, one no store).
+The route fixed five typo cases and matched `Mongoose` to the already-seeded alias `moongoose`.
+That is not evidence of extracting or inferring counter-guidance. One extra raw hit (`errors`
+matched `error`) was cut by the scorer's pin budget; raw nonempty results rose from 40 to 47.
+The perfect scorer result does not imply perfect raw precision or transfer to unseen queries.
+These small-store timings do not establish chat-path latency.
+
+Replay the [belief command above](#approved-belief-replay-on-miku-fedora) with `--lane current-belief`
+and a new output path. Compare with `--lane explicit-scope` in both orders. Candidate receipts
+under `.local/benchmarks/memory/current-belief.JZKcqx/` are working-tree runs based on `5843edb`,
+not clean results from that commit. The first pass, in `current-belief.LF0T15/`, preceded a
+cleanup that removed an unused negative-preference branch; both passes had identical case ID sets.
+
+Next gate: hold out alias/noise cases and measure raw-history extraction, evidence review, and
+accepted IDs lost at each step. Then compare time-aware and bounded multi-hop evidence at the
+same context budget with matched answer models and prompts. Profile vector deadline misses before
+trying e-means. Do not route live chat to this preview on PMB alone.
+
 ## Public reference protocol
 
 Use the [Agent Memory Benchmark](https://github.com/vectorize-io/agent-memory-benchmark) split and

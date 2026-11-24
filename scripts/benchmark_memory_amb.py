@@ -2,7 +2,7 @@
 
 Use pinned AMB checkout and PrecisionMemBench fixtures from docs/memory-benchmark.md.
 Default archive lane uses local CPU BGE assets. PrecisionMemBench seeded-belief
-and explicit-scope lanes use native structured identity lookup without an encoder.
+and scoped belief lanes use native structured identity lookup without an encoder.
 Run from the Ember checkout.
 """
 
@@ -254,7 +254,7 @@ def _run_beliefs(params: Params, split: str, lane: BeliefLane) -> dict[str, obje
                     query.query,
                     query.user_id,
                     budget,
-                    scope=request_scope(query) if lane == "explicit-scope" else (),
+                    scope=request_scope(query) if lane != "seeded-belief" else (),
                 )
             )
     # Nothing read from the scorer's verdicts can affect a canonical request.
@@ -460,7 +460,7 @@ def main() -> int:
     parser.add_argument("--query-limit", type=int, help="deterministic first N queries per split")
     parser.add_argument(
         "--lane",
-        choices=["archive", "seeded-belief", "explicit-scope"],
+        choices=["archive", "seeded-belief", "explicit-scope", "current-belief"],
         default="archive",
         help="belief lanes require --dataset precisionmembench",
     )
@@ -532,8 +532,11 @@ def main() -> int:
             ranking_unit="native_accepted_ids_crosswalked_by_exact_source_evidence",
             temporal_policy="current_guidance_only_no_validity_bounds_inferred",
             scope_policy="explicit_caller_tags_within_user"
-            if params.lane == "explicit-scope"
+            if params.lane != "seeded-belief"
             else "user_only",
+            identity_policy="exact_then_bounded_alias"
+            if params.lane == "current-belief"
+            else "exact",
         )
     splits = (
         SPLITS

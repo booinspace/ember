@@ -98,7 +98,7 @@ class SqliteMemoryStore:
             supported_kinds=("fact", "episode", "goal", "plan"),
             supported_modalities=tuple(sorted(KNOWN_MODALITIES)),
             supported_predicates=tuple(definition.name for definition in state.predicates),
-            supported_extensions=(identity_recall.IDENTITY_RECALL,),
+            supported_extensions=(identity_recall.IDENTITY_RECALL, identity_recall.CURRENT_BELIEF),
             retrieval_modes=(
                 "hybrid_if_indexed",
                 "deep_archive_if_indexed",

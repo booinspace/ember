@@ -61,6 +61,24 @@ No index rebuild, default ranking change, fuzzy expansion, or canonical writes. 
 [public seeded-belief replay](../../../docs/memory-benchmark.md#approved-belief-replay-on-miku-fedora)
 for scorer boundaries and measured results.
 
+### Current-belief preview
+
+`ember.current_belief_v1` on a structured `MemoryQuery` selects active accepted assertions,
+preferences, and beliefs. It rejects historical selectors and applies known validity bounds
+also to episodes in this route; ordinary episode and historical lookup keep their own semantics.
+`origin_store_ids` narrows the same canonical scope before ranking and cannot grant access.
+
+Exact alias matches win. If none are eligible, try one edit (including adjacent transposition)
+on ASCII words of 4–64 characters with an unchanged two-letter prefix. Resolve against eligible
+claims only, reject ambiguous typo matches, and match the resulting canonical IDs. Lookup scans
+at most 256 query words, materializes at most 257 alias rows to detect cap overflow, and shares
+identity lookup's 150 ms soft deadline. Blank, unmatched, or ambiguous input can return nothing;
+no archive fallback. Evidence headers, current authorization, and delivery certificate expiry
+still apply. No identity writes, storage migration, or character-chat routing change.
+
+See [paired seeded replay](../../../docs/memory-benchmark.md#current-belief-preview) for
+acceptance evidence and remaining raw-ingest and answer-quality gates.
+
 ## Bounded deep engine profile
 
 Existing owned workers accept an explicitly read-only request profile. It copies

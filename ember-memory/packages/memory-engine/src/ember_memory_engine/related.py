@@ -40,6 +40,7 @@ def certificate(
     profile_epoch: int | None = None,
     temporal: TemporalQuery | None = None,
     current_ids: frozenset[CanonicalId] = frozenset(),
+    current_belief_ids: frozenset[CanonicalId] = frozenset(),
 ) -> ContextDependencies:
     """Collect only selected memory/evidence and known time boundaries; no relationship joins."""
     sources = {
@@ -75,7 +76,7 @@ def certificate(
         m.temporal.valid_until
         for m in memories
         if m.temporal.valid_until
-        and m.content.kind != "episode"
+        and (m.content.kind != "episode" or m.memory_id in current_belief_ids)
         and (not historical or m.memory_id in current_ids)
     ]
     now = timestamp_from_datetime(state.database.clock.now())

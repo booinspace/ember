@@ -179,9 +179,9 @@ def test_retired_archive_ranking_flag_is_rejected(
     assert "unrecognized arguments: --archive-ranking precision_v1" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("lane", ["seeded-belief", "explicit-scope"])
+@pytest.mark.parametrize("lane", ["seeded-belief", "explicit-scope", "current-belief"])
 def test_seeded_belief_crosswalk_and_scope(
-    tmp_path: Path, lane: Literal["seeded-belief", "explicit-scope"]
+    tmp_path: Path, lane: Literal["seeded-belief", "explicit-scope", "current-belief"]
 ) -> None:
     """Identical evidence/alias never combines source IDs or crosses user grants."""
     from scripts.benchmark_memory_amb_beliefs import BeliefBenchmark, load_seed
@@ -226,11 +226,15 @@ def test_seeded_belief_crosswalk_and_scope(
         # Both users have identically named memories; tags can only narrow within one user.
         assert set(run.retrieve("moonbeam", "alice", 20).ids) == {"work", "home"}
         assert set(run.retrieve("moonbeam", "alice", 20, scope=("shared",)).ids) == {"work", "home"}
-        expected: set[str] = {"work"} if lane == "explicit-scope" else {"work", "home"}
+        expected: set[str] = {"work"} if lane != "seeded-belief" else {"work", "home"}
         assert set(run.retrieve("moonbeam", "alice", 20, scope=("work",)).ids) == expected
-        expected = set() if lane == "explicit-scope" else {"work", "home"}
+        expected = set() if lane != "seeded-belief" else {"work", "home"}
         assert set(run.retrieve("moonbeam", "alice", 20, scope=("foreign-only",)).ids) == expected
         assert run.retrieve("moonbeam", "bob", 20, scope=("work",)).ids == ("foreign",)
+        if lane == "current-belief":
+            assert run.retrieve("moonbeaz", "alice", 20, scope=("work",)).ids == ("work",)
+            assert not run.retrieve("moonbeaz", "alice", 20, scope=("foreign-only",)).ids
+            assert not run.retrieve("moonbeaz", "alice", 20).ids  # Two eligible identities.
         assert len(run.retrieve("moonbeam", "alice", 1).ids) == 1
         assert run.retrieve("moonbeam", "alice", 0).coverage == "skipped"
         assert run.retrieve("", "alice", 20).coverage == "skipped"
@@ -311,7 +315,7 @@ def test_belief_status_preserves_history_without_inventing_dates(
             assert engine.validate(assertion.evidence) == payload.event
 
 
-@pytest.mark.parametrize("lane", ["seeded-belief", "explicit-scope"])
+@pytest.mark.parametrize("lane", ["seeded-belief", "explicit-scope", "current-belief"])
 def test_belief_manifest_and_scoring_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -320,7 +324,12 @@ def test_belief_manifest_and_scoring_boundary(
     """Changing scorer-only fields changes assertions, not ingestion or request fields."""
     from scripts import benchmark_memory_amb as amb
     from scripts.benchmark_memory_amb_archive import InputDocument
-    from scripts.benchmark_memory_amb_beliefs import CURRENT_MODALITIES
+
+    from ember_memory_engine.identity_recall import (
+        CURRENT_BELIEF,
+        CURRENT_MODALITIES,
+        IDENTITY_RECALL,
+    )
 
     seed = tmp_path / "beliefs.seed.json"
     seed.write_text(
@@ -405,8 +414,10 @@ def test_belief_manifest_and_scoring_boundary(
     assert amb.main() == 0
     first, second = requests
     assert first == second and first.text == "moonbeam" and first.limit == 5
-    assert first.mode == "structured" and first.modalities == CURRENT_MODALITIES
-    identity_options = first.options.extensions["ember.identity_recall_v1"]
+    assert first.mode == "structured"
+    current = lane == "current-belief"
+    assert first.modalities == (() if current else CURRENT_MODALITIES)
+    identity_options = first.options.extensions[CURRENT_BELIEF if current else IDENTITY_RECALL]
     if lane == "seeded-belief":
         assert identity_options == {}
     else:

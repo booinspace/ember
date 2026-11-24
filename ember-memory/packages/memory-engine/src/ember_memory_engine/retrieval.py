@@ -65,6 +65,8 @@ def memory_scope(
     recent_first: bool = False,
     metadata_only: bool = False,
     index_lookup: bool = False,
+    identity_vocabulary: bool = False,
+    current_state: bool = False,
     narrowing: tuple[str, tuple[str | int, ...]] = ("", ()),
 ) -> tuple[str, tuple[str | int, ...]]:
     """Build canonical eligibility used before both indexed and fallback candidate limits."""
@@ -135,9 +137,11 @@ def memory_scope(
         )
     ):
         now = timestamp_to_unix_microseconds(timestamp_from_datetime(state.database.clock.now()))
+        ended_episode = "" if current_state else "r.kind='episode' OR "
         conditions.append(
-            "(r.valid_from_us IS NULL OR r.valid_from_us<=?) AND "
-            "(r.kind='episode' OR r.valid_until_us IS NULL OR ?<r.valid_until_us)"
+            "(r.valid_from_us IS NULL OR r.valid_from_us<=?) AND ("
+            + ended_episode
+            + "r.valid_until_us IS NULL OR ?<r.valid_until_us)"
         )
         parameters.extend((now, now))
     if include_text and query.text:
@@ -178,7 +182,8 @@ def memory_scope(
         parameters.extend(values)
     restriction, restriction_values = narrowing
     parameters.extend(restriction_values)
-    parameters.append(query.limit)
+    if not identity_vocabulary:
+        parameters.append(query.limit)
     order = (
         "r.recorded_at_us DESC,r.memory_id"
         if recent_first
@@ -186,7 +191,13 @@ def memory_scope(
     )
     if include_text and query.text and not recent_first:
         order = "ember_word_hits(" + EXTRACTED_TEXT_SQL + ") DESC," + order
-    projection = "r.memory_id,r.revision" if metadata_only else "r.*"
+    projection = (
+        "r.memory_id,r.revision,p.subject_id"
+        if identity_vocabulary
+        else "r.memory_id,r.revision"
+        if metadata_only
+        else "r.*"
+    )
     ordered_recent = recent_first and before is None and query.lifecycles == ("active",)
     lookup = (
         " INDEXED BY memory_recent_order"
@@ -215,9 +226,7 @@ def memory_scope(
         + " WHERE "
         + " AND ".join(conditions)
         + restriction
-        + " ORDER BY "
-        + order
-        + " LIMIT ?"
+        + ("" if identity_vocabulary else " ORDER BY " + order + " LIMIT ?")
     )
     return sql, tuple(parameters)
 
@@ -226,14 +235,51 @@ def _identity_search(
     state: CharacterState, connection: sqlite3.Connection, query: MemoryQuery, epoch: int
 ) -> SearchResponse:
     deadline = monotonic() + 0.15
-    predicate, parameters, truncated = identity_recall.narrow(query)
+    current = identity_recall.CURRENT_BELIEF in query.options.extensions
+    extension = identity_recall.CURRENT_BELIEF if current else identity_recall.IDENTITY_RECALL
+    origin, origins = identity_recall.origin_scope(query, extension)
+    if current:
+        query = identity_recall.current_query(query)
+    predicate, names, truncated = identity_recall.exact(query.text, current=current)
     reasons = ["identity_query_word_limit"] if truncated else []
     selected: list[Memory] = []
-    sql, values = memory_scope(state, query, metadata_only=True, narrowing=(predicate, parameters))
+    method = "exact_entity_identity_v1"
+    sql, values = memory_scope(
+        state,
+        query,
+        metadata_only=True,
+        current_state=current,
+        narrowing=(predicate + origin, (*names, *origins)),
+    )
     if state.read_budget is None:
         connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
     try:
-        for row in connection.execute(sql, values).fetchall():
+        rows = connection.execute(sql, values).fetchall()
+        if current and not rows and names and not truncated and origins != ("[]",):
+            eligible_sql, eligible_values = memory_scope(
+                state,
+                query,
+                identity_vocabulary=True,
+                current_state=True,
+                narrowing=(origin, origins),
+            )
+            ids, reason = identity_recall.fuzzy_ids(
+                connection, query.text, eligible_sql, eligible_values, deadline
+            )
+            if reason:
+                reasons.append(reason)
+            if ids:
+                predicate, names = identity_recall.resolved(ids)
+                sql, values = memory_scope(
+                    state,
+                    query,
+                    metadata_only=True,
+                    current_state=True,
+                    narrowing=(predicate + origin, (*names, *origins)),
+                )
+                rows = connection.execute(sql, values).fetchall()
+                method = "fuzzy_entity_identity_v1"
+        for row in rows:
             if monotonic() >= deadline:
                 break
             selected.append(
@@ -245,7 +291,9 @@ def _identity_search(
                 )
             )
         if selected and monotonic() < deadline:
-            selected, incomplete = _qualify_identity(state, connection, query, selected)
+            selected, incomplete = _qualify_identity(
+                state, connection, query, selected, current=current, origin_scope=(origin, origins)
+            )
             if incomplete:
                 reasons.append("source_unavailable_or_changed")
     except sqlite3.OperationalError as error:
@@ -269,7 +317,7 @@ def _identity_search(
                 score=memory.content.importance,
                 ranking=(
                     RankingExplanation(
-                        method="exact_entity_identity_v1",
+                        method=method,
                         score=memory.content.importance,
                         reasons=("ENTITY_MATCH",) if query.text else ("STRUCTURED_FACT_MATCH",),
                     ),
@@ -290,6 +338,9 @@ def _qualify_identity(
     connection: sqlite3.Connection,
     query: MemoryQuery,
     selected: list[Memory],
+    *,
+    current: bool,
+    origin_scope: tuple[str, tuple[str, ...]],
 ) -> tuple[list[Memory], bool]:
     # Accepted revisions already prove exact spans. Check original availability, then reread
     # eligibility at the fresh clock boundary (a grant can expire without a policy write).
@@ -313,11 +364,13 @@ def _qualify_identity(
     }
     keys = tuple(key for memory in selected for key in (str(memory.memory_id), memory.revision))
     pairs = ",".join("(?,?)" for _ in selected)
+    origin, origins = origin_scope
     sql, values = memory_scope(
         state,
         query,
         metadata_only=True,
-        narrowing=(" AND (r.memory_id,r.revision) IN (" + pairs + ")", keys),
+        current_state=current,
+        narrowing=(" AND (r.memory_id,r.revision) IN (" + pairs + ")" + origin, (*keys, *origins)),
     )
     allowed = {
         (row_text(row, "memory_id"), row_int(row, "revision"))
@@ -346,7 +399,10 @@ def search(
     if query.cursor is not None:
         raise UnsupportedQueryError()
     epoch = state.policy_epoch(connection)
-    if identity_recall.IDENTITY_RECALL in query.options.extensions:
+    if query.options.extensions.keys() & {
+        identity_recall.IDENTITY_RECALL,
+        identity_recall.CURRENT_BELIEF,
+    }:
         return _identity_search(state, connection, query, epoch)
     terms = register_word_match(connection, query.text)
     if (
@@ -673,6 +729,11 @@ def retrieve_context(
         else SearchResponse(results=(), coverage=coverage(state))
     )
     context_coverage = response.coverage
+    current_belief_ids: frozenset[CanonicalId] = (
+        frozenset(result.memory.memory_id for result in response.results)
+        if identity_recall.CURRENT_BELIEF in request.memory_query.options.extensions
+        else frozenset()
+    )
     candidates: list[MemoryResult] = []
     used: set[CanonicalId] = set()
     for pin in pinned:
@@ -818,6 +879,7 @@ def retrieve_context(
                 profile_epoch=selection.selection_epoch if selection else None,
                 temporal=request.memory_query.temporal if request.include_memory_search else None,
                 current_ids=frozenset(p.memory_id for p in kept_pins),
+                current_belief_ids=current_belief_ids,
             )
             break
         except ValidationError:
@@ -901,6 +963,7 @@ def retrieve_context(
                 profile_epoch=selection.selection_epoch if selection else None,
                 temporal=request.memory_query.temporal if request.include_memory_search else None,
                 current_ids=frozenset(p.memory_id for p in kept_pins),
+                current_belief_ids=current_belief_ids,
             )
     if selection and selection.valid_until:
         boundary = min(b for b in (selection.valid_until, context_certificate.valid_until) if b)

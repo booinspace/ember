@@ -11,7 +11,7 @@ approvals, never active character seeds. Unknown types/statuses stay source-only
 `created_at` dates the source snapshot, not the underlying claim. No observation,
 validity, replacement edge, or predecessor/successor dates are inferred. Exclude
 why_it_matters, pins, confidence/importance hints, reinforcement, expertise,
-relation links, and editorial metadata. Only explicit-scope uses source scope tags.
+relation links, and editorial metadata. Scoped lanes use source scope tags.
 Fixture approval is synthetic setup in disposable stores, not past human review,
 a model extraction result, or a policy for adopting private records.
 """
@@ -49,6 +49,7 @@ from ember_memory_abi.memory import (
 from ember_memory_abi.temporal import SourceTimestamp
 from ember_memory_engine import CanonicalEngine
 from ember_memory_engine.character import SqliteMemoryStore
+from ember_memory_engine.identity_recall import CURRENT_BELIEF, CURRENT_MODALITIES, IDENTITY_RECALL
 from ember_memory_engine.library import (
     ApprovalRequest,
     KnowledgeSelection,
@@ -57,7 +58,7 @@ from ember_memory_engine.library import (
 )
 from ember_memory_engine.models import MutationAuthority
 
-type BeliefLane = Literal["seeded-belief", "explicit-scope"]
+type BeliefLane = Literal["seeded-belief", "explicit-scope", "current-belief"]
 ADAPTER = "ember.pmb-fixture-beliefs"
 SPEC = ProcessingSpecRef(
     name=ADAPTER,
@@ -66,7 +67,6 @@ SPEC = ProcessingSpecRef(
 )
 _TYPES = frozenset({"preference", "decision", "entity", "relation", "open_question"})
 _STATUSES = frozenset({"active", "inferred", "exploratory", "superseded"})
-CURRENT_MODALITIES = ("FACTUAL_ASSERTION", "PREFERENCE", "BELIEF")
 
 
 class SeedBelief(BaseModel):
@@ -136,7 +136,7 @@ class BeliefBenchmark:
         self.setup: Counter[str] = Counter(approved=0, seeded=0, history_only=0, source_only=0)
         groups: dict[tuple[str, frozenset[str]], list[SeedBelief]] = defaultdict(list)
         for row in seeds:
-            tags: frozenset[str] = frozenset(row.scope if lane == "explicit-scope" else ())
+            tags = frozenset(row.scope if lane != "seeded-belief" else ())
             groups[row.user_id, tags].append(row)
         service = LibraryService(engine, authority=MutationAuthority(mode="confirmed_user"))
         for index, ((user, tags), rows) in enumerate(groups.items()):
@@ -301,7 +301,7 @@ class BeliefBenchmark:
             return Retrieval((), 0.0, "no_unit")
         origins = (
             [str(library) for library, tags in unit.tags.items() if tags.intersection(scope)]
-            if self.lane == "explicit-scope" and scope
+            if self.lane != "seeded-belief" and scope
             else None
         )
         identity_options: dict[str, JsonValue] = (
@@ -311,12 +311,15 @@ class BeliefBenchmark:
                 "origin_store_ids": list[JsonValue](origins),
             }
         )
+        current = self.lane == "current-belief"
         request = MemoryQuery(
             mode="structured",
             text=text,
             limit=limit,
-            modalities=CURRENT_MODALITIES,
-            options=RequestOptions(extensions={"ember.identity_recall_v1": identity_options}),
+            modalities=() if current else CURRENT_MODALITIES,
+            options=RequestOptions(
+                extensions={(CURRENT_BELIEF if current else IDENTITY_RECALL): identity_options}
+            ),
         )
         started = perf_counter()
         response = unit.store.search(request)

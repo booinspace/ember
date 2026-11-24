@@ -500,3 +500,12 @@ turn or delivery to settle and still uses the exact native policy and durable
 receipts. No new writer, scheduler, or import authority is introduced. Checkout
 implementation is not deployment or acceptance. [P8-AC-07](../../PLAN.md#phase-8-acceptance-criteria-automatic-capture-and-memory-source-controls)
 evidence for this path, including live latency on the exact runner profile, remains open.
+
+## Current-belief preview
+
+[Memory ADR 0009](../../ember-memory/docs/adr/0009-phase-eight-scope-and-temporal-capture.md#current-belief-preview)
+records an explicit, engine-owned route for accepted current claims. Ordinary chat, historical
+lookup, and archive evidence remain unchanged. The [paired replay](../memory-benchmark.md#current-belief-preview)
+checks scoped eligibility before limits (P5-AC-02). Offline tests check current validity and
+delivery expiry (P8-AC-26) for this route only. Raw-history extraction (P6-AC-10), live chat
+quality, and scale were not run. No deployment.

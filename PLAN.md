@@ -3989,6 +3989,9 @@ dates, reviewed enrichment and historical delivery; they are distinct from deep 
   survive query-aware preparation/delivery validation, with current profile pins scoped
   separately. Current forgetting, suppression, source controls, revocation and grant
   expiry still prevent disclosure; no historical record is reactivated to bypass checks.
+  The [explicit current-belief preview](docs/adr/0015-phase-eight-implementation.md#current-belief-preview)
+  tests bounded alias lookup within eligible scope and known validity bounds before top-k. It
+  can abstain and does not replace ordinary recall or the historical/archive paths.
 - **P8-AC-27:** Conversation-local follow-ups such as "the year before" and "during that
   same period" retain only the last resolved scope/reference clock and selected exact
   references, then revalidate. Ambiguous antecedents clarify; historical/current
