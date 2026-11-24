@@ -12,7 +12,6 @@ import pytest
 from ember_memory_abi.evidence import SourceRef
 from ember_memory_abi.interfaces import (
     ArchiveQuery,
-    ArchiveSearchResponse,
     MemoryQuery,
     RememberRequest,
     RequestOptions,
@@ -22,7 +21,7 @@ from ember_memory_abi.memory import ArchiveChunk, MemoryDraft
 from ember_memory_engine.character import SqliteMemoryStore
 from ember_memory_engine.chunking import Unit, group_chunks
 from ember_memory_engine.engine import CanonicalEngine
-from ember_memory_engine.errors import EmbeddingError, EngineBusyError
+from ember_memory_engine.errors import EmbeddingError, EngineBusyError, UnsupportedQueryError
 from ember_memory_engine.index_storage import connect
 from ember_memory_engine.search_contracts import EmbeddingSpec
 
@@ -252,51 +251,14 @@ def test_revocation_filters_existing_shared_vectors(
     assert not store.search_archive(query).results
 
 
-def test_archive_precision_gates_weak_vectors_and_filler_without_rebuilding(
-    engine: CanonicalEngine,
-    store: SqliteMemoryStore,
-    source_fixture: SourceFixture,
-) -> None:
-    class ContrastEncoder(SyntheticEncoder):
-        def encode(self, texts: Sequence[str], *, query: bool = False) -> tuple[bytes, ...]:
-            return tuple(
-                struct.pack(
-                    "<384f",
-                    *((0.0, 1.0) if query and text != "espresso" else (1.0, 0.0)),
-                    *([0.0] * 382),
-                )
-                for text in texts
+def test_retired_archive_ranking_is_not_silently_ignored(store: SqliteMemoryStore) -> None:
+    with pytest.raises(UnsupportedQueryError):
+        store.search_archive(
+            ArchiveQuery(
+                text="café",
+                options=RequestOptions(extensions={"ember.archive_ranking": "precision_v1"}),
             )
-
-    encoder = ContrastEncoder()
-    library = source_fixture.evidence_ref.source_store_id
-    _build(engine, library, encoder)
-    generation, path = engine.indexes[library].active()
-    options = RequestOptions(extensions={"ember.archive_ranking": "precision_v1"})
-
-    def search(text: str, *, precision: bool = True) -> ArchiveSearchResponse:
-        query = ArchiveQuery(
-            text=text,
-            source_store_ids=(library,),
-            options=options if precision else RequestOptions(),
         )
-        return store.search_archive(query)
-
-    assert search("unrelated", precision=False).results
-    irrelevant = search("unrelated")
-    assert not irrelevant.results and irrelevant.coverage.status == "complete"
-    assert not search("what is the").results
-    assert search("café").results  # Weak vector, valid lexical evidence.
-    paraphrase = search("espresso")
-    assert paraphrase.results and paraphrase.coverage.status == "complete"
-    assert all(
-        "SEMANTIC_MATCH" in explanation.reasons
-        for hit in paraphrase.results
-        for explanation in hit.ranking
-    )
-    assert engine.indexes[library].active() == (generation, path)
-    engine.revoke_source(store.character_id, library)
-    assert not search("espresso").results
 
 
 def test_native_encode_timeout_remains_owned_and_bounded(

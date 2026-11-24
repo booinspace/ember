@@ -3,7 +3,28 @@
 Public benchmark results and synthetic diagnostics are separate. Synthetic retrieval scores are not
 answer accuracy and do not go in leaderboard tables.
 
-## Latest checkpoint: rank-first archive search on Miku Fedora
+See the [e-means review and macOS AMB baseline](memory-benchmark-emeans.md) for the worktree
+HEAD runs and a proposed test of clustered archive search. Neither changes Ember's defaults.
+
+## Archive ranking
+
+Hybrid archive search uses one ranker, unchanged from `6db7289`'s default. Character chat
+never selected `precision_v1`. The experiment and its CLI flags are retired; new benchmark
+receipts still identify the default ranker where older receipts did. To reproduce historical
+`precision_v1` results, use a separate checkout at `6db728969b8aa6b6246f4e24067683afd0dad7c4`
+and its runbook. The old API extension now returns `unsupported_query`; omit it for default
+behavior. No storage migration or reindex is needed.
+
+Cleanup replay on macOS: all 77 PrecisionMemBench cases matched the `6db7289` default
+baseline in ordered IDs, verdicts, and coverage (9 passes, 71 complete, 5 skipped, 1 no
+user store). The warmed synthetic NAS probe selected all eight exact supporting passages
+in separate groups and passed cross-character and source-switch checks. The offline root gate
+passed (1,524 tests, 18 skipped), including temporal recall and authorized archive-neighbor tests.
+This does not close Phase 5 capacity or Phase 8 answer/latency gates. Receipts under
+`.local/benchmarks/memory/`:
+`archive-cleanup.OJfbl5/pmb-default.json` and `deep-cleanup.o1xF3c/deep.json`.
+
+## Historical checkpoint: rank-first archive search on Miku Fedora
 
 Paired serial replay, Fedora 45 under WSL2, Python 3.12.16, SQLite 3.53.1, one CPU BGE
 thread. Both providers used `precision_v1`, identical frozen stores and requests, and the same
@@ -64,7 +85,8 @@ was tested. Belief ranking and matched answer judging are separate gates.
 
 ### Replay the archive speed checkpoint
 
-Use pinned inputs in the setup below, and prepare each snapshot once with
+To run a default-ranker replay on the current checkout, use the pinned inputs below and
+prepare each snapshot once with
 `python -m scripts.benchmark_memory_archive_speed prepare --root PATH --encoder PATH`.
 For public PMB add `--amb PATH --fixtures PATH`. Keep each `fixture.json` and `store/` together
 unchanged; each timed run uses a disposable copy. Run serially on one host, baseline then
@@ -74,7 +96,7 @@ imports the intended engine instead of the editable install from another checkou
 ```bash
 # Run from each benchmark checkout, holding the same Fedora timing lock for the pair.
 python -X utf8 -m scripts.benchmark_memory_archive_speed run \
-  --root "$FIXTURE" --encoder "$ENCODER" --ranking precision_v1 --output "$NEW_REPORT"
+  --root "$FIXTURE" --encoder "$ENCODER" --output "$NEW_REPORT"
 ```
 
 Repeat separately with `--profile` for row, stage, and call counts; do not use instrumented
@@ -155,22 +177,15 @@ The final setup command warms uv's separate scorer overlay; Rich is already in E
 lock. Do not install AMB or change Ember's lockfiles. The runner checks the pinned AMB revision,
 its scorer source, and both fixture hashes. Unset `AMB_PMB_RETURN_CAP` if set.
 
-Run these commands sequentially on the same checkout and host; change output names for every
-rerun. With no `--query-limit`, both use all 77 cases. `default` omits the extension; `precision_v1`
-opts into engine ranking for that request only and requires `--mode hybrid`. Neither command
-changes runtime defaults. Each JSON manifest records `mode` and `archive_ranking`.
+Run on the same host for comparisons; use a new output name each time. With no `--query-limit`,
+this uses all 77 cases. The receipt records `mode` and the fixed `archive_ranking`.
 
 ```bash
 uv run --locked --offline --with tiktoken==0.12.0 --with google-genai==1.66.0 --with scipy==1.17.1 \
   python -X utf8 -m scripts.benchmark_memory_amb --amb .local/benchmarks/memory/amb \
   --fixtures .local/benchmarks/memory/pmb-input --encoder .local/models/bge-small-en-v1.5 \
-  --dataset precisionmembench --mode hybrid --archive-ranking default \
+  --dataset precisionmembench --mode hybrid \
   --output .local/benchmarks/memory/results/pmb-baseline-001.json
-uv run --locked --offline --with tiktoken==0.12.0 --with google-genai==1.66.0 --with scipy==1.17.1 \
-  python -X utf8 -m scripts.benchmark_memory_amb --amb .local/benchmarks/memory/amb \
-  --fixtures .local/benchmarks/memory/pmb-input --encoder .local/models/bge-small-en-v1.5 \
-  --dataset precisionmembench --mode hybrid --archive-ranking precision_v1 \
-  --output .local/benchmarks/memory/results/pmb-precision-v1-001.json
 ```
 
 To reproduce the lexical control, repeat the baseline command with `--mode lexical` and
@@ -201,9 +216,8 @@ local CPU BGE assets installed:
   --revision (git rev-parse HEAD)
 ```
 
-Use a new run root every time. For a paired archive comparison, run once with
-`--archive-ranking default` and again with `--archive-ranking precision_v1`; keep the seed, encoder,
-and result cap fixed. This flag does not affect the belief lane.
+Use a new run root every time. For paired runs across revisions, hold seed, encoder, and
+result cap fixed.
 
 The script creates two fictional source libraries and two independent
 characters. It uses exact archive grants for the archive lane, and approves and seeds exact-evidence
@@ -347,7 +361,7 @@ queries per lane, 96 with evidence labels). Both isolation checks passed in both
 
 Direct and current-value recall stayed at 24/24 each. Neither profile found both alias sources
 in any of 24 cases; both returned context on all 24 unanswerable queries. Seeded-belief quality
-was unchanged (87.50% recall@5, 20.00% precision@5). Keep the profile opt-in: recovering history
+was unchanged (87.50% recall@5, 20.00% precision@5). The profile was not promoted: recovering history
 also surfaced stale evidence on current-value queries. Test explicit temporal selection and typed
 corrections next; these fixtures use dated episodes, not canonical state transitions.
 

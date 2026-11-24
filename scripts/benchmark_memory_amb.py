@@ -26,7 +26,6 @@ from typing import Literal, Protocol, cast
 from pydantic import BaseModel, Field, TypeAdapter
 from scripts.benchmark_memory_amb_archive import (
     ArchiveBenchmark,
-    ArchiveRanking,
     InputDocument,
     Retrieval,
     SearchMode,
@@ -73,7 +72,6 @@ class Params(BaseModel):
     split: str | None
     lane: Lane = "archive"
     mode: SearchMode = "lexical"
-    archive_ranking: ArchiveRanking
     limit: int = Field(ge=1, le=40)
     query_limit: int | None = Field(ge=1)
 
@@ -306,13 +304,7 @@ def _run(params: Params, dataset: str, split: str, encoder: BgeEncoder) -> dict[
     groups = (units,) if scorer is not None else ((user,) for user in units)
     for group in groups:
         with TemporaryDirectory(prefix="ember-amb-", dir=params.output.parent) as root:
-            run = ArchiveBenchmark(
-                Path(root).resolve(),
-                encoder,
-                params.mode,
-                params.limit,
-                archive_ranking=params.archive_ranking,
-            )
+            run = ArchiveBenchmark(Path(root).resolve(), encoder, params.mode, params.limit)
             try:
                 for user in group:
                     if unit_docs := doc_units.get(user):
@@ -476,12 +468,6 @@ def main() -> int:
         "--mode", choices=["lexical", "hybrid"], help="archive mode (default lexical)"
     )
     parser.add_argument(
-        "--archive-ranking",
-        choices=["default", "precision_v1"],
-        default="default",
-        help="precision_v1 requires --mode hybrid (default: omit the ranking extension)",
-    )
-    parser.add_argument(
         "--limit", type=int, default=DEFAULT_RESULT_LIMIT, help="archive result cap, max 40"
     )
     args = parser.parse_args()
@@ -491,14 +477,12 @@ def main() -> int:
     else:
         if args.dataset != "precisionmembench":
             parser.error("belief lanes require --dataset precisionmembench")
-        if args.mode is not None or args.archive_ranking != "default" or args.encoder is not None:
-            parser.error("--mode, --archive-ranking, and --encoder are archive options")
+        if args.mode is not None or args.encoder is not None:
+            parser.error("--mode and --encoder are archive options")
         if args.limit != DEFAULT_RESULT_LIMIT:
             parser.error("belief lanes use the frozen native result cap of 20")
     args.mode = args.mode or "lexical"
     params = Params.model_validate(vars(args))
-    if params.archive_ranking != "default" and params.mode != "hybrid":
-        parser.error("--archive-ranking precision_v1 requires --mode hybrid")
     if params.split is not None and params.dataset != "beam":
         parser.error("--split is supported only with --dataset beam")
     if _git(params.amb, "rev-parse", "HEAD").decode().strip() != AMB_COMMIT:
@@ -532,7 +516,7 @@ def main() -> int:
                 Path(__file__).with_name("benchmark_memory_amb_archive.py")
             ),
             mode=params.mode,
-            archive_ranking=params.archive_ranking,
+            archive_ranking="default",
             retrieval="native_granted_document_archive",
             ranking_unit="native_hits_mapped_to_distinct_amb_document_ids",
             temporal_policy="preserve_document_timestamps_no_query_time_filter",

@@ -35,11 +35,10 @@ def words(text: str) -> tuple[str, ...]:
     return tuple(re.findall(r"[^\W_]+", normalized))
 
 
-def query_words(text: str, *, allow_filler_only: bool = True) -> tuple[str, ...]:
-    """Remove question filler; permit literal filler-only searches by default."""
+def query_words(text: str) -> tuple[str, ...]:
+    """Remove question filler; preserve literal filler-only searches."""
     terms = tuple(dict.fromkeys(words(text)))[:32]
-    meaningful = tuple(term for term in terms if term not in _FILLER)
-    return meaningful or (terms if allow_filler_only else ())
+    return tuple(term for term in terms if term not in _FILLER) or terms
 
 
 def register_word_match(connection: sqlite3.Connection, text: str) -> tuple[str, ...]:

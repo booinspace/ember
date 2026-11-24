@@ -45,8 +45,8 @@ def test_archive_speed_replays_identically_with_diagnostic_probes(
 
     plain, diagnostic = tmp_path / "plain.json", tmp_path / "profile.json"
     connect = sqlite3.connect
-    speed.run(root, encoder, plain, "precision_v1", diagnostic=False)
-    speed.run(root, encoder, diagnostic, "precision_v1", diagnostic=True)
+    speed.run(root, encoder, plain, diagnostic=False)
+    speed.run(root, encoder, diagnostic, diagnostic=True)
     assert sqlite3.connect is connect
     baseline = json.loads(plain.read_bytes())
     profiled = json.loads(diagnostic.read_bytes())

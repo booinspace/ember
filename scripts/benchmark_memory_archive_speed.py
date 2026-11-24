@@ -22,12 +22,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, JsonValue
 from scripts import benchmark_memory_amb as amb  # shared pinned input loader
-from scripts.benchmark_memory_amb_archive import ArchiveRanking, InputDocument, ingest
+from scripts.benchmark_memory_amb_archive import InputDocument, ingest
 from scripts.benchmark_memory_archive_profile import Trace, current, profile
 
 from ember_memory_abi.common import canonical_object_sha256
 from ember_memory_abi.errors import DeadlineExceededError
-from ember_memory_abi.interfaces import ArchiveQuery, ArchiveSearchResponse, RequestOptions
+from ember_memory_abi.interfaces import ArchiveQuery, ArchiveSearchResponse
 from ember_memory_abi.memory import ArchiveChunk
 from ember_memory_engine import CanonicalEngine, SourceGrant
 from ember_memory_engine.character import SqliteMemoryStore
@@ -181,15 +181,8 @@ class Sample:
     coverage_sha256: str | None = None
 
 
-def _request(case: Case, ranking: ArchiveRanking) -> ArchiveQuery:
-    return ArchiveQuery(
-        text=case.text,
-        source_store_ids=case.source_store_ids,
-        limit=case.limit,
-        options=RequestOptions(
-            extensions={"ember.archive_ranking": ranking} if ranking != "default" else {}
-        ),
-    )
+def _request(case: Case) -> ArchiveQuery:
+    return ArchiveQuery(text=case.text, source_store_ids=case.source_store_ids, limit=case.limit)
 
 
 def _sample(
@@ -282,16 +275,14 @@ def _summary(samples: list[Sample], traces: list[Trace | None]) -> dict[str, obj
 
 
 def _passes(
-    engine: CanonicalEngine, fixture: Fixture, ranking: ArchiveRanking, *, diagnostic: bool
+    engine: CanonicalEngine, fixture: Fixture, *, diagnostic: bool
 ) -> tuple[list[Sample], list[Trace | None]]:
     clients: dict[UUID, SqliteMemoryStore] = {}
     for case in fixture.cases:
         if case.character is not None and case.character not in clients:
             client = clients[case.character] = engine.character(case.character)
-            request = _request(
-                case.model_copy(update={"text": "Benchmark warmup probe", "limit": 1}), ranking
-            )
-            client.search_archive(request)
+            probe = case.model_copy(update={"text": "Benchmark warmup probe", "limit": 1})
+            client.search_archive(_request(probe))
 
     samples: list[Sample] = []
     traces: list[Trace | None] = []
@@ -307,7 +298,7 @@ def _passes(
             else:
                 seen.add(case.text)
                 client = clients[case.character]
-                request = _request(case, ranking)
+                request = _request(case)
                 trace = Trace() if diagnostic else None
                 token = current.set(trace) if trace is not None else None
                 start = perf_counter_ns()
@@ -328,9 +319,7 @@ def _passes(
     return samples, traces
 
 
-def run(
-    root: Path, encoder: Encoder, output: Path, ranking: ArchiveRanking, *, diagnostic: bool
-) -> None:
+def run(root: Path, encoder: Encoder, output: Path, *, diagnostic: bool) -> None:
     """Time two warm-process passes on disposable copy; diagnostic native work may overlap."""
     if output.exists() or not output.parent.is_dir():
         raise ValueError("Output must be a new file in an existing directory.")
@@ -347,7 +336,7 @@ def run(
             raise ValueError("Benchmark store differs from frozen fixture.")
         with profile(encoder) if diagnostic else nullcontext():
             with CanonicalEngine(store, encoder=encoder) as engine:
-                samples, traces = _passes(engine, fixture, ranking, diagnostic=diagnostic)
+                samples, traces = _passes(engine, fixture, diagnostic=diagnostic)
 
     checkout = Path(__file__).resolve().parents[1]
     git = amb._git  # pyright: ignore[reportPrivateUsage]
@@ -359,7 +348,7 @@ def run(
         "input_sha256": fixture.input_sha256,
         "encoder": encoder.specification.model_dump(mode="json"),
         "profiled": diagnostic,
-        "archive_ranking": ranking,
+        "archive_ranking": "default",
         "ember_commit": git(checkout, "rev-parse", "HEAD").decode().strip(),
         "engine_sha256": _tree_sha256(checkout / "ember-memory/packages/memory-engine/src", "*.py"),
         "benchmark_code_sha256": {
@@ -380,7 +369,7 @@ def run(
     with output.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, indent=2, allow_nan=False)
         stream.write("\n")
-    print(f"{fixture.dataset} ({ranking}, profiled={diagnostic}): {output}", flush=True)
+    print(f"{fixture.dataset} (profiled={diagnostic}): {output}", flush=True)
 
 
 def main() -> None:
@@ -395,7 +384,6 @@ def main() -> None:
     build.add_argument("--amb", type=Path, help="pinned AMB checkout; omit for synthetic fixture")
     build.add_argument("--fixtures", type=Path, help="pinned PMB JSON directory")
     bench.add_argument("--output", type=Path, required=True)
-    bench.add_argument("--ranking", choices=("default", "precision_v1"), default="precision_v1")
     bench.add_argument("--profile", action="store_true", help="install diagnostic-only probes")
     args = cli.parse_args()
     encoder = BgeEncoder(args.encoder, threads=1)
@@ -405,7 +393,7 @@ def main() -> None:
             cli.error("Pass both --amb and --fixtures for PMB, or neither for synthetic.")
         prepare(root, encoder, pmb=(args.amb, args.fixtures) if args.amb else None)
     else:
-        run(root, encoder, args.output, args.ranking, diagnostic=args.profile)
+        run(root, encoder, args.output, diagnostic=args.profile)
 
 
 if __name__ == "__main__":

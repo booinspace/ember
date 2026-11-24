@@ -18,7 +18,7 @@ from ember_memory_abi.archive import (
 )
 from ember_memory_abi.common import canonical_object_sha256, timestamp_from_datetime
 from ember_memory_abi.evidence import SourceRef, source_text_sha256
-from ember_memory_abi.interfaces import ArchiveQuery, RequestOptions
+from ember_memory_abi.interfaces import ArchiveQuery
 from ember_memory_abi.memory import ArchiveChunk
 from ember_memory_abi.temporal import SourceTimestamp
 from ember_memory_engine import CanonicalEngine
@@ -33,7 +33,6 @@ SPEC = ProcessingSpecRef(
 )
 
 type SearchMode = Literal["lexical", "hybrid"]
-type ArchiveRanking = Literal["default", "precision_v1"]
 
 
 @dataclass(frozen=True)
@@ -151,14 +150,11 @@ class ArchiveBenchmark:
         encoder: Encoder,
         mode: SearchMode,
         limit: int,
-        *,
-        archive_ranking: ArchiveRanking = "default",
     ) -> None:
         self.engine = CanonicalEngine(root, encoder=encoder)
         self.encoder = encoder
         self.mode: SearchMode = mode
         self.limit = limit
-        self.archive_ranking = archive_ranking
         self.units: dict[str | None, tuple[UUID, dict[UUID, str], UUID]] = {}
         self.index_documents = 0
         self.index_vectors = 0
@@ -187,18 +183,7 @@ class ArchiveBenchmark:
         if unit is None:
             return Retrieval((), 0.0, "no_unit")
         source, crosswalk, character = unit
-        if self.archive_ranking == "precision_v1":
-            request = ArchiveQuery(
-                text=query,
-                mode=self.mode,
-                source_store_ids=(source,),
-                limit=limit,
-                options=RequestOptions(extensions={"ember.archive_ranking": "precision_v1"}),
-            )
-        else:
-            request = ArchiveQuery(
-                text=query, mode=self.mode, source_store_ids=(source,), limit=limit
-            )
+        request = ArchiveQuery(text=query, mode=self.mode, source_store_ids=(source,), limit=limit)
         if self.mode == "hybrid":
             # Deep archive accepts only admitted query vectors. Count ordinary CPU encoding
             # here rather than prewarming on benchmark questions or changing service policy.

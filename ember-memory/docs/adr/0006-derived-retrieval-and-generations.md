@@ -85,8 +85,10 @@ through hydration and native completion; release the native lease immediately on
 submission. Check the caller's explicit deadline after indexed or fallback exact reads. Uncertified
 reads inspect all candidate payloads; unmetered requests can hash at most 4 MiB to certify reopened
 files. Skipped payloads are not individually diagnosed. No schema or default ranking change.
-Opt-in `ember.archive_ranking: precision_v1` separately gates weak semantic matches and
-question filler in hybrid mode. See [paired measurements](../../../docs/memory-benchmark.md).
+The `precision_v1` archive experiment did not ship in character chat and is retired in this
+checkout. Hybrid archive requests use the existing default ranker; the old
+`ember.archive_ranking` request key is rejected rather than silently changing results. No
+migration or index rebuild. See [historical measurements](../../../docs/memory-benchmark.md).
 
 One derived writer (two pending), one query encoder (two pending), and distinct
 foreground/deep native owners (two pending each) protect the realtime loop.

@@ -26,7 +26,7 @@ from statistics import median
 from struct import pack
 from tempfile import TemporaryDirectory
 from time import perf_counter_ns
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from benchmark_memory_archive_profile import Stage, Trace, current, profile
@@ -36,7 +36,7 @@ from ember_memory_abi.archive import ImportCursor, NormalizedArchiveBatch, Proce
 from ember_memory_abi.common import ContractModel, canonical_object_sha256
 from ember_memory_abi.errors import DeadlineExceededError
 from ember_memory_abi.evidence import SourceRef
-from ember_memory_abi.interfaces import ArchiveQuery, RequestOptions
+from ember_memory_abi.interfaces import ArchiveQuery
 from ember_memory_abi.memory import ArchiveChunk
 from ember_memory_engine import CanonicalEngine, SourceGrant
 from ember_memory_engine.character import SqliteMemoryStore
@@ -75,7 +75,6 @@ class Arguments(ContractModel):
     queries: int = Field(default=12, ge=1, le=5 * _TOPICS)
     append_records: int = Field(default=4, ge=1, le=128)
     seed: int = 29045
-    archive_ranking: Literal["default", "precision_v1"] = "default"
     profile: bool = False
 
 
@@ -296,18 +295,8 @@ def _scenario(
             raise RuntimeError("Active archive index did not catch up with the source outbox.")
         refreshed_size = path.stat().st_size
 
-    options = RequestOptions(
-        extensions={"ember.archive_ranking": args.archive_ranking}
-        if args.archive_ranking != "default"
-        else {}
-    )
     scope = tuple(library_ids)
-    requests = [
-        ArchiveQuery(
-            text=text, mode="hybrid", source_store_ids=scope, limit=_LIMIT, options=options
-        )
-        for text in texts
-    ]
+    requests = [ArchiveQuery(text=text, source_store_ids=scope, limit=_LIMIT) for text in texts]
     return {
         "libraries": libraries,
         "history_records": history,
@@ -357,7 +346,6 @@ def main() -> None:
         parser.add_argument(option, nargs="+", type=int, default=argparse.SUPPRESS, help=help_text)
     for option in ("--queries", "--append-records", "--seed"):
         parser.add_argument(option, type=int, default=argparse.SUPPRESS)
-    parser.add_argument("--archive-ranking", choices=("default", "precision_v1"), default="default")
     parser.add_argument("--profile", action="store_true", help="run a separate diagnostic pair")
     try:
         args = Arguments.model_validate(vars(parser.parse_args()))

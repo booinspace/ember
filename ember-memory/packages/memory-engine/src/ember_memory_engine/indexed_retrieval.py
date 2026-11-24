@@ -5,7 +5,6 @@ import sqlite3
 from concurrent.futures import Future, TimeoutError
 from contextlib import ExitStack, closing
 from dataclasses import dataclass
-from math import sqrt
 from pathlib import Path
 from time import monotonic
 from uuid import UUID
@@ -55,14 +54,7 @@ from .word_recall import (
     register_word_match,
 )
 
-_ARCHIVE_RANKING_KEY = "ember.archive_ranking"
-_ARCHIVE_PRECISION_PROFILE = "precision_v1"
-# Similarity floor for unit-normalized embeddings, not a calibrated probability.
-_ARCHIVE_MIN_COSINE = 0.75
 _ARCHIVE_CERTIFY_BYTES = 4 * 1024 * 1024
-_ARCHIVE_FILLER = frozenset(
-    "a an are at for from how it the to was were what when who with".split()
-)
 _ARCHIVE_HEADER_COLUMNS = (
     "d.id,d.kind,d.target_id,d.source_store_id,d.record_kind,d.record_id,"
     "d.revision,d.part_id,d.branch"
@@ -501,7 +493,6 @@ class IndexedRetriever:
         deep: bool = False,
         isolated: bool = False,
         memory_words: bool = False,
-        archive_precision: bool = False,
         archive_snapshot: _ArchiveSnapshot | None = None,
     ) -> tuple[
         IndexGeneration,
@@ -524,12 +515,6 @@ class IndexedRetriever:
             _attach(connection, state)
             terms = register_word_match(connection, text) if memory_words else ()
             lexical_text = " ".join(terms) if memory_words else text
-            if archive_precision:
-                lexical_text = " ".join(
-                    term
-                    for term in query_words(text, allow_filler_only=False)
-                    if term not in _ARCHIVE_FILLER
-                )
             connection.set_progress_handler(
                 lambda: int(
                     monotonic() > deadline
@@ -550,13 +535,6 @@ class IndexedRetriever:
                         "ON d.id=e.document_id WHERE " + scope
                     )
                     parameters = values
-                    max_distance = None
-                    if archive_precision:
-                        max_distance = (
-                            sqrt(2.0 * (1.0 - _ARCHIVE_MIN_COSINE))
-                            if generation.distance_metric == "l2"
-                            else 1.0 - _ARCHIVE_MIN_COSINE
-                        )
                     if plain_current and generation.layout == "ember.search-layout@0.6.0":
                         now = timestamp_to_unix_microseconds(
                             timestamp_from_datetime(state.database.clock.now())
@@ -568,11 +546,8 @@ class IndexedRetriever:
                         )
                         parameters = (now, now)
                     else:
-                        columns = (
-                            "e.document_id, v.distance" if archive_precision else "e.document_id"
-                        )
                         statement = (
-                            f"SELECT {columns} FROM vec_documents v JOIN embedding_records e ON "
+                            "SELECT e.document_id FROM vec_documents v JOIN embedding_records e ON "
                             "e.id=v.rowid WHERE v.embedding MATCH ? AND k=40 "
                             "AND v.rowid IN (" + eligible_ids + ") ORDER BY v.distance"
                         )
@@ -587,7 +562,6 @@ class IndexedRetriever:
                                 encoding=self.pool.query(text, deep=isolated),
                                 release=release,
                                 budget=state.read_budget,
-                                max_distance=max_distance,
                             )
                         )
                     except (EmbeddingError, EngineBusyError):
@@ -975,10 +949,6 @@ class IndexedRetriever:
                 self.pool.invalidate()
             self._epoch = epoch
         deadline = monotonic() + 0.5
-        precision = (
-            query.mode == "hybrid"
-            and query.options.extensions.get(_ARCHIVE_RANKING_KEY) == _ARCHIVE_PRECISION_PROFILE
-        )
         scope, values = _archive_eligibility(state, query)
         stores = canonical.execute(
             "SELECT DISTINCT source_store_id FROM source_grants WHERE capability='archive_search'"
@@ -1025,7 +995,6 @@ class IndexedRetriever:
                             deadline,
                             deep=True,
                             isolated=deep,
-                            archive_precision=precision,
                             archive_snapshot=snapshot,
                         )
                     except IndexError:
@@ -1067,11 +1036,6 @@ class IndexedRetriever:
                             "policy_epoch": epoch,
                             "soft_deadline_ms": 500,
                             "mode": query.mode,
-                            **(
-                                {_ARCHIVE_RANKING_KEY: _ARCHIVE_PRECISION_PROFILE}
-                                if precision
-                                else {}
-                            ),
                             "temporal": query.temporal.model_dump_json(),
                         }
                     },

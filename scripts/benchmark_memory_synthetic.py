@@ -31,7 +31,7 @@ from ember_memory_abi.evidence import (
     make_evidence_span,
     source_text_sha256,
 )
-from ember_memory_abi.interfaces import ArchiveQuery, MemoryQuery, RequestOptions
+from ember_memory_abi.interfaces import ArchiveQuery, MemoryQuery
 from ember_memory_abi.memory import (
     ArchiveChunk,
     CandidateMemory,
@@ -64,7 +64,6 @@ class Arguments(ContractModel):
     topics: int = Field(default=24, ge=2, le=128)
     distractors: int = Field(default=256, ge=0, le=2000)
     k: int = Field(default=5, ge=1, le=20)
-    archive_ranking: Literal["default", "precision_v1"] = "default"
 
 
 @dataclass(frozen=True)
@@ -284,13 +283,10 @@ def query(
     case: Case,
     id_map: dict[UUID, str],
     k: int,
-    archive_options: RequestOptions | None = None,
 ) -> Sample:
     started = perf_counter()
     if lane == "archive":
-        archive = store.search_archive(
-            ArchiveQuery(text=case.query, limit=k, options=archive_options or RequestOptions())
-        )
+        archive = store.search_archive(ArchiveQuery(text=case.query, limit=k))
         refs = [
             ref
             for item in archive.results
@@ -369,11 +365,6 @@ def run(args: Arguments) -> int:
         output.write("\n")
     encoder = BgeEncoder(args.encoder, threads=1)
     checks: dict[str, bool] = {}
-    archive_options = RequestOptions(
-        extensions={"ember.archive_ranking": args.archive_ranking}
-        if args.archive_ranking != "default"
-        else {}
-    )
     report: dict[str, object] = {
         "version": VERSION,
         "dataset": NAME,
@@ -387,7 +378,7 @@ def run(args: Arguments) -> int:
         "topics": args.topics,
         "distractors": args.distractors,
         "k": args.k,
-        "archive_ranking": args.archive_ranking,
+        "archive_ranking": "default",
         "scored_sessions": len(sessions),
         "fixture_sha256": canonical_object_sha256(
             {
@@ -436,12 +427,10 @@ def run(args: Arguments) -> int:
                 report["belief_index_seconds"] = perf_counter() - started
             store = engine.character(character)
             # First pass has distinct query text; second is repeated, not a process restart.
-            cold = [query(store, lane, case, ids, args.k, archive_options) for case in cases]
-            warm = [query(store, lane, case, ids, args.k, archive_options) for case in cases]
-            owner_hit = query(
-                engine.character(canary_character), lane, canary, ids, args.k, archive_options
-            )
-            outsider_hit = query(store, lane, canary, ids, args.k, archive_options)
+            cold = [query(store, lane, case, ids, args.k) for case in cases]
+            warm = [query(store, lane, case, ids, args.k) for case in cases]
+            owner_hit = query(engine.character(canary_character), lane, canary, ids, args.k)
+            outsider_hit = query(store, lane, canary, ids, args.k)
             checks[lane] = (
                 owner_hit.all_required is True
                 and "canary" not in outsider_hit.returned
@@ -476,7 +465,6 @@ def main() -> int:
     for path in ("--root", "--encoder"):
         parser.add_argument(path, type=Path, required=True)
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--archive-ranking", choices=("default", "precision_v1"), default="default")
     for option in ("--seed", "--topics", "--distractors", "--k"):
         parser.add_argument(option, type=int, default=argparse.SUPPRESS)
     return run(Arguments.model_validate(vars(parser.parse_args())))

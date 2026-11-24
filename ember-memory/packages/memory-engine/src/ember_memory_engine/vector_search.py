@@ -5,7 +5,6 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from contextlib import suppress
 from dataclasses import dataclass
-from math import isfinite
 from pathlib import Path
 from time import monotonic
 
@@ -27,7 +26,6 @@ class VectorRequest:
     encoding: Future[bytes]
     release: Callable[[], None]
     budget: ReadBudget | None = None
-    max_distance: float | None = None
 
 
 class VectorPool:
@@ -95,16 +93,7 @@ class VectorPool:
                 rows = connection.execute(
                     request.statement, (vector, *request.parameters)
                 ).fetchall()
-            if request.max_distance is None:
-                return tuple(dict.fromkeys(row_int(row, "document_id") for row in rows))
-            matches: dict[int, None] = {}
-            for row in rows:
-                distance: object = row["distance"]
-                if not isinstance(distance, (float, int)) or not isfinite(distance):
-                    raise IndexError()
-                if 0 <= distance <= request.max_distance:
-                    matches[row_int(row, "document_id")] = None
-            return tuple(matches)
+            return tuple(dict.fromkeys(row_int(row, "document_id") for row in rows))
         except sqlite3.Error as error:
             raise IndexError() from error
         finally:

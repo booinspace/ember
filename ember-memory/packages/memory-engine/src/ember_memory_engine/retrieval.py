@@ -497,6 +497,9 @@ def search_archive(
     check_deadline(state.database.clock, query.options.deadline_at)
     if query.cursor is not None:
         raise UnsupportedQueryError()
+    # Refuse the retired experiment rather than silently returning a different result set.
+    if "ember.archive_ranking" in query.options.extensions:
+        raise UnsupportedQueryError()
     epoch = state.policy_epoch(connection)
     if state.retriever is not None and query.text:
         indexed = state.retriever.archive(state, connection, query, deep=deep)

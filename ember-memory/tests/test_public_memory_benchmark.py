@@ -99,11 +99,8 @@ def test_labels_do_not_enter_request() -> None:
     assert document_evidence(changed.gold_ids, ("first", "later"))["reciprocal_rank"] == 1.0
 
 
-@pytest.mark.parametrize("ranking", ["default", "precision_v1"])
-def test_archive_ranking_receipt_and_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ranking: Literal["default", "precision_v1"]
-) -> None:
-    """Recorded ranking matches the native request; defaults omit request options."""
+def test_archive_mode_receipt_and_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Recorded mode matches the native request without ranking overrides."""
     from scripts import benchmark_memory_amb as amb
     from scripts.benchmark_memory_amb import PublicQuery
     from scripts.benchmark_memory_amb_archive import InputDocument
@@ -122,8 +119,6 @@ def test_archive_ranking_receipt_and_request(
         "--mode",
         "hybrid",
     ]
-    if ranking != "default":
-        argv.extend(("--archive-ranking", ranking))
     monkeypatch.setattr(sys, "argv", argv)
     monkeypatch.setattr(amb, "_git", Mock(return_value=amb.AMB_COMMIT.encode()))
     monkeypatch.setattr(amb, "BgeEncoder", Mock(return_value=TestEncoder()))
@@ -149,20 +144,17 @@ def test_archive_ranking_receipt_and_request(
 
     monkeypatch.setattr(SqliteMemoryStore, "search_archive", capture)
     assert amb.main() == 0
-    assert json.loads(output.read_text(encoding="utf-8"))["archive_ranking"] == ranking
+    receipt = json.loads(output.read_text(encoding="utf-8"))
     (request,) = requests
-    assert request.mode == "hybrid"
-    if ranking == "default":
-        assert "options" not in request.model_fields_set
-        assert request.options.extensions == {}
-    else:
-        assert request.options.extensions == {"ember.archive_ranking": "precision_v1"}
+    assert receipt["mode"] == request.mode == "hybrid"
+    assert receipt["archive_ranking"] == "default"
+    assert not request.options.extensions
 
 
-def test_precision_ranking_rejects_lexical(
+def test_retired_archive_ranking_flag_is_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Reject the opt-in before loading files or encoder for the default lexical mode."""
+    """Fail instead of replaying the old experiment with different ranking."""
     from scripts import benchmark_memory_amb as amb
 
     monkeypatch.setattr(
@@ -184,7 +176,7 @@ def test_precision_ranking_rejects_lexical(
     )
     with pytest.raises(SystemExit, match="2"):
         amb.main()
-    assert "--archive-ranking precision_v1 requires --mode hybrid" in capsys.readouterr().err
+    assert "unrecognized arguments: --archive-ranking precision_v1" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("lane", ["seeded-belief", "explicit-scope"])
