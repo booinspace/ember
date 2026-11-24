@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 from pydantic import Field, ValidationError
 
 from ember_memory_abi.common import timestamp_from_datetime
-from ember_memory_abi.errors import MemoryError
+from ember_memory_abi.errors import DeadlineExceededError, MemoryError
 from ember_memory_abi.interfaces import (
     AsyncMemoryClient,
     ContextRequest,
@@ -23,6 +23,7 @@ from ember_memory_abi.interfaces import (
 from ember_memory_abi.memory import FactPayload, Memory
 from ember_memory_abi.related import (
     AsyncRelatedLookupClient,
+    ConflictStatus,
     ContextDependencies,
     MemoryReference,
     RelatedRequest,
@@ -68,7 +69,13 @@ from .public_search import (
     public_search_query,
 )
 from .task_work import AmbiguousWork, WorkDigest, WorkUnavailable, lookup_prefix
-from .temporal import CalendarResolver, CalendarScope
+from .temporal import (
+    CURRENT_BELIEF,
+    HISTORICAL_IDENTITY,
+    CalendarResolver,
+    CalendarScope,
+    belief_intent,
+)
 from .tool_workflow import (
     BUILD,
     INSPECT,
@@ -418,8 +425,11 @@ class CharacterCore:
                 ("deep_recall_" + investigation.outcome,),
                 observation.prompts,
             )
+        typed = belief_intent(text)
+        if typed is not None and investigation is not None:
+            raise GatewayError("deep_context_invalidated")
         stripped = text.strip()
-        work_query = lookup_prefix(text) if self.lookup_work is not None else None
+        work_query = lookup_prefix(text) if self.lookup_work is not None and typed is None else None
         if self.task_notice is not None and stripped.casefold().rstrip("?.!") in {
             "task updates",
             "any task updates",
@@ -452,7 +462,7 @@ class CharacterCore:
                     return replace(local, local_reply=await self.submit_task(goal, identity))
                 return local
 
-        goal = build_goal(text)
+        goal = build_goal(text) if typed is None else None
         if (
             self.submit_managed is not None
             and goal
@@ -467,11 +477,14 @@ class CharacterCore:
                 ("tool_plan_needs_order",),
                 observation.prompts,
             )
-        hosted = hosted_web_request(
-            text, self.public_web.search_binding, self.public_web.read_binding
+        hosted = (
+            hosted_web_request(text, self.public_web.search_binding, self.public_web.read_binding)
+            if typed is None
+            else None
         )
         if (
-            investigation is None
+            typed is None
+            and investigation is None
             and hosted is None
             and work_query is None
             and not stripped.casefold().startswith("build:")
@@ -517,8 +530,10 @@ class CharacterCore:
                 ("public_web_input_rejected",),
                 observation.prompts,
             )
-        if investigation is None and (
-            self.public_web.search_binding or self.public_web.read_binding
+        if (
+            typed is None
+            and investigation is None
+            and (self.public_web.search_binding or self.public_web.read_binding)
         ):
             try:
                 query = public_search_query(text)
@@ -541,7 +556,7 @@ class CharacterCore:
                     ("public_web_input_rejected",),
                     observation.prompts,
                 )
-        elif investigation is None and public_page_requested(text):
+        elif typed is None and investigation is None and public_page_requested(text):
             return self._local_turn(
                 text,
                 identity,
@@ -551,17 +566,23 @@ class CharacterCore:
                 observation.prompts,
             )
 
-        resolved = self.calendar.resolve(text, reference_at, self.last_scope)
+        resolved = (
+            self.calendar.resolve_belief(typed, reference_at)
+            if typed is not None
+            else self.calendar.resolve(text, reference_at, self.last_scope)
+        )
         if (
             resolved.status == "clarification"
             and self.interpreter is not None
             and investigation is None
+            and typed is None
         ):
             resolved = await self.interpreter.resolve(
                 text, reference_at, self.last_scope, self.calendar, self.context_id
             )
         if resolved.status == "clarification":
-            self.last_scope = None
+            if typed is None:
+                self.last_scope = None
             return self._clarification(
                 text, identity, observed_at, resolved.reasons, observation.prompts
             )
@@ -571,7 +592,7 @@ class CharacterCore:
         ):
             raise GatewayError("deep_context_invalidated")
         query = resolved.query
-        if resolved.scope is not None:
+        if typed is None and resolved.scope is not None:
             self.last_scope = resolved.scope
         capabilities = (
             await self.memory.capabilities() if self.recall_enabled else MemoryCapabilities()
@@ -584,6 +605,20 @@ class CharacterCore:
             self.batch_validation
             and "selected_context_dependencies_v1" in capabilities.retrieval_modes
         )
+        current_belief = typed is not None and typed[0] == "current"
+        if typed is not None and (
+            not selected_certification
+            or (CURRENT_BELIEF if current_belief else HISTORICAL_IDENTITY)
+            not in capabilities.supported_extensions
+            or (current_belief and "current_conflict_status_v1" not in capabilities.retrieval_modes)
+            or (
+                not current_belief
+                and "historical_context_validation_v1" not in capabilities.retrieval_modes
+            )
+        ):
+            return self._clarification(
+                text, identity, observed_at, ("typed_recall_unavailable",), observation.prompts
+            )
         if (
             self.recall_enabled
             and resolved.scope is not None
@@ -600,30 +635,59 @@ class CharacterCore:
             raise GatewayError("deep_context_invalidated")
         profile_advertised = "profile_pins_v1" in capabilities.retrieval_modes
         profile_supported = profile_advertised and self.batch_validation
-        context = (
-            await self.memory.retrieve_context(
-                ContextRequest(
-                    memory_query=query.model_copy(update={"limit": 100}),
-                    memory_token_budget=65536,
-                    include_memory_search=(
-                        investigation is None
-                        or "pins_only_context_v1" not in capabilities.retrieval_modes
-                    ),
-                    include_pinned=True,
-                    include_profile=profile_supported,
-                    include_summaries=False,
+        context_request = ContextRequest(
+            memory_query=query.model_copy(update={"limit": 100}),
+            memory_token_budget=65536,
+            include_memory_search=(
+                investigation is None or "pins_only_context_v1" not in capabilities.retrieval_modes
+            ),
+            include_pinned=typed is None,
+            include_profile=typed is None and profile_supported,
+            include_current_conflicts=current_belief,
+            include_summaries=False,
+        )
+        loop = asyncio.get_running_loop()
+        typed_deadline = loop.time() + 0.15 if typed is not None else None
+        if self.recall_enabled:
+            try:
+                async with asyncio.timeout_at(typed_deadline):
+                    context = await self.memory.retrieve_context(context_request)
+            except (TimeoutError, DeadlineExceededError):
+                if typed is None:
+                    raise
+                return self._clarification(
+                    text, identity, observed_at, ("typed_recall_timeout",), observation.prompts
                 )
-            )
-            if self.recall_enabled
-            else RetrievalContext(
+        else:
+            context = RetrievalContext(
                 coverage=RetrievalCoverage(
                     status="unavailable",
                     index_status="unavailable",
                     reason_codes=("client_retention_unqualified",),
                 )
             )
-        )
         base = context.fast_dependencies if self.batch_validation else None
+        if typed is not None and (
+            context.coverage.status != "complete" or base is None or not context.memories
+        ):
+            reason = (
+                "typed_recall_no_match"
+                if context.coverage.status == "complete" and base is not None
+                else "typed_recall_unavailable"
+            )
+            return self._clarification(text, identity, observed_at, (reason,), observation.prompts)
+        if (
+            current_belief
+            and base is not None
+            and {(item.memory.memory_id, item.memory.revision) for item in base.current_conflicts}
+            != {(row.memory.memory_id, row.memory.revision) for row in context.memories}
+        ):
+            raise GatewayError("typed_recall_validation_unavailable")
+        conflicts = frozenset(
+            (item.memory.memory_id, item.memory.revision)
+            for item in (base.current_conflicts if current_belief and base else ())
+            if item.unresolved
+        )
         if self.recall_enabled and resolved.scope is not None and base is None:
             raise GatewayError("temporal_delivery_validation_unavailable")
         omissions = (
@@ -667,16 +731,14 @@ class CharacterCore:
             )
             memories = []
             omissions.extend(deep_context.omissions if deep_context else ())
-        previous = (
-            await self.sink.recent(self.context_id, identity)
-            if isinstance(self.sink, ConversationSink)
-            else [old for old in self.history if old.request_id != identity]
-        )
-        excerpt = (
-            await self.sink.lookup(self.context_id, identity, text)
-            if isinstance(self.sink, ConversationSink)
-            else None
-        )
+        previous: list[CompletedTurn] = []
+        excerpt = None
+        if typed is None:
+            if isinstance(self.sink, ConversationSink):
+                previous = await self.sink.recent(self.context_id, identity)
+                excerpt = await self.sink.lookup(self.context_id, identity, text)
+            else:
+                previous = [old for old in self.history if old.request_id != identity]
         live_history: list[CompletedTurn] = []
         for old in previous[-64:]:
             # Keep marked web replies and legacy shortcuts out of model history.
@@ -712,18 +774,23 @@ class CharacterCore:
                 live_history.append(old)
             else:
                 live_history.append(replace(old, assistant="", dependencies=(), certificate=None))
-        historical = resolved.scope is not None and resolved.scope.axis == "recorded"
+        historical = resolved.scope is not None and (
+            typed is not None or resolved.scope.axis == "recorded"
+        )
+
+        def recalled(rows: list[Memory]) -> PromptMessage:
+            return recalled_message(rows, historical=historical, conflicts=conflicts)
+
         selected_values: list[Memory] = []
         seen_values: set[str] = set()
         for memory in memories:
             key = json.dumps(recall_value(memory, historical=historical), sort_keys=True)
+            if (memory.memory_id, memory.revision) in conflicts:
+                key += ":unresolved_conflict"
             if key in seen_values:
                 omissions.append("duplicate_memory_value")
                 continue
-            if (
-                message_bytes(recalled_message([*selected_values, memory], historical=historical))
-                > self.memory_ceiling
-            ):
+            if message_bytes(recalled([*selected_values, memory])) > self.memory_ceiling:
                 omissions.append("memory_category_budget")
                 continue
             selected_values.append(memory)
@@ -830,6 +897,14 @@ class CharacterCore:
             qualified: set[tuple[UUID, int]] = set()
             selections: list[TemporalSelection] = []
             current_pins = {(m.memory_id, m.revision) for m in pins}
+            conflict_status: dict[tuple[UUID, int], ConflictStatus] = {}
+            for parent in parents:
+                for item in parent.current_conflicts:
+                    key = (item.memory.memory_id, item.memory.revision)
+                    if key in selected_refs:
+                        if key in conflict_status and conflict_status[key] != item:
+                            raise ValueError("Inconsistent conflict status.")
+                        conflict_status[key] = item
             for parent in parents:
                 for group in parent.selections:
                     members = tuple(
@@ -843,6 +918,7 @@ class CharacterCore:
                         qualified.update((ref.memory_id, ref.revision) for ref in members)
             certificate = ContextDependencies(
                 selections=tuple(selections),
+                current_conflicts=tuple(conflict_status.values()),
                 archive_sources=archive_sources,
                 excerpt_sources=excerpt_sources,
                 memories=tuple(MemoryReference(memory_id=i, revision=r) for i, r in refs),
@@ -872,7 +948,7 @@ class CharacterCore:
                     raise GatewayError("context_dependency_overflow") from None
 
         work: tuple[WorkDigest, ...] = ()
-        if self.lookup_work and investigation is None:
+        if typed is None and self.lookup_work and investigation is None:
             try:
                 async with asyncio.timeout(0.15):
                     work = await self.lookup_work(
@@ -902,6 +978,17 @@ class CharacterCore:
                 observation.prompts,
             )
 
+        frame = recall_frame(resolved.scope, investigation.outcome if investigation else None)
+        if current_belief:
+            frame = PromptMessage(
+                role="system",
+                content="Use only recalled claims. Report conflicts without picking a winner.",
+            )
+        elif typed is not None and frame is not None:
+            frame = frame.model_copy(
+                update={"content": frame.content + " Use only recalled claims."}
+            )
+
         def compose() -> tuple[PromptMessage, ...]:
             messages = [PromptMessage(role="system", content=instructions)]
             capabilities: list[str] = []
@@ -917,15 +1004,14 @@ class CharacterCore:
                 )
             if capabilities:
                 messages.append(PromptMessage(role="system", content="\n".join(capabilities)))
-            framing = recall_frame(resolved.scope, investigation.outcome if investigation else None)
-            if framing is not None:
-                if message_bytes(framing) > 216:
+            if frame is not None:
+                if message_bytes(frame) > 216:
                     raise GatewayError("prompt_overflow")
-                messages.append(framing)
+                messages.append(frame)
             if pins:
                 messages.append(pins_message(pins))
             if memories:
-                messages.append(recalled_message(memories, historical=historical))
+                messages.append(recalled(memories))
             if deep_context is not None:
                 messages.extend(deep_context.messages)
             if excerpt is not None:
@@ -996,6 +1082,10 @@ class CharacterCore:
                     observation.prompts,
                 )
             raise GatewayError("prompt_overflow")
+        if typed is not None and not memories:
+            return self._clarification(
+                text, identity, observed_at, ("typed_recall_unavailable",), observation.prompts
+            )
         references, certificate = dependencies()
 
         async def certify(
@@ -1007,15 +1097,20 @@ class CharacterCore:
                 and isinstance(self.memory, AsyncRelatedLookupClient)
             ):
                 try:
-                    checked = await self.memory.lookup_related(
-                        RelatedRequest(
-                            intent="validate",
-                            dependencies=certificate,
-                            refresh_dependencies=True,
-                            row_budget=512,
-                            call_budget=8,
+                    async with asyncio.timeout_at(typed_deadline):
+                        checked = await self.memory.lookup_related(
+                            RelatedRequest(
+                                intent="validate",
+                                dependencies=certificate,
+                                refresh_dependencies=True,
+                                row_budget=512,
+                                call_budget=8,
+                            )
                         )
-                    )
+                except (TimeoutError, DeadlineExceededError):
+                    if typed is not None:
+                        raise TimeoutError from None
+                    return False, None
                 except MemoryError:
                     return False, None
                 return (
@@ -1024,18 +1119,22 @@ class CharacterCore:
                 )
             return await self.current(references, certificate), certificate
 
-        valid, certificate = await certify(references, certificate)
-        if not valid:
-            # One stale member cannot trigger unbounded per-ID probes. Drop dependent
-            # history together, then certify only the remaining prompt once.
-            history = [
-                replace(old, assistant="", dependencies=(), certificate=None) for old in history
-            ]
-            references, certificate = dependencies()
-            omissions.append("history_dependency_invalid")
+        try:
             valid, certificate = await certify(references, certificate)
-            if not valid:
-                raise GatewayError("context_invalidated")
+            if not valid and typed is None:
+                # Drop stale dependent history together before one retry.
+                history = [
+                    replace(old, assistant="", dependencies=(), certificate=None) for old in history
+                ]
+                references, certificate = dependencies()
+                omissions.append("history_dependency_invalid")
+                valid, certificate = await certify(references, certificate)
+        except TimeoutError:
+            return self._clarification(
+                text, identity, observed_at, ("typed_recall_timeout",), observation.prompts
+            )
+        if not valid:
+            raise GatewayError("context_invalidated")
             messages = compose()
         thinking = self.turn_view.thinking_for(identity)
         request = GatewayRequest(
@@ -1051,12 +1150,13 @@ class CharacterCore:
         literal_tools = tuple(
             task.definition(name)
             for name, task in self.task_tools.items()
-            if not thinking and not task.use_current_turn
+            if typed is None and not thinking and not task.use_current_turn
         )
         turn_tools = tuple(
             task.definition(name)
             for name, task in self.task_tools.items()
-            if not thinking
+            if typed is None
+            and not thinking
             and task.use_current_turn
             and len(text) <= _TASK_TEXT_LIMIT
             and text.startswith(task.required_prefix)
@@ -1127,7 +1227,7 @@ class CharacterCore:
             accounting=PromptAccounting(
                 identity=message_bytes(messages[0]),
                 pins=message_bytes(pins_message(pins)) if pins else 0,
-                memories=message_bytes(recalled_message(memories, historical=historical))
+                memories=message_bytes(recalled(memories))
                 if memories
                 else deep_context.memory_bytes
                 if deep_context
@@ -1135,13 +1235,7 @@ class CharacterCore:
                 excerpts=(deep_context.excerpt_bytes if deep_context else 0)
                 + (message_bytes(PromptMessage(role="user", content=excerpt)) if excerpt else 0),
                 recent_and_current=current_cost + sum(self._history_cost(old) for old in history),
-                framing=message_bytes(frame)
-                if (
-                    frame := recall_frame(
-                        resolved.scope, investigation.outcome if investigation else None
-                    )
-                )
-                else 0,
+                framing=message_bytes(frame) if frame else 0,
                 serialized_total=prompt_cost(messages),
             ),
         )
@@ -1156,7 +1250,9 @@ class CharacterCore:
                 for item in investigation.memories
                 if (item.memory.memory_id, item.memory.revision) in selected_deep
             )
-        self.turn_view.prepared(identity, view_rows, references, certificate, historical=historical)
+        self.turn_view.prepared(
+            identity, view_rows, references, certificate, historical=historical, conflicts=conflicts
+        )
         return prepared
 
     @staticmethod
@@ -1194,6 +1290,11 @@ class CharacterCore:
             else "What calendar date or range did you mean? Please include a four-digit year."
         )
         deep_outcomes = {
+            "belief_topic_required": "Name the subject to recall.",
+            "belief_history_scope_required": "Give an event date or recorded-before cutoff.",
+            "typed_recall_unavailable": "Scoped recall is unavailable. No other sources used.",
+            "typed_recall_timeout": "Scoped recall timed out. No other sources used.",
+            "typed_recall_no_match": "No eligible accepted claim matched that subject and scope.",
             "deep_recall_deferred": (
                 "Deep recall is deferred while foreground work is active. Please try again."
             ),
@@ -1549,6 +1650,20 @@ class CharacterCore:
                             raise GatewayError("unexpected_thinking_stream")
                         self.turn_view.append_thinking(event.request_id, event.text)
                     if event.kind == "text":
+                        if (
+                            not delivered
+                            and turn.certificate is not None
+                            and belief_intent(turn.user) is not None
+                            and any(
+                                status.unresolved for status in turn.certificate.current_conflicts
+                            )
+                        ):
+                            event = event.model_copy(
+                                update={
+                                    "text": "Unresolved conflict in recalled claims.\n\n"
+                                    + event.text
+                                }
+                            )
                         self.turn_view.stage(event.request_id, "answering")
                         delivered.append(event.text)
                     if event.kind == "end":
@@ -1581,6 +1696,15 @@ class CharacterCore:
             complete and (not finished or delivered != generated)
         ):
             raise GatewayError("delivery_receipt_invalid")
+        if (
+            (complete or delivered)
+            and belief_intent(turn.user) is not None
+            and not await self.current(turn.dependencies, turn.certificate)
+        ):
+            await self._delivered(turn, "", False)
+            self.pending_delivery = None
+            self.turn_view.invalidate(request_id)
+            raise GatewayError("context_invalidated")
         await self._delivered(turn, delivered, complete)
         self.pending_delivery = None
 

@@ -84,6 +84,7 @@ class CurrentTurnView:
         certificate: ContextDependencies | None,
         *,
         historical: bool = False,
+        conflicts: frozenset[tuple[UUID, int]] = frozenset(),
     ) -> None:
         """Expose only final selected values and retain their exact private certificate."""
         entry = self.entry
@@ -94,12 +95,10 @@ class CurrentTurnView:
         used = 0
         truncated = False
         for category, memory in rows:
-            value = RecalledValue(
-                category=category,
-                data=adapter.validate_python(
-                    recall_value(memory, historical=historical and category != "profile")
-                ),
-            )
+            data = recall_value(memory, historical=historical and category != "profile")
+            if category == "recall" and (memory.memory_id, memory.revision) in conflicts:
+                data["status"] = "unresolved_conflict"
+            value = RecalledValue(category=category, data=adapter.validate_python(data))
             size = len(value.model_dump_json().encode("utf-8"))
             if len(values) >= 100 or used + size > 65536:
                 truncated = True

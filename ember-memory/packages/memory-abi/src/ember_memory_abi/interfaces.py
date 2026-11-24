@@ -149,6 +149,7 @@ class ContextRequest(ContractModel):
     include_memory_search: bool = Field(default=True, exclude_if=lambda value: value)
     include_pinned: bool = True
     include_profile: bool = False
+    include_current_conflicts: bool = Field(default=False, exclude_if=lambda value: not value)
     include_summaries: bool = True
     options: RequestOptions = Field(default_factory=RequestOptions)
 

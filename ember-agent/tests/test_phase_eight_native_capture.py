@@ -25,18 +25,21 @@ from .test_gateway import FakeUpstream, configuration
 
 SOURCE = "Please call me Rówan."
 UNCERTAIN = "Maybe call me Rówan."
+CONFLICT = "Please call me Sól."
 
 
 class NativeUpstream(FakeUpstream):
     def __init__(self) -> None:
         super().__init__()
         self.extracted: list[str] = []
+        self.foreground: list[GatewayRequest] = []
         self.capture_started = asyncio.Event()
         self.capture_release = asyncio.Event()
         self.capture_release.set()
 
     async def generate(self, value: GatewayRequest) -> AsyncGenerator[NativeFrame, None]:
         if value.workload != "P3":
+            self.foreground.append(value)
             async for frame in super().generate(value):
                 yield frame
             return
@@ -45,7 +48,7 @@ class NativeUpstream(FakeUpstream):
         self.capture_started.set()
         await self.capture_release.wait()
         claims = ()
-        if message in {SOURCE, UNCERTAIN}:
+        if message in {SOURCE, UNCERTAIN, CONFLICT}:
             # Even a model that tries stripping uncertainty cannot bypass native policy.
             claims = (
                 DatedFactClaim(
@@ -54,7 +57,7 @@ class NativeUpstream(FakeUpstream):
                     quote=message.removeprefix("Maybe ") if message == UNCERTAIN else message,
                     quote_start=None,
                     predicate="user.preferred_name",
-                    value="Rówan",
+                    value="Sól" if message == CONFLICT else "Rówan",
                     entity_name=None,
                     modality="FACTUAL_ASSERTION",
                     confidence=0.99,
@@ -177,16 +180,30 @@ def test_http_capture_stages_during_next_reply_and_recalls_exactly_while_connect
             assert evidence.evidence.span.end_codepoint == len(SOURCE)
             assert result.memory.origin is None
 
+            conflict = await text.turn(identity, uuid4(), CONFLICT)
+            await text.acknowledge(identity, conflict.request_id)
+            await until_idle(runtime)
+            summary = await asyncio.to_thread(runtime.capture.summary)
+            assert summary.accepted == 1 and summary.deferred == 2 and summary.complete == 3
+
             settings = await runtime.capture_settings()
             await runtime.configure_capture(
                 CaptureControl(enabled=False, revision=settings.revision)
             )
-            third = await text.turn(identity, uuid4(), "Please call me Ember's test user.")
+            third = await text.turn(identity, uuid4(), "current: User preferred name")
+            assert third.retained_memories == 1
+            assert third.text == "Unresolved conflict in recalled claims.\n\nvisible"
+            prompt = "\n".join(message.content for message in upstream.foreground[-1].messages)
+            assert "Rówan" in prompt and "unresolved_conflict" in prompt
+            assert "Maybe" not in prompt and "Sól" not in prompt
+            pending = runtime.core.pending_delivery
+            assert pending is not None and pending[0].certificate is not None
+            assert pending[0].certificate.current_conflicts[0].unresolved is True
             await text.acknowledge(identity, third.request_id)
             async with asyncio.timeout(5):
                 while (await runtime.processing_status()).capture_status != "disabled":
                     await asyncio.sleep(0.01)
-            assert upstream.extracted == [SOURCE, UNCERTAIN]
+            assert upstream.extracted == [SOURCE, UNCERTAIN, CONFLICT]
             assert (await runtime.capture_settings()).enabled is False
         finally:
             upstream.capture_release.set()

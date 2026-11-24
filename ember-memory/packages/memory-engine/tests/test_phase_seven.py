@@ -464,21 +464,51 @@ def test_literal_owned_object_repeated_support_and_no_index_rebuild(tmp_path: Pa
 
 
 def test_manual_rejection_resolves_conflict_and_survives_new_job(tmp_path: Path) -> None:
+    from ember_memory_abi.interfaces import RequestOptions
+    from ember_memory_engine.identity_recall import CURRENT_BELIEF
     from ember_memory_engine.processing_review import ReviewService
 
     with CanonicalEngine(tmp_path / "data") as engine:
         character = engine.create_character().store_id
+        store = engine.character(character)
+        request = ContextRequest(
+            memory_query=MemoryQuery(
+                text="User",
+                mode="structured",
+                options=RequestOptions(extensions={CURRENT_BELIEF: {}}),
+            ),
+            memory_token_budget=4096,
+            include_pinned=False,
+            include_current_conflicts=True,
+        )
         append_native(engine, character, "Please call me Rowan.")
-        accept(
+        accepted = accept(
             engine,
             character,
             extract(engine, character, NativeModel("user.preferred_name", "Rowan"))[0],
         )
+        clean = store.retrieve_context(request).fast_dependencies
+        assert clean is not None and len(clean.current_conflicts) == 1
+        assert clean.current_conflicts[0].memory == accepted.memory
+        assert not clean.current_conflicts[0].unresolved
         append_native(engine, character, "Please call me Sky.")
         model = NativeModel("user.preferred_name", "Sky")
         candidate = extract(engine, character, model)[-1]
         assert accept(engine, character, candidate).outcome == "deferred"
         assert not context(engine, character).profile.automatic
+        conflicted = store.retrieve_context(request).fast_dependencies
+        assert conflicted is not None and conflicted.current_conflicts[0].unresolved
+        assert conflicted.sources == clean.sources
+        assert str(candidate) not in conflicted.model_dump_json()
+        assert not store.lookup_related(RelatedRequest(intent="validate", dependencies=clean)).valid
+        assert (
+            store.lookup_related(
+                RelatedRequest(
+                    intent="validate", dependencies=conflicted, refresh_dependencies=True
+                )
+            ).dependencies
+            == conflicted
+        )
         service = ProcessingService(engine, character)
         job = service.definitions()[0]
         reviewer = ReviewService(service, authority=AUTHORITY)
@@ -490,8 +520,18 @@ def test_manual_rejection_resolves_conflict_and_survives_new_job(tmp_path: Path)
         )
         reviewer.apply(review.model_copy(update={"entries": selected}))
         assert context(engine, character).profile.automatic
+        resolved = store.retrieve_context(request).fast_dependencies
+        assert resolved is not None and resolved.current_conflicts == clean.current_conflicts
+        assert not store.lookup_related(
+            RelatedRequest(intent="validate", dependencies=conflicted)
+        ).valid
         newer = extract(engine, character, model)[-1]
         assert accept(engine, character, newer).outcome == "rejected"
+        after_rejection = store.retrieve_context(request).fast_dependencies
+        assert (
+            after_rejection is not None
+            and after_rejection.current_conflicts == clean.current_conflicts
+        )
 
 
 def test_source_revision_edit_omits_old_profile_and_invalidates_context(tmp_path: Path) -> None:

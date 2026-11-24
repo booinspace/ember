@@ -48,6 +48,13 @@ class TemporalSelection(ContractModel):
         return self
 
 
+class ConflictStatus(ContractModel):
+    """Status of an exact current claim; never identifies a deferred candidate or its sources."""
+
+    memory: MemoryReference
+    unresolved: bool
+
+
 class ContextDependencies(ContractModel):
     """Small fast-path certificate; policy changes invalidate rather than widen access."""
 
@@ -62,6 +69,9 @@ class ContextDependencies(ContractModel):
     archive_sources: Annotated[
         tuple[SourceRef, ...], Field(max_length=256, exclude_if=lambda value: not value)
     ] = ()
+    current_conflicts: Annotated[
+        tuple[ConflictStatus, ...], Field(max_length=100, exclude_if=lambda value: not value)
+    ] = ()
     policy_epoch: NonnegativeInteger
     selection_epoch: NonnegativeInteger | None = None
     valid_until: UtcTimestamp | None = None
@@ -73,6 +83,11 @@ class ContextDependencies(ContractModel):
             (ref.memory_id, ref.revision) for group in self.selections for ref in group.memories
         ]
         references = {(ref.memory_id, ref.revision) for ref in self.memories}
+        conflicts = [
+            (item.memory.memory_id, item.memory.revision) for item in self.current_conflicts
+        ]
+        if len(conflicts) != len(set(conflicts)) or not set(conflicts) <= references:
+            raise ValueError("Conflict status must uniquely qualify an existing dependency.")
         if len(selected) != len(set(selected)) or not set(selected) <= references:
             raise ValueError("Temporal groups must uniquely select existing dependencies.")
         if not {ref.identity_key() for ref in self.excerpt_sources} <= {

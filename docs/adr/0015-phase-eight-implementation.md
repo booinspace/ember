@@ -509,3 +509,19 @@ lookup, and archive evidence remain unchanged. The [paired replay](../memory-ben
 checks scoped eligibility before limits (P5-AC-02). Offline tests check current validity and
 delivery expiry (P8-AC-26) for this route only. Raw-history extraction (P6-AC-10), live chat
 quality, and scale were not run. No deployment.
+
+## Explicit typed recall
+
+`current: <subject>` selects accepted current claims only. `history: <subject> in <period>`
+selects exact identities with event-time overlap; `history: <subject> recorded-before <date>`
+selects the pre-cutoff recorded view. Dates use the configured conversation timezone. Missing
+or ambiguous scope clarifies. Typed turns do not read pins, profile, raw archive, recent
+excerpts, or prior replies. They do not invoke interpretation, tools, or deep recall.
+
+The engine returns an unresolved-conflict flag for each selected current revision, never the
+deferred candidate or its evidence. Prompt packing retains flags only for surviving revisions.
+The visible reply discloses unresolved conflict even if the model omits it. Final certification,
+streaming, and acknowledgment recheck revisions, flags, temporal scope, and source policy.
+Initial typed retrieval and certification share a 150 ms soft deadline after capability lookup.
+Timeouts and empty results do not fall back. Ordinary recall and archive ranking are unchanged.
+See [validation](../memory-benchmark.md#typed-recall-on-miku-fedora) for scope and limits.

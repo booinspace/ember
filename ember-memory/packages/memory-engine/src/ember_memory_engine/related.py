@@ -134,10 +134,14 @@ def validate(
             for group in dependencies.selections
             for ref in group.memories
         }
+        conflict_refs = {
+            (item.memory.memory_id, item.memory.revision) for item in dependencies.current_conflicts
+        }
         current_refs = tuple(
             ref
             for ref in dependencies.memories
             if (str(ref.memory_id), ref.revision) not in historical_refs
+            or (ref.memory_id, ref.revision) in conflict_refs
         )
         current_placeholders = ",".join("(?,?)" for _ in current_refs) or "(NULL,NULL)"
         current_parameters = tuple(
@@ -211,6 +215,18 @@ def validate(
             )
             required.add(reference.identity_key())
             required_sources.append(reference)
+    if dependencies.current_conflicts and not reasons:
+        from .related_conflicts import statuses
+
+        actual, examined = statuses(
+            state,
+            connection,
+            tuple(item.memory for item in dependencies.current_conflicts),
+            row_budget=min(64, request.row_budget - rows_count),
+        )
+        rows_count += examined
+        if actual != dependencies.current_conflicts:
+            reasons.append("current_conflict_status_changed_or_unavailable")
     if request.refresh_dependencies:
         # This is selected-result certification, not authority supplied by the caller.
         # Hard evidence comes from canonical metadata; explicit raw excerpts stay scoped.

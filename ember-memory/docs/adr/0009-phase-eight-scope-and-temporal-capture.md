@@ -74,10 +74,17 @@ claims only, reject ambiguous typo matches, and match the resulting canonical ID
 at most 256 query words, materializes at most 257 alias rows to detect cap overflow, and shares
 identity lookup's 150 ms soft deadline. Blank, unmatched, or ambiguous input can return nothing;
 no archive fallback. Evidence headers, current authorization, and delivery certificate expiry
-still apply. No identity writes, storage migration, or character-chat routing change.
+still apply. No identity writes or storage migration.
 
 See [paired seeded replay](../../../docs/memory-benchmark.md#current-belief-preview) for
 acceptance evidence and remaining raw-ingest and answer-quality gates.
+
+`current_conflict_status_v1` adds an opt-in status-only context read for selected current
+revisions. Bounded inspection checks exact native conflict edges, review, suppression and
+source headers. It never returns deferred claim text, source excerpts, or candidate IDs.
+Both positive and negative statuses are rechecked on context validation. Exceeding the edge
+budget cannot certify absence. [Typed chat routing](../../../docs/adr/0015-phase-eight-implementation.md#explicit-typed-recall)
+uses this capability; default search, grants, and canonical records are unchanged.
 
 ## Bounded deep engine profile
 

@@ -2,6 +2,8 @@
 
 import re
 
+from .temporal import belief_intent
+
 # ponytail: recognize leading, specific recall questions; expand with tested transcript examples.
 _NATURAL_V1 = re.compile(
     r"(?:(?:hey[, ]+)?ember[, ]+)?"
@@ -16,6 +18,8 @@ _NATURAL_V1 = re.compile(
 
 def deep_recall_query(text: str, *, natural: bool = False) -> str | None:
     """Return explicit command query or opt-in natural question; preserve temporal wording."""
+    if belief_intent(text) is not None:
+        return None
     stripped = text.strip()
     for prefix in ("/recall ", "recall deeply "):
         if stripped.casefold().startswith(prefix):

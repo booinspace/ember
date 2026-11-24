@@ -9,9 +9,22 @@ from zoneinfo import ZoneInfo
 from pydantic import Field
 
 from ember_memory_abi.common import ContractModel, timestamp_from_datetime
-from ember_memory_abi.interfaces import MemoryQuery, TemporalQuery
+from ember_memory_abi.interfaces import MemoryQuery, RequestOptions, TemporalQuery
 
 type TimeAxis = Literal["event", "observed", "recorded"]
+type BeliefScope = Literal["current", "history"]
+
+CURRENT_BELIEF = "ember.current_belief_v1"
+HISTORICAL_IDENTITY = "ember.identity_recall_v1"
+_BELIEF_PREFIX = re.compile(r"^\s*(?:(?:/recall|recall deeply)\s+)?(current|history):\s*", re.I)
+
+
+def belief_intent(text: str) -> tuple[BeliefScope, str] | None:
+    """Recognize explicit typed recall, including existing recall command prefixes."""
+    match = _BELIEF_PREFIX.match(text)
+    if match is None:
+        return None
+    return ("current" if match[1].lower() == "current" else "history", text[match.end() :])
 
 
 class CalendarScope(ContractModel):
@@ -84,7 +97,12 @@ class CalendarResolver:
         self.zone = ZoneInfo(timezone)
 
     def resolve(
-        self, text: str, reference: datetime, previous: CalendarScope | None = None
+        self,
+        text: str,
+        reference: datetime,
+        previous: CalendarScope | None = None,
+        *,
+        axis_override: TimeAxis | None = None,
     ) -> QueryResolution:
         """Resolve one supported scope; ambiguity and invalid dates require clarification."""
         if reference.tzinfo is None:
@@ -92,7 +110,7 @@ class CalendarResolver:
         if len(text) > 8192:
             return QueryResolution(status="clarification", reasons=("query_too_long",))
         lower = text.casefold()
-        axis = requested_axis(text)
+        axis = axis_override or requested_axis(text)
         if re.search(r"\b\d{1,2}[/.]\d{1,2}[/.]\d{2,4}\b", lower):
             return QueryResolution(status="clarification", reasons=("ambiguous_numeric_date",))
         followup = re.search(
@@ -238,6 +256,52 @@ class CalendarResolver:
         except (ValueError, OverflowError):
             return QueryResolution(status="clarification", reasons=("invalid_calendar_date",))
         return self.from_scope(text, match.span(), start, end, axis)
+
+    def resolve_belief(
+        self, intent: tuple[BeliefScope, str], reference: datetime
+    ) -> QueryResolution:
+        """Select accepted claims only; never reinterpret missing scope as ordinary recall."""
+        kind, topic = intent
+        if not topic.strip() or len(topic) > 8192:
+            return QueryResolution(status="clarification", reasons=("belief_topic_required",))
+        if kind == "current":
+            return QueryResolution(
+                status="resolved",
+                query=MemoryQuery(
+                    text=topic,
+                    mode="structured",
+                    kinds=("fact",),
+                    options=RequestOptions(extensions={CURRENT_BELIEF: {}}),
+                ),
+            )
+        recorded = re.search(r"\brecorded[- ]before\b", topic, re.I)
+        topic = topic.replace(recorded.group(), "before", 1) if recorded else topic
+        axis = "recorded" if recorded else requested_axis(topic)
+        if axis == "event" and re.search(r"\b(?:before|after)\b", topic, re.I):
+            return QueryResolution(
+                status="clarification", reasons=("belief_history_scope_required",)
+            )
+        resolved = self.resolve(topic, reference, axis_override=axis)
+        if resolved.status == "clarification":
+            return resolved
+        if resolved.scope is None or resolved.scope.axis == "observed":
+            return QueryResolution(
+                status="clarification", reasons=("belief_history_scope_required",)
+            )
+        if not resolved.query.text:
+            return QueryResolution(status="clarification", reasons=("belief_topic_required",))
+        return resolved.model_copy(
+            update={
+                "query": resolved.query.model_copy(
+                    update={
+                        "mode": "structured",
+                        "kinds": ("fact",),
+                        "modalities": ("FACTUAL_ASSERTION", "PREFERENCE", "BELIEF"),
+                        "options": RequestOptions(extensions={HISTORICAL_IDENTITY: {}}),
+                    }
+                )
+            }
+        )
 
     def from_scope(
         self, text: str, span: tuple[int, int], start: datetime, end: datetime, axis: TimeAxis

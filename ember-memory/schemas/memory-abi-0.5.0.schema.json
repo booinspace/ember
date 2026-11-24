@@ -643,6 +643,35 @@
       "minimum": 0,
       "type": "number"
     },
+    "ConflictStatus": {
+      "additionalProperties": false,
+      "description": "Status of an exact current claim; never identifies a deferred candidate or its sources.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/ExtensionKey"
+          },
+          "title": "Extensions",
+          "type": "object"
+        },
+        "memory": {
+          "$ref": "#/$defs/MemoryReference"
+        },
+        "unresolved": {
+          "title": "Unresolved",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "memory",
+        "unresolved"
+      ],
+      "title": "ConflictStatus",
+      "type": "object"
+    },
     "ContentPart": {
       "additionalProperties": false,
       "description": "Ordered visible text or a typed absence, unsupported part, or reasoning exclusion.",
@@ -738,6 +767,15 @@
           },
           "maxItems": 256,
           "title": "Archive Sources",
+          "type": "array"
+        },
+        "current_conflicts": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ConflictStatus"
+          },
+          "maxItems": 100,
+          "title": "Current Conflicts",
           "type": "array"
         },
         "excerpt_sources": {
@@ -846,6 +884,11 @@
           },
           "title": "Extensions",
           "type": "object"
+        },
+        "include_current_conflicts": {
+          "default": false,
+          "title": "Include Current Conflicts",
+          "type": "boolean"
         },
         "include_memory_search": {
           "default": true,

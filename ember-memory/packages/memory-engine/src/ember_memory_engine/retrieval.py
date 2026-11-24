@@ -714,6 +714,13 @@ def retrieve_context(
     """Pack pins, memories and archive records with all delivered source dependencies."""
     check_deadline(state.database.clock, request.options.deadline_at)
     epoch = state.policy_epoch(connection)
+    if request.include_current_conflicts and (
+        identity_recall.CURRENT_BELIEF not in request.memory_query.options.extensions
+        or request.include_pinned
+        or request.include_profile
+        or not request.include_memory_search
+    ):
+        raise UnsupportedQueryError()
     pinned = (
         get_pinned(state, connection, PageRequest(limit=32, options=request.options))
         if request.include_pinned
@@ -968,6 +975,23 @@ def retrieve_context(
     if selection and selection.valid_until:
         boundary = min(b for b in (selection.valid_until, context_certificate.valid_until) if b)
         context_certificate = context_certificate.model_copy(update={"valid_until": boundary})
+    if request.include_current_conflicts:
+        from .related_conflicts import statuses
+
+        conflicts, _ = statuses(state, connection, context_certificate.memories, row_budget=64)
+        if conflicts is None:
+            return RetrievalContext(
+                coverage=context_coverage.model_copy(
+                    update={
+                        "status": "partial",
+                        "reason_codes": (*context_coverage.reason_codes, "current_conflict_budget"),
+                    }
+                )
+            )
+        context_certificate = context_certificate.model_copy(
+            update={"current_conflicts": conflicts}
+        )
+
     dependency_map = {
         item.evidence.source.identity_key(): item.evidence.source
         for result in memories

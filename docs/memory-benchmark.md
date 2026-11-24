@@ -443,6 +443,23 @@ accepted IDs lost at each step. Then compare time-aware and bounded multi-hop ev
 same context budget with matched answer models and prompts. Profile vector deadline misses before
 trying e-means. Do not route live chat to this preview on PMB alone.
 
+## Typed recall on Miku Fedora
+
+Serial forward and reverse replays used frozen PMB inputs and scorer, based on `6bf3f75`.
+The typed overlay preserved every verdict, raw ID set, coverage status and reason in each lane.
+Independently seeded stores differed in tie ordering (4–8 cases per pair); ordered parity is
+not claimed. Each arm had 71 completed requests, five skips, one missing user store, and no
+partials, timeouts or deferrals. No encoder, extraction model, answer model, or judge ran.
+
+| Lane | Passes (active) | Forward p95, base / overlay | Reverse p95, base / overlay |
+| --- | --- | ---: | ---: |
+| Exact scoped identities | 71/77 (37/43) | 1.48 / 1.54 ms | 1.46 / 1.57 ms |
+| Current-belief identities | 77/77 (43/43) | 1.59 / 1.61 ms | 1.64 / 1.62 ms |
+
+Receipts: `results/typed-recall.LbTfF7/` on Miku, copied to `.local/typed-recall/`.
+These search-only timings predate final delivery refinements. They do not measure conflict
+certification, ordinary recall latency, or chat/answer quality. Final caller tests run on macOS.
+
 ## Public reference protocol
 
 Use the [Agent Memory Benchmark](https://github.com/vectorize-io/agent-memory-benchmark) split and
