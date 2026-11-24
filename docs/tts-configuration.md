@@ -61,6 +61,56 @@ controls are available. A compatible provider without that advertisement still s
 using its configured model, voice and speed. This amendment does not promise new UI
 capabilities or synthesis quality for a provider whose installed service was not exercised.
 
+## Kokoro 82M custom blends on Windows
+
+Use the existing CPU installation from `scripts/setup_speech.ps1`. From the
+Ember checkout, use the following speech settings in the deployment profile.
+Keep its input/recognition settings and replace the example Ember checkout path
+if needed. The relative paths assume the profile lives in `.local/config`.
+
+```toml
+[services.tts]
+endpoint = "http://127.0.0.1:8880"
+mode = "managed"
+executable = "../tools/kokoro-fastapi/.venv/Scripts/python.exe"
+working_directory = "../tools/kokoro-fastapi"
+arguments = ["-m", "uvicorn", "--app-dir", "C:/Users/operator/repos/ember/scripts", "kokoro_tts:load_app", "--factory", "--host", "127.0.0.1", "--port", "8880", "--no-access-log"]
+startup_timeout_seconds = 60.0
+
+[audio]
+# Replace these speech keys in the existing [audio] section.
+tts_model = "kokoro"
+tts_voice = "bf_emma"
+tts_speed = 1.0
+```
+
+1. On the Windows host, open [Kokoro's player](http://127.0.0.1:8880/web/).
+   Add voices and adjust their weights to preview the blend. Keep the service on
+   loopback because the player and voice export are local operator tools.
+2. Save the blend on the Windows host. For example, this mixes Emma and Lily
+   in a 2:1 ratio and uses the British English pipeline.
+
+   ```powershell
+   .\scripts\save_kokoro_blend.ps1 -Name bf_ember -Blend 'bf_emma(2)+bf_lily(1)'
+   ```
+
+   Use the language prefix of the first voice for the new ID (for example,
+   `bf_` for British English or `af_` for American English). Choose a new
+   name for each revision. The script saves a voice pack in the installed
+   Kokoro catalog and refuses to overwrite an existing voice.
+3. Restart Ember to refresh the picker. Select `bf_ember` in voice settings,
+   or set `tts_voice = "bf_ember"` in the deployment to use it at each start.
+
+### Custom blend verification (2026-11-24)
+
+P8-AC-10 provider evidence: an isolated Miku Windows CPU service running the
+installed Kokoro 82M pin served the preview page, saved a 2:1 Emma/Lily pack,
+refused to overwrite it, listed its ID and streamed 24 kHz mono PCM from that ID.
+Two blend requests returned first PCM in 462-499 ms and rendered five seconds
+of audio in 0.94-1.00 s. These were provider measurements. The macOS root gate
+passed formatting, lint, strict types and 1,578 tests with 17 skips. Live Ember
+activation and browser or physical playback of Kokoro were not run.
+
 ## Verification
 
 Configuration tests cover legacy sections, explicit Phonon defaults, unchanged Kokoro

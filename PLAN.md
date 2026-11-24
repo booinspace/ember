@@ -5179,6 +5179,11 @@ retains Kokoro through the existing compatible adapter and legacy TOML alias, an
 makes startup pace an explicit deployment value. Phonon deployment defaults select
 Juniper at 1.1×; engine-specific voice IDs do not enter character/memory logic.
 
+The [Kokoro blend workflow](docs/tts-configuration.md#kokoro-82m-custom-blends-on-windows)
+uses the installed provider's CPU preview and export. The optional Kokoro launcher
+advertises existing browser controls and the catalog of saved voices at startup.
+Provider-level checks supplement P8-AC-10 without extending its physical-audio evidence.
+
 ## Phase 10 implementation status
 
 Direct MCP is implemented through the existing tool/task owner with pinned SDK

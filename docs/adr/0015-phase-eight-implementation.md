@@ -194,6 +194,13 @@ without logging the activation capability. Existing explicit configuration and
 setup-only dependency/frontend installation rules remain unchanged.
 
 
+## Kokoro 82M custom voice packs
+
+The opt-in Kokoro launcher uses the installed CPU provider's weighted blend
+preview and export on loopback. The operator saves a generated pack under a new
+voice ID. Ember selects it through the existing speech transport and voice picker
+after startup catalog validation. See the [setup and blend runbook](../tts-configuration.md#kokoro-82m-custom-blends-on-windows).
+
 ## Installed voice and browser corrections: 2026-10-14
 
 The configured main-device runtime now starts installed CPU Whisper/Silero inputs

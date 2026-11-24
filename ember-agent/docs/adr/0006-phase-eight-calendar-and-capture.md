@@ -120,6 +120,14 @@ without logging the activation capability. Existing explicit configuration and
 setup-only dependency/frontend installation rules remain unchanged.
 
 
+## Kokoro voice picker compatibility
+
+The optional Kokoro launcher adds capability metadata to the provider's voice
+catalog. Kokoro owns warmup, preview, voice export and PCM streaming. Ember uses
+the same idle-turn voice selection and startup catalog validation as Phonon.
+The Windows blend command saves a new installed voice pack with no overwrite.
+See the [blend runbook](../../../docs/tts-configuration.md#kokoro-82m-custom-blends-on-windows).
+
 ## Installed voice and browser corrections: 2026-10-14
 
 The configured main-device runtime now starts installed CPU Whisper/Silero inputs
