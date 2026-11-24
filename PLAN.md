@@ -4003,6 +4003,8 @@ dates, reviewed enrichment and historical delivery; they are distinct from deep 
   existing prompt/reference bounds. Follow-ups do not automatically start deep recall.
   [Supporting source follow-ups](docs/adr/0015-phase-eight-implementation.md#supporting-source-follow-ups)
   revalidate one exact evidence span from the previous acknowledged reply, without archive search.
+  Exact wordings bypass inference; likely paraphrases use one bounded local intent proposal that
+  cannot select evidence or widen access.
 - **P8-AC-28:** Independently opt-in interpretation defaults off and uses at most one
   bounded schema-constrained foreground P0 call through the gateway. Validate proposed
   intent/fields/calendar bounds/anchor support; no SQL, grants, identity or mutation

@@ -236,6 +236,15 @@ reported voice ready and its existing character index available. No additional
 private import review/approval/seeding or primary-character conversation occurred.
 
 
+## Supporting source paraphrases
+
+- **P8-AC-27, synthetic browser API passed:** exact and paraphrased requests reach the
+  same verifier. Both exercise ambiguity, missing or interrupted replies, forgetting,
+  source deselection, and invalidation before receipt. Rejected local proposals do not
+  run a lookup or generate a quote. No archive expansion.
+- [Paired replay](memory-benchmark.md#source-follow-up-replay) measures quote delivery
+  separately from the scripted router. Live Strata classification and latency not run.
+
 ## Deep archive relevance deployment preview
 
 - **P8-AC-13, option routing passed:** authenticated synthetic browser API tests cover

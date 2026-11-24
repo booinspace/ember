@@ -70,8 +70,9 @@ from .public_search import (
     profile_links,
     search_has_link,
 )
-from .recall_intent import source_followup
+from .recall_intent import source_followup, source_intent_candidate
 from .source_evidence import SourceAnchor, supporting_anchor, verified_quote, verified_source
+from .source_intent import propose_source_intent
 from .task_work import AmbiguousWork, WorkDigest, WorkUnavailable, lookup_prefix
 from .temporal import (
     CURRENT_BELIEF,
@@ -153,6 +154,7 @@ class PreparedTurn:
     workflow_executed: bool = False
     page_followup: PageFollowup | None = None
     source_anchor: SourceAnchor | None = None
+    source_lookup: bool = False
 
 
 @dataclass
@@ -612,6 +614,30 @@ class CharacterCore:
                 ("tool_plan_needs_order",),
                 observation.prompts,
             )
+
+        if (
+            conversation_tools
+            and self.recall_enabled
+            and page is None
+            and goal is None
+            and intent is None
+            and source_intent_candidate(text)
+        ):
+            proposal = await propose_source_intent(
+                self.model, self.model_tag, self.context_id, text
+            )
+            if proposal is None:
+                return self._local_turn(
+                    text,
+                    identity,
+                    observed_at,
+                    "I couldn’t check whether you were asking for a supporting source. "
+                    "If you were, try ‘What was the original source of that memory?’",
+                    ("source_intent_unavailable",),
+                    observation.prompts,
+                )
+            if proposal.intent == "source_followup":
+                return await self._prepare_source(observation)
 
         submit_build = self.submit_build
         if goal is not None and (
@@ -1418,10 +1444,8 @@ class CharacterCore:
             (reason,),
             observation.prompts,
         )
-        if proof is None:
-            return turn
-        refs = tuple((ref.memory_id, ref.revision) for ref in proof.memories)
-        return replace(turn, dependencies=refs, certificate=proof)
+        refs = tuple((ref.memory_id, ref.revision) for ref in proof.memories) if proof else ()
+        return replace(turn, dependencies=refs, certificate=proof, source_lookup=True)
 
     @staticmethod
     def _history_messages(turn: CompletedTurn) -> tuple[PromptMessage, ...]:
@@ -2003,8 +2027,8 @@ class CharacterCore:
         if (
             (complete or delivered)
             and (
-                belief_intent(turn.user) is not None
-                or source_followup(turn.user)
+                turn.source_lookup
+                or belief_intent(turn.user) is not None
                 or turn.page_followup is not None
             )
             and not await self.current(turn.dependencies, turn.certificate)

@@ -356,7 +356,11 @@ reply from the current conversation. When it had one unambiguous recalled memory
 competing source context, the core retains its exact supporting span and revision in memory.
 It reads that span through `evidence_read`, preserves the prior time selector, and revalidates
 before delivery. Multiple claims clarify; missing or invalid evidence abstains. Quote lookup
-has a 500 ms soft bound. No model call, archive fallback, or new persisted metadata. A
+has a 500 ms soft bound. Exact wordings bypass inference. For short, likely paraphrases,
+one local foreground call receives only the current question and proposes `source_followup`
+or `other`, with a four-second deadline. `other` continues normal routing; invalid or
+unavailable classification asks for a rephrase. Both source routes use the same verifier
+and acknowledgment checks. No archive fallback or new persisted metadata. A
 supporting span does not prove first occurrence or model attribution. See
 [paired replay](../../../docs/memory-benchmark.md#source-follow-up-replay).
 

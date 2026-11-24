@@ -97,7 +97,8 @@ The experimental main-device runtime has installed browser/speech evidence; the 
 The [current-belief preview](0015-phase-eight-implementation.md#current-belief-preview) is opt-in;
 seeded retrieval evidence does not qualify chat routing or raw-history extraction.
 [Supporting source follow-ups](0015-phase-eight-implementation.md#supporting-source-follow-ups)
-use exact evidence from the prior acknowledged reply, not archive ranking.
+use exact evidence from the prior acknowledged reply, not archive ranking. Likely paraphrases
+can reach the same verifier via one bounded local intent proposal.
 [Deep archive relevance](0015-phase-eight-implementation.md#deep-archive-relevance-preview)
 is a separate default-off deployment preview for deep investigations.
 

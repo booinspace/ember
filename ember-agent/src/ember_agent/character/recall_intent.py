@@ -31,6 +31,33 @@ def source_followup(text: str) -> bool:
     return _SOURCE_FOLLOWUP.fullmatch(normalized) is not None
 
 
+# ponytail: broad cues only decide whether to spend one model call; they don't select a route.
+_EVIDENCE_CUE = re.compile(
+    r"\b(?:sources?|provenance|cit(?:e|ation)|quot(?:e|ation)|verbatim|original(?:ly)?|"
+    r"(?:exact|actual) (?:line|words|wording|message|passage))\b",
+    re.I,
+)
+_REFERENCE_CUE = re.compile(
+    r"\b(?:it|that|this|previous|last|earlier|above|memor(?:y|ies)|recall(?:ed)?|"
+    r"message|passage|said|wrote|mentioned|told)\b",
+    re.I,
+)
+
+
+def source_intent_candidate(text: str) -> bool:
+    """Gate one local proposal on short, source-like input, not particular sentence shapes."""
+    text = text.strip()
+    return (
+        0 < len(text.encode()) <= 512
+        and len(text.splitlines()) == 1
+        and not text.startswith("/")
+        and not text.casefold().startswith("recall deeply ")
+        and "://" not in text
+        and _EVIDENCE_CUE.search(text) is not None
+        and _REFERENCE_CUE.search(text) is not None
+    )
+
+
 def deep_recall_query(text: str, *, natural: bool = False) -> str | None:
     """Return explicit command query or opt-in natural question; preserve temporal wording."""
     if belief_intent(text) is not None:

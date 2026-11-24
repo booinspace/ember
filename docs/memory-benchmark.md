@@ -512,6 +512,15 @@ uv run --locked --offline python -m pytest -qs \
   ember-agent/tests/test_source_followup.py
 ```
 
+Local paraphrase routing replay uses authenticated in-process browser HTTP turn and
+acknowledgment endpoints. Four paraphrases and four near misses, each repeated three
+times with independent two-turn conversations: **12/12 vs 0/12** exact quotes with and
+without the proposal; **0/12** near misses read evidence in either arm. Exact wording
+still makes no inference call; unrelated chat makes no routing call. In the focused
+macOS run, paraphrase turn+receipt p95 was **4.08 vs 3.66 ms**; scripted proposal stream
+p95 was **0.03 ms**. These are routing integration checks with pre-scripted labels, not
+live classification accuracy, inference latency, or answer quality.
+
 Independent AMB regression: all 77 PMB verdicts, ID sets, and coverage matched `6bf3f75`
 for hybrid archive (**9/77**) and seeded current-belief (**77/77**). Archive order also
 matched on all 77 cases. Receipts: `.local/benchmarks/memory/source-followup.PPfaiE/`.

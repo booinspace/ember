@@ -186,6 +186,12 @@ Inspection shows ordered event/state periods, modality and inclusion reasons.
 Source links open already-authorized exact passages; another passage in the same
 record is not treated as the cited evidence.
 
+After a reply with one unambiguous recalled memory, ask “What was the original
+source of that memory?” for the verified passage. Likely paraphrases such as
+“Can you get the raw source of that memory?” use the local model only to choose
+the route. If it cannot classify the request, use the first wording to bypass
+inference. Missing or ambiguous supporting evidence still blocks quoting.
+
 To preview the corroborated hybrid archive filter, set this at the top level of
 the deployment TOML, before any `[table]` header:
 
