@@ -437,7 +437,7 @@ class LocalRuntime:
             token,
             native_temporal_specification(
                 self.config.model_tag,
-                self.config.model_digest,
+                self.config.model_digest.removeprefix("sha256:"),
                 timezone=self.config.recall_timezone,
                 workload="P3",
             ),

@@ -10,8 +10,9 @@ import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from time import monotonic
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from livekit import api, rtc
 
@@ -879,5 +880,48 @@ def test_cancelled_phonon_spawn_stops_child_before_return(
             assert not owner.children
         finally:
             released.set()
+
+    asyncio.run(exercise())
+
+
+def test_runtime_recovery_releases_only_its_previous_reservation(tmp_path: Path) -> None:
+    from ember_agent.runtime.livekit_runtime import (
+        _claim_reservation_owner,
+        _release_reservation_owner,
+        _ReservationOwner,
+    )
+
+    async def exercise() -> None:
+        endpoint = "http://127.0.0.1:18110"
+        first, current, unrelated = uuid4(), uuid4(), uuid4()
+        reservations = {first, unrelated}
+        path = tmp_path / "realtime-owner.json"
+
+        async def gateway(request: httpx.Request) -> httpx.Response:
+            identity = UUID(request.url.path.rsplit("/", 1)[-1])
+            assert request.method == "PUT"
+            assert json.loads(request.content) == {"connected": False}
+            reservations.discard(identity)
+            return httpx.Response(200)
+
+        client = HttpGatewayClient(
+            endpoint,
+            "synthetic",
+            client=httpx.AsyncClient(base_url=endpoint, transport=httpx.MockTransport(gateway)),
+        )
+        try:
+            path.write_text(
+                _ReservationOwner(endpoint=endpoint, identity=first).model_dump_json(),
+                encoding="utf-8",
+            )
+            owner = _ReservationOwner(endpoint=endpoint, identity=current)
+            await _claim_reservation_owner(path, client, owner)
+            assert reservations == {unrelated}
+            assert _ReservationOwner.model_validate_json(path.read_bytes()) == owner
+            reservations.add(current)
+            await _release_reservation_owner(path, client, current)
+            assert reservations == {unrelated} and not path.exists()
+        finally:
+            await client.aclose()
 
     asyncio.run(exercise())

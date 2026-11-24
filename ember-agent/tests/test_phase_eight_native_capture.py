@@ -82,8 +82,10 @@ def test_http_capture_stages_during_next_reply_and_recalls_exactly_while_connect
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def exercise() -> None:
-        config = configuration(tmp_path).model_copy(
+        base = configuration(tmp_path)
+        config = base.model_copy(
             update={
+                "model_digest": "sha256:" + base.model_digest.removeprefix("sha256:"),
                 "data_root": tmp_path / "data",
                 "runtime_root": tmp_path / "runtime",
                 "system_prompt_file": tmp_path / "prompts" / "system.md",

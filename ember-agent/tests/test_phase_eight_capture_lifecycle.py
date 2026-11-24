@@ -203,3 +203,53 @@ def test_missing_background_credentials_block_without_repeated_idle_drains(tmp_p
             await runtime.aclose()
 
     asyncio.run(exercise())
+
+
+def test_disconnect_releases_reservation_while_capture_is_waiting() -> None:
+    async def exercise() -> None:
+        started = asyncio.Event()
+        disconnected = asyncio.Event()
+        capture_released = asyncio.Event()
+        resumed = asyncio.Event()
+        events: list[str] = []
+        identity = uuid4()
+
+        async def reserve(_: UUID, connected: bool) -> None:
+            events.append("reserve" if connected else "release")
+            if not connected:
+                disconnected.set()
+
+        async def quiesce() -> None:
+            events.append("quiesce")
+
+        async def permit(_: UUID, idle: bool) -> None:
+            events.append("permit" if idle else "fence")
+
+        async def consolidate(allowed: Callable[[], bool], context: UUID | None) -> int:
+            if context == identity:
+                started.set()
+                await capture_released.wait()
+                assert not allowed()
+            else:
+                assert context is None and allowed()
+                resumed.set()
+            return 0
+
+        lifecycle = CaptureLifecycle(
+            identity, reserve, quiesce, consolidate, idle=lambda: True, permit=permit
+        )
+        lifecycle.connection_changed(True)
+        lifecycle.start()
+        try:
+            await asyncio.wait_for(started.wait(), 2)
+            lifecycle.connection_changed(False)
+            await asyncio.wait_for(disconnected.wait(), 2)
+            assert events == ["reserve", "permit", "quiesce", "release"]
+            assert not resumed.is_set()
+            capture_released.set()
+            await asyncio.wait_for(resumed.wait(), 2)
+        finally:
+            capture_released.set()
+            await lifecycle.aclose()
+
+    asyncio.run(exercise())

@@ -8,6 +8,7 @@ from typing import Literal
 
 import pytest
 
+from ember_memory_abi.errors import RevisionConflictError
 from ember_memory_abi.interfaces import MemoryQuery
 from ember_memory_engine import CanonicalEngine, SourceGrant
 from ember_memory_engine.capture import CaptureCheckpoint, CaptureService, CaptureSettings
@@ -469,3 +470,48 @@ def test_failed_checkpoint_is_visible_without_blocking_later_capture(tmp_path: P
         assert service.pending()[0].job_id == original_job
         assert not asyncio.run(service.drain(CaptureModel("user.preferred_name", "Rowan"), worker))
         assert not service.pending() and len(service.processing.definitions()) == 2
+
+
+@pytest.mark.parametrize("failed_stage", ["pinned_job", "acceptance"])
+def test_unrecoverable_checkpoint_does_not_block_next_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_stage: str
+) -> None:
+    with CanonicalEngine(tmp_path / "data") as engine, ThreadPoolExecutor(max_workers=1) as worker:
+        character = engine.create_character().store_id
+        append_native(engine, character, "Please call me Rowan.")
+        append_native(engine, character, "Please call me Rowan.")
+        capture = CaptureService(engine, character)
+        first, second = capture.pending()
+        if failed_stage == "pinned_job":
+            from uuid import uuid4
+
+            capture._mark(first.delivery_key, "processing", uuid4())
+            code = "job_not_found"
+        else:
+            real_accept = NativeAcceptanceService.accept
+            attempts = 0
+
+            def accept(
+                service: NativeAcceptanceService, request: NativeAcceptanceRequest
+            ) -> NativeAcceptanceReceipt:
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise RevisionConflictError()
+                return real_accept(service, request)
+
+            monkeypatch.setattr(NativeAcceptanceService, "accept", accept)
+            code = "revision_conflict"
+
+        assert not asyncio.run(capture.drain(CaptureModel("user.preferred_name", "Rowan"), worker))
+        (failed,) = capture.pending()
+        assert (failed.delivery_key, failed.status, failed.error_code) == (
+            first.delivery_key,
+            "failed",
+            code,
+        )
+        assert failed.job_id is not None and second.delivery_key != first.delivery_key
+        assert capture.summary().accepted == capture.summary().complete == 1
+        (found,) = engine.character(character).search(MemoryQuery()).results
+        (source,) = engine.character(character).get_sources(found.memory.memory_id)
+        assert source.quote == "Please call me Rowan."

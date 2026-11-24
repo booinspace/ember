@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import APIRouter
 from livekit import api, rtc
-from pydantic import ValidationError
+from pydantic import UUID4, ValidationError
 
 from ember_memory_abi.errors import MemoryError
 from ember_memory_abi.related import ContextDependencies, RelatedRequest
@@ -38,7 +38,7 @@ from .browser_control import BrowserControl
 from .browser_server import BrowserServer
 from .coding_api import coding_routes, coding_token
 from .composition import LocalRuntime
-from .config import ConfigurationError, DeploymentConfig
+from .config import ConfigurationError, DeploymentConfig, RuntimeModel
 from .console import read_line
 from .livekit_config import LiveKitCredentials, credentials, server_yaml
 from .processes import OwnedProcess, RuntimeLease
@@ -308,11 +308,20 @@ def port_open(endpoint: str) -> bool:
         return False
 
 
+class _ReservationOwner(RuntimeModel):
+    endpoint: str
+    identity: UUID4
+
+
 def publish_room(path: Path, binding: RoomBinding) -> None:
     """Publish complete discovery atomically; readers never see partial JSON."""
+    _publish_runtime_record(path, binding)
+
+
+def _publish_runtime_record(path: Path, value: RuntimeModel) -> None:
     temporary = path.with_suffix(".next")
     with temporary.open("w", encoding="utf-8", newline="\n") as stream:
-        stream.write(binding.model_dump_json())
+        stream.write(value.model_dump_json())
         stream.flush()
         os.fsync(stream.fileno())
     temporary.replace(path)
@@ -777,6 +786,30 @@ class RuntimeServices:
         await self._remove_strata_directory()
 
 
+async def _claim_reservation_owner(
+    path: Path, client: HttpGatewayClient, owner: _ReservationOwner
+) -> None:
+    # Caller holds the runtime root lease, proving the recorded launcher has exited.
+    try:
+        previous = _ReservationOwner.model_validate_json(await asyncio.to_thread(path.read_bytes))
+    except FileNotFoundError:
+        previous = None
+    except ValidationError as error:
+        raise GatewayError("runtime_reservation_owner_invalid") from error
+    if (
+        previous is not None
+        and previous.endpoint == owner.endpoint
+        and previous.identity != owner.identity
+    ):
+        await client.session(previous.identity, connected=False)
+    await asyncio.to_thread(_publish_runtime_record, path, owner)
+
+
+async def _release_reservation_owner(path: Path, client: HttpGatewayClient, identity: UUID) -> None:
+    await client.session(identity, connected=False)
+    await asyncio.to_thread(path.unlink, missing_ok=True)
+
+
 async def _reserve_gateway_startup(
     client: HttpGatewayClient, identity: UUID, timeout: float
 ) -> None:
@@ -838,7 +871,15 @@ async def run_runtime(
         reservation = HttpGatewayClient(config.services.gateway.endpoint, foreground_token)
         cleanup.push_async_callback(reservation.aclose)
         if gateway_available:
+            owner_path = config.runtime_root / "realtime-owner.json"
             try:
+                await _claim_reservation_owner(
+                    owner_path,
+                    reservation,
+                    _ReservationOwner(
+                        endpoint=config.services.gateway.endpoint, identity=services.instance
+                    ),
+                )
                 await _reserve_gateway_startup(
                     reservation, services.instance, config.services.livekit.startup_timeout_seconds
                 )
@@ -848,7 +889,9 @@ async def run_runtime(
                 gateway_available = False
                 value = None
             else:
-                cleanup.push_async_callback(reservation.session, services.instance, connected=False)
+                cleanup.push_async_callback(
+                    _release_reservation_owner, owner_path, reservation, services.instance
+                )
         runtime = await asyncio.to_thread(
             LocalRuntime,
             config,

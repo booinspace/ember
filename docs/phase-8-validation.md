@@ -6,6 +6,35 @@ evidence below remains historical. Main-device integration is recorded in the
 2026-10-13/14 sections; the 2026-10-16 review changes have not restarted services
 or modified production memory data.
 
+## Checkpoint failure recovery
+
+P8-AC-01/02/09: a missing or incompatible pinned processing job and a conflicting
+acceptance write must leave an inspectable failed checkpoint. Later deliveries
+continue through the same exact-evidence policy. Other processing errors leave a
+paused checkpoint. The regression cases in `test_phase_eight_capture.py` verify
+that a later delivery becomes recallable. The locked root gate passed 1,560 tests
+with 17 skipped. Miku live acceptance remains open.
+
+## Native capture model pin
+
+P8-AC-01/02: native capture constructs its immutable extraction pin from the
+configured model digest with the optional `sha256:` prefix removed. The
+connected HTTP capture regression uses the prefixed deployment format. On
+Miku the previous format raised a validation error before inference. With the
+normalized pin, one synthetic preferred name passed real Strata extraction,
+exact-evidence acceptance, and recall in an isolated character store. The live
+runtime backlog remains a separate check.
+
+## Realtime reservation cleanup
+
+P8-AC-07/09: disconnect fences and releases the room reservation after delivery
+settles even while its capture batch is waiting. The runtime keeps a single
+capture batch and joins it at shutdown. A launcher holding the runtime lease
+can release its recorded previous owner on the same gateway before reserving
+its new room. Native-request recovery still uses the gateway's journal.
+Synthetic disconnect and startup regressions cover these cases. Live
+disconnect-to-zero and Miku capture acceptance remain open.
+
 ## Connected-idle native capture: 2026-11-23
 
 Synthetic HTTP coverage uses real gateway HTTP contracts, a scripted upstream, and an isolated

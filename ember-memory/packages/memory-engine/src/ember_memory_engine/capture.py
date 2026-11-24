@@ -18,6 +18,7 @@ from ember_memory_abi.evidence import SourceRef
 from .consolidation import DATED_POLICY, POLICY, NativeAcceptanceRequest, NativeAcceptanceService
 from .database import row_int, row_text
 from .engine import CanonicalEngine
+from .errors import IdempotencyConflictError
 from .models import MutationAuthority, SourceKeyAssignment
 from .processing import ProcessingService
 from .processing_contracts import (
@@ -31,6 +32,16 @@ from .processing_contracts import (
 )
 
 _REFERENCE_ADAPTER = TypeAdapter(tuple[SourceRef, ...])
+_PINNED_JOB_FAILURES = frozenset(
+    {
+        "job_not_found",
+        "job_key_conflict",
+        "processing_extractor_changed",
+        "processing_policy_changed",
+        "processing_prompt_or_schema_changed",
+        "temporal_timezone_unavailable",
+    }
+)
 
 
 class CaptureSettings(ContractModel):
@@ -221,12 +232,12 @@ class CaptureService:
         self.database.write(write)
 
     def _mark(
-        self, key: str, status: str, job_id: CanonicalId, error_code: str | None = None
+        self, key: str, status: str, job_id: CanonicalId | None, error_code: str | None = None
     ) -> None:
         self.database.write(
             lambda connection: connection.execute(
                 "UPDATE native_capture SET status=?,job_id=?,error_code=? WHERE delivery_key=?",
-                (status, str(job_id), error_code, key),
+                (status, str(job_id) if job_id else None, error_code, key),
             )
         )
 
@@ -337,32 +348,35 @@ class CaptureService:
                 break
             if not (await loop.run_in_executor(executor, self.settings)).enabled:
                 break
-            pinned = await loop.run_in_executor(
-                executor,
-                lambda item=item: self.processing.definition(item.job_id) if item.job_id else None,
-            )
-            job_spec = pinned.request.specification if pinned is not None else spec
-            selected_model = model_for(job_spec) if model_for is not None else model
-            if selected_model.specification != job_spec:
-                raise ProcessingError("processing_model_specification_mismatch")
-            request = JobRequest(
-                idempotency_key="native-capture:" + item.delivery_key,
-                owner_store_id=self.character,
-                specification=job_spec,
-                source_kind="native",
-                source_references=item.sources,
-            )
-            job = await loop.run_in_executor(
-                executor, lambda request=request: self.processing.create(request)
-            )
-            identity = job.definition.job_id
-            await loop.run_in_executor(
-                executor,
-                lambda item=item, identity=identity: self._mark(
-                    item.delivery_key, "processing", identity
-                ),
-            )
+            identity = item.job_id
             try:
+                pinned = await loop.run_in_executor(
+                    executor,
+                    lambda item=item: (
+                        self.processing.definition(item.job_id) if item.job_id else None
+                    ),
+                )
+                job_spec = pinned.request.specification if pinned is not None else spec
+                selected_model = model_for(job_spec) if model_for is not None else model
+                if selected_model.specification != job_spec:
+                    raise ProcessingError("processing_model_specification_mismatch")
+                request = JobRequest(
+                    idempotency_key="native-capture:" + item.delivery_key,
+                    owner_store_id=self.character,
+                    specification=job_spec,
+                    source_kind="native",
+                    source_references=item.sources,
+                )
+                job = await loop.run_in_executor(
+                    executor, lambda request=request: self.processing.create(request)
+                )
+                identity = job.definition.job_id
+                await loop.run_in_executor(
+                    executor,
+                    lambda item=item, identity=identity: self._mark(
+                        item.delivery_key, "processing", identity
+                    ),
+                )
                 outcome = await self.processing.run(
                     identity,
                     selected_model,
@@ -380,6 +394,24 @@ class CaptureService:
                     executor, self._mark, item.delivery_key, "paused", identity
                 )
                 raise
+            except ProcessingError as error:
+                failed = error.code in _PINNED_JOB_FAILURES
+                await loop.run_in_executor(
+                    executor,
+                    self._mark,
+                    item.delivery_key,
+                    "failed" if failed else "paused",
+                    identity,
+                    error.code,
+                )
+                if not failed:
+                    raise
+                continue
+            except (IdempotencyConflictError, RevisionConflictError) as error:
+                await loop.run_in_executor(
+                    executor, self._mark, item.delivery_key, "failed", identity, error.code
+                )
+                continue
             status = (
                 "complete"
                 if outcome.status == "complete" and accepted_all

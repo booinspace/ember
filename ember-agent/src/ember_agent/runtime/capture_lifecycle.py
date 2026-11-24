@@ -1,6 +1,7 @@
 """One event-driven native capture owner for disconnected and connected-idle chat."""
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
@@ -8,6 +9,8 @@ from ember_memory_abi.errors import MemoryError
 
 from ..inference.contracts import GatewayError
 from .worker_process import settled
+
+_LOG = logging.getLogger(__name__)
 
 
 class CaptureLifecycle:
@@ -42,6 +45,8 @@ class CaptureLifecycle:
         self.changed = asyncio.Event()
         self.lock = asyncio.Lock()
         self.task: asyncio.Task[None] | None = None
+        self._batch: asyncio.Task[None] | None = None
+        self._batch_wake_pending = False
         self._reserved_epoch: int | None = None
         self._permitted = False
         self._connection_epoch = 0
@@ -118,6 +123,38 @@ class CaptureLifecycle:
             and (self.idle is None or self.idle())
         )
 
+    async def _process_batch(self, epoch: int, context: UUID | None) -> None:
+        def allowed() -> bool:
+            return self._allowed(epoch)
+
+        try:
+            self.pending = await self.consolidate(allowed, context)
+            if self._connection_epoch != epoch or self.closed:
+                return
+            self.status = "pending" if self.pending else "idle"
+            if self.pending and allowed():
+                self.wake()
+            else:
+                async with self.lock:
+                    if self._connection_epoch == epoch:
+                        await self._fence_permit()
+        except GatewayError as error:
+            if self._connection_epoch == epoch:
+                self.status = (
+                    "waiting_for_idle" if error.code == "idle_capture_deferred" else "blocked"
+                )
+        except (MemoryError, TimeoutError):
+            if self._connection_epoch == epoch:
+                self.status = "blocked"
+        except Exception as error:
+            if self._connection_epoch == epoch:
+                self.status = "blocked"
+            _LOG.error("Native capture batch failed: %s", type(error).__name__)
+        finally:
+            if self._batch_wake_pending or self._connection_epoch != epoch:
+                self._batch_wake_pending = False
+                self.wake()
+
     async def _run(self) -> None:
         while not self.closed:
             await self.changed.wait()
@@ -126,9 +163,6 @@ class CaptureLifecycle:
                 break
             connected = self.connected
             epoch = self._connection_epoch
-
-            def allowed(epoch: int = epoch) -> bool:
-                return self._allowed(epoch)
 
             try:
                 if not connected and self._drained_epoch != epoch:
@@ -150,26 +184,29 @@ class CaptureLifecycle:
                     if connected and self.permit is None:
                         self.status = "realtime_reserved"
                         continue
-                    if not allowed():
+                    if not self._allowed(epoch):
                         await self._fence_permit()
                         if not self._permitted:
                             self.status = "waiting_for_idle"
+                        continue
+                    if self._batch is not None and not self._batch.done():
+                        self._batch_wake_pending = True
+                        if self.status != "processing":
+                            self.status = "draining_capture"
                         continue
                     if connected and self.permit is not None:
                         # Treat a lost response as possibly applied; fence on the next turn.
                         self._permitted = True
                         await self.permit(self.identity, True)
-                if not allowed():
+                if not self._allowed(epoch):
                     await self.fence()
                     continue
                 self.status = "processing"
-                self.pending = await self.consolidate(allowed, self.identity if connected else None)
-                self.status = "pending" if self.pending else "idle"
-                if self.pending and allowed():
-                    self.wake()  # Process successive bounded batches only while idle.
-                else:
-                    async with self.lock:
-                        await self._fence_permit()
+                # A waiting P3 batch must not own the event loop that releases its reservation.
+                self._batch = asyncio.create_task(
+                    self._process_batch(epoch, self.identity if connected else None),
+                    name="ember-capture-batch",
+                )
             except GatewayError as error:
                 self.status = (
                     "waiting_for_idle" if error.code == "idle_capture_deferred" else "blocked"
@@ -188,7 +225,11 @@ class CaptureLifecycle:
                 if self.task is not None:
                     await self.task
             finally:
-                async with self.lock:
-                    await self._reserve(False)
+                try:
+                    async with self.lock:
+                        await self._reserve(False)
+                finally:
+                    if self._batch is not None:
+                        await self._batch
 
         await settled(asyncio.create_task(drain_and_release(), name="ember-capture-close"))
