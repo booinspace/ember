@@ -22,7 +22,7 @@ def test_missing_page_provider_reports_unavailable_without_hallucinated_fetch(
                 model_tag="synthetic",
             )
             turn = await core.prepare("Summarize https://public.example/article")
-            assert turn.local_reply and "not configured" in turn.local_reply
+            assert turn.local_reply and "unavailable" in turn.local_reply
 
     asyncio.run(run())
 
@@ -54,7 +54,7 @@ def test_page_failure_activity_keeps_only_a_safe_fixed_diagnostic(tmp_path: Path
                 )
             )
             turn = await core.prepare("Fixture read: https://arxiv.org/abs/1706.03762")
-            assert turn.local_reply and "unavailable" in turn.local_reply
+            assert turn.local_reply and "rate-limited" in turn.local_reply
             event = next(e for e in core.activity.since(0) if e.name == "read_page")
             assert (
                 event.code == "public_web_rate_limited" and "arxiv" not in event.model_dump_json()

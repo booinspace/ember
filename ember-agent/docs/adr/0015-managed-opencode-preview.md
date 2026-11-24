@@ -146,6 +146,17 @@ and [Root ADR 0027](../../../docs/adr/0027-public-web-retrieval.md#natural-langu
   blocks the dependent Build; no silent downgrade or replay. See
   [Root ADR 0026](../../../docs/adr/0026-managed-opencode-build.md#conversation-planning-and-build-prerequisites-amendment).
 
+## Conversation-first routing
+
+This amendment replaces the preview's separate first-pass planner with ready
+tool definitions on the ordinary P0 reply request. CharacterCore streams text
+or accepts one complete first proposal after native settlement. Text closes
+the effect path for that generation. Later workflow steps retain current-turn
+isolation, bounded inputs and durable prerequisites. Explicit public reads
+reuse the web adapter. Only an acknowledged page clarification can create
+one-turn link follow-up eligibility, with provider and recall authority
+checked at use and delivery. See [requirements and evidence](../../../docs/adr/0027-public-web-retrieval.md#conversation-first-routing).
+
 ## Resolved public retrieval authority
 
 Research pins the resolved pair of public operation bindings at submission and

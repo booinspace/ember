@@ -37,6 +37,24 @@ async def verified_source(
     client: AsyncRelatedLookupClient, anchor: SourceAnchor, parent: ContextDependencies
 ) -> tuple[str, ContextDependencies] | None:
     """Resolve the exact span under the prior selector and a fresh delivery certificate."""
+    resolved = await verified_quote(client, anchor, parent)
+    if resolved is None:
+        return None
+    quote, observed, proof = resolved
+    ref = anchor.evidence.source
+    date = f", source timestamp {observed}" if observed else ""
+    return (
+        "I recalled one memory for that reply. Its supporting source is "
+        f"{ref.record_kind} {ref.record_id}, revision {ref.record_revision}{date}:"
+        f"\n\n{quote}",
+        proof,
+    )
+
+
+async def verified_quote(
+    client: AsyncRelatedLookupClient, anchor: SourceAnchor, parent: ContextDependencies
+) -> tuple[str, str | None, ContextDependencies] | None:
+    """Read exact authorized text and its certificate without formatting a reply."""
     if anchor.memory not in parent.memories:
         return None
     temporal = next(
@@ -79,11 +97,5 @@ async def verified_source(
             and source.quote
         ):
             observed = observation.observed.value if observation.observed else None
-            date = f", source timestamp {observed}" if observed else ""
-            return (
-                "I recalled one memory for that reply. Its supporting source is "
-                f"{ref.record_kind} {ref.record_id}, revision {ref.record_revision}{date}:"
-                f"\n\n{source.quote}",
-                proof,
-            )
+            return source.quote, observed, proof
     return None

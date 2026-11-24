@@ -136,6 +136,40 @@ and [Agent ADR 0015](../../ember-agent/docs/adr/0015-managed-opencode-preview.md
 Read-only Inspect, offline Build and task-only Web Research keep their existing
 grants. No direct MCP, skills, memory or provider fallback is added.
 
+## Conversation-first routing
+
+This amendment supersedes the separate first-pass planner for ordinary turns.
+CharacterCore lets the same local generation answer with current authorized
+context or propose a tool. It starts an effect only after it receives a
+complete, validated action with no visible text. It can recover an ordinary
+reply from one rejected proposal without replaying effects. The existing
+workflow consumes the first valid proposal and keeps later requests isolated
+from recall and prior chat. Explicit page reads use the existing public-web
+adapter and local source-checked synthesis.
+
+A page clarification can authorize one exact pasted link on the next turn
+after full delivery. Core retains the link, provider revision and evidence
+certificate only in the session's acknowledged history. It validates their
+currency before dispatch. Ambiguous, unsupported and private inputs confer
+no authority. No new provider, worker grant, task transition or ABI is needed.
+
+| PLAN criterion | Current evidence and status |
+| --- | --- |
+| CTP-AC-01 | Passed scripted text and LiveKit SDK cases in `test_tool_workflow.py`. Ordinary recall gets one generation, and mistaken or late proposals have zero effects. Real-model intent and voice timing on Miku pending. |
+| CTP-AC-02 | Passed scripted literal and Markdown reads, bare public URL normalization, exact mock Exa egress, provider mismatch, and no egress for unsafe or revoked inputs. Live Exa pending. |
+| CTP-AC-03 | Passed scripted composed-runtime chains with a connected gateway reservation. Live Strata and physical voice timing pending. |
+| CTP-AC-04 | Passed scripted dependent Build, malformed and interrupted action cases. Existing durable prerequisite and gateway release checks remain applicable. |
+| CTP-AC-05 | Passed scripted source-checked synthesis, evidence-bound follow-up and delivery interruption cases. Miku browser replay pending. |
+
+The macOS locked dependency check, Ruff formatting and lint, and strict
+Pyright passed. The locked Python module test run passed **1,555 tests** with
+17 skipped.
+
+Read-only preflight found Miku at baseline `5a2804b` running the Strata
+`qwen3.8-flash-next-iq3_s` profile with Exa MCP configured. Its active deployment
+config has local edits. The shared GPU run, live Exa and physical voice were
+not run. Production rollout remains a separate authorization.
+
 ## Keyless Exa MCP for Conversation and Tasks
 
 **Status:** Opt-in. A live Miku probe reached initialization but sent no page-read

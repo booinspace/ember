@@ -10,6 +10,15 @@ from .source_evidence import SourceAnchor
 
 
 @dataclass(frozen=True)
+class PageFollowup:
+    context_id: UUID
+    original_request: str
+    provider: str
+    revision: str
+    offered_url: str | None = None
+
+
+@dataclass(frozen=True)
 class CompletedTurn:
     user: str
     assistant: str
@@ -20,6 +29,7 @@ class CompletedTurn:
     clipped: bool = False
     public_web_reply: bool = False
     source_anchor: SourceAnchor | None = None
+    page_followup: PageFollowup | None = None
 
 
 @runtime_checkable

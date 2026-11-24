@@ -51,7 +51,7 @@ from ..web_evidence import (
     WebEvidence,
 )
 from .build_intent import build_goal
-from .conversation import CompletedTurn, ConversationSink
+from .conversation import CompletedTurn, ConversationSink, PageFollowup
 from .delivery import ObservedDialogueSink
 from .interpretation import CalendarInterpreter
 from .prompt_budget import (
@@ -65,11 +65,13 @@ from .prompts import PromptSnapshot
 from .public_search import (
     hosted_web_request,
     matches_web_provider,
-    public_page_requested,
-    public_search_query,
+    page_link,
+    page_request,
+    profile_links,
+    search_has_link,
 )
 from .recall_intent import source_followup
-from .source_evidence import SourceAnchor, supporting_anchor, verified_source
+from .source_evidence import SourceAnchor, supporting_anchor, verified_quote, verified_source
 from .task_work import AmbiguousWork, WorkDigest, WorkUnavailable, lookup_prefix
 from .temporal import (
     CURRENT_BELIEF,
@@ -80,9 +82,8 @@ from .temporal import (
 )
 from .tool_workflow import (
     BUILD,
+    CONVERSATION_TOOLS,
     INSPECT,
-    NO_PLAN,
-    Intent,
     SubmitManaged,
     execute_workflow,
     has_embedded_prerequisite,
@@ -91,6 +92,9 @@ from .tool_workflow import (
     planning_eligible,
     planning_request,
     propose_tool,
+    retrieval_failure_message,
+    tool_clauses,
+    tool_definitions,
     workflow_accounting,
 )
 from .turn_view import CurrentTurnView, MemoryCategory
@@ -145,8 +149,15 @@ class PreparedTurn:
     work_sequence: int = 0
     prompts: PromptSnapshot | None = None
     web_evidence: WebEvidence | None = None
-    tool_plan: tuple[Intent, ToolCall] | None = None
+    workflow_tools: tuple[str, ...] = ()
+    workflow_executed: bool = False
+    page_followup: PageFollowup | None = None
     source_anchor: SourceAnchor | None = None
+
+
+@dataclass
+class ConversationRoute:
+    executed: bool = False
 
 
 _TASK_TEXT_LIMIT = 1600
@@ -487,20 +498,125 @@ class CharacterCore:
             if typed is None
             else None
         )
-        if (
+        conversation_tools = (
             typed is None
             and investigation is None
-            and hosted is None
             and work_query is None
-            and not stripped.casefold().startswith("build:")
+            and hosted is None
             and planning_eligible(text)
+            and not stripped.casefold().startswith("build:")
+        )
+        chain = has_tool_chain(text)
+        page = (
+            page_request(text, self.public_web.read_binding)
+            if conversation_tools and not chain
+            else None
+        )
+        if conversation_tools:
+            previous_turn = next(
+                (old for old in reversed(self.history) if old.request_id != identity), None
+            )
+            link = page_link(text)
+            followup = (
+                previous_turn.page_followup if previous_turn and previous_turn.complete else None
+            )
+            binding = self.public_web.read_binding
+            if link is not None and followup is not None and previous_turn is not None:
+                if (
+                    followup.context_id == self.context_id
+                    and binding is not None
+                    and binding.ready()
+                    and (binding.provider, binding.revision)
+                    == (followup.provider, followup.revision)
+                    and (followup.offered_url is None or followup.offered_url == link)
+                    and await self.current(previous_turn.dependencies, previous_turn.certificate)
+                ):
+                    return await self._prepare_web(
+                        observation, "read", link, purpose=followup.original_request
+                    )
+                return self._local_turn(
+                    text,
+                    identity,
+                    observed_at,
+                    "Please ask me to read that link directly.",
+                    ("public_page_followup_expired",),
+                    observation.prompts,
+                )
+            if search_has_link(tool_clauses(text)[0]):
+                return self._local_turn(
+                    text,
+                    identity,
+                    observed_at,
+                    "That looks like a page link. Ask me to read it.",
+                    ("public_search_link",),
+                    observation.prompts,
+                )
+            if page is not None:
+                if page.provider is not None and not matches_web_provider(page.provider, binding):
+                    return self._local_turn(
+                        text,
+                        identity,
+                        observed_at,
+                        "That provider isn't configured to read pages.",
+                        ("public_web_unavailable",),
+                        observation.prompts,
+                    )
+                if binding is None or not binding.ready():
+                    return self._local_turn(
+                        text,
+                        identity,
+                        observed_at,
+                        "Page reading is unavailable.",
+                        ("public_web_unavailable",),
+                        observation.prompts,
+                    )
+                if page.url:
+                    return await self._prepare_web(observation, "read", page.url, purpose=text)
+                if page.invalid:
+                    return self._local_turn(
+                        text,
+                        identity,
+                        observed_at,
+                        "Give me one public page link. Nothing was sent.",
+                        ("public_web_input_rejected",),
+                        observation.prompts,
+                    )
+                if not page.subject or not self.recall_enabled:
+                    return self._ask_page_link(observation)
+
+        intent = intent_for(text) if conversation_tools else None
+        available = self._available_tools() if conversation_tools else ()
+        if intent is not None and any(step not in available for step in intent.steps):
+            if self.submit_managed is not None or any(
+                step in {SEARCH, PAGE} for step in intent.steps
+            ):
+                return self._local_turn(
+                    text,
+                    identity,
+                    observed_at,
+                    "A requested tool is unavailable.",
+                    ("tool_unavailable",),
+                    observation.prompts,
+                )
+        if (
+            len(tool_clauses(text)) > 1
+            and intent is None
+            and conversation_tools
+            and any(intent_for(clause) is not None for clause in tool_clauses(text))
         ):
-            planned = await self._plan_turn(observation)
-            if planned is not None:
-                return planned
+            return self._local_turn(
+                text,
+                identity,
+                observed_at,
+                "Give me the required actions in order, with exact inputs.",
+                ("tool_plan_needs_order",),
+                observation.prompts,
+            )
 
         submit_build = self.submit_build
-        if goal is not None:
+        if goal is not None and (
+            self.submit_managed is None or not conversation_tools or intent is None
+        ):
             if self.submit_managed is not None and not stripped.casefold().startswith("build:"):
                 goal = ""  # A failed natural-language plan cannot become an implicit Build.
             if not goal or len(goal) > 8192:
@@ -526,6 +642,15 @@ class CharacterCore:
                     observation.prompts,
                 )
             if not has_tool_chain(value):
+                if operation == "search" and page_link(value) is not None:
+                    return self._local_turn(
+                        text,
+                        identity,
+                        observed_at,
+                        "That's a page link. Ask me to read it.",
+                        ("public_search_link",),
+                        observation.prompts,
+                    )
                 return await self._prepare_web(observation, operation, value)
             return self._local_turn(
                 text,
@@ -535,42 +660,6 @@ class CharacterCore:
                 ("public_web_input_rejected",),
                 observation.prompts,
             )
-        if (
-            typed is None
-            and investigation is None
-            and (self.public_web.search_binding or self.public_web.read_binding)
-        ):
-            try:
-                query = public_search_query(text)
-            except GatewayError:
-                query = ""
-            if query is not None or public_page_requested(text):
-                operation = "search" if query is not None else "read"
-                binding = self.public_web.binding(operation)
-                placeholder = "public query" if query is not None else "public URL"
-                reply = (
-                    f"Use `{binding.label} {operation}: <{placeholder}>`. No request was sent."
-                    if binding
-                    else "That public web action is not configured."
-                )
-                return self._local_turn(
-                    text,
-                    identity,
-                    observed_at,
-                    reply,
-                    ("public_web_input_rejected",),
-                    observation.prompts,
-                )
-        elif typed is None and investigation is None and public_page_requested(text):
-            return self._local_turn(
-                text,
-                identity,
-                observed_at,
-                "Page reading is not configured.",
-                ("public_page_unavailable",),
-                observation.prompts,
-            )
-
         resolved = (
             self.calendar.resolve_belief(typed, reference_at)
             if typed is not None
@@ -729,6 +818,8 @@ class CharacterCore:
                 for memory in memories
                 if await self.current(((memory.memory_id, memory.revision),))
             ]
+        if page is not None and page.subject:
+            return await self._offer_page_link(observation, page.subject, memories, base)
         if investigation is not None:
             deep_context = condense(
                 investigation,
@@ -994,14 +1085,14 @@ class CharacterCore:
                 update={"content": frame.content + " Use only recalled claims."}
             )
 
+        thinking = self.turn_view.thinking_for(identity)
+        workflow_tools = available if not thinking else ()
+
         def compose() -> tuple[PromptMessage, ...]:
             messages = [PromptMessage(role="system", content=instructions)]
             capabilities: list[str] = []
-            if self.public_web.search_binding and self.public_web.search_binding.ready():
-                capabilities.append(
-                    "Public web search is available for explicit requests: 'Search for ...'. "
-                    "Cite only URLs in the supplied search results."
-                )
+            if workflow_tools:
+                capabilities.append(CONVERSATION_TOOLS)
             if not self.recall_enabled:
                 capabilities.append(
                     "Private long-term memory recall is unavailable in this client. "
@@ -1141,7 +1232,6 @@ class CharacterCore:
         if not valid:
             raise GatewayError("context_invalidated")
             messages = compose()
-        thinking = self.turn_view.thinking_for(identity)
         request = GatewayRequest(
             version="0.4.0" if thinking else "0.3.0",
             request_id=identity,
@@ -1167,7 +1257,7 @@ class CharacterCore:
             and text.startswith(task.required_prefix)
             and (not task.required_prefix or text[len(task.required_prefix) :].strip())
         )
-        if work and work_query is None and (literal_tools or turn_tools):
+        if work and work_query is None and (turn_tools or (literal_tools and not workflow_tools)):
             # Only when a completion competes with a native action: select on current
             # input alone. A positive tool proposal leaves the receipt pending. If
             # selection is unavailable, answer with receipts and no effect authority.
@@ -1199,11 +1289,17 @@ class CharacterCore:
                 work = ()
                 messages = compose()
                 request = request.model_copy(update={"messages": messages})
+        native_tools = literal_tools + turn_tools
+        workflow_definitions = tool_definitions(workflow_tools)
         for definitions in (
-            (literal_tools + turn_tools, literal_tools) if turn_tools else (literal_tools,)
+            native_tools + workflow_definitions,
+            native_tools,
+            workflow_definitions,
         ):
-            if not definitions or work:
-                break
+            if not definitions:
+                continue
+            if work and (definitions != workflow_definitions or intent is None):
+                continue
             candidate = request.model_copy(update={"tools": definitions})
             serialized = json.dumps(
                 {
@@ -1217,6 +1313,11 @@ class CharacterCore:
                 break
         prepared = PreparedTurn(
             request=request,
+            workflow_tools=tuple(
+                name
+                for name in workflow_tools
+                if any(tool.function.name == name for tool in request.tools)
+            ),
             work_sequence=max((row.sequence for row in work), default=0)
             if work_query is None
             else -1,
@@ -1241,7 +1342,7 @@ class CharacterCore:
                 + (message_bytes(PromptMessage(role="user", content=excerpt)) if excerpt else 0),
                 recent_and_current=current_cost + sum(self._history_cost(old) for old in history),
                 framing=message_bytes(frame) if frame else 0,
-                serialized_total=prompt_cost(messages),
+                serialized_total=workflow_accounting(request).serialized_total,
             ),
         )
         view_rows: list[tuple[MemoryCategory, Memory]] = [
@@ -1382,14 +1483,19 @@ class CharacterCore:
         return binding is not None and binding.ready()
 
     async def _prepare_web(
-        self, observation: TurnObservation, operation: PublicWebOperation, value: str
+        self,
+        observation: TurnObservation,
+        operation: PublicWebOperation,
+        value: str,
+        *,
+        purpose: str | None = None,
     ) -> PreparedTurn:
         tool = "read_page" if operation == "read" else "web_search"
         base = self._local_turn(
             observation.text,
             observation.request_id,
             observation.observed_at,
-            "Public web retrieval is unavailable. No other provider was used.",
+            "Public web retrieval is unavailable.",
             ("public_web_unavailable",),
             observation.prompts,
         )
@@ -1432,7 +1538,11 @@ class CharacterCore:
                 omissions=("public_web_input_rejected",),
             )
         if evidence.coverage == "unavailable":
-            return base
+            return replace(
+                base,
+                local_reply=f"{binding.label} {retrieval_failure_message(evidence.failure)}.",
+                omissions=("public_web_" + (evidence.failure or "unavailable"),),
+            )
         if not evidence.sources:
             return replace(
                 base,
@@ -1440,7 +1550,8 @@ class CharacterCore:
                 omissions=("public_web_empty",),
             )
         messages = evidence_prompt(
-            evidence, value if operation == "search" else "Summarize the requested page excerpts."
+            evidence,
+            purpose or (value if operation == "search" else "Summarize the page excerpts."),
         )
         cost = prompt_cost(messages)
         if cost > self.input_ceiling:
@@ -1513,9 +1624,9 @@ class CharacterCore:
             ),
         )
 
-    async def _plan_turn(self, observation: TurnObservation) -> PreparedTurn | None:
+    def _available_tools(self) -> tuple[str, ...]:
         available: list[str] = []
-        if self.public_web.search_binding and self.public_web.search_binding.ready():
+        if self.web_search_ready:
             available.append(SEARCH)
         if self.public_web.read_binding and self.public_web.read_binding.ready():
             available.append(PAGE)
@@ -1524,93 +1635,216 @@ class CharacterCore:
                 available.append(INSPECT)
             if self.build_ready():
                 available.append(BUILD)
-        if not available:
-            return None
-        base = self._local_turn(
+        return tuple(available)
+
+    def _ask_page_link(self, observation: TurnObservation) -> PreparedTurn:
+        binding = self.public_web.read_binding
+        assert binding is not None
+        turn = self._local_turn(
             observation.text,
             observation.request_id,
             observation.observed_at,
-            NO_PLAN,
-            (),
+            "Which page should I read? Paste one public link.",
+            ("public_page_link_required",),
             observation.prompts,
         )
-        workflow = planning_request(base.request, tuple(available))
-        accounting = workflow_accounting(workflow)
-        call = None
-        if accounting.serialized_total <= self.input_ceiling:
-            # The gateway deduplicates generation IDs. Keep the original turn ID for
-            # ordinary reply, delivery, and task receipts, not this routing pass.
-            request = workflow.model_copy(
-                update={
-                    "request_id": uuid4(),
-                    "max_output_tokens": 256,
-                    "deadline_at": timestamp_from_datetime(
-                        datetime.now(UTC) + timedelta(seconds=15)
-                    ),
-                }
-            )
-            self.observation_failures += not notify(
-                self.observe_request, replace(base, request=request, accounting=accounting)
-            )
-            finished = False
-            try:
-                async with asyncio.timeout(15):
-                    call = await propose_tool(self.model, request)
-                finished = True
-            except (GatewayError, TimeoutError, ValueError):
-                pass
-            finally:
-                self.observation_failures += not notify(
-                    self.observe_end, request.request_id, finished
-                )
-        intent = intent_for(observation.text)
-        if intent is not None and not all(step in available for step in intent.steps):
-            return replace(base, local_reply="A requested tool is unavailable. Nothing ran.")
-        if call is None:
-            return base if intent is not None else None
-        if intent is None or call.name != intent.steps[0]:
-            return replace(
-                base,
-                local_reply="I couldn't verify that tool request. Nothing ran. "
-                "State what to do and give the exact public URL, search terms, or task goal.",
-            )
         return replace(
-            base,
-            request=workflow,
-            tool_plan=(intent, call),
-            local_reply=None,
-            accounting=accounting,
+            turn,
+            page_followup=PageFollowup(
+                self.context_id, observation.text, binding.provider, binding.revision
+            ),
         )
 
-    async def _workflow_response(self, turn: PreparedTurn) -> AsyncGenerator[GatewayEvent, None]:
-        assert turn.tool_plan is not None
-        intent, call = turn.tool_plan
+    async def _offer_page_link(
+        self,
+        observation: TurnObservation,
+        subject: str,
+        memories: list[Memory],
+        parent: ContextDependencies | None,
+    ) -> PreparedTurn:
+        turn = self._ask_page_link(observation)
+        binding = self.public_web.read_binding
+        if (
+            binding is None
+            or turn.page_followup is None
+            or parent is None
+            or not isinstance(self.memory, AsyncRelatedLookupClient)
+        ):
+            return turn
+        candidates: dict[str, ContextDependencies] = {}
+        # ponytail: bounded ordinary recall only; broader archive search needs its own request.
+        try:
+            async with asyncio.timeout(0.15):
+                for memory in memories[:4]:
+                    anchor = supporting_anchor(memory)
+                    if anchor is None:
+                        continue
+                    result = await verified_quote(self.memory, anchor, parent)
+                    if result is None:
+                        continue
+                    quote, _, proof = result
+                    for url in profile_links(subject, quote):
+                        candidates[url] = proof
+                    if len(candidates) > 1:
+                        return turn
+                if len(candidates) == 1:
+                    ((url, proof),) = candidates.items()
+                    refs = tuple((ref.memory_id, ref.revision) for ref in proof.memories)
+                    if await self.current(refs, proof):
+                        return replace(
+                            turn,
+                            dependencies=refs,
+                            certificate=proof,
+                            local_reply=(
+                                f"I have {url}. Paste that link if you'd like me to read it "
+                                f"with {binding.label}."
+                            ),
+                            page_followup=replace(turn.page_followup, offered_url=url),
+                        )
+        except (MemoryError, TimeoutError):
+            pass
+        return turn
 
-        def observe(request: GatewayRequest) -> None:
-            self.observation_failures += not notify(
-                self.observe_request,
-                replace(turn, request=request, accounting=workflow_accounting(request)),
+    async def _conversation_response(
+        self, turn: PreparedTurn, route: ConversationRoute
+    ) -> AsyncGenerator[GatewayEvent, None]:
+        """Stream ordinary text, or dispatch one validated proposal after native release."""
+        call: ToolCall | None = None
+        rejected = answered = False
+        terminal: GatewayEvent | None = None
+        sequence = 0
+
+        def event_for(event: GatewayEvent) -> GatewayEvent:
+            nonlocal sequence
+            event = event.model_copy(
+                update={"request_id": turn.request.request_id, "sequence": sequence}
             )
+            sequence += 1
+            return event
 
-        events = self._local_response(replace(turn, local_reply=""))
-        async with aclosing(events):
-            async for event in events:
-                if event.kind == "text":
-                    answer = await execute_workflow(
-                        self.model,
-                        turn.request,
-                        intent,
-                        call,
-                        public_web=self.public_web,
-                        submit=self.submit_managed,
-                        input_ceiling=self.input_ceiling,
-                        inspect_ready=self.inspect_ready(),
-                        build_ready=self.build_ready(),
-                        on_request=observe,
-                        activity=self.activity,
-                    )
-                    event = event.model_copy(update={"text": answer})
-                yield event
+        try:
+            async with aclosing(self.model.stream(turn.request)) as events:
+                async for event in events:
+                    if event.kind == "tools":
+                        if call is None and len(event.calls) == 1 and not answered:
+                            call = event.calls[0]
+                        else:
+                            rejected = True
+                        continue
+                    if event.kind == "end":
+                        terminal = event
+                        continue
+                    if event.kind == "text" and event.text:
+                        if call is not None or rejected:
+                            rejected = True
+                            continue
+                        answered = True
+                    yield event_for(event)
+        except GatewayError as error:
+            if str(error) not in {
+                "unrequested_tool",
+                "invalid_tool_arguments",
+            }:
+                raise
+            rejected = True
+
+        if answered:
+            if terminal is not None:
+                yield event_for(terminal)
+            return
+        if (
+            terminal is not None
+            and not terminal.truncated
+            and not rejected
+            and call is not None
+            and call.name in self.task_tools
+            and call.name not in turn.workflow_tools
+        ):
+            yield event_for(
+                terminal.model_copy(
+                    update={
+                        "kind": "tools",
+                        "calls": (call,),
+                        "usage": None,
+                    }
+                )
+            )
+            yield event_for(terminal)
+            return
+        intent = intent_for(turn.user)
+        available = self._available_tools()
+        if (
+            terminal is not None
+            and not terminal.truncated
+            and not rejected
+            and call is not None
+            and intent is not None
+            and call.name == intent.steps[0]
+            and call.name in turn.workflow_tools
+            and all(step in available for step in intent.steps)
+        ):
+            if not await self.current(turn.dependencies, turn.certificate):
+                raise GatewayError("context_invalidated")
+            workflow = planning_request(turn.request, available)
+
+            def observe(request: GatewayRequest) -> None:
+                self.observation_failures += not notify(
+                    self.observe_request,
+                    replace(turn, request=request, accounting=workflow_accounting(request)),
+                )
+
+            route.executed = True
+            answer = await execute_workflow(
+                self.model,
+                workflow,
+                intent,
+                call,
+                public_web=self.public_web,
+                submit=self.submit_managed,
+                input_ceiling=self.input_ceiling,
+                inspect_ready=self.inspect_ready(),
+                build_ready=self.build_ready(),
+                on_request=observe,
+                on_end=self.observe_end,
+                activity=self.activity,
+            )
+            yield event_for(
+                terminal.model_copy(update={"kind": "text", "text": answer, "usage": None})
+            )
+            yield event_for(terminal)
+            return
+
+        if intent is not None:
+            reply = (
+                "Give me the exact public search terms."
+                if intent.steps[0] == SEARCH and not intent.query
+                else "Give me one public page link."
+                if intent.steps[0] == PAGE and not intent.url
+                else "I couldn't start that action. Try restating the request."
+            )
+            async for event in self._local_response(replace(turn, local_reply=reply)):
+                if event.kind != "start" or sequence == 0:
+                    yield event_for(event)
+            return
+        if call is None and not rejected:
+            if terminal is not None:
+                yield event_for(terminal)
+            return
+        fallback = turn.request.model_copy(update={"request_id": uuid4(), "tools": ()})
+        self.observation_failures += not notify(
+            self.observe_request, replace(turn, request=fallback)
+        )
+        finished = False
+        try:
+            async with aclosing(self.model.stream(fallback)) as events:
+                async for event in events:
+                    if event.kind == "tools":
+                        raise GatewayError("unrequested_tool")
+                    if event.kind != "start" or sequence == 0:
+                        yield event_for(event)
+                    finished = event.kind == "end"
+        finally:
+            self.observation_failures += not notify(self.observe_end, fallback.request_id, finished)
 
     async def _local_response(self, turn: PreparedTurn) -> AsyncGenerator[GatewayEvent, None]:
         """Fixed clarification has no model inference, invented token count or recall authority."""
@@ -1651,17 +1885,18 @@ class CharacterCore:
         self.busy = True
         delivered: list[str] = []
         complete = False
+        route = ConversationRoute()
         try:
             if not await self.current(turn.dependencies, turn.certificate):
                 self.turn_view.invalidate(turn.request.request_id)
                 raise GatewayError("context_invalidated")
-            if turn.tool_plan is None and turn.local_reply is None:
+            if turn.local_reply is None:
                 self.observation_failures += not notify(self.observe_request, turn)
             response = (
-                self._workflow_response(turn)
-                if turn.tool_plan is not None
-                else self._local_response(turn)
+                self._local_response(turn)
                 if turn.local_reply is not None
+                else self._conversation_response(turn, route)
+                if turn.workflow_tools
                 else synthesize_public_web(self.model, turn.request, turn.web_evidence)
                 if turn.web_evidence is not None
                 else self.model.stream(turn.request)
@@ -1742,6 +1977,8 @@ class CharacterCore:
                 self.observation_failures += not notify(
                     self.observe_end, turn.request.request_id, complete
                 )
+            if route.executed:
+                turn = replace(turn, workflow_executed=True)
             try:
                 if defer_delivery:
                     self.pending_delivery = (turn, text, complete)
@@ -1765,7 +2002,11 @@ class CharacterCore:
             raise GatewayError("delivery_receipt_invalid")
         if (
             (complete or delivered)
-            and (belief_intent(turn.user) is not None or source_followup(turn.user))
+            and (
+                belief_intent(turn.user) is not None
+                or source_followup(turn.user)
+                or turn.page_followup is not None
+            )
             and not await self.current(turn.dependencies, turn.certificate)
         ):
             await self._delivered(turn, "", False)
@@ -1787,7 +2028,9 @@ class CharacterCore:
                 complete,
                 turn.dependencies,
                 turn.certificate,
-                public_web_reply=bool(turn.work_sequence or turn.web_evidence or turn.tool_plan),
+                public_web_reply=bool(
+                    turn.work_sequence or turn.web_evidence or turn.workflow_executed
+                ),
             )
         elif isinstance(self.sink, ObservedDialogueSink):
             await self.sink.commit_delivery(
@@ -1802,8 +2045,11 @@ class CharacterCore:
             turn.certificate,
             turn.request.request_id,
             complete,
-            public_web_reply=bool(turn.work_sequence or turn.web_evidence or turn.tool_plan),
+            public_web_reply=bool(
+                turn.work_sequence or turn.web_evidence or turn.workflow_executed
+            ),
             source_anchor=turn.source_anchor if complete and text else None,
+            page_followup=turn.page_followup if complete and text else None,
         )
         self.history = [old for old in self.history if old.request_id != turn.request.request_id]
         self.history.append(observed)

@@ -321,7 +321,7 @@ def test_conversation_uses_only_literal_url_and_local_validated_provenance(
                 f"Parallel read: {_URL}",
                 "Exa read: file:///private/file.txt",
                 "Exa search: /private/file.txt",
-                "Look up PRIVATE_CURRENT_COMMENTARY",
+                "Exa search: PRIVATE_CURRENT_COMMENTARY",
                 "Exa search: public query\nPRIVATE_CURRENT_COMMENTARY",
             ):
                 denied = await core.prepare(invalid)

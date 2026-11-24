@@ -707,7 +707,7 @@ def test_research_broker_grants_only_exact_public_inputs_and_same_task_sources()
         (f"Could you explain this page at <{_URL}>?", PAGE, "url", _URL, True),
         (f"Give me a summary of the article at {_URL}", PAGE, "url", _URL, True),
         (f"Give me a summary of {_URL} and https://example.net", PAGE, "url", _URL, False),
-        (f"Explain {_URL}", PAGE, "url", "https://example.net/rewritten", False),
+        (f"Explain {_URL} and build a demo", PAGE, "url", "https://example.net/rewritten", False),
         (f"Search the web for {_QUERY}", SEARCH, "query", "public map designs", False),
     ],
 )
@@ -719,7 +719,11 @@ def test_natural_language_requires_literal_grant(
     from .test_tool_workflow import Harness, Model, _call
 
     server = Server(_tool(_PAGE_TEXT))
-    model = Model((_call(operation, arg, proposal),), "Use strong contrast.")
+    model = (
+        Model('{"answer":"Use strong contrast.","sources":[1]}')
+        if allowed
+        else Model((_call(operation, arg, proposal),))
+    )
 
     async def run() -> None:
         with CanonicalEngine(tmp_path) as engine:
@@ -735,9 +739,13 @@ def test_natural_language_requires_literal_grant(
                         "arguments": {"urls": [_URL], "maxCharacters": 2600},
                     }
                 else:
-                    assert not server.requests and len(model.requests) == 1
-                    command = "read" if operation == PAGE else "search"
-                    assert f"Exa MCP {command}: {proposal}" in reply
+                    assert not server.requests
+                    if "https://example.net" in phrase:
+                        assert not model.requests and "one public page link" in reply
+                    else:
+                        assert len(model.requests) == 1
+                        command = "read" if operation == PAGE else "search"
+                        assert f"Exa MCP {command}: {proposal}" in reply
             finally:
                 await fixture.memory.aclose()
 

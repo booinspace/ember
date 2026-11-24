@@ -130,7 +130,9 @@ def test_structured_reader_resolves_and_runs_with_config_only(
             }
             assert len(payloads) == 3  # No fallback or retry, including malformed evidence.
             if shape != "valid":
-                assert turn.web_evidence is None and "unavailable" in (turn.local_reply or "")
+                assert turn.web_evidence is None and "unexpected response" in (
+                    turn.local_reply or ""
+                )
             else:
                 assert turn.web_evidence is not None and turn.web_evidence.truncated
                 assert len(turn.web_evidence.sources[0].passages[0].encode()) == 2600

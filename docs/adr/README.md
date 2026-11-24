@@ -187,6 +187,8 @@ history budget, timeout recovery, and the profile gates for live preemption. See
 records hosted extraction, task-scoped retrieval grants, and dashboard/task status changes.
 Its [natural-language planning amendment](0027-public-web-retrieval.md#natural-language-conversation-tool-planning-amendment)
 records the implementation and [scripted preview evidence](../../PLAN.md#conversation-tool-planning-preview-acceptance).
+[Conversation-first routing](0027-public-web-retrieval.md#conversation-first-routing)
+moves first proposals into ordinary local generation and records the Miku qualification gate.
 [Keyless Exa MCP](0027-public-web-retrieval.md#keyless-exa-mcp-for-conversation-and-tasks)
 is an opt-in provider for Conversation and Web Research, not a direct MCP grant.
 [Declarative bindings](0027-public-web-retrieval.md#declarative-provider-bindings)

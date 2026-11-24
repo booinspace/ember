@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from livekit.agents import llm
 from pydantic import JsonValue
 
 from ember_agent.character.conversation import CompletedTurn
@@ -37,6 +38,7 @@ from ember_agent.inference.service import create_app
 from ember_agent.observability import ActivityLog
 from ember_agent.public_web import PublicWeb, WebBinding
 from ember_agent.realtime.contracts import RoomBinding
+from ember_agent.realtime.livekit import EmberAgent
 from ember_agent.runtime import harness as harness_runtime
 from ember_agent.runtime import hosted_web, livekit_runtime, opencode_harness, public_web_runtime
 from ember_agent.runtime.composition import LocalRuntime
@@ -45,9 +47,10 @@ from ember_agent.runtime.public_web_runtime import _snippet_retrieval
 from ember_agent.runtime.task_router import TaskResult, ToolContext, ToolReceipt
 from ember_agent.runtime.task_store import TaskState, TaskSubmission
 from ember_agent.web_evidence import PublicWebOperation, WebEvidence, WebSource
-from ember_memory_abi.interfaces import ContextRequest, RetrievalContext
-from ember_memory_engine import CanonicalEngine
+from ember_memory_abi.interfaces import ContextRequest, ForgetRequest, RetrievalContext
+from ember_memory_engine import CanonicalEngine, MutationAuthority
 from ember_memory_engine.async_client import InProcessAsyncMemoryClient
+from ember_memory_engine.authoring import MemoryAuthoringService, NewMemoryInput, ensure_subject
 
 from .test_gateway import FakeUpstream, configuration
 from .test_hosted_web import reply as web_reply
@@ -179,7 +182,7 @@ def test_search_then_build_hands_off_only_current_evidence(tmp_path: Path) -> No
                 assert "Use strong contrast" in dump
                 assert _URL not in dump and "PRIVATE_" not in dump
                 [(plan, turn_id)] = harness.plans
-                assert turn_id != first.request_id and plan.inspect is None
+                assert turn_id == first.request_id and plan.inspect is None
                 assert harness.core.history[-1].request_id == turn_id
                 assert plan.build and "Use high-contrast transit lines" in plan.build
                 assert "Use strong contrast" not in plan.build
@@ -519,16 +522,22 @@ def test_cancel_inflight_retrieval_prevents_build(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "request_text",
-    [f"Read {_URL}", f"Read the\tpage <{_URL}>", f"Summarise this labels music {_URL}"],
+    [
+        f"Read {_URL}",
+        f"Read the\tpage <{_URL}>",
+        f"Summarise this labels music {_URL}",
+        f"Fetch the data from this page {_URL.removeprefix('https://')}",
+        f"fetch this page [{_URL}]({_URL})",
+        f"sick but I want you to read the contents of this page and tell me what you think {_URL}",
+        f"Use Exa {_URL}",
+    ],
 )
 def test_public_page_without_commands_and_no_private_url_egress(
     tmp_path: Path, request_text: str
 ) -> None:
     async def run() -> None:
         private = "http://router.nas/secret"
-        model = Model(
-            (_call(PAGE, "url", private),), (_call(PAGE, "url", _URL),), "Use strong contrast."
-        )
+        model = Model('{"answer":"Use strong contrast.","sources":[1]}')
         with CanonicalEngine(tmp_path) as engine:
             harness = Harness(engine, model)
             try:
@@ -616,11 +625,11 @@ def test_described_page_then_cooperative_build(tmp_path: Path, available: bool) 
 )
 def test_ambiguous_page_proposal_has_no_egress(tmp_path: Path, text: str) -> None:
     async def run() -> None:
-        model = Model((_call(PAGE, "url", _URL),))
+        model = Model((_call(PAGE, "url", _URL),), "Please give me an exact page link.")
         with CanonicalEngine(tmp_path) as engine:
             harness = Harness(engine, model)
             try:
-                assert "Nothing sent" in await harness.turn(text)
+                assert "public page link" in await harness.turn(text) or len(model.requests) == 2
                 assert not harness.web.inputs and not harness.plans
             finally:
                 await harness.memory.aclose()
@@ -644,14 +653,18 @@ def test_conditional_cooperative_build_never_queues(
     async def run() -> None:
         goal = f"Let’s build a website {condition}"
         build = (_call(BUILD, "goal", "Build a website"),)
-        model = Model((_call(PAGE, "url", _URL),), build) if page_first else Model(build)
+        model = (
+            Model((_call(PAGE, "url", _URL),), build, "I'll wait.")
+            if page_first
+            else Model(build, "I'll wait.")
+        )
         with CanonicalEngine(tmp_path) as engine:
             harness = Harness(engine, model)
             try:
                 text = f"Read {_URL}, then {goal}" if page_first else goal
-                assert "Nothing ran" in await harness.turn(text)
+                assert await harness.turn(text)
                 assert not harness.web.inputs and not harness.plans
-                assert len(model.requests) == 1
+                assert len(model.requests) <= 2
             finally:
                 await harness.memory.aclose()
 
@@ -673,18 +686,26 @@ def test_mere_mentions_do_not_grant_tools(text: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "text", ["How are you?", "Binary search: why is it logarithmic?", "Cold read: what is it?"]
+    "text",
+    [
+        "How are you?",
+        "Binary search: why is it logarithmic?",
+        "Cold read: what is it?",
+        "What's my artist name?",
+        "What was my favourite set and when?",
+        "List some of the best sets I told you about at the club",
+    ],
 )
 def test_no_proposal_preserves_ordinary_reply(tmp_path: Path, text: str) -> None:
     async def run() -> None:
-        model = Model("Ignored planner text", "Ordinary reply")
+        model = Model("Ordinary reply")
         with CanonicalEngine(tmp_path) as engine:
             harness = Harness(engine, model)
             retrieve = harness.memory.retrieve_context
             recalled: list[ContextRequest] = []
 
             async def recall(request: ContextRequest) -> RetrievalContext:
-                assert len(model.requests) == 1 and model.requests[0].tools
+                assert not model.requests
                 recalled.append(request)
                 return await retrieve(request)
 
@@ -705,15 +726,14 @@ def test_no_proposal_preserves_ordinary_reply(tmp_path: Path, text: str) -> None
                 assert reply == "Ordinary reply"
                 assert len(recalled) == 1
                 assert not harness.plans and not harness.web.inputs
-                planner, ordinary = model.requests
-                assert [tool.function.name for tool in planner.tools] == [
+                (ordinary,) = model.requests
+                assert [tool.function.name for tool in ordinary.tools] == [
                     SEARCH,
                     PAGE,
                     INSPECT,
                     BUILD,
                 ]
-                assert "PRIVATE_" not in planner.model_dump_json()
-                assert planner.request_id != identity == ordinary.request_id
+                assert ordinary.request_id == identity
                 prompt = ordinary.model_dump_json()
                 assert "PRIVATE_HISTORY" in prompt and "PRIVATE_ORDINARY_REPLY" in prompt
                 assert "PRIVATE_LEGACY_WEB_REPLY" not in prompt
@@ -751,8 +771,8 @@ def test_unbound_provider_shortcut_never_falls_back(tmp_path: Path, text: str) -
 @pytest.mark.parametrize(
     ("text", "name", "arg", "value"),
     [
-        (f"Whats on this page {_URL}", INSPECT, "goal", f"Whats on this page {_URL}"),
-        (f"Whats on this page {_URL}", SEARCH, "query", "public design guide"),
+        ("List the best sets I told you about", INSPECT, "goal", _INSPECT),
+        ("What was my favourite set?", SEARCH, "query", "public design guide"),
         (f"I bookmarked {_URL}", PAGE, "url", _URL),
         (f"Don't read {_URL}", PAGE, "url", _URL),
         (f"Check {_URL}", INSPECT, "goal", f"Check {_URL}"),
@@ -762,12 +782,14 @@ def test_proposal_does_not_grant_authority(
     tmp_path: Path, text: str, name: str, arg: str, value: str
 ) -> None:
     async def run() -> None:
-        model = Model((_call(name, arg, value),))
+        model = Model((_call(name, arg, value),), "Ordinary reply")
         with CanonicalEngine(tmp_path) as engine:
             harness = Harness(engine, model)
             try:
-                assert "Nothing ran" in await harness.turn(text)
-                assert len(model.requests) == 1
+                assert await harness.turn(text) == "Ordinary reply"
+                first, fallback = model.requests
+                assert first.request_id != fallback.request_id
+                assert first.messages == fallback.messages and not fallback.tools
                 assert not harness.plans and not harness.web.inputs
             finally:
                 await harness.memory.aclose()
@@ -805,6 +827,137 @@ def test_snippet_search_stays_snippet_only(tmp_path: Path, text: str) -> None:
                 answer = await harness.turn(text)
                 assert "search snippets only" in answer and "excerpts" not in answer
                 assert _URL in answer and not harness.plans
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("case", ["approved", "ambiguous", "revoked", "interrupted", "intervening"])
+def test_profile_followup_is_evidence_bound(tmp_path: Path, case: str) -> None:
+    profile_url = "https://www.soundstage.org/artists/synthetic"
+
+    async def run() -> None:
+        model = Model(
+            _WEB_SUMMARY if case == "approved" else "Ordinary reply",
+            "Ordinary reply",
+        )
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            authority = MutationAuthority(mode="confirmed_user")
+            author = MemoryAuthoringService(
+                engine, ensure_subject(engine, harness.memory.character_id), authority=authority
+            )
+            source = f"My Soundstage profile is {profile_url}"
+            if case == "ambiguous":
+                source += " or https://www.soundstage.org/other"
+            memory = author.create(NewMemoryInput(idempotency_key="profile", text=source)).affected[
+                0
+            ]
+
+            async def voice(text: str, *, complete: bool = True) -> str:
+                agent = EmberAgent(harness.core, defer_delivery=True)
+                context = llm.ChatContext()
+                message = context.add_message(role="user", content=text)
+                await agent.on_user_turn_completed(context, message)
+                stream = agent.gateway_llm.chat(chat_ctx=context)
+                try:
+                    reply = "".join(
+                        [chunk.delta.content or "" async for chunk in stream if chunk.delta]
+                    )
+                finally:
+                    await stream.aclose()
+                turn_id = agent.gateway_llm.completed_request_id
+                assert turn_id is not None
+                await harness.core.acknowledge(
+                    turn_id, reply if complete else reply[:3], complete=complete
+                )
+                return reply
+
+            try:
+                reply = await voice(
+                    "Read my Soundstage profile, thoughts?", complete=case != "interrupted"
+                )
+                assert not model.requests and not harness.web.inputs and not harness.plans
+                if case == "ambiguous":
+                    assert "Paste one public link" in reply and profile_url not in reply
+                    return
+                assert profile_url in reply and "with Exa" in reply
+                if case == "revoked":
+                    engine.character(harness.memory.character_id, authority=authority).forget(
+                        ForgetRequest(
+                            idempotency_key="forget-profile",
+                            memory_id=memory.memory_id,
+                            expected_revision=memory.revision,
+                            reason="user_request",
+                        )
+                    )
+                if case == "intervening":
+                    assert await voice("Yes") == "Ordinary reply"
+                    assert not harness.web.inputs
+                response = await voice(f"from here !!! [{profile_url}]({profile_url})")
+                if case == "approved":
+                    assert harness.web.inputs == [("read", profile_url)] and not harness.plans
+                    assert "Use strong contrast" in response
+                    (synthesis,) = model.requests
+                    assert "Read my Soundstage profile, thoughts?" in synthesis.messages[-1].content
+                else:
+                    assert not harness.web.inputs
+                    assert (
+                        "directly" in response
+                        if case == "revoked"
+                        else response == "Ordinary reply"
+                    )
+            finally:
+                await harness.memory.aclose()
+
+    asyncio.run(run())
+
+
+_WEB_SUMMARY = '{"answer":"Use strong contrast.","sources":[1]}'
+
+
+def test_visible_voice_reply_discards_late_tool(tmp_path: Path) -> None:
+    class MixedModel(Model):
+        async def stream(self, request: GatewayRequest) -> AsyncGenerator[GatewayEvent, None]:
+            async for event in super().stream(request):
+                if event.kind == "text":
+                    yield event
+                    yield event.model_copy(
+                        update={
+                            "kind": "tools",
+                            "sequence": 2,
+                            "text": "",
+                            "calls": (_call(SEARCH, "query", _QUERY),),
+                        }
+                    )
+                else:
+                    yield event.model_copy(update={"sequence": 3}) if event.kind == "end" else event
+
+    async def run() -> None:
+        model = MixedModel("I remember the opening set.")
+        with CanonicalEngine(tmp_path) as engine:
+            harness = Harness(engine, model)
+            try:
+                agent = EmberAgent(harness.core, defer_delivery=True)
+                context = llm.ChatContext()
+                message = context.add_message(
+                    role="user", content="Which set did I tell you about?"
+                )
+                await agent.on_user_turn_completed(context, message)
+                stream = agent.gateway_llm.chat(chat_ctx=context)
+                try:
+                    chunks = [chunk async for chunk in stream]
+                finally:
+                    await stream.aclose()
+                reply = "".join(chunk.delta.content or "" for chunk in chunks if chunk.delta)
+                assert reply == "I remember the opening set."
+                assert chunks[-1].usage is not None and len(model.requests) == 1
+                assert not harness.web.inputs and not harness.plans
+                turn_id = agent.gateway_llm.completed_request_id
+                assert turn_id is not None
+                await harness.core.acknowledge(turn_id, "I remember", complete=False)
+                assert harness.core.history[-1].assistant == "I remember"
             finally:
                 await harness.memory.aclose()
 

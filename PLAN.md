@@ -5281,30 +5281,33 @@ tool priority, inert UTF-8 and binary handling passed in `test_task_work.py`.
 gate: 1,442 passed, 18 skipped; frontend: 33 unit and 26 browser checks passed,
 3 live browser checks skipped. Live voice latency and deployment not qualified.
 
-**Status:** Implemented in the isolated Mac worktree with scripted acceptance evidence.
-No deployment or live qualification authorized by this amendment.
-See [Root ADR 0027](docs/adr/0027-public-web-retrieval.md#natural-language-conversation-tool-planning-amendment),
+**Status:** Conversation-first routing implemented in checkout. Real-model
+qualification and rollout are separate. See [Root ADR 0027](docs/adr/0027-public-web-retrieval.md#conversation-first-routing),
 [Root ADR 0026](docs/adr/0026-managed-opencode-build.md#conversation-planning-and-build-prerequisites-amendment)
-and [Agent ADR 0015](ember-agent/docs/adr/0015-managed-opencode-preview.md#natural-language-conversation-tool-planning-amendment).
+and [Agent ADR 0015](ember-agent/docs/adr/0015-managed-opencode-preview.md#conversation-first-routing).
 
-Ember's isolated local planner sees the configured tool menu on bounded
-Conversation turns, without a keyword gate. It chooses one typed public search,
-page read, Inspect or Build proposal, or declines. An ordinary no-tool turn
-continues through regular recall and reply. Existing explicit commands remain
-shortcuts. Runtime, not the model, validates current-turn intent, order, tool
-scope, and exact arguments before any effect; planner output alone grants nothing.
-Only an unambiguous literal public query or single URL can
-be sent without further approval. For rewritten or ambiguous input, display
-exact provider, action and argument when safe and require a fresh explicit turn.
-No pending approval or automatic resume. Hosted retrieval receives only validated
-public input and provider authentication, never recall, prior chat, other
-credentials or raw workspace data. No hosted planning fallback.
+On bounded turns, the ordinary Conversation generation receives the ready tool
+menu alongside authorized recall and history. It can answer in one streaming
+pass or propose one action. Once text starts, later proposals from that
+generation cannot cause effects. A rejected proposal on an ordinary turn can
+fall back once to the same context with tools removed. Thinking retains its
+tool-free path. A workflow continuation sees current input and bounded same-turn
+results. It does not receive recall or conversation history.
 
-An affirmative page request may describe its target before one terminal literal URL
-(e.g. `Summarise this label's music <URL>`). The label stays local. Cooperative
-software requests (`let's build`, `lets build`, `let us build`) can validate a
-Build proposal, including after an explicit prerequisite. These are not shortcuts:
-the local planner must still propose the matching tool. Scope and chain limits stay unchanged.
+Core validates current-turn intent, exact input, provider, target scope and
+required order before dispatch. Managed calls still need a standalone goal
+and explicit workspace scope for Inspect. Existing commands and unambiguous
+standalone page reads use the public adapter directly. One plain or Markdown
+URL is accepted, including a bare domain or domain/path with HTTPS supplied
+by Ember. Source-checked synthesis can answer the original request locally.
+Hosted retrieval receives only the validated public argument and provider
+authentication. Rewritten search inputs still require a fresh explicit request.
+
+For a profile request missing its URL, offer one unique matching public
+link only when present verbatim in authorized supporting evidence. Otherwise
+ask for a link. A pasted link may answer the immediately preceding fully
+acknowledged clarification in the same session. Recheck provider and evidence
+before retrieval. Generic assent and interrupted delivery confer no authority.
 
 Native search and page reading can run during connected chat. No Tasks operation
 requires a disconnect. Inspect, Build, Web Research and text Summary share idle
@@ -5328,6 +5331,13 @@ No grants added to managed workers; no change to recall or ordinary reply policy
 | CTP-AC-03 — Reservation and ordering | Both chains and text Summary complete through the authenticated gateway while Conversation stays connected. The pinned Research worker completes and returns source receipts with a held Conversation reservation and scripted inference/retrieval. Gateway tests check speech holds, foreground ordering and native drain, and unchanged unmarked P2 behavior. | Passed on macOS with scripted backends; live Strata and physical voice not run. |
 | CTP-AC-04 — Durable prerequisite and failure | `test_inspect_build_dependency.py`: exact parent, atomic admission, detach during commit, failure, expiry, cancellation and restart reconciliation. `test_tool_workflow.py`: unavailable or cancelled retrieval. | Scripted Mac pass; live crash/recovery not qualified. |
 | CTP-AC-05 — Handoff, provenance and unchanged grants | Router checks bounded summary, source IDs/URLs and replacement of fabricated receipt fields. Pinned workers exercise isolation with scripted upstreams. Browser, recall and MCP regressions pass. | Scripted Mac pass; Windows, native Linux and physical voice not run. |
+
+Conversation-first qualification runs the real local model through browser
+text and voice on the authorized Miku profile with isolated synthetic state.
+Record tool effects, interruption, and baseline/candidate warm time to first
+text and first audio. Track live Exa and physical playback separately.
+The [current evidence](docs/adr/0027-public-web-retrieval.md#conversation-first-routing)
+records scripted results against the original criteria.
 
 Planner routing correction: the Mac root gate passed (1,389 Python passed,
 18 skipped), and the final focused gate passed (70 tests). Mocked Exa MCP covers
