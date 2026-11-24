@@ -219,6 +219,95 @@ def test_owned_browser_socket_startup_shutdown_and_port_conflict(
         asyncio.run(exercise())
 
 
+@pytest.mark.parametrize("preview", [False, True])
+def test_browser_deep_archive_relevance_is_opt_in(tmp_path: Path, preview: bool) -> None:
+    from unittest.mock import patch
+
+    import httpx
+
+    from ember_agent.runtime.composition import LocalRuntime
+    from ember_agent.runtime.config import load_config
+    from ember_memory_abi.interfaces import ArchiveSearchResponse, RetrievalCoverage
+
+    example = Path(__file__).parents[1] / "config/deployment.example.toml"
+    path = tmp_path / "deployment.toml"
+    text = example.read_text(encoding="utf-8")
+    if preview:
+        text = text.replace("# deep_archive_relevance", "deep_archive_relevance")
+    path.write_text(text, encoding="utf-8")
+    config = load_config(path).model_copy(
+        update={
+            "data_root": tmp_path / "data",
+            "runtime_root": tmp_path / "runtime",
+            "system_prompt_file": tmp_path / "prompts/system.md",
+            "embedding_directory": None,
+        }
+    )
+    runtime = LocalRuntime(config, gateway_available=False)
+
+    async def answer(_: object) -> str:
+        return "unused"
+
+    async def exercise() -> None:
+        owner = BrowserControl(
+            origin=ORIGIN,
+            assets=tmp_path / "unbuilt",
+            binding=RoomBinding(
+                instance_id=uuid4(),
+                character_id=runtime.memory.character_id,
+                room="ember-" + uuid4().hex,
+                endpoint="ws://127.0.0.1:7880",
+            ),
+            core=runtime.core,
+            deep=runtime.deep,
+            controls=Controls(),
+            room_token=lambda: "synthetic",
+            answer=answer,
+        )
+        response = ArchiveSearchResponse(
+            results=(), coverage=RetrievalCoverage(status="complete", index_status="available")
+        )
+        try:
+            with patch.object(
+                InProcessAsyncMemoryClient, "search_archive", return_value=response
+            ) as search:
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=owner.app),
+                    base_url=ORIGIN,
+                    headers={"origin": ORIGIN},
+                ) as browser:
+                    assert (
+                        await browser.post("/api/bootstrap", json={"token": owner.activation})
+                    ).is_success
+                    await runtime.core.prepare("Synthetic router topic")
+                    source = await runtime.core.prepare("What was the original source?")
+                    assert source.omissions == ("source_followup_unavailable",)
+                    search.assert_not_called()
+                    request_id = uuid4()
+                    started = await browser.post(
+                        "/api/deep",
+                        json={"request_id": str(request_id), "text": "Synthetic router topic"},
+                    )
+                    assert started.is_success
+                    await asyncio.wait_for(owner._tasks[request_id], timeout=5)
+                    assert (await browser.get(f"/api/deep/{request_id}")).json()["result"]
+                search.assert_awaited_once()
+                query = search.await_args.args[0]
+                assert query.mode == "hybrid" and query.roles == ("user",)
+                assert query.options.deadline_at is not None
+                assert query.options.extensions == (
+                    {"ember.archive_relevance": "corroborated_v1"} if preview else {}
+                )
+        finally:
+            await owner.aclose()
+            await runtime.aclose()
+
+    try:
+        asyncio.run(exercise())
+    finally:
+        runtime.close_workers()
+
+
 def test_status_history_remains_bounded_while_older_work_is_active(tmp_path: Path) -> None:
     from ember_agent.memory.deep_contracts import DeepRecallRequest, DeepRecallResult
 

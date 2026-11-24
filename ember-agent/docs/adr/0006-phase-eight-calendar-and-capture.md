@@ -359,3 +359,12 @@ before delivery. Multiple claims clarify; missing or invalid evidence abstains. 
 has a 500 ms soft bound. No model call, archive fallback, or new persisted metadata. A
 supporting span does not prove first occurrence or model attribution. See
 [paired replay](../../../docs/memory-benchmark.md#source-follow-up-replay).
+
+## Deep archive relevance preview
+
+Composition passes the deployment's optional `deep_archive_relevance` to `DeepRecallService`.
+Only its hybrid `search_archive` call carries the existing memory extension. No request schema,
+UI toggle, new retrieval primitive, or model call. Missing setting sends the same request as
+before; unknown settings fail config validation. Accepted-memory search and exact evidence reads
+are unchanged. Grants, budgets, and delivery checks remain in their existing owners. Coverage
+still describes search execution, not exhaustiveness; filtering can drop relevant hits.

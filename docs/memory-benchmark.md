@@ -49,6 +49,12 @@ With the multi-term fallback, LoCoMo hit rate held at 28/30, mean recall reached
 89.44%, and p95 was 34.15 ms versus 33.85 ms default. This smoke is one conversation,
 not a full-split or rollout gate.
 
+Paired Miku Windows replay at `5a2804b` reproduced **9/77 vs 54/77**,
+**6.00% vs 65.88% precision**, and **100% vs 97.34% recall**. p95 was
+**42.05 ms vs 31.33 ms**, with identical coverage. Receipts on Miku:
+`.local/benchmarks/memory/head-5a2804b-20261124T190455Z/`. These are public-fixture
+engine runs, not measurements of the [deployment preview](phase-8-runbook.md#deep-recall-and-calendar-interpretation).
+
 Use the pinned [AMB command below](#public-reference-protocol), add
 `--mode hybrid --archive-relevance corroborated_v1` for the candidate, and omit
 `--archive-relevance` for the control. For LoCoMo use `--dataset locomo --query-limit 30`.

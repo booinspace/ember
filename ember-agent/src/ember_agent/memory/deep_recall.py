@@ -132,7 +132,9 @@ class DeepRecallService:
         *,
         admission: DeepAdmission | None = None,
         validation: AsyncRelatedLookupClient,
+        archive_relevance: str | None = None,
     ) -> None:
+        self._archive_relevance = archive_relevance
         self.character_id = character_id
         self.factory = factory
         self.admission = admission or DeepAdmission()
@@ -270,7 +272,12 @@ class DeepRecallService:
                 roles=("user",),
                 source_from=resolution.scope.start if resolution.scope else None,
                 source_until=resolution.scope.end if resolution.scope else None,
-                options=RequestOptions(deadline_at=work.deadline_at),
+                options=RequestOptions(
+                    deadline_at=work.deadline_at,
+                    extensions={"ember.archive_relevance": self._archive_relevance}
+                    if self._archive_relevance is not None
+                    else {},
+                ),
             )
         )
         if archive.coverage.status != "complete":

@@ -236,6 +236,18 @@ reported voice ready and its existing character index available. No additional
 private import review/approval/seeding or primary-character conversation occurred.
 
 
+## Deep archive relevance deployment preview
+
+- **P8-AC-13, option routing passed:** authenticated synthetic browser API tests cover
+  omitted and explicit deployment settings. Only deep hybrid archive queries carry the
+  option. Unknown settings fail validation. No live browser or voice run.
+- **P8-AC-16/17, regression checks passed:** ordinary recall and supporting source
+  follow-ups issue no archive search; existing archive scope, quote, revocation and
+  delivery tests pass. No private-source or rollout qualification.
+- Offline macOS gate: 1,544 passed, 18 skipped. Miku Windows paired engine replay
+  reproduced the [PrecisionMemBench result](memory-benchmark.md#opt-in-archive-relevance-replay).
+  Engine replay does not qualify live chat, answer quality, or service latency.
+
 ## Large private-memory-set regression: 2026-10-14
 
 The operator authorized testing the large imported character memory set. The running

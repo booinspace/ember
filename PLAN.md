@@ -1731,6 +1731,10 @@ a deterministic control phrase; it does not need another routing LLM. The opt-in
 `natural_deep_recall` setting also recognizes leading, specific recall questions in
 voice and text using deterministic v1 rules. It leaves other turns on ordinary recall
 and uses the same bounded service and admission rules as the explicit commands.
+An unset `deep_archive_relevance` preserves default archive ranking. Explicit
+`"corroborated_v1"` opts into the existing hybrid relevance preview for deep
+investigations' optional archive search only. Ordinary recall, accepted-memory
+search, and linked-evidence reads keep their existing paths, grants, and bounds.
 
 Example: investigate the NAS/Tailscale/MagicDNS/AdGuard/OPNsense project, distinguish
 other networking incidents, and answer with the best-supported reconstruction or a

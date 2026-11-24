@@ -186,6 +186,19 @@ Inspection shows ordered event/state periods, modality and inclusion reasons.
 Source links open already-authorized exact passages; another passage in the same
 record is not treated as the cited evidence.
 
+To preview the corroborated hybrid archive filter, set this at the top level of
+the deployment TOML, before any `[table]` header:
+
+```toml
+deep_archive_relevance = "corroborated_v1"
+```
+
+Apply on the next authorized restart. Remove the setting and restart to roll back.
+**Recall deeply** and other investigations using the same service apply it only to
+optional archive expansion. Ordinary chat and exact source follow-ups do not use it.
+No index rebuild is needed. A filtered search can miss relevant raw passages;
+existing semantic admission and lexical fallback still apply.
+
 Deep reads currently defer to admitted foreground native jobs: an initial ungated
 comparison failed strict ordinary regression limits. Deferred investigations
 remain explicit, ephemeral outcomes and are never silently replayed.

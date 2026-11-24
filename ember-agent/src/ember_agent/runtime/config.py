@@ -342,6 +342,7 @@ class DeploymentConfig(RuntimeModel):
     audio: AudioSettings = Field(default_factory=AudioSettings)
     interpretation: InterpretationSettings = Field(default_factory=InterpretationSettings)
     natural_deep_recall: bool = False
+    deep_archive_relevance: Literal["corroborated_v1"] | None = None
     mcp_servers: tuple[MCPServerSettings, ...] = ()
     memory_mcp: MemoryMCPSettings | None = None
     inference: InferenceSettings = InferenceSettings()
@@ -430,6 +431,7 @@ class _DeploymentSettings(RuntimeModel):
     browser: _BrowserSettings = _BrowserSettings()
     interpretation: InterpretationSettings = InterpretationSettings()
     natural_deep_recall: bool = False
+    deep_archive_relevance: Literal["corroborated_v1"] | None = None
     prompts: _PromptSettings = _PromptSettings()
     memory_mcp: MemoryMCPSettings | None = None
     inference: InferenceSettings = InferenceSettings()
@@ -797,6 +799,7 @@ def load_config(path: Path, *, require_model_pin: bool = False) -> DeploymentCon
         recall_timezone=settings.search.timezone,
         interpretation=settings.interpretation,
         natural_deep_recall=settings.natural_deep_recall,
+        deep_archive_relevance=settings.deep_archive_relevance,
         audio=AudioSettings(
             enabled=settings.audio.enabled,
             stt_model_directory=(

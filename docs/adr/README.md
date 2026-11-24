@@ -98,6 +98,8 @@ The [current-belief preview](0015-phase-eight-implementation.md#current-belief-p
 seeded retrieval evidence does not qualify chat routing or raw-history extraction.
 [Supporting source follow-ups](0015-phase-eight-implementation.md#supporting-source-follow-ups)
 use exact evidence from the prior acknowledged reply, not archive ranking.
+[Deep archive relevance](0015-phase-eight-implementation.md#deep-archive-relevance-preview)
+is a separate default-off deployment preview for deep investigations.
 
 The [connected-idle native capture amendment](0015-phase-eight-implementation.md#connected-idle-native-capture)
 is implemented in the checkout for terminal and both browser transports. It uses

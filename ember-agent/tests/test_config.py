@@ -238,6 +238,19 @@ def test_natural_deep_recall_is_opt_in(config_path: Path) -> None:
     assert load_config(config_path).natural_deep_recall
 
 
+def test_deep_archive_relevance_rejects_unknown_profile(config_path: Path) -> None:
+    text = config_path.read_text(encoding="utf-8")
+    assert load_config(config_path).deep_archive_relevance is None
+    config_path.write_text(
+        text.replace(
+            '# deep_archive_relevance = "corroborated_v1"', 'deep_archive_relevance = "unknown"'
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match="invalid types, values, or unknown keys"):
+        load_config(config_path)
+
+
 def test_paths_resolve_relative_to_config_file(config_path: Path) -> None:
     config = load_config(config_path)
     assert config.data_root == (config_path.parent / "../../.local/data").resolve()

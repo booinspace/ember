@@ -5,6 +5,8 @@ active_profile = "primary"
 # Route specific questions like "Do you remember what caused the NAS outage?"
 # to deep recall in voice and browser chat. Ordinary turns stay on fast recall.
 natural_deep_recall = false
+# Optional preview: filter hybrid archive expansion only during deep recall.
+# deep_archive_relevance = "corroborated_v1"
 
 [paths]
 data_root = "../../.local/data"

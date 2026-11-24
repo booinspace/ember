@@ -109,7 +109,12 @@ class LocalRuntime:
                     store, deep_sources=DeepSources(self.engine, budget), read_budget=budget
                 )
 
-            self.deep = DeepRecallService(binding.character_id, deep_client, validation=self.memory)
+            self.deep = DeepRecallService(
+                binding.character_id,
+                deep_client,
+                validation=self.memory,
+                archive_relevance=config.deep_archive_relevance,
+            )
             self.model = HttpGatewayClient(config.services.gateway.endpoint, token)
             self.dashboard = Dashboard(
                 model=config.model_tag,

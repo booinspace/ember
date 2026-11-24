@@ -533,3 +533,10 @@ records bounded exact evidence lookup after a completed reply. The
 [paired replay](../memory-benchmark.md#source-follow-up-replay) checks verbatim output and
 source controls for this path (P5-AC-04, P8-AC-26). Live transport and real-source acceptance
 were not run. Archive ranking and permissions are unchanged.
+
+## Deep archive relevance preview
+
+[Agent ADR 0006](../../ember-agent/docs/adr/0006-phase-eight-calendar-and-capture.md#deep-archive-relevance-preview)
+records the default-off deployment binding for the existing hybrid archive option. It changes
+only optional archive candidates in deep investigations. AMB measures the engine option;
+the browser route needs separate validation (P8-AC-13/16/17). No permission or schema change.
