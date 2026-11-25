@@ -71,9 +71,9 @@ def test_memory_mcp_lan_requires_https_and_adds_proxy_scoped_firewall_rule(
     with pytest.raises(ConfigurationError, match="requires browser HTTPS ingress"):
         load_config(deployment)
 
-    https = lan.replace('public_origin = ""', 'public_origin = "https://ember.example.test"').replace(
-        'trusted_proxy = ""', 'trusted_proxy = "10.254.254.10"'
-    )
+    https = lan.replace(
+        'public_origin = ""', 'public_origin = "https://ember.example.test"'
+    ).replace('trusted_proxy = ""', 'trusted_proxy = "10.254.254.10"')
     for port in (8787, 7880, 7881):
         deployment.write_text(https + f"port = {port}\n", encoding="utf-8")
         with pytest.raises(ConfigurationError, match="distinct TCP port"):
