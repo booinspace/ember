@@ -156,7 +156,7 @@ indexes link decisions to actual phase status and acceptance evidence.
 Run `uv sync --locked` and `.\scripts\setup_livekit.ps1` from the checkout.
 Double-click `start.bat` to select a deployment from `.local\config`. Only
 `deployment*.toml` files are listed. Stop Ember with Ctrl+C before switching.
-See [Windows Strata setup](ember-agent/docs/strata.md) or the
+See [Windows Strata setup](ember-agent/docs/strata-setup.md) or the
 [Ollama setup](ember-agent/README.md#setup-and-running-from-windows-powershell)
 to create a local deployment on a fresh clone. Startup never downloads models.
 

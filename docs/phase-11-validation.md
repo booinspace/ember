@@ -81,6 +81,7 @@ The refreshed final vLLM pin passed original real Phase 6/7 acceptance, all ten
 conformance cases, complete brokered multi-round history, the native Hermes task
 and **210 warm trials plus seven drain/recovered-P0 probes**. Its
 [configuration, exact hashes and reports](benchmarks/2026-11-04-phase11-qualification/vllm/evidence.json)
+(the machine-specific environment receipt is kept private)
 are separate from the prior profile. It reuses the existing GGUF through a symlink;
 no second weights copy was installed. Ollama remains the production default.
 

@@ -73,7 +73,7 @@ still governs the separate listener.
    repositories, or personal context. To disable the preview, remove `[harness]` and
    relaunch; do not change the memory stores or copy prior task/chat data.
 
-Miku's tracked `deployment.strata.toml` and `deployment.strata-mtp.toml` explicitly
+The tested local `deployment.strata.toml` and `deployment.strata-mtp.toml` explicitly
 opt into the preview for a dedicated synthetic fixture workspace. They pin the
 installed Windows x64 baseline binary under `.local/tools/opencode/2.3.2/`. Use
 `Read fixture.txt and return its exact contents.` to smoke-test after relaunch;

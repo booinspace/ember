@@ -5,7 +5,7 @@ The model still returns text and tool calls, not images.
 
 ## Enable on Miku
 
-Miku's tracked `deployment.strata.toml` and `deployment.strata-mtp.toml` already
+The tested local `deployment.strata.toml` and `deployment.strata-mtp.toml` already
 opt in and pin the reader and projector. For a rebuild or new profile:
 
 1. Get the matching projector from the same [SC117 revision](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF/tree/90a3350cd800ec1fe0d1660a38414ad9e985782f).
@@ -36,7 +36,7 @@ opt in and pin the reader and projector. For a rebuild or new profile:
    }
    ```
 
-3. Pass that copy to `scripts/prepare_strata_profile.py` as in [Windows setup](strata.md#rebuild-on-windows).
+3. Pass that copy to `scripts/prepare_strata_profile.py` as in [Windows setup](strata-setup.md#rebuild-on-windows).
    It creates `runner.ember-strata-vision.json` and `deployment.strata-vision.toml`
    without overwriting text profiles. Carry over the intended HTTPS settings and
    runtime/data roots; keep the new runner pins. Set `coding_api = true` and

@@ -127,7 +127,7 @@ Agent ADR 0006 record its passing checks and pending UI deployment authorization
 Historical: [Root ADR 0016 — Hermes and Windows runner evaluation](0016-planned-hermes-and-runner-evaluation.md). The Hermes plan is superseded by Root ADR 0025.
 In progress: [Phase 9 operational tasks](0017-phase-nine-operational-tasks.md).
 
-The [LAN HTTPS reverse-proxy extension](../phase-8-lan-https-design.md) uses
+The [LAN HTTPS reverse-proxy extension](../lan-https-setup.md) uses
 explicit Nginx trust and direct operator admission. Isolated tests and live HTTPS
 control checks pass; room join, client microphone and media acceptance remain open.
 

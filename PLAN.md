@@ -5099,7 +5099,7 @@ Do not optimize based solely on hypothetical performance concerns.
 
 The implementation supports an explicitly trusted Nginx proxy and direct operator
 admission on a configured HTTPS origin. Browser port 8787 remains fixed in this mode;
-LiveKit signalling uses WSS through Nginx. The [design and setup](docs/phase-8-lan-https-design.md)
+LiveKit signalling uses WSS through Nginx. The [design and setup](docs/lan-https-setup.md)
 record the exposure, ownership and open live-validation gates. Phase 8 remains in progress.
 
 ### Phase 8 long-speech correction

@@ -18,9 +18,9 @@ output cap and temperature 0.2. CPU Phonon Juniper at 1.1x supplies paced SDK PC
 The benchmark never sends generation directly to either runner.
 
 [Configuration and source hashes](configuration.json),
-[verified setup/software receipt](environment.json),
 [live conformance](conformance.json), [original real acceptance](real-acceptance.json)
 and [six paired profile replies](phase7-paired-native.json) supply provenance.
+The machine-specific software receipt is kept private.
 The Ollama measured-source snapshot is preserved in
 [the earlier manifest](before-native-timing/configuration.json); the final
 manifest records the vLLM timing extraction/label change. The measurement algorithm,

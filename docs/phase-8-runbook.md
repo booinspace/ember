@@ -448,7 +448,7 @@ to return to Kokoro on this workstation.
 
 ## LAN HTTPS through Nginx
 
-See [the LAN HTTPS design and configuration](phase-8-lan-https-design.md). Direct
+See [the LAN HTTPS design and configuration](lan-https-setup.md). Direct
 access grants operator authority to clients able to reach the configured proxy.
 
 ## Voice controls and read-ahead text

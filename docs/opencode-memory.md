@@ -41,7 +41,7 @@ Windows PowerShell with the root environment installed (replace the path):
 After an authorized Ember relaunch, check for `Memory MCP listening` at the
 expected loopback address. If the listener cannot start, Ember reports it without
 blocking normal operation. Existing operator-managed SSH forwarding or explicitly
-configured [trusted-proxy LAN HTTPS](phase-8-lan-https-design.md) can still be used;
+configured [trusted-proxy LAN HTTPS](lan-https-setup.md) can still be used;
 neither makes inference local. Keep the endpoint private. A bearer holder who can
 reach it can read eligible character memories.
 
